@@ -13,7 +13,7 @@ EFFECT_BINARY_NAME="hivra-trading-exact-order-runner"
 UNIT_NAME="hivra-trading-public-shadow-runner.service"
 MANIFEST_NAME="ARTIFACT-MANIFEST.v1"
 SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"
-AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-and-exact-order"
+AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-exact-and-deterministic-order"
 BUNDLE_INSTALL_PATH="/opt/hivra/trading-public-shadow"
 BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
 EFFECT_BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$EFFECT_BINARY_NAME"
@@ -56,6 +56,8 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --execute-exact-order <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --execute-deterministic-order <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
@@ -510,7 +512,10 @@ PY
   for marker in \
     'openApi/swap/v2/trade/order' \
     'openApi/swap/v2/trade/order/test' \
-    'hivra-trading-exact-order-evidence-v1'; do
+    'hivra-trading-exact-order-evidence-v1' \
+    'trading-remote-mandate-admission-v4' \
+    'one_deterministic_order' \
+    'hivra-trading-deterministic-cycle-evidence-v1'; do
     grep -aFq "$marker" "$effect_binary" ||
       die "artifact effect binary is missing exact-order marker: $marker"
   done
@@ -1030,12 +1035,13 @@ except (UnicodeDecodeError, json.JSONDecodeError):
 version = value.get("contract_version") if isinstance(value, dict) else None
 is_account_read = version == "trading-remote-mandate-admission-v2"
 is_exact_order = version == "trading-remote-mandate-admission-v3"
-if not is_account_read and not is_exact_order:
+is_deterministic_order = version == "trading-remote-mandate-admission-v4"
+if not is_account_read and not is_exact_order and not is_deterministic_order:
     raise SystemExit("mandate contract version mismatch")
 expected_root = [
     "contract_version", "operation_id", "commitment_hash_hex",
     "runner_key_id", "operation_kind",
-    *( ["read_scope"] if is_account_read else ["exact_order"] ),
+    *( ["read_scope"] if is_account_read else ["exact_order"] if is_exact_order else ["strategy_policy"] ),
     "max_uses", "mandate", "signature_suite", "signature_hex",
 ]
 expected_mandate = [
@@ -1056,13 +1062,13 @@ if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
 if value["signature_suite"] != "ed25519-v1":
     raise SystemExit("mandate signature suite mismatch")
 if value["max_uses"] != 1:
-    raise SystemExit("mandate account-read use bound mismatch" if is_account_read else "mandate exact-order use bound mismatch")
+    raise SystemExit("mandate account-read use bound mismatch" if is_account_read else "mandate order use bound mismatch")
 if is_account_read:
     if value["operation_kind"] != "account_read":
         raise SystemExit("mandate operation kind mismatch")
     if value["read_scope"] != ["balance", "positions", "open_orders"]:
         raise SystemExit("mandate account-read scope mismatch")
-else:
+elif is_exact_order:
     if value["operation_kind"] != "one_exact_order":
         raise SystemExit("mandate operation kind mismatch")
     expected_order = [
@@ -1099,6 +1105,26 @@ else:
             raise SystemExit(f"invalid exact order {key}")
     if float(exact_order["quantity_decimal"]) * float(exact_order["limit_price_decimal"]) > float(mandate["max_order_notional_quote_decimal"]):
         raise SystemExit("exact order exceeds mandate notional")
+else:
+    if value["operation_kind"] != "one_deterministic_order":
+        raise SystemExit("mandate operation kind mismatch")
+    policy = value.get("strategy_policy")
+    expected_policy = [
+        "runner_build_id", "plugin_id", "plugin_version",
+        "package_digest_hex", "host_abi", "stop_loss_percent",
+        "minimum_risk_reward",
+    ]
+    if not isinstance(policy, dict) or list(policy) != expected_policy:
+        raise SystemExit("deterministic strategy policy is not canonical")
+    for key in ("runner_build_id", "plugin_id", "plugin_version", "host_abi"):
+        if not isinstance(policy[key], str) or not policy[key] or len(policy[key]) > 128:
+            raise SystemExit(f"invalid deterministic policy {key}")
+    if not isinstance(policy["package_digest_hex"], str) or re.fullmatch(r"[0-9a-f]{64}", policy["package_digest_hex"]) is None:
+        raise SystemExit("invalid deterministic package digest")
+    for key in ("stop_loss_percent", "minimum_risk_reward"):
+        number = policy[key]
+        if isinstance(number, bool) or not isinstance(number, (int, float)) or number <= 0:
+            raise SystemExit(f"invalid deterministic policy {key}")
 if value["runner_key_id"] != expected_runner_key_id:
     raise SystemExit("mandate runner binding mismatch")
 hex64 = re.compile(r"[0-9a-f]{64}")
@@ -1156,12 +1182,12 @@ commitment_semantic = {
     "contract_version": value["contract_version"],
     "runner_key_id": value["runner_key_id"],
     "operation_kind": value["operation_kind"],
-    **({"read_scope": value["read_scope"]} if is_account_read else {"exact_order": value["exact_order"]}),
+    **({"read_scope": value["read_scope"]} if is_account_read else {"exact_order": value["exact_order"]} if is_exact_order else {"strategy_policy": value["strategy_policy"]}),
     "max_uses": value["max_uses"],
     "mandate": mandate,
 }
 commitment = hashlib.sha256(
-    (b"hivra:bingx-futures-remote-mandate-admission:v2\n" if is_account_read else b"hivra:bingx-futures-remote-mandate-admission:v3\n") +
+    (b"hivra:bingx-futures-remote-mandate-admission:v2\n" if is_account_read else b"hivra:bingx-futures-remote-mandate-admission:v3\n" if is_exact_order else b"hivra:bingx-futures-remote-mandate-admission:v4\n") +
     json.dumps(commitment_semantic, separators=(",", ":")).encode("utf-8")
 ).hexdigest()
 if value["commitment_hash_hex"] != commitment:
@@ -1194,12 +1220,16 @@ if is_account_read:
     pathlib.Path(work, "read-scope").write_text(
         ",".join(value["read_scope"]), encoding="ascii"
     )
-else:
+elif is_exact_order:
     pathlib.Path(work, "effect-operation-id").write_text(
         value["exact_order"]["intent_hash_hex"], encoding="ascii"
     )
     pathlib.Path(work, "exact-order.json").write_text(
         json.dumps(value["exact_order"], separators=(",", ":")), encoding="utf-8"
+    )
+else:
+    pathlib.Path(work, "strategy-policy.json").write_text(
+        json.dumps(value["strategy_policy"], separators=(",", ":")), encoding="utf-8"
     )
 pathlib.Path(work, "max-uses").write_text(str(value["max_uses"]), encoding="ascii")
 PY
@@ -1261,6 +1291,7 @@ admit_remote_mandate() {
   case "$operation_kind" in
     account_read) target="$target_dir/prepared.v2.json" ;;
     one_exact_order) target="$target_dir/exact-order.v3.json" ;;
+    one_deterministic_order) target="$target_dir/deterministic-order.v4.json" ;;
     *) die "mandate admission produced an unsupported operation kind" ;;
   esac
   if [ -e "$target_dir" ] || [ -L "$target_dir" ]; then
@@ -1316,7 +1347,10 @@ provision_exchange_credential() {
   ' EXIT INT TERM
 
   local mandate
-  if [ -f "$STATE_DIRECTORY/mandates/exact-order.v3.json" ] &&
+  if [ -f "$STATE_DIRECTORY/mandates/deterministic-order.v4.json" ] &&
+    [ ! -L "$STATE_DIRECTORY/mandates/deterministic-order.v4.json" ]; then
+    mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  elif [ -f "$STATE_DIRECTORY/mandates/exact-order.v3.json" ] &&
     [ ! -L "$STATE_DIRECTORY/mandates/exact-order.v3.json" ]; then
     mandate="$STATE_DIRECTORY/mandates/exact-order.v3.json"
   else
@@ -1923,6 +1957,143 @@ execute_exact_order_once() {
   echo "PASS trading-runner-artifact: exact order lifecycle state=$state effect_operation_id=$effect_operation_id admission_operation_id=$admission_operation_id"
 }
 
+execute_deterministic_order_once() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  command -v systemd-run >/dev/null 2>&1 || die "systemd-run is required"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "deterministic order refused the installed runner key id"
+  [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+    [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    die "deterministic order requires one prepared exchange credential"
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "deterministic order requires one prepared deterministic authority"
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work
+  work="$(mktemp -d /run/hivra-trading-deterministic-order.XXXXXX)"
+  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+  [ "$(cat "$work/verified/operation-kind")" = "one_deterministic_order" ] ||
+    die "deterministic order authority kind mismatch"
+
+  local evidence
+  evidence="$(find "$STATE_DIRECTORY/stream/evidence" -maxdepth 1 -type f \
+    -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.json' \
+    -print | LC_ALL=C sort | tail -1)"
+  [ -n "$evidence" ] && [ -f "$evidence" ] && [ ! -L "$evidence" ] ||
+    die "deterministic order requires one committed market evidence"
+  [ "$(file_size "$evidence")" -le 8192 ] ||
+    die "deterministic market evidence is oversized"
+  local continuity
+  continuity="$(python3 - "$evidence" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+sequence = value.get("sequence")
+previous = value.get("previous_evidence_hash_hex")
+if not isinstance(sequence, int) or sequence < 1:
+    raise SystemExit("invalid market evidence sequence")
+if not isinstance(previous, str) or re.fullmatch(r"[0-9a-f]{64}", previous) is None:
+    raise SystemExit("invalid market evidence continuity")
+print(f"{sequence - 1} {previous}")
+PY
+)" || die "deterministic market evidence continuity is invalid"
+  local last_sequence last_hash operation_id
+  read -r last_sequence last_hash <<<"$continuity"
+  operation_id="$(cat "$work/verified/operation-id")"
+  local transient_name="hivra-trading-deterministic-${operation_id:0:12}-$$"
+  local credential_dir="/run/credentials/$transient_name.service"
+  if ! systemd-run \
+    --unit="$transient_name" \
+    --service-type=exec \
+    --wait --pipe --collect --quiet \
+    --property=DynamicUser=yes \
+    --property=StateDirectory=hivra-trading-public-shadow \
+    --property=StateDirectoryMode=0700 \
+    --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
+    --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
+    --property="LoadCredential=deterministic-admission:$mandate" \
+    --property="LoadCredential=market-evidence:$evidence" \
+    --property=RuntimeMaxSec=90s \
+    --property=TimeoutStartSec=90s \
+    --property=TimeoutStopSec=10s \
+    --property=KillMode=mixed \
+    --property=OOMPolicy=stop \
+    --property=MemoryMax=160M \
+    --property=MemorySwapMax=0 \
+    --property=TasksMax=16 \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=yes \
+    --property=ProtectProc=invisible \
+    --property=ProcSubset=pid \
+    --property=ProtectKernelTunables=yes \
+    --property=ProtectKernelModules=yes \
+    --property=ProtectKernelLogs=yes \
+    --property=ProtectControlGroups=yes \
+    --property=RestrictSUIDSGID=yes \
+    --property=RestrictNamespaces=yes \
+    --property=LockPersonality=yes \
+    --property=MemoryDenyWriteExecute=yes \
+    --property=CapabilityBoundingSet= \
+    --property=AmbientCapabilities= \
+    --property=SystemCallArchitectures=native \
+    --property=SystemCallFilter=@system-service \
+    --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" \
+    --property=SocketBindDeny=any \
+    --property=IPAccounting=yes \
+    "$EFFECT_BINARY_INSTALL_PATH" \
+      --mode deterministic-order \
+      --runner-seed-file "$credential_dir/runner-seed" \
+      --deterministic-credential-file "$credential_dir/bingx-exchange" \
+      --deterministic-admission-file "$credential_dir/deterministic-admission" \
+      --market-evidence-file "$credential_dir/market-evidence" \
+      --deterministic-state-home "$STATE_DIRECTORY/deterministic-order-runtime" \
+      --last-accepted-sequence "$last_sequence" \
+      --last-accepted-evidence-hash "$last_hash" \
+      >"$work/stdout" 2>"$work/stderr"; then
+    die "deterministic order failed without exposing provider output"
+  fi
+  [ ! -s "$work/stderr" ] ||
+    die "deterministic order produced unexpected standard error"
+  python3 - "$work/stdout" "$operation_id" <<'PY'
+import json
+import pathlib
+import sys
+
+source, operation_id = sys.argv[1:]
+text = pathlib.Path(source).read_text(encoding="utf-8")
+if not text.endswith("\n") or text.endswith("\n\n"):
+    raise SystemExit("deterministic evidence is not one line")
+value = json.loads(text[:-1])
+if value.get("contract_version") == "hivra-trading-deterministic-cycle-evidence-v1":
+    if list(value) != ["contract_version", "state", "reason_code", "effect"] or value["state"] != "blocked" or value["effect"] is not False:
+        raise SystemExit("deterministic blocked evidence is invalid")
+elif value.get("contract_version") == "hivra-trading-exact-order-evidence-v1":
+    if value.get("operation_id") != operation_id:
+        raise SystemExit("deterministic effect operation mismatch")
+else:
+    raise SystemExit("deterministic evidence version mismatch")
+PY
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: completed one deterministic order cycle operation_id=$operation_id"
+}
+
 install_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -2205,7 +2376,10 @@ self_test() {
   printf '%s\n' \
     'openApi/swap/v2/trade/order' \
     'openApi/swap/v2/trade/order/test' \
-    'hivra-trading-exact-order-evidence-v1' >> "$artifact/$EFFECT_BINARY_NAME"
+    'hivra-trading-exact-order-evidence-v1' \
+    'trading-remote-mandate-admission-v4' \
+    'one_deterministic_order' \
+    'hivra-trading-deterministic-cycle-evidence-v1' >> "$artifact/$EFFECT_BINARY_NAME"
   chmod 700 "$artifact/$BINARY_NAME"
   chmod 700 "$artifact/$EFFECT_BINARY_NAME"
   cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
@@ -2713,7 +2887,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -2837,6 +3011,12 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
       die "exact order requires only runner identity and prepared host state"
     execute_exact_order_once "$ARTIFACT_DIR"
+    ;;
+  execute-deterministic-order)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "deterministic order requires only runner identity and prepared host state"
+    execute_deterministic_order_once "$ARTIFACT_DIR"
     ;;
   uninstall-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

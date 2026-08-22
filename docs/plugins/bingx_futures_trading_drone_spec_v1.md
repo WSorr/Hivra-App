@@ -1047,11 +1047,21 @@ Fields:
 - durable command identity supplies restart-safe anti-replay for the current
   1.x path; a separate plugin execution journal must not duplicate it.
 
-## 16. Remote One-Exact-Order Boundary
+## 16. Remote Single-Effect Boundaries
 
 The remote runner may execute only a Capsule-signed `one_exact_order`
 admission bound to one runner key, one trading mandate, one account binding,
 one symbol, one canonical trigger-limit payload, and `max_uses = 1`.
+
+The same existing effect executable may also run one explicitly triggered
+`one_deterministic_order` cycle. That admission binds one runner key, one
+trading mandate, one account binding, one symbol, the exact runner/plugin
+build identity, and the exact stop-loss/minimum-risk-reward policy. The runner
+must consume one fresh signed market-evidence item, read complete fresh
+account risk and contract rules, compose one candidate through the canonical
+candidate owner, and consume the admission commitment as the single durable
+effect operation identity. A replay or a different candidate under the same
+admission cannot produce a second provider POST.
 
 - `ExternalEffectService` remains the sole durable effect lifecycle owner.
 - The read-only public-shadow executable has no order-effect imports or routes.
@@ -1064,6 +1074,7 @@ one symbol, one canonical trigger-limit payload, and `max_uses = 1`.
   unresolved instead of returning `notFound` to the generic retry transition.
 - Test-order success proves provider-boundary wiring but not live acceptance;
   a live subaccount order requires a separate explicit operator decision.
-- Scheduling, leases, cancellation, leverage/margin mutation, withdrawal,
+- Continuous scheduling, leases, automatic admission, cancellation,
+  leverage/margin mutation, withdrawal,
   transfer, Pair Consensus, AI authority, and multi-symbol execution are out of
   scope.

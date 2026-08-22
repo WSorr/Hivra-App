@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
@@ -11,6 +12,7 @@ import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/external_effect_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
+import 'trading_remote_deterministic_order.dart';
 import 'trading_remote_shadow_probe.dart'
     show readExchangeCredentialFile, readRunnerSeedBytes;
 
@@ -18,6 +20,18 @@ const String exactOrderMode = 'exact-order';
 
 Future<void> main(List<String> args) async {
   try {
+    if (_requestedMode(args) == deterministicOrderMode) {
+      final options = parseDeterministicOrderArgs(args);
+      final seedBytes = await readRunnerSeedBytes(options);
+      stdout.writeln(
+        await runOneDeterministicOrder(
+          options: options,
+          runnerSeedBytes: seedBytes,
+          executeExactOrder: runAuthorizedExactOrder,
+        ),
+      );
+      return;
+    }
     final options = _parseExactOrderArgs(args);
     final seedBytes = await readRunnerSeedBytes(options);
     stdout.writeln(
@@ -30,6 +44,13 @@ Future<void> main(List<String> args) async {
     stderr.writeln('trading exact order failed');
     exitCode = 1;
   }
+}
+
+String? _requestedMode(List<String> args) {
+  for (var index = 0; index + 1 < args.length; index++) {
+    if (args[index] == '--mode') return args[index + 1];
+  }
+  return null;
 }
 
 Future<String> runMandateBoundExactOrder({
@@ -99,6 +120,47 @@ Future<String> runMandateBoundExactOrder({
   if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(effectOperationId)) {
     throw const FormatException('exact order intent identity is invalid');
   }
+  return runAuthorizedExactOrder(
+    admission: admission,
+    exactOrder: admission.exactOrder!,
+    effectOperationId: effectOperationId,
+    credentials: credentials,
+    stateHome: stateHome,
+    requestSender: requestSender,
+    nowUtc: nowUtc,
+    clockMs: clockMs,
+  );
+}
+
+Future<String> runAuthorizedExactOrder({
+  required BingxFuturesRemoteMandateAdmission admission,
+  required Map<String, dynamic> exactOrder,
+  required String effectOperationId,
+  required BingxFuturesApiCredentials credentials,
+  required String stateHome,
+  BingxHttpRequestSender? requestSender,
+  DateTime Function()? nowUtc,
+  int Function()? clockMs,
+}) async {
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(effectOperationId) ||
+      !Directory(stateHome).isAbsolute) {
+    throw const FormatException('authorized exact order state is invalid');
+  }
+  final normalizedOrder =
+      BingxFuturesRemoteMandateAdmission.issueExactOrder(
+        mandate: admission.mandate,
+        runnerKeyId: admission.runnerKeyId,
+        exactOrder: exactOrder,
+        signCommitment: (_) => '0' * 128,
+      )?.exactOrder;
+  if (normalizedOrder == null) {
+    throw const FormatException('authorized exact order is invalid');
+  }
+  final accountBinding =
+      sha256.convert(utf8.encode(credentials.apiKey)).toString();
+  if (accountBinding != admission.mandate.accountBindingHashHex) {
+    throw const FormatException('exchange account binding mismatch');
+  }
   final now = nowUtc ?? () => DateTime.now().toUtc();
   final adapter = BingxFuturesExternalEffectAdapter(
     exchange: BingxFuturesExchangeService(
@@ -139,7 +201,7 @@ Future<String> runMandateBoundExactOrder({
     providerId: BingxFuturesExternalEffectAdapter.providerId,
     accountBindingId: accountBinding,
     effectKind: BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
-    canonicalPayloadJson: jsonEncode(admission.exactOrder),
+    canonicalPayloadJson: jsonEncode(normalizedOrder),
   );
   if (operation.state == ExternalEffectState.prepared) {
     if (!admission.mandate.isActiveAt(now().toUtc())) {

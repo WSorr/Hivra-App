@@ -9,6 +9,7 @@ PUBLIC_SESSION_STREAM="$ROOT/flutter/lib/services/bingx_futures_public_session_s
 PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart"
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
 EXACT_ORDER_PROBE="$ROOT/flutter/tool/trading_remote_exact_order.dart"
+DETERMINISTIC_ORDER_PROBE="$ROOT/flutter/tool/trading_remote_deterministic_order.dart"
 SHADOW_ANCHOR_VERIFIER="$ROOT/flutter/tool/verify_trading_shadow_anchor.dart"
 SHADOW_EVIDENCE="$ROOT/flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart"
 SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
@@ -30,6 +31,7 @@ TRADING_MODELS="$ROOT/flutter/lib/models/bingx_futures_order_tracking_models.dar
 TRADING_SCREEN="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
 EXCHANGE_SERVICE="$ROOT/flutter/lib/services/bingx_futures_exchange_service.dart"
 REMOTE_PROBE_TEST="$ROOT/flutter/test/trading_remote_shadow_probe_test.dart"
+DETERMINISTIC_ORDER_TEST="$ROOT/flutter/test/trading_remote_deterministic_order_test.dart"
 PUBLIC_SESSION_TEST="$ROOT/flutter/test/bingx_futures_public_session_accumulator_test.dart"
 STATUS=0
 
@@ -123,7 +125,7 @@ liquidity_sequence_is_canonical() {
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
     rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
-    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-and-exact-order"' "$1" &&
+    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-exact-and-deterministic-order"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
@@ -452,6 +454,23 @@ runner_exact_order_is_fail_closed() {
     rg -q 'ambiguous test order remains unresolved without blind retry' "$tests" &&
     rg -q 'live timeout reconciles by client id after restart' "$tests" &&
     "$artifact" --self-test >/dev/null
+}
+
+runner_deterministic_order_is_single_use() {
+  rg -q -- '--execute-deterministic-order <artifact-dir>' "$1" &&
+    rg -q 'execute_deterministic_order_once' "$1" &&
+    rg -q 'deterministic-order.v4.json' "$1" &&
+    rg -q -- '--mode deterministic-order' "$1" &&
+    rg -q 'LoadCredential=market-evidence:' "$1" &&
+    rg -q 'const String deterministicOrderMode = .deterministic-order.' "$2" &&
+    rg -q 'runOneDeterministicOrder' "$2" &&
+    rg -q 'BingxFuturesRemoteOrderCandidateService' "$2" &&
+    rg -q 'BingxFuturesExchangeRiskInputService' "$2" &&
+    rg -q 'effectOperationId: admission.operationId' "$2" &&
+    rg -q 'isDeterministicOrder' "$3" &&
+    rg -q "deterministicOrderOperationKind =" "$3" &&
+    rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
+    rg -q 'stale market evidence blocks without an exchange effect' "$4"
 }
 
 runner_package_is_pinned() {
@@ -799,6 +818,14 @@ fi
 pass "exact remote order executable exposes no cancel, leverage, margin, transfer, or withdrawal path"
 else
   fail "exact remote order lost signed binding, durable handoff, or no-duplicate reconciliation"
+fi
+
+if runner_deterministic_order_is_single_use \
+  "$RUNNER_ARTIFACT" "$DETERMINISTIC_ORDER_PROBE" "$TRADING_MODELS" \
+  "$DETERMINISTIC_ORDER_TEST"; then
+  pass "deterministic remote cycle composes fresh inputs into one existing effect operation"
+else
+  fail "deterministic remote cycle lost policy binding, freshness, or single-use effect identity"
 fi
 
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then
