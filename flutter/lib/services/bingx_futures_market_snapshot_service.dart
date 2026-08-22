@@ -5,8 +5,17 @@ import 'package:crypto/crypto.dart';
 import '../models/bingx_futures_market_snapshot_models.dart';
 
 class BingxFuturesMarketSnapshotService {
-  static const List<String> requiredTimeframes = <String>[
+  static const List<String> _canonicalTimeframes = <String>[
     '1m',
+    '5m',
+    '15m',
+    '1h',
+    '4h',
+    '1d',
+    '1w',
+  ];
+
+  static const List<String> requiredTimeframes = <String>[
     '5m',
     '15m',
     '1h',
@@ -320,6 +329,7 @@ class BingxFuturesMarketSnapshotService {
   String _normalizeTimeframe(String raw) {
     final value = raw.trim().toLowerCase();
     const aliases = <String, String>{
+      // Accepted for deterministic replay of legacy snapshot-v1 evidence.
       '1m': '1m',
       '5m': '5m',
       '15m': '15m',
@@ -358,8 +368,8 @@ class BingxFuturesMarketSnapshotService {
   }
 
   int _compareTimeframe(String left, String right) {
-    final leftIndex = requiredTimeframes.indexOf(left);
-    final rightIndex = requiredTimeframes.indexOf(right);
+    final leftIndex = _canonicalTimeframes.indexOf(left);
+    final rightIndex = _canonicalTimeframes.indexOf(right);
     if (leftIndex == -1 || rightIndex == -1) {
       return _compareString(left, right);
     }

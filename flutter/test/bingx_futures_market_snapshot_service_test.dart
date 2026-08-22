@@ -28,6 +28,32 @@ void main() {
       );
     });
 
+    test('does not require legacy 1m candles', () {
+      final input = _inputA();
+      final digest = service.build(
+        BingxFuturesMarketSnapshotInput(
+          instrument: input.instrument,
+          prices: input.prices,
+          candles: input.candles
+              .where((item) => item.timeframe != '1m')
+              .toList(growable: false),
+          trades: input.trades,
+          openInterest: input.openInterest,
+          funding: input.funding,
+          liquidityLevels: input.liquidityLevels,
+          sessionVolumes: input.sessionVolumes,
+          orderBookTopLevels: input.orderBookTopLevels,
+        ),
+      );
+
+      expect(digest.marketSnapshotHashHex, hasLength(64));
+      expect(
+        (digest.normalizedSnapshot['candles'] as List<dynamic>)
+            .any((item) => item['timeframe'] == '1m'),
+        isFalse,
+      );
+    });
+
     test('keeps liquidation feed optional and marks metadata unknown', () {
       final digest = service.build(_inputA());
 

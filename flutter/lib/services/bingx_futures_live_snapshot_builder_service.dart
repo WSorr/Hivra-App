@@ -52,11 +52,6 @@ class BingxFuturesLiveSnapshotBuilderService {
       );
     }
 
-    final k1mFuture = exchange.getPublicKlines(
-      symbol: normalizedSymbol,
-      interval: '1m',
-      limit: 120,
-    );
     final k5mFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '5m',
@@ -87,7 +82,6 @@ class BingxFuturesLiveSnapshotBuilderService {
       interval: '1w',
       limit: 60,
     );
-    final k1m = await k1mFuture;
     final k5m = await k5mFuture;
     final k15m = await k15mFuture;
     final k1h = await k1hFuture;
@@ -96,7 +90,6 @@ class BingxFuturesLiveSnapshotBuilderService {
     final k1w = await k1wFuture;
 
     final klineResults = <BingxFuturesPublicKlinesResult>[
-      k1m,
       k5m,
       k15m,
       k1h,
@@ -175,7 +168,6 @@ class BingxFuturesLiveSnapshotBuilderService {
     try {
       final observationTime = _clockUtc().toUtc();
       final allCandles = <BingxFuturesCandle>[
-        ..._mapCandles('1m', k1m.klines, observedAtUtc: observationTime),
         ..._mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
         ..._mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
         ..._mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
