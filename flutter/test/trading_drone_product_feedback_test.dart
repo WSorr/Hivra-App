@@ -5,7 +5,7 @@ import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
-  test('restores endpoint mode from an active mandate only', () {
+  test('defaults to live and restores test only from an active mandate', () {
     final now = DateTime.utc(2026, 8, 22, 10);
     final live = BingxFuturesTradingMandate.issue(
       capsuleRootHex: 'a' * 64,
@@ -32,10 +32,29 @@ void main() {
         mandate: live,
         nowUtc: now.add(const Duration(hours: 2)),
       ),
-      isTrue,
+      isFalse,
     );
     expect(
       tradingUsesTestEndpointAfterRestore(mandate: null, nowUtc: now),
+      isFalse,
+    );
+    final test = BingxFuturesTradingMandate.issue(
+      capsuleRootHex: 'a' * 64,
+      accountBindingHashHex: 'b' * 64,
+      symbol: 'BTC-USDT',
+      testOrder: true,
+      issuedAtUtc: now.subtract(const Duration(hours: 1)),
+      expiresAtUtc: now.add(const Duration(hours: 1)),
+      maxOrderNotionalQuoteDecimal: '10',
+      maxRiskPerTradePercent: 2,
+      maxDailyLossPercent: 5,
+      maxConcurrentPositions: 1,
+      cooldownAfterLossStreak: 2,
+      cooldownMinutes: 60,
+      maxEffects: 1,
+    );
+    expect(
+      tradingUsesTestEndpointAfterRestore(mandate: test, nowUtc: now),
       isTrue,
     );
   });

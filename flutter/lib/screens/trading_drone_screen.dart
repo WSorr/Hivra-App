@@ -70,7 +70,7 @@ bool tradingUsesTestEndpointAfterRestore({
   required DateTime nowUtc,
 }) =>
     mandate == null || !mandate.isActiveAt(nowUtc.toUtc())
-        ? true
+        ? false
         : mandate.testOrder;
 
 String tradingPreferredSideForCycle({
@@ -305,7 +305,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _signalRankExpanded = true;
   bool _cancelingOrder = false;
   bool _fittingMaxNotional = false;
-  bool _useTestOrderEndpoint = true;
+  bool _useTestOrderEndpoint = false;
   bool _droneEnabled = false;
   BingxFuturesTradingMandate? _tradingMandate;
   bool _tradingControlLoaded = false;
@@ -1044,7 +1044,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         );
       } else {
         _droneEnabled = false;
-        _useTestOrderEndpoint = true;
+        _useTestOrderEndpoint = false;
       }
       final restoredStopLossPercent = state.stopLossPercent;
       if (restoredStopLossPercent != null &&
@@ -1071,6 +1071,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'managedCount=${_managedOrderIds.length} '
             'symbolCount=${_managedOrderSymbols.length} '
             'provenanceCount=${_managedOrderProvenance.length} '
+            'mandateActive=$mandateActive '
+            'endpoint=${_useTestOrderEndpoint ? "test" : "live"} '
             'slPct=${_stopLossPercent.toStringAsFixed(2)} '
             'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
       );
@@ -2242,6 +2244,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       'bingx.trading_cycle.result',
       'status=${cycle.status.name} code=${cycle.reasonCode} '
           'symbol=$symbol effect=false '
+          'decision=${decision?.decision.name ?? "-"} '
+          'side=${decision?.side ?? "-"} '
+          'zone_side=${decision?.zoneSide ?? "-"} '
+          'zone_evaluation_side=${decision?.zoneEvaluationSide ?? "-"} '
+          'zone_anchor=${decision?.zoneAnchorSource ?? "-"} '
+          'zone_conflict=${decision?.zoneConflict ?? false} '
+          'opposite_target=${decision?.oppositeLiquidityTargetDecimal ?? "-"} '
+          'opposite_source=${decision?.oppositeLiquidityTargetSource ?? "-"} '
+          'failed=${decision == null ? "-" : decision.reasons.where((reason) => !reason.passed).map((reason) => "${reason.code}:${reason.detail}").join("|")} '
           'live_hash=${decision?.liveDecisionHashHex ?? "-"}',
     );
     final envelope = cycle.intent?.decisionEnvelope;
