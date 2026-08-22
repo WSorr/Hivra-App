@@ -66,6 +66,7 @@ class BingxFuturesShadowEvidence {
   final String featureHashHex;
   final String decisionHashHex;
   final String decision;
+  final String? marketSymbol;
   final String? marketProposalStatus;
   final String? marketProposalJson;
   final int observedAtEpochMs;
@@ -88,6 +89,7 @@ class BingxFuturesShadowEvidence {
     required this.featureHashHex,
     required this.decisionHashHex,
     required this.decision,
+    this.marketSymbol,
     this.marketProposalStatus,
     this.marketProposalJson,
     required this.observedAtEpochMs,
@@ -112,6 +114,7 @@ class BingxFuturesShadowEvidence {
     'decision_hash_hex': decisionHashHex,
     'decision': decision,
     if (contractVersion == _shadowEvidenceV2) ...<String, dynamic>{
+      'market_symbol': marketSymbol,
       'market_proposal_status': marketProposalStatus,
       'market_proposal_json': marketProposalJson,
     },
@@ -159,6 +162,7 @@ class BingxFuturesShadowEvidence {
       featureHashHex: featureHashHex,
       decisionHashHex: decisionHashHex,
       decision: decision,
+      marketSymbol: marketSymbol,
       marketProposalStatus: marketProposalStatus,
       marketProposalJson: marketProposalJson,
       observedAtEpochMs: observedAtEpochMs,
@@ -199,6 +203,7 @@ class BingxFuturesReplayRunResult {
   final String decisionHashHex;
   final BingxTvhDecisionKind decision;
   final String topReasonCode;
+  final String? marketSymbol;
   final String? marketProposalStatus;
   final String? marketProposalJson;
 
@@ -209,6 +214,7 @@ class BingxFuturesReplayRunResult {
     required this.decisionHashHex,
     required this.decision,
     required this.topReasonCode,
+    this.marketSymbol,
     this.marketProposalStatus,
     this.marketProposalJson,
   });
@@ -285,6 +291,8 @@ class BingxFuturesDeterministicReplayHarnessService {
       decision: decision.decision,
       topReasonCode:
           decision.reasons.isNotEmpty ? decision.reasons.first.code : '',
+      marketSymbol:
+          fixtureId.startsWith('live:') ? fixtureId.substring(5) : null,
     );
   }
 
@@ -304,6 +312,8 @@ class BingxFuturesDeterministicReplayHarnessService {
       decision: decision.decision,
       topReasonCode:
           decision.reasons.isNotEmpty ? decision.reasons.first.code : '',
+      marketSymbol:
+          fixtureId.startsWith('live:') ? fixtureId.substring(5) : null,
       marketProposalStatus: decision.canPrepareIntent ? 'READY' : 'BLOCKED',
       marketProposalJson: decision.canonicalJson,
     );
@@ -436,14 +446,15 @@ class BingxFuturesDeterministicReplayHarnessService {
   }) {
     if (!_isSupportedShadowContract(contractVersion) ||
         (contractVersion == _shadowEvidenceV2 &&
-            !_marketProposalCodec.validate(
-              status: publicRun.marketProposalStatus,
-              proposalJson: publicRun.marketProposalJson,
-              decisionHashHex: publicRun.decisionHashHex,
-              decision: publicRun.decision.name,
-              marketSnapshotHashHex: publicRun.marketSnapshotHashHex,
-              featureHashHex: publicRun.featureHashHex,
-            ))) {
+            (!_isMarketSymbol(publicRun.marketSymbol) ||
+                !_marketProposalCodec.validate(
+                  status: publicRun.marketProposalStatus,
+                  proposalJson: publicRun.marketProposalJson,
+                  decisionHashHex: publicRun.decisionHashHex,
+                  decision: publicRun.decision.name,
+                  marketSnapshotHashHex: publicRun.marketSnapshotHashHex,
+                  featureHashHex: publicRun.featureHashHex,
+                )))) {
       throw const FormatException('invalid shadow evidence contract payload');
     }
     return BingxFuturesShadowEvidence(
@@ -458,6 +469,7 @@ class BingxFuturesDeterministicReplayHarnessService {
       featureHashHex: publicRun.featureHashHex,
       decisionHashHex: publicRun.decisionHashHex,
       decision: publicRun.decision.name,
+      marketSymbol: publicRun.marketSymbol,
       marketProposalStatus: publicRun.marketProposalStatus,
       marketProposalJson: publicRun.marketProposalJson,
       observedAtEpochMs: observedAtEpochMs,
@@ -601,7 +613,8 @@ class BingxFuturesDeterministicReplayHarnessService {
         evidence.decisionHashHex != localPublicRun.decisionHashHex ||
         evidence.decision != localPublicRun.decision.name ||
         (evidence.contractVersion == _shadowEvidenceV2 &&
-            (evidence.marketProposalStatus !=
+            (evidence.marketSymbol != localPublicRun.marketSymbol ||
+                evidence.marketProposalStatus !=
                     localPublicRun.marketProposalStatus ||
                 evidence.marketProposalJson !=
                     localPublicRun.marketProposalJson))) {
@@ -660,6 +673,10 @@ class BingxFuturesDeterministicReplayHarnessService {
       featureHashHex: _requiredString(decoded, 'feature_hash_hex'),
       decisionHashHex: _requiredString(decoded, 'decision_hash_hex'),
       decision: _requiredAscii(decoded, 'decision'),
+      marketSymbol:
+          contractVersion == _shadowEvidenceV2
+              ? _requiredAscii(decoded, 'market_symbol')
+              : null,
       marketProposalStatus:
           contractVersion == _shadowEvidenceV2
               ? _requiredAscii(decoded, 'market_proposal_status')
@@ -683,14 +700,15 @@ class BingxFuturesDeterministicReplayHarnessService {
       throw const FormatException('shadow evidence is not canonical');
     }
     if (contractVersion == _shadowEvidenceV2 &&
-        !_marketProposalCodec.validate(
-          status: evidence.marketProposalStatus,
-          proposalJson: evidence.marketProposalJson,
-          decisionHashHex: evidence.decisionHashHex,
-          decision: evidence.decision,
-          marketSnapshotHashHex: evidence.marketSnapshotHashHex,
-          featureHashHex: evidence.featureHashHex,
-        )) {
+        (!_isMarketSymbol(evidence.marketSymbol) ||
+            !_marketProposalCodec.validate(
+              status: evidence.marketProposalStatus,
+              proposalJson: evidence.marketProposalJson,
+              decisionHashHex: evidence.decisionHashHex,
+              decision: evidence.decision,
+              marketSnapshotHashHex: evidence.marketSnapshotHashHex,
+              featureHashHex: evidence.featureHashHex,
+            ))) {
       throw const FormatException('invalid shadow market proposal');
     }
     return evidence;
@@ -700,6 +718,9 @@ class BingxFuturesDeterministicReplayHarnessService {
       value == _shadowEvidenceV1 || value == _shadowEvidenceV2;
 
   bool _isSha256(String value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
+
+  bool _isMarketSymbol(String? value) =>
+      value != null && RegExp(r'^[A-Z0-9]{2,20}-USDT$').hasMatch(value);
 
   bool _isCanonicalAscii(String value) =>
       RegExp(r'^[A-Za-z0-9._:-]{1,128}$').hasMatch(value);

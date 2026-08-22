@@ -196,6 +196,7 @@ void main() {
         decisionHashHex: sha256.convert(utf8.encode(proposalJson)).toString(),
         decision: BingxTvhDecisionKind.long,
         topReasonCode: 'funding_guard',
+        marketSymbol: 'BTC-USDT',
         marketProposalStatus: 'READY',
         marketProposalJson: proposalJson,
       );
@@ -234,6 +235,7 @@ void main() {
                 sha256.convert(utf8.encode(invalidJson)).toString(),
             decision: BingxTvhDecisionKind.long,
             topReasonCode: 'funding_guard',
+            marketSymbol: 'BTC-USDT',
             marketProposalStatus: 'READY',
             marketProposalJson: invalidJson,
           ),
@@ -309,6 +311,7 @@ void main() {
       expect(evidence.decisionHashHex, expected.decisionHashHex);
       expect(evidence.decision, expected.decision.name);
       expect(evidence.contractVersion, 'trading-shadow-evidence-v2');
+      expect(evidence.marketSymbol, 'BTC-USDT');
       expect(evidence.marketProposalStatus, expected.marketProposalStatus);
       expect(evidence.marketProposalJson, expected.marketProposalJson);
       expect(
@@ -333,6 +336,16 @@ void main() {
           ),
         ),
         isTrue,
+      );
+      expect(
+        await liveService.verifyShadowEvidenceContinuity(
+          untrustedWireBytes:
+              _copyEvidence(evidence, marketSymbol: 'ETH-USDT').wireBytes,
+          trustedRunnerKey: publicKey,
+          lastAcceptedSequence: 0,
+          lastAcceptedEvidenceHashHex: _emptyEvidenceHash,
+        ),
+        BingxFuturesShadowEvidenceVerdict.invalidSignature,
       );
 
       final tamperedProposal = jsonEncode(<String, dynamic>{
@@ -1006,6 +1019,7 @@ BingxFuturesShadowEvidence _copyEvidence(
   String? hostAbi,
   String? policyHashHex,
   String? decisionHashHex,
+  String? marketSymbol,
   String? marketProposalStatus,
   String? marketProposalJson,
   int? observedAtEpochMs,
@@ -1027,6 +1041,7 @@ BingxFuturesShadowEvidence _copyEvidence(
     featureHashHex: evidence.featureHashHex,
     decisionHashHex: decisionHashHex ?? evidence.decisionHashHex,
     decision: evidence.decision,
+    marketSymbol: marketSymbol ?? evidence.marketSymbol,
     marketProposalStatus: marketProposalStatus ?? evidence.marketProposalStatus,
     marketProposalJson: marketProposalJson ?? evidence.marketProposalJson,
     observedAtEpochMs: observedAtEpochMs ?? evidence.observedAtEpochMs,
@@ -1036,6 +1051,7 @@ BingxFuturesShadowEvidence _copyEvidence(
         previousEvidenceHashHex ?? evidence.previousEvidenceHashHex,
     runnerKeyId: runnerKeyId ?? evidence.runnerKeyId,
     signatureSuite: signatureSuite ?? evidence.signatureSuite,
+    signatureHex: evidence.signatureHex,
   );
 }
 
