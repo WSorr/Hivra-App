@@ -27,6 +27,81 @@ class BingxFuturesRemoteOrderCandidateResult {
     required this.canonicalJson,
     required this.candidateHashHex,
   });
+
+  BingxFuturesIntentPayload? toExactOrderIntent({required DateTime nowUtc}) {
+    if (status != BingxFuturesRemoteOrderCandidateStatus.ready ||
+        canonicalJson == null ||
+        candidateHashHex == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(candidateHashHex!) ||
+        sha256.convert(utf8.encode(canonicalJson!)).toString() !=
+            candidateHashHex) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(canonicalJson!);
+      const candidateKeys = <String>{
+        'contract_version',
+        'market_evidence_hash_hex',
+        'market_decision_hash_hex',
+        'mandate_id',
+        'risk_decision_hash_hex',
+        'symbol',
+        'side',
+        'client_order_id',
+        'quantity_decimal',
+        'limit_price_decimal',
+        'trigger_price_decimal',
+        'stop_loss_decimal',
+        'take_profit_decimal',
+        'liquidity_event_id',
+        'market_observed_at_utc',
+        'account_risk_observed_at_utc',
+        'composed_at_utc',
+        'valid_until_utc',
+        'test_order',
+      };
+      if (decoded is! Map<String, dynamic> ||
+          decoded.keys.toSet().difference(candidateKeys).isNotEmpty ||
+          candidateKeys.difference(decoded.keys.toSet()).isNotEmpty ||
+          decoded['test_order'] is! bool ||
+          decoded['contract_version'] !=
+              BingxFuturesRemoteOrderCandidateService.contractVersion) {
+        return null;
+      }
+      for (final key in <String>[
+        'quantity_decimal',
+        'limit_price_decimal',
+        'trigger_price_decimal',
+        'stop_loss_decimal',
+        'take_profit_decimal',
+      ]) {
+        final value = num.tryParse(decoded[key]?.toString() ?? '');
+        if (value == null || !value.isFinite || value <= 0) return null;
+      }
+      final composedAt =
+          DateTime.parse(decoded['composed_at_utc']?.toString() ?? '').toUtc();
+      final validUntil =
+          DateTime.parse(decoded['valid_until_utc']?.toString() ?? '').toUtc();
+      final now = nowUtc.toUtc();
+      if (composedAt.isAfter(now) || now.isAfter(validUntil)) return null;
+      return BingxFuturesIntentPayload.fromPluginResult(<String, dynamic>{
+        'client_order_id': decoded['client_order_id'],
+        'symbol': decoded['symbol'],
+        'side': decoded['side'],
+        'order_type': 'limit',
+        'quantity_decimal': decoded['quantity_decimal'],
+        'limit_price_decimal': decoded['limit_price_decimal'],
+        'time_in_force': 'GTC',
+        'entry_mode': 'zone_pending',
+        'trigger_price_decimal': decoded['trigger_price_decimal'],
+        'stop_loss_decimal': decoded['stop_loss_decimal'],
+        'take_profit_decimal': decoded['take_profit_decimal'],
+        'intent_hash_hex': candidateHashHex,
+      });
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 class BingxFuturesRemoteOrderCandidateService {

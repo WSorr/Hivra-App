@@ -56,6 +56,68 @@ void main() {
       expect(candidate['valid_until_utc'], '2026-08-22T12:01:00.000Z');
     });
 
+    test(
+      'adapts one fresh candidate into the existing exact-order path',
+      () async {
+        final fixture = await _fixture();
+        final result = await _compose(fixture);
+        final intent = result.toExactOrderIntent(nowUtc: fixture.now);
+
+        expect(intent, isNotNull);
+        expect(intent!.orderType, 'limit');
+        expect(intent.timeInForce, 'GTC');
+        expect(intent.entryMode, 'zone_pending');
+        expect(intent.intentHashHex, result.candidateHashHex);
+        final admission = BingxFuturesRemoteMandateAdmission.issueExactOrder(
+          mandate: fixture.mandate,
+          runnerKeyId: '7' * 64,
+          exactOrder: intent.toExactOrderJson(
+            testOrder: fixture.mandate.testOrder,
+          ),
+          signCommitment: (_) => '8' * 128,
+        );
+        expect(admission, isNotNull);
+        expect(
+          admission!.exactOrder?['intent_hash_hex'],
+          result.candidateHashHex,
+        );
+      },
+    );
+
+    test('does not adapt stale or mutated candidate bytes', () async {
+      final fixture = await _fixture();
+      final result = await _compose(fixture);
+
+      expect(
+        result.toExactOrderIntent(
+          nowUtc: fixture.now.add(const Duration(minutes: 2)),
+        ),
+        isNull,
+      );
+      final mutated = BingxFuturesRemoteOrderCandidateResult(
+        status: result.status,
+        reasonCode: result.reasonCode,
+        canonicalJson: result.canonicalJson!.replaceFirst(
+          '"quantity_decimal":"0.099"',
+          '"quantity_decimal":"0.098"',
+        ),
+        candidateHashHex: result.candidateHashHex,
+      );
+      expect(mutated.toExactOrderIntent(nowUtc: fixture.now), isNull);
+
+      final decoded = jsonDecode(result.canonicalJson!) as Map<String, dynamic>;
+      decoded['stop_loss_decimal'] = null;
+      final incompleteCanonical = jsonEncode(decoded);
+      final incomplete = BingxFuturesRemoteOrderCandidateResult(
+        status: result.status,
+        reasonCode: result.reasonCode,
+        canonicalJson: incompleteCanonical,
+        candidateHashHex:
+            sha256.convert(utf8.encode(incompleteCanonical)).toString(),
+      );
+      expect(incomplete.toExactOrderIntent(nowUtc: fixture.now), isNull);
+    });
+
     test('rejects a proposal reused under another symbol mandate', () async {
       final fixture = await _fixture(mandateSymbol: 'ETH-USDT');
       final result = await _compose(fixture);

@@ -1081,6 +1081,13 @@ selected admission and recovery contract. The existing Capsule-signed v3 exact
 order admission remains the sole remote order authority; candidate composition
 does not replace or bypass it.
 
+A fresh intact candidate may be deterministically adapted into the existing
+`BingxFuturesIntentPayload` exact-order shape. The adapter fixes the operation
+to `limit`, `GTC`, and `zone_pending`, binds `intent_hash_hex` to the exact
+candidate hash, and rejects expired, mutated, incomplete, non-canonical, or
+non-positive order values. This is schema composition only: it neither issues
+the v3 admission nor signs, journals, or executes an effect.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of
