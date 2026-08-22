@@ -215,13 +215,20 @@ Canonical Pass A path:
 public BingX market data
   -> pinned Trading Drone package and policy
   -> full market-only live decision (TVH + zone + trend + target)
-  -> signed, bounded shadow evidence
+  -> exact canonical READY/BLOCKED market proposal
+  -> signed, bounded v2 shadow evidence
   -> local comparison and diagnostics only
 ```
 
 The shadow decision uses the same live decision owner as the foreground drone,
 but its public entry accepts no consensus, risk, account, mandate, credential,
 or effect input. There is no remote effect path in Pass A.
+The v2 evidence embeds the exact canonical live-decision JSON, validates its
+snapshot, feature, decision hash, schema, readiness, executable anchor, and
+opposite-liquidity target, and remains readable in the same authenticated
+stream after v1 evidence. It is a market proposal, not an order proposal:
+sizing, risk, account state, mandate binding, and exchange effects remain local
+and outside this contract.
 
 ### 11.2 Permanent Authority Boundary
 

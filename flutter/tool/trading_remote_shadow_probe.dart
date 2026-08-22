@@ -100,6 +100,8 @@ Future<void> main(List<String> args) async {
           'runner_key_id=${evidence.runnerKeyId} '
           'runner_public_key_hex=${_encodeHex(publicKey.bytes)} '
           'evidence_hash=${evidence.evidenceHashHex} '
+          'market_proposal_status=${evidence.marketProposalStatus} '
+          'market_proposal_json=${evidence.marketProposalJson} '
           'cycle=$cycleNumber/${schedule.runCount}',
         );
       },
