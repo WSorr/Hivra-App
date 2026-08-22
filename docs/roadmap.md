@@ -4240,12 +4240,24 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     clears them while preserving the exact blocking notice; strategy,
     exchange, mandate, Core, Ledger, DTO, service, and effect owners remain
     unchanged.
-  - Status: active UI remediation (2026-08-22). Provider conformance,
+  - Protected projection remediation: PR `#184` merged the existing-screen fix
+    at `1e339d3`; branch and post-merge repository gates passed.
+  - Packaged non-effect evidence: macOS Release build `1.0.3+100030048` from
+    merge SHA `1e339d3` reproduced `market_liquidity_zone_conflict` and then
+    `liquidity_anchor_unavailable`. Both cycles logged `effect=false`, retained
+    the exact blocking notice, and left pending-zone and derived order fields
+    empty.
+  - Follow-up finding, not selected: the screen initializes
+    `_useTestOrderEndpoint` to TEST before restoring Capsule trading state and
+    does not derive the mode from the retained active mandate. Simulation
+    remains a valid explicit no-order mode; silently replacing a retained LIVE
+    mandate selection with TEST after restart is product-state drift.
+  - Status: complete (2026-08-22). Provider conformance,
     trigger-bound sizing, one exact live effect, receipt, cancellation,
     no-duplicate restart restoration, side-locked revalidation, and stable-event
-    freshness are proven. The Trading Drone is not operational; VPS/24/7
-    execution, scheduling, release, tag, and any additional live effect remain
-    blocked.
+    freshness and blocked-zone projection are proven. No next implementation
+    pass is selected. The Trading Drone is not operational; VPS/24/7 execution,
+    scheduling, release, tag, and any additional live effect remain blocked.
 
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
