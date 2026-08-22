@@ -110,6 +110,50 @@ void main() {
       expect(capturedReferencePrice, '90');
       expect(capturedIntent!.quantityDecimal, '0.13');
       expect(capturedIntent!.triggerPriceDecimal, '90');
+      expect(capturedIntent!.takeProfitDecimal, '70');
+    });
+
+    test('blocks when fresh opposite liquidity is unavailable', () async {
+      var intentCalls = 0;
+      final service = _service(
+        decision: _decision(oppositeLiquidityTargetDecimal: null),
+        intentRunner: (command) async {
+          intentCalls += 1;
+          return _intentResult(command);
+        },
+        executionRunner: _executionRunner(onCall: () {}),
+      );
+
+      final result = await service.run(_command(executeEffect: false));
+
+      expect(result.status, BingxFuturesTradingCycleStatus.marketBlocked);
+      expect(result.reasonCode, 'opposite_liquidity_target_unavailable');
+      expect(intentCalls, 0);
+    });
+
+    test('blocks opposite liquidity on the wrong side of entry', () async {
+      final service = _service(
+        decision: _decision(oppositeLiquidityTargetDecimal: '95'),
+        executionRunner: _executionRunner(onCall: () {}),
+      );
+
+      final result = await service.run(_command(executeEffect: false));
+
+      expect(result.status, BingxFuturesTradingCycleStatus.marketBlocked);
+      expect(result.reasonCode, 'opposite_liquidity_target_wrong_side');
+    });
+
+    test('uses R only as a minimum quality gate', () async {
+      final service = _service(
+        decision: _decision(oppositeLiquidityTargetDecimal: '115'),
+        executionRunner: _executionRunner(onCall: () {}),
+      );
+
+      final result = await service.run(_command(executeEffect: false));
+
+      expect(result.status, BingxFuturesTradingCycleStatus.marketBlocked);
+      expect(result.reasonCode, 'opposite_liquidity_risk_reward_insufficient');
+      expect(result.takeProfitDecimal, '115');
     });
 
     test('rejects missing event evidence before intent or effect', () async {
@@ -428,6 +472,7 @@ BingxFuturesLiveDecisionResult _decision({
   BingxTvhDecisionKind decision = BingxTvhDecisionKind.long,
   String? side = 'buy',
   List<BingxTvhDecisionReason> reasons = const <BingxTvhDecisionReason>[],
+  String? oppositeLiquidityTargetDecimal = '120',
 }) {
   return BingxFuturesLiveDecisionResult(
     canPrepareIntent: canPrepareIntent,
@@ -451,6 +496,12 @@ BingxFuturesLiveDecisionResult _decision({
     liquidityEventId: eventId,
     liquidityEventAtUtc: '2026-08-16T00:00:00.000Z',
     latestClosedMicroBarAtUtc: '2026-08-16T00:05:00.000Z',
+    oppositeLiquidityTargetDecimal:
+        side == 'sell' && oppositeLiquidityTargetDecimal == '120'
+            ? '70'
+            : oppositeLiquidityTargetDecimal,
+    oppositeLiquidityTargetSource: '1d_fresh_high',
+    oppositeLiquidityTargetAtUtc: '2026-08-15T00:00:00.000Z',
   );
 }
 

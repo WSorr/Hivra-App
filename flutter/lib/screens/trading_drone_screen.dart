@@ -64,6 +64,15 @@ String tradingIntentStatusLabel(PluginHostApiStatus? status) {
   return status == PluginHostApiStatus.executed ? 'prepared' : status.name;
 }
 
+@visibleForTesting
+bool tradingUsesTestEndpointAfterRestore({
+  required BingxFuturesTradingMandate? mandate,
+  required DateTime nowUtc,
+}) =>
+    mandate == null || !mandate.isActiveAt(nowUtc.toUtc())
+        ? true
+        : mandate.testOrder;
+
 String tradingPreferredSideForCycle({
   required String symbol,
   required String currentSide,
@@ -1026,8 +1035,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         ..addAll(state.managedOrderProvenance);
       _droneEnabled = state.droneEnabled == true;
       _tradingMandate = state.tradingMandate;
-      if (_tradingMandate?.isActiveAt(DateTime.now().toUtc()) != true) {
+      final mandateActive =
+          _tradingMandate?.isActiveAt(DateTime.now().toUtc()) == true;
+      if (mandateActive) {
+        _useTestOrderEndpoint = tradingUsesTestEndpointAfterRestore(
+          mandate: _tradingMandate,
+          nowUtc: DateTime.now().toUtc(),
+        );
+      } else {
         _droneEnabled = false;
+        _useTestOrderEndpoint = true;
       }
       final restoredStopLossPercent = state.stopLossPercent;
       if (restoredStopLossPercent != null &&
@@ -1809,27 +1826,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
   }
 
-  ({String stopLossDecimal, String takeProfitDecimal}) _deriveRiskTargets({
-    required String side,
-    required num entryPrice,
-    required double stopLossPercent,
-    required double riskReward,
-  }) {
-    final slFactor = stopLossPercent / 100;
-    final buy = side.trim().toLowerCase() == 'buy';
-    final stopLoss =
-        buy ? entryPrice * (1 - slFactor) : entryPrice * (1 + slFactor);
-    final risk = (stopLoss - entryPrice).abs();
-    final takeProfit =
-        buy
-            ? entryPrice + (risk * riskReward)
-            : entryPrice - (risk * riskReward);
-    return (
-      stopLossDecimal: _formatDecimal(stopLoss, scale: 8),
-      takeProfitDecimal: _formatDecimal(takeProfit, scale: 8),
-    );
-  }
-
   String _formatDecimal(num value, {int scale = 8}) {
     final fixed = value.toStringAsFixed(scale);
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
@@ -2447,22 +2443,35 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             limitPriceDecimal ?? _limitPriceController.text,
       );
       if (entryPrice != null && entryPrice > 0) {
-        final derived = _deriveRiskTargets(
+        final derived = deriveBingxFuturesLiquidityTargets(
           side: _side,
           entryPrice: entryPrice,
           stopLossPercent: _stopLossPercent,
-          riskReward: _takeProfitRiskReward,
+          minimumRiskReward: _takeProfitRiskReward,
+          oppositeLiquidityTargetDecimal:
+              liveDecision?.oppositeLiquidityTargetDecimal,
         );
-        stopLossDecimal = derived.stopLossDecimal;
+        if (derived.blockerCode != null) {
+          await _module.uiLog.log(
+            'bingx.intent.risk_targets.blocked',
+            'code=${derived.blockerCode} entry=$entryPrice side=$_side '
+                'target=${liveDecision?.oppositeLiquidityTargetDecimal ?? "-"}',
+          );
+          await _showSnack(derived.blockerMessage!, seconds: 4);
+          return 'blocked:${derived.blockerCode}';
+        }
+        stopLossDecimal = derived.stopLossDecimal!;
         _stopLossController.text = stopLossDecimal;
-        takeProfitDecimal = derived.takeProfitDecimal;
+        takeProfitDecimal = derived.takeProfitDecimal!;
         _takeProfitController.text = takeProfitDecimal;
         await _module.uiLog.log(
           'bingx.intent.risk_targets.auto',
           'entry=$entryPrice side=$_side '
               'sl=$stopLossDecimal tp=$takeProfitDecimal '
               'slPct=${_stopLossPercent.toStringAsFixed(2)} '
-              'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
+              'minRr=${_takeProfitRiskReward.toStringAsFixed(2)} '
+              'actualRr=${derived.actualRiskReward!.toStringAsFixed(3)} '
+              'targetSource=${liveDecision?.oppositeLiquidityTargetSource ?? "-"}',
         );
       }
     }
@@ -4258,7 +4267,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           (value) => DropdownMenuItem<double>(
                             value: value,
                             child: Text(
-                              'TP ${value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1)}R',
+                              'Min RR ${value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1)}',
                             ),
                           ),
                         )

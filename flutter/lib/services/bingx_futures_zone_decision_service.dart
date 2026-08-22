@@ -94,6 +94,10 @@ class BingxFuturesZoneDecisionResult {
   final num targetRetestPct;
   final num? externalSellRetest;
   final num? externalBuyRetest;
+  final String? externalSellRetestSource;
+  final String? externalBuyRetestSource;
+  final String? externalSellRetestAtUtc;
+  final String? externalBuyRetestAtUtc;
   final String anchorSource;
   final bool anchorExecutable;
   final String anchorLifecycle;
@@ -129,6 +133,10 @@ class BingxFuturesZoneDecisionResult {
     required this.targetRetestPct,
     required this.externalSellRetest,
     required this.externalBuyRetest,
+    this.externalSellRetestSource,
+    this.externalBuyRetestSource,
+    this.externalSellRetestAtUtc,
+    this.externalBuyRetestAtUtc,
     required this.anchorSource,
     required this.anchorExecutable,
     required this.anchorLifecycle,
@@ -628,6 +636,10 @@ class BingxFuturesZoneDecisionService {
       targetRetestPct: targetRetestDistancePct,
       externalSellRetest: externalSellRetest?.price,
       externalBuyRetest: externalBuyRetest?.price,
+      externalSellRetestSource: externalSellRetest?.source,
+      externalBuyRetestSource: externalBuyRetest?.source,
+      externalSellRetestAtUtc: externalSellRetest?.eventAtUtc,
+      externalBuyRetestAtUtc: externalBuyRetest?.eventAtUtc,
       anchorSource: anchorSource,
       anchorExecutable: anchorExecutable,
       anchorLifecycle: anchorLifecycle,

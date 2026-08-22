@@ -194,9 +194,28 @@ class BingxFuturesLiveDecisionService {
         zone == null ? null : _formatDecimal(zone.zoneLow, scale: 8);
     final zoneHighDecimal =
         zone == null ? null : _formatDecimal(zone.zoneHigh, scale: 8);
+    final oppositeLiquidityTarget = switch (side) {
+      'buy' => zone?.externalSellRetest,
+      'sell' => zone?.externalBuyRetest,
+      _ => null,
+    };
+    final oppositeLiquidityTargetSource = switch (side) {
+      'buy' => zone?.externalSellRetestSource,
+      'sell' => zone?.externalBuyRetestSource,
+      _ => null,
+    };
+    final oppositeLiquidityTargetAtUtc = switch (side) {
+      'buy' => zone?.externalSellRetestAtUtc,
+      'sell' => zone?.externalBuyRetestAtUtc,
+      _ => null,
+    };
+    final oppositeLiquidityTargetDecimal =
+        oppositeLiquidityTarget == null
+            ? null
+            : _formatDecimal(oppositeLiquidityTarget, scale: 8);
     final canonical = jsonEncode(<String, dynamic>{
-      'schema_version': 1,
-      'contract': 'bingx_futures_live_decision_v1',
+      'schema_version': 2,
+      'contract': 'bingx_futures_live_decision_v2',
       'market_snapshot_hash_hex': snapshot.marketSnapshotHashHex,
       'feature_hash_hex': tvhDecision.featureHashHex,
       'tvh_decision_hash_hex': tvhDecision.decisionHashHex,
@@ -232,6 +251,15 @@ class BingxFuturesLiveDecisionService {
                 'liquidity_event_at_utc': zone.liquidityEventAtUtc,
                 'latest_closed_micro_bar_at_utc':
                     zone.latestClosedMicroBarAtUtc,
+              },
+      'profit_target':
+          oppositeLiquidityTargetDecimal == null
+              ? null
+              : <String, dynamic>{
+                'kind': 'opposite_external_liquidity',
+                'price_decimal': oppositeLiquidityTargetDecimal,
+                'source': oppositeLiquidityTargetSource,
+                'event_at_utc': oppositeLiquidityTargetAtUtc,
               },
       'reason_codes':
           reasons
@@ -271,6 +299,9 @@ class BingxFuturesLiveDecisionService {
       liquidityEventAtUtc: zone?.liquidityEventAtUtc,
       latestClosedMicroBarAtUtc: zone?.latestClosedMicroBarAtUtc,
       referencePriceDecimal: referencePriceDecimal,
+      oppositeLiquidityTargetDecimal: oppositeLiquidityTargetDecimal,
+      oppositeLiquidityTargetSource: oppositeLiquidityTargetSource,
+      oppositeLiquidityTargetAtUtc: oppositeLiquidityTargetAtUtc,
     );
   }
 

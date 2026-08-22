@@ -245,6 +245,36 @@ void main() {
       },
     );
 
+    test('binds fresh opposite liquidity into the signed decision', () {
+      final result = BingxFuturesLiveDecisionService(
+        snapshotService: _StubSnapshotService(),
+        featureExtractor: const _StubFeatureExtractor(
+          trendDirection: BingxTrendDirection.bullish,
+        ),
+        ruleEngine: const _StubRuleEngine(decision: BingxTvhDecisionKind.long),
+        zoneDecision: const _StubZoneDecision(
+          side: 'buy',
+          zoneSide: 'buyside',
+          trend4h: 'bull',
+          trend1d: 'bull',
+          needsFartherRetest: false,
+          targetRetestPct: 0.02,
+          externalSellRetest: 120,
+          externalBuyRetest: 70,
+        ),
+      ).decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildInput(permuted: false),
+          isConsensusSignable: true,
+        ),
+      );
+
+      expect(result.oppositeLiquidityTargetDecimal, '120');
+      expect(result.oppositeLiquidityTargetSource, '1d_fresh_high');
+      expect(result.canonicalJson, contains('opposite_external_liquidity'));
+      expect(result.canonicalJson, contains('"schema_version":2'));
+    });
+
     test('blocks missed short retest after bearish momentum continuation', () {
       final gatedService = BingxFuturesLiveDecisionService(
         snapshotService: _StubSnapshotService(),
@@ -1019,6 +1049,8 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
   final num recentHigh;
   final num recentLow;
   final bool sweepUp;
+  final num externalSellRetest;
+  final num externalBuyRetest;
 
   const _StubZoneDecision({
     required this.side,
@@ -1032,6 +1064,8 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
     this.recentHigh = 105,
     this.recentLow = 85,
     this.sweepUp = true,
+    this.externalSellRetest = 120,
+    this.externalBuyRetest = 70,
   });
 
   @override
@@ -1062,8 +1096,12 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
       rangePct1d: 0.05,
       rangePct1w: 0.08,
       targetRetestPct: targetRetestPct,
-      externalSellRetest: 90,
-      externalBuyRetest: 80,
+      externalSellRetest: externalSellRetest,
+      externalBuyRetest: externalBuyRetest,
+      externalSellRetestSource: '1d_fresh_high',
+      externalBuyRetestSource: '1d_fresh_low',
+      externalSellRetestAtUtc: '2026-08-15T00:00:00.000Z',
+      externalBuyRetestAtUtc: '2026-08-14T00:00:00.000Z',
       anchorSource: 'stub',
       anchorExecutable: true,
       anchorLifecycle: 'fresh',
