@@ -118,6 +118,51 @@ bool tradingCycleProjectsExecutableZone({
 }) => cyclePrepared && decisionCanPrepareIntent;
 
 @visibleForTesting
+String? tradingReconciliationResumeSymbol(
+  BingxFuturesOrderTrackingState state,
+) {
+  String? normalize(String? value) {
+    final symbol = value?.trim().toUpperCase() ?? '';
+    return symbol.isEmpty ? null : symbol;
+  }
+
+  bool isTerminal(BingxManagedOrderLifecycleStatus status) =>
+      status == BingxManagedOrderLifecycleStatus.filled ||
+      status == BingxManagedOrderLifecycleStatus.cancelled ||
+      status == BingxManagedOrderLifecycleStatus.rejected ||
+      status == BingxManagedOrderLifecycleStatus.expired;
+
+  final tracked = normalize(state.trackedSymbol);
+  if (tracked != null) return tracked;
+
+  final managedIds = state.managedOrderIds.toList()..sort();
+  for (final orderId in managedIds) {
+    final symbol = normalize(state.managedOrderSymbols[orderId]);
+    if (symbol != null) return symbol;
+  }
+
+  final provenance =
+      state.managedOrderProvenance.values.toList()
+        ..sort((a, b) => a.orderId.compareTo(b.orderId));
+  for (final record in provenance) {
+    if (record.testOrder || isTerminal(record.lifecycleStatus)) continue;
+    final symbol = normalize(record.symbol);
+    if (symbol != null) return symbol;
+  }
+
+  final claims =
+      state.liquidityEventEffectClaims.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+  for (final entry in claims) {
+    final claim = entry.value;
+    if (claim.testOrder || isTerminal(claim.lifecycleStatus)) continue;
+    final symbol = normalize(claim.symbol);
+    if (symbol != null) return symbol;
+  }
+  return null;
+}
+
+@visibleForTesting
 bool tradingMandateMatchesSelection({
   required BingxFuturesTradingMandate? mandate,
   required bool droneEnabled,
@@ -433,12 +478,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
   }
 
-  void _startOpenOrdersAutoTracking({required String symbol, String? orderId}) {
+  void _startOpenOrdersAutoTracking({
+    required String symbol,
+    String? orderId,
+    bool allowReconciliationWithoutManagedOrder = false,
+  }) {
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) return;
     final normalizedOrderId = orderId?.trim();
     if ((normalizedOrderId == null || normalizedOrderId.isEmpty) &&
-        _managedOrderIds.isEmpty) {
+        _managedOrderIds.isEmpty &&
+        !allowReconciliationWithoutManagedOrder) {
       unawaited(
         _module.uiLog.log(
           'bingx.exchange.tracking.skip',
@@ -471,6 +521,41 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       setState(() {});
     }
     unawaited(_persistOpenOrdersTrackingState(source: 'tracking_enabled'));
+  }
+
+  Future<bool> _resumeManagedOrderReconciliation({
+    required String source,
+  }) async {
+    final state = await _module.orderTrackingStore.load();
+    if (state == null) return false;
+    final symbol = tradingReconciliationResumeSymbol(state);
+    if (symbol == null) {
+      await _module.uiLog.log(
+        'bingx.exchange.tracking.resume.skip',
+        'source=$source reason=no_unresolved_live_effect',
+      );
+      return false;
+    }
+    if (await _ensureCredentialsLoaded(silent: true) == null) {
+      await _module.uiLog.log(
+        'bingx.exchange.tracking.resume.deferred',
+        'source=$source symbol=$symbol reason=credentials_not_loaded',
+      );
+      return false;
+    }
+    if (!_isTrackingOpenOrders) {
+      _startOpenOrdersAutoTracking(
+        symbol: symbol,
+        orderId: state.trackedOrderId,
+        allowReconciliationWithoutManagedOrder: true,
+      );
+    }
+    await _module.uiLog.log(
+      'bingx.exchange.tracking.resume',
+      'source=$source symbol=$symbol orderId=${state.trackedOrderId ?? "-"}',
+    );
+    await _fetchOpenOrders(silent: true);
+    return true;
   }
 
   void _stopOpenOrdersAutoTracking({String reason = 'manual'}) {
@@ -948,66 +1033,24 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           _takeProfitRiskRewardOptions.contains(restoredRiskReward)) {
         _takeProfitRiskReward = restoredRiskReward;
       }
-      final trackedSymbol = state.trackedSymbol?.trim().toUpperCase();
-      final trackedOrderId = state.trackedOrderId?.trim();
-      if (trackedSymbol == null || trackedSymbol.isEmpty) {
-        String? managedSymbol;
-        for (final value in _managedOrderSymbols.values) {
-          final normalized = value.trim().toUpperCase();
-          if (normalized.isNotEmpty) {
-            managedSymbol = normalized;
-            break;
-          }
-        }
-        final credentials = await _ensureCredentialsLoaded(silent: true);
-        if (managedSymbol != null && credentials != null) {
-          _startOpenOrdersAutoTracking(symbol: managedSymbol);
-          await _fetchOpenOrders(silent: true);
-        }
-        if (mounted) {
-          setState(() {});
-        }
-        await _module.uiLog.log(
-          'bingx.exchange.tracking.restore',
-          'tracked=no managedCount=${_managedOrderIds.length} '
-              'symbolCount=${_managedOrderSymbols.length} '
-              'provenanceCount=${_managedOrderProvenance.length} '
-              'slPct=${_stopLossPercent.toStringAsFixed(2)} '
-              'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
-        );
-        return;
+      final resumeSymbol = tradingReconciliationResumeSymbol(state);
+      if (resumeSymbol != null) {
+        _symbolController.text = resumeSymbol;
       }
-      _symbolController.text = trackedSymbol;
-      if (await _ensureCredentialsLoaded(silent: true) == null) {
-        if (mounted) {
-          setState(() {});
-        }
-        await _module.uiLog.log(
-          'bingx.exchange.tracking.restore',
-          'tracked=deferred symbol=$trackedSymbol '
-              'orderId=${trackedOrderId ?? "-"} reason=credentials_not_loaded '
-              'managedCount=${_managedOrderIds.length} '
-              'symbolCount=${_managedOrderSymbols.length} '
-              'provenanceCount=${_managedOrderProvenance.length} '
-              'slPct=${_stopLossPercent.toStringAsFixed(2)} '
-              'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
-        );
-        return;
-      }
-      _startOpenOrdersAutoTracking(
-        symbol: trackedSymbol,
-        orderId: trackedOrderId,
+      final resumed = await _resumeManagedOrderReconciliation(
+        source: 'state_restored',
       );
       await _module.uiLog.log(
         'bingx.exchange.tracking.restore',
-        'tracked=yes symbol=$trackedSymbol '
-            'orderId=${trackedOrderId ?? "-"} managedCount=${_managedOrderIds.length} '
+        'tracked=${resumed ? "yes" : "deferred_or_idle"} '
+            'symbol=${resumeSymbol ?? "-"} '
+            'orderId=${state.trackedOrderId ?? "-"} '
+            'managedCount=${_managedOrderIds.length} '
             'symbolCount=${_managedOrderSymbols.length} '
             'provenanceCount=${_managedOrderProvenance.length} '
             'slPct=${_stopLossPercent.toStringAsFixed(2)} '
             'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
       );
-      await _fetchOpenOrders(silent: true);
     } catch (error) {
       await _module.uiLog.log(
         'bingx.exchange.tracking.restore.error',
@@ -1680,6 +1723,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.credentials.save',
         'ok keyLen=${apiKey.length} secretLen=${apiSecret.length}',
       );
+      await _resumeManagedOrderReconciliation(source: 'credentials_saved');
       await _showSnack('BingX credentials saved for active capsule');
     } catch (error) {
       await _module.uiLog.log('bingx.credentials.save.error', '$error');
@@ -3184,7 +3228,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'trackedOrderId=${state.trackedOrderId ?? "-"}',
       ),
     );
-    if (state.managedOrderIds.isEmpty) {
+    if (tradingReconciliationResumeSymbol(state) == null) {
       _stopOpenOrdersAutoTracking(reason: 'no_managed_open_orders');
     }
   }

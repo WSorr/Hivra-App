@@ -193,4 +193,76 @@ void main() {
     expect(tradingZoneSideForOrderSide('buy'), 'buyside');
     expect(tradingZoneSideForOrderSide('sell'), 'sellside');
   });
+
+  test(
+    'restart resumes an unresolved live effect without a known order id',
+    () {
+      final eventId = List<String>.filled(64, 'a').join();
+      final state = BingxFuturesOrderTrackingState(
+        trackedSymbol: null,
+        trackedOrderId: null,
+        managedOrderIds: const <String>[],
+        managedOrderSymbols: const <String, String>{},
+        liquidityEventEffectClaims: <String, BingxLiquidityEventEffectClaim>{
+          'live|$eventId': BingxLiquidityEventEffectClaim(
+            liquidityEventId: eventId,
+            clientOrderId: 'hivra-live-recovery',
+            symbol: 'SOL-USDT',
+            side: 'sell',
+            testOrder: false,
+            status: BingxLiquidityEventEffectClaimStatus.reserved,
+            orderId: null,
+            recordedAtUtc: '2026-08-22T00:00:00.000Z',
+          ),
+        },
+        stopLossPercent: null,
+        takeProfitRiskReward: null,
+      );
+
+      expect(tradingReconciliationResumeSymbol(state), 'SOL-USDT');
+    },
+  );
+
+  test('terminal and test-only effects do not keep provider polling alive', () {
+    BingxLiquidityEventEffectClaim claim({
+      required String eventId,
+      required bool testOrder,
+      required BingxManagedOrderLifecycleStatus lifecycle,
+    }) => BingxLiquidityEventEffectClaim(
+      liquidityEventId: eventId,
+      clientOrderId: 'hivra-$eventId',
+      symbol: 'BNB-USDT',
+      side: 'buy',
+      testOrder: testOrder,
+      status: BingxLiquidityEventEffectClaimStatus.confirmed,
+      orderId: 'order-$eventId',
+      lifecycleStatus: lifecycle,
+      recordedAtUtc: '2026-08-22T00:00:00.000Z',
+    );
+
+    final testEvent = List<String>.filled(64, 'b').join();
+    final terminalEvent = List<String>.filled(64, 'c').join();
+    final state = BingxFuturesOrderTrackingState(
+      trackedSymbol: null,
+      trackedOrderId: null,
+      managedOrderIds: const <String>[],
+      managedOrderSymbols: const <String, String>{},
+      liquidityEventEffectClaims: <String, BingxLiquidityEventEffectClaim>{
+        'test|$testEvent': claim(
+          eventId: testEvent,
+          testOrder: true,
+          lifecycle: BingxManagedOrderLifecycleStatus.unresolved,
+        ),
+        'live|$terminalEvent': claim(
+          eventId: terminalEvent,
+          testOrder: false,
+          lifecycle: BingxManagedOrderLifecycleStatus.cancelled,
+        ),
+      },
+      stopLossPercent: null,
+      takeProfitRiskReward: null,
+    );
+
+    expect(tradingReconciliationResumeSymbol(state), isNull);
+  });
 }
