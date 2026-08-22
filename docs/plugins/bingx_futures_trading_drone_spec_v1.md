@@ -469,6 +469,13 @@ revalidates the zone. A ranked scan selection may project the matching retained
 live decision, but changing the symbol MUST clear that evidence and execution
 MUST continue to use a newly computed decision.
 
+A foreground cycle may populate pending-zone and derived order fields only
+after it has prepared an executable intent from a decision whose
+`canPrepareIntent` flag is true. A blocked, conflicting, unavailable, stale, or
+otherwise non-executable cycle MUST clear those fields and expose only its exact
+blocking notice. Historical liquidity evidence MUST NOT be presented as a
+current pending order.
+
 Liquidation and bounded orderbook-derived proxies rank already valid structural
 pools. They never become executable anchors by themselves. If a proxy aligns
 with multiple candidates, deterministic distance bands increase the candidate

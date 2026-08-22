@@ -4228,13 +4228,24 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     lifecycle, executable state, and evaluation side remain exact and each
     derived boundary drifts by at most 1 bp. Backward time, changed binding,
     conflict, malformed decimals, or material drift remains fail-closed.
-  - Status: active remediation (2026-08-22). Provider conformance,
-    trigger-bound sizing, one exact live effect, receipt, cancellation, and
-    no-duplicate restart restoration are proven. Side-locked revalidation is
-    merged; stable-event freshness and mandate-episode intent clearing must pass
-    protected gates and packaged non-effect smoke before this pass can close.
-    The Trading Drone is not operational; VPS/24/7 execution, scheduling,
-    release, tag, and any additional live effect remain blocked.
+  - Protected freshness remediation: PR `#183` merged the stable-event boundary
+    and mandate-episode intent clearing at `1eccd22`; branch and post-merge gates
+    passed.
+  - Packaged UI finding: a later SOL cycle correctly returned
+    `market_liquidity_zone_conflict`, but the screen projected the attached
+    non-executable decision into pending-zone and derived order fields. This
+    made historical/conflicting evidence look like a current retest order.
+  - Active projection remediation: only a prepared decision with
+    `canPrepareIntent=true` may populate executable fields. Every blocked path
+    clears them while preserving the exact blocking notice; strategy,
+    exchange, mandate, Core, Ledger, DTO, service, and effect owners remain
+    unchanged.
+  - Status: active UI remediation (2026-08-22). Provider conformance,
+    trigger-bound sizing, one exact live effect, receipt, cancellation,
+    no-duplicate restart restoration, side-locked revalidation, and stable-event
+    freshness are proven. The Trading Drone is not operational; VPS/24/7
+    execution, scheduling, release, tag, and any additional live effect remain
+    blocked.
 
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
