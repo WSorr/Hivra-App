@@ -190,6 +190,14 @@ void main() {
       expect(evidence.previousEvidenceHashHex, _emptyEvidenceHash);
       expect(evidence.runnerKeyId, _runnerKeyId(publicKey));
       expect(evidence.validUntilEpochMs - evidence.observedAtEpochMs, 60000);
+      final expected = liveService.runPublicLiveMarket(
+        fixtureId: 'live:BTC-USDT',
+        snapshotInput: fixture.snapshotInput,
+      );
+      expect(evidence.marketSnapshotHashHex, expected.marketSnapshotHashHex);
+      expect(evidence.featureHashHex, expected.featureHashHex);
+      expect(evidence.decisionHashHex, expected.decisionHashHex);
+      expect(evidence.decision, expected.decision.name);
       expect(
         await Ed25519().verify(
           evidence.signingPayload,

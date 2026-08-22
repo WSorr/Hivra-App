@@ -35,6 +35,32 @@ void main() {
       expect(first.canonicalJson, second.canonicalJson);
     });
 
+    test(
+      'public market entry reproduces full live decision without trust input',
+      () {
+        final snapshot = _buildInput(permuted: false);
+        final local = service.decide(
+          BingxFuturesLiveDecisionInput(
+            snapshotInput: snapshot,
+            isConsensusSignable: true,
+            policy: const BingxTvhPolicy(requireConsensusSignable: true),
+          ),
+        );
+        final public = service.decidePublicMarket(
+          snapshotInput: snapshot,
+          policy: const BingxTvhPolicy(requireConsensusSignable: true),
+        );
+
+        expect(public.canonicalJson, local.canonicalJson);
+        expect(public.liveDecisionHashHex, local.liveDecisionHashHex);
+        expect(public.zoneAnchorSource, local.zoneAnchorSource);
+        expect(
+          public.oppositeLiquidityTargetDecimal,
+          local.oppositeLiquidityTargetDecimal,
+        );
+      },
+    );
+
     test('stays stable when snapshot input ordering changes', () {
       final base = service.decide(
         BingxFuturesLiveDecisionInput(
