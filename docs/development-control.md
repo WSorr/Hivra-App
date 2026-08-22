@@ -6,9 +6,11 @@ Current development focus: Hivra 1.x product completion. The Trading Drone has
 proved one bounded live order and restart reconciliation, but it is not yet an
 operational product. Remote public-shadow evidence now reproduces the full
 market-only live decision and exposes its exact bounded `READY`/`BLOCKED`
-market proposal rather than only a reduced verdict or opaque hash. VPS/24/7
-execution, plugin ABI, Core, Ledger, tag, Release, and 2.0 runtime work remain
-blocked until an explicit product finding selects them.
+market proposal rather than only a reduced verdict or opaque hash. A completed
+bounded composition combines that authenticated proposal with one active
+mandate and one fresh transient account-risk snapshot into a non-authorizing order
+candidate. VPS/24/7 execution, exchange effects, plugin ABI, Core, Ledger, tag,
+Release, and 2.0 runtime work remain blocked.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -31,7 +33,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Product completion; no unit selected | Chat, Moltbook, and Trading must each close a complete user journey through their existing canonical owners. | Trading has proved one bounded live effect, restart reconciliation, and a signed inspectable remote market proposal; this is evidence, not an operational-product claim. | Select one reproduced product blocker. Do not create a documentation pass to describe it. |
+| **1.x maintained runtime** | Trading bounded composition complete | Authenticated fresh remote market evidence, an active mandate, fresh complete transient account risk, and exchange rules compose into one inspectable non-authorizing order candidate. | No provider POST, scheduler, VPS activation, order admission, or effect is part of this unit. | No next unit is selected automatically; effect admission remains a separate decision. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

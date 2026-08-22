@@ -1056,6 +1056,31 @@ This remediation adds no service, Core/Ledger fact, FFI contract, plugin ABI,
 schedule, lease, persistent runner credential, POST/DELETE path, order,
 cancellation, reconciliation, exchange effect, tag, or Release.
 
+### 11.29 Bounded Remote Order Candidate Composition
+
+The existing replay harness authenticates one fresh v2 public-market evidence
+entry before candidate composition. Its signed commitment includes the exact
+market symbol and canonical `READY` proposal; symbol substitution, stream
+replay/fork, identity drift, stale evidence, or a `BLOCKED` proposal fails
+closed.
+
+One pure application service may combine that evidence with the existing
+active `BingxFuturesTradingMandate`, exact contract rules, and one complete
+transient account-risk snapshot. The account snapshot must be no more than 30
+seconds old and must contain no fallback or unavailable provider field. It is
+not written into public shadow evidence or retained as a new account-state
+projection. Existing sizing, liquidity-target, and risk-governor owners remain
+the semantic owners of their decisions.
+
+The output is a canonical hashed order candidate bound to the market evidence,
+decision, symbol, mandate, risk decision, liquidity event, quantity, prices,
+mode, and the earlier of market-evidence or mandate expiry. It is inspectable
+data only: it grants no authority, performs no provider request, claims no
+idempotency slot, and cannot enter the exchange-effect path without a separately
+selected admission and recovery contract. The existing Capsule-signed v3 exact
+order admission remains the sole remote order authority; candidate composition
+does not replace or bypass it.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of
