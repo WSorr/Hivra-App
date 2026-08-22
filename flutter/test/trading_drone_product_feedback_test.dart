@@ -165,6 +165,30 @@ void main() {
     );
   });
 
+  test('only a prepared executable decision projects a pending zone', () {
+    expect(
+      tradingCycleProjectsExecutableZone(
+        cyclePrepared: true,
+        decisionCanPrepareIntent: true,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingCycleProjectsExecutableZone(
+        cyclePrepared: false,
+        decisionCanPrepareIntent: true,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingCycleProjectsExecutableZone(
+        cyclePrepared: false,
+        decisionCanPrepareIntent: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('ranked order side maps to the matching liquidity zone side', () {
     expect(tradingZoneSideForOrderSide('buy'), 'buyside');
     expect(tradingZoneSideForOrderSide('sell'), 'sellside');

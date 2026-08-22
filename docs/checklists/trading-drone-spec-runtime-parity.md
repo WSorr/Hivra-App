@@ -87,6 +87,8 @@ Legend:
 - [ ] Trend, OI, session evidence, and large-flow activation remain context; recent aggressive-volume imbalance owns directional activation.
 - [ ] Missing executable liquidity anchor emits `liquidity_anchor_unavailable` and makes managed-order revalidation cancel-only.
 - [ ] Pending-zone fields cannot be mistaken for current price: source, formation time, age, signed distance, and Run Intent revalidation are visible, and changing symbol clears prior evidence.
+- [ ] A blocked or conflicting foreground cycle clears executable zone, sizing,
+      risk-target, and strategy-tag fields while retaining its exact blocking notice.
 - [ ] Rule engine decision path is explicit and hashable: `LONG | SHORT | NO_SIGNAL | BLOCKED`.
 - [ ] A blocked foreground cycle exposes the exact funding, volume, structure,
       zone-conflict, or continuation reason without invoking intent/effect owners.

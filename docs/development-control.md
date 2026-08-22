@@ -15,10 +15,13 @@ without a duplicate provider effect. Protected PR `#182` closed the resulting
 side-locked revalidation and prepared-label remediation at `657a482`. A later
 packaged SOL run exposed a separate freshness defect: the same executable
 liquidity event was rejected after a later closed bar and an approximately
-0.00023% zone-boundary adjustment. The active remediation keeps exact event,
-side, anchor, lifecycle, and monotonic-time binding while allowing at most 1 bp
-of derived boundary drift. Re-authorizing a mandate also clears any prepared
-intent from the previous authority episode.
+0.00023% zone-boundary adjustment. Stable-event freshness is merged and green
+at `1eccd22`: it keeps exact event, side, anchor, lifecycle, and monotonic-time
+binding while allowing at most 1 bp of derived boundary drift, and mandate
+re-authorization clears the previous prepared intent. Packaged smoke then found
+that a blocked SOL zone-conflict decision still populated executable pending-
+zone fields. The active bounded UI remediation projects those fields only for a
+prepared executable decision and otherwise retains only the blocking notice.
 Until then the Trading Drone is not operational and VPS/24/7 execution remains
 blocked. No plugin ABI, Core, Ledger, tag, or Release is authorized.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
@@ -32,7 +35,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete the bounded BingX stable-event freshness remediation through protected gates and packaged non-effect smoke. Do not repeat the proven live effect or start VPS/24/7 execution. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Complete the bounded Trading blocked-zone projection remediation through protected gates. Do not alter the existing live order, repeat the proven live effect, or start VPS/24/7 execution. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -42,7 +45,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | BingX stable-event freshness remediation active | The existing execution use case remains the sole freshness owner and accepts only the same exact liquidity-event binding with monotonic bar time and at most 1 bp derived boundary drift. | Provider conformance, trigger sizing, one packaged live effect, restart restoration, side-locked revalidation, and prepared-label remediation are proven. | Merge freshness regressions through protected gates, then packaged non-effect smoke; VPS, scheduler, release, and any additional effect remain blocked. |
+| **1.x maintained runtime** | Trading blocked-zone projection remediation active | The existing Trading screen remains the sole projection owner and may display executable order fields only for a prepared decision whose `canPrepareIntent` flag is true. | Provider conformance, trigger sizing, one packaged live effect, restart restoration, side-locked revalidation, prepared-label remediation, and stable-event freshness are proven. | Merge the UI projection regression through protected gates; VPS, scheduler, release, and any additional effect remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

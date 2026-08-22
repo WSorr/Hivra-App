@@ -112,6 +112,12 @@ String tradingZoneSideAfterCycle({
 }
 
 @visibleForTesting
+bool tradingCycleProjectsExecutableZone({
+  required bool cyclePrepared,
+  required bool decisionCanPrepareIntent,
+}) => cyclePrepared && decisionCanPrepareIntent;
+
+@visibleForTesting
 bool tradingMandateMatchesSelection({
   required BingxFuturesTradingMandate? mandate,
   required bool droneEnabled,
@@ -2133,40 +2139,54 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
     final decision = cycle.decision;
     final response = cycle.intent?.response;
+    final projectsExecutableZone =
+        decision != null &&
+        tradingCycleProjectsExecutableZone(
+          cyclePrepared: cycle.isPrepared,
+          decisionCanPrepareIntent: decision.canPrepareIntent,
+        );
+    final executableDecision = projectsExecutableZone ? decision : null;
     if (mounted) {
       setState(() {
-        if (decision != null) {
-          _displayedZoneDecision = decision;
-          _lastPreparedLiveDecision = cycle.isPrepared ? decision : null;
+        if (executableDecision != null) {
+          _displayedZoneDecision = executableDecision;
+          _lastPreparedLiveDecision = executableDecision;
           _side = tradingSideAfterCycle(
             currentSide: _side,
-            cyclePrepared: cycle.isPrepared,
-            decisionSide: decision.side,
+            cyclePrepared: true,
+            decisionSide: executableDecision.side,
           );
           _zoneSide = tradingZoneSideAfterCycle(
             currentZoneSide: _zoneSide,
-            cyclePrepared: cycle.isPrepared,
-            decisionZoneSide: decision.zoneSide,
+            cyclePrepared: true,
+            decisionZoneSide: executableDecision.zoneSide,
           );
           _entryMode = 'zone_pending';
           _zonePriceRule = 'zone_mid';
-          _zoneLowController.text = decision.zoneLowDecimal ?? '';
-          _zoneHighController.text = decision.zoneHighDecimal ?? '';
+          _zoneLowController.text = executableDecision.zoneLowDecimal ?? '';
+          _zoneHighController.text = executableDecision.zoneHighDecimal ?? '';
           _triggerPriceController.text =
-              decision.side == 'buy'
-                  ? decision.zoneHighDecimal ?? ''
-                  : decision.zoneLowDecimal ?? '';
+              executableDecision.side == 'buy'
+                  ? executableDecision.zoneHighDecimal ?? ''
+                  : executableDecision.zoneLowDecimal ?? '';
           _strategyTagController.text =
-              _module.strategyNaming.tagForDecision(decision.decision) ?? '';
-        }
-        if (cycle.sizing?.quantityDecimal != null) {
-          _quantityController.text = cycle.sizing!.quantityDecimal!;
-        }
-        if (cycle.stopLossDecimal != null) {
-          _stopLossController.text = cycle.stopLossDecimal!;
-        }
-        if (cycle.takeProfitDecimal != null) {
-          _takeProfitController.text = cycle.takeProfitDecimal!;
+              _module.strategyNaming.tagForDecision(
+                executableDecision.decision,
+              ) ??
+              '';
+          _quantityController.text = cycle.sizing?.quantityDecimal ?? '';
+          _stopLossController.text = cycle.stopLossDecimal ?? '';
+          _takeProfitController.text = cycle.takeProfitDecimal ?? '';
+        } else {
+          _displayedZoneDecision = null;
+          _lastPreparedLiveDecision = null;
+          _zoneLowController.clear();
+          _zoneHighController.clear();
+          _triggerPriceController.clear();
+          _quantityController.clear();
+          _stopLossController.clear();
+          _takeProfitController.clear();
+          _strategyTagController.clear();
         }
         _lastIntentResponse = response;
         _intentBlockingMessage = cycle.isPrepared ? null : cycle.reasonMessage;

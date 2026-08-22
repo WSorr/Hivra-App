@@ -304,7 +304,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/settings_screen.dart` line `8` (`SettingsScreen`) — rule `surface_mapping:ui_settings`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/settings_screen.dart` line `622` (`_CapsuleCardScannerScreen`) — rule `surface_mapping:ui_capsule_card_scanner`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/starters_screen.dart` line `16` (`StartersScreen`) — rule `surface_mapping:ui_starters`
-- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/trading_drone_screen.dart` line `163` (`TradingDroneScreen`) — rule `registry`
+- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/trading_drone_screen.dart` line `169` (`TradingDroneScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/transports_screen.dart` line `8` (`TransportsScreen`) — rule `surface_mapping:ui_transports`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/wasm_plugins_screen.dart` line `79` (`WasmPluginsScreen`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_capsule_inspection_service.dart` line `104` (`AiCapsuleInspectionService`) — rule `current_flutter_service_support`
@@ -480,7 +480,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 ### Oversized Candidate Surfaces
 
-- `4844` lines — `flutter/lib/screens/trading_drone_screen.dart`
+- `4864` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3329` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2425` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
