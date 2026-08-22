@@ -186,27 +186,24 @@ void main() {
       },
     );
 
-    test(
-      'explicit structural side is not replaced by an opposite live signal',
-      () {
-        final result = service.decide(
-          BingxFuturesLiveDecisionInput(
-            snapshotInput: _buildInput(permuted: false),
-            isConsensusSignable: true,
-            zoneEvaluationSide: 'sell',
-          ),
-        );
+    test('opposite live flow cannot replace an explicit structural side', () {
+      final result = service.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildInput(permuted: false),
+          isConsensusSignable: true,
+          zoneEvaluationSide: 'sell',
+        ),
+      );
 
-        expect(result.decision, BingxTvhDecisionKind.long);
-        expect(result.side, 'buy');
-        expect(result.zoneEvaluationSide, 'sell');
-        expect(result.zoneSide, 'sellside');
-        expect(result.zoneLowDecimal, isNotNull);
-        expect(result.zoneHighDecimal, isNotNull);
-        expect(result.zoneConflict, isTrue);
-        expect(result.canPrepareIntent, isFalse);
-      },
-    );
+      expect(result.decision, BingxTvhDecisionKind.noSignal);
+      expect(result.side, isNull);
+      expect(result.zoneEvaluationSide, 'sell');
+      expect(result.zoneSide, 'sellside');
+      expect(result.zoneLowDecimal, isNotNull);
+      expect(result.zoneHighDecimal, isNotNull);
+      expect(result.zoneConflict, isFalse);
+      expect(result.canPrepareIntent, isFalse);
+    });
 
     test(
       'blocks far retest short in strong bearish continuation trend gate',
@@ -992,6 +989,7 @@ class _StubRuleEngine extends BingxFuturesTvhRuleEngineService {
     required BingxFuturesFeatureExtractionResult features,
     required String fundingRateDecimal,
     required bool isConsensusSignable,
+    String? requiredSide,
     List<String> blockingFactCodes = const <String>[],
     BingxTvhPolicy policy = const BingxTvhPolicy(),
   }) {

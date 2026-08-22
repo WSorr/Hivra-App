@@ -173,6 +173,30 @@ void main() {
       expect(result.decision, BingxTvhDecisionKind.short);
     });
 
+    test('opposite trade flow cannot flip a constrained liquidity side', () {
+      final result = service.evaluateMarket(
+        features: _feature(
+          trend: BingxTrendDirection.bullish,
+          tradeDeltaDecimal: '1.50',
+          sessionNetDeltaDecimal: '3.20',
+          sessionEvidenceComplete: false,
+          hasBuyWhaleActivation: true,
+          hasSellWhaleActivation: false,
+        ),
+        fundingRateDecimal: '0.0008',
+        requiredSide: 'sell',
+        policy: policy,
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.noSignal);
+      expect(
+        result.reasons
+            .singleWhere((reason) => reason.code == 'liquidity_side_constraint')
+            .detail,
+        'sell',
+      );
+    });
+
     test('is hash-stable for identical inputs', () {
       final features = _feature(
         trend: BingxTrendDirection.bullish,
