@@ -143,6 +143,116 @@ void main() {
       );
     });
 
+    test('accepts only a complete READY market proposal in v2', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final proposal = <String, dynamic>{
+        'schema_version': 2,
+        'contract': 'bingx_futures_live_decision_v2',
+        'market_snapshot_hash_hex': '1'.padLeft(64, '1'),
+        'feature_hash_hex': '2'.padLeft(64, '2'),
+        'tvh_decision_hash_hex': '3'.padLeft(64, '3'),
+        'decision': 'long',
+        'can_prepare_intent': true,
+        'trend_bundle': <String, dynamic>{
+          'trend_15m': 'bullish',
+          'trend_4h': 'bull',
+          'trend_1d': 'bull',
+        },
+        'trend_gate': <String, dynamic>{'blocked': false, 'code': 'ok'},
+        'side': 'buy',
+        'zone_evaluation_side': 'buy',
+        'zone': <String, dynamic>{
+          'side': 'buyside',
+          'low_decimal': '100.25',
+          'high_decimal': '101.50',
+          'source': 'micro_sweep_reclaim',
+          'side_reason': 'buy_signal',
+          'conflict': false,
+          'target_retest_pct': 0.01,
+          'needs_farther_retest': false,
+          'anchor_source': 'micro_sweep_reclaim',
+          'anchor_executable': true,
+          'anchor_lifecycle': 'fresh',
+          'liquidity_event_id': '4'.padLeft(64, '4'),
+          'liquidity_event_at_utc': '2026-08-22T10:00:00Z',
+          'latest_closed_micro_bar_at_utc': '2026-08-22T10:05:00Z',
+        },
+        'profit_target': <String, dynamic>{
+          'kind': 'opposite_external_liquidity',
+          'price_decimal': '110.00',
+          'source': '1d_fresh_high',
+          'event_at_utc': '2026-08-21T00:00:00Z',
+        },
+        'reason_codes': <Map<String, dynamic>>[
+          <String, dynamic>{'code': 'funding_guard', 'passed': true},
+        ],
+      };
+      final proposalJson = jsonEncode(proposal);
+      final run = BingxFuturesReplayRunResult(
+        fixtureId: 'ready',
+        marketSnapshotHashHex: '1'.padLeft(64, '1'),
+        featureHashHex: '2'.padLeft(64, '2'),
+        decisionHashHex: sha256.convert(utf8.encode(proposalJson)).toString(),
+        decision: BingxTvhDecisionKind.long,
+        topReasonCode: 'funding_guard',
+        marketProposalStatus: 'READY',
+        marketProposalJson: proposalJson,
+      );
+      final unsigned = service.buildShadowEvidence(
+        publicRun: run,
+        runnerBuildId: 'runner-build-ready',
+        pluginId: 'hivra.bingx-futures-trading',
+        pluginVersion: '0.2.7-plugins',
+        packageDigestHex: _packageDigest,
+        hostAbi: 'dart-headless-v1',
+        observedAtEpochMs: 1770000000000,
+        validUntilEpochMs: 1770000060000,
+        sequence: 1,
+        previousEvidenceHashHex: _emptyEvidenceHash,
+        runnerKeyId: _runnerKeyId(publicKey),
+        contractVersion: 'trading-shadow-evidence-v2',
+      );
+      final evidence = await _resign(unsigned, signingKey);
+
+      expect(
+        service.parseShadowEvidence(evidence.wireBytes).marketProposalStatus,
+        'READY',
+      );
+      final missingTarget = <String, dynamic>{
+        ...proposal,
+        'profit_target': null,
+      };
+      final invalidJson = jsonEncode(missingTarget);
+      expect(
+        () => service.buildShadowEvidence(
+          publicRun: BingxFuturesReplayRunResult(
+            fixtureId: 'invalid-ready',
+            marketSnapshotHashHex: '1'.padLeft(64, '1'),
+            featureHashHex: '2'.padLeft(64, '2'),
+            decisionHashHex:
+                sha256.convert(utf8.encode(invalidJson)).toString(),
+            decision: BingxTvhDecisionKind.long,
+            topReasonCode: 'funding_guard',
+            marketProposalStatus: 'READY',
+            marketProposalJson: invalidJson,
+          ),
+          runnerBuildId: 'runner-build-ready',
+          pluginId: 'hivra.bingx-futures-trading',
+          pluginVersion: '0.2.7-plugins',
+          packageDigestHex: _packageDigest,
+          hostAbi: 'dart-headless-v1',
+          observedAtEpochMs: 1770000000000,
+          validUntilEpochMs: 1770000060000,
+          sequence: 1,
+          previousEvidenceHashHex: _emptyEvidenceHash,
+          runnerKeyId: _runnerKeyId(publicKey),
+          contractVersion: 'trading-shadow-evidence-v2',
+        ),
+        throwsFormatException,
+      );
+    });
+
     test('produces signed one-shot evidence from public live input', () async {
       final fixture = _fixtureLong();
       final marketData = _PublicMarketDataStub();
@@ -198,6 +308,22 @@ void main() {
       expect(evidence.featureHashHex, expected.featureHashHex);
       expect(evidence.decisionHashHex, expected.decisionHashHex);
       expect(evidence.decision, expected.decision.name);
+      expect(evidence.contractVersion, 'trading-shadow-evidence-v2');
+      expect(evidence.marketProposalStatus, expected.marketProposalStatus);
+      expect(evidence.marketProposalJson, expected.marketProposalJson);
+      expect(
+        liveService.parseShadowEvidence(evidence.wireBytes).evidenceHashHex,
+        evidence.evidenceHashHex,
+      );
+      expect(
+        await liveService.verifyShadowEvidenceContinuity(
+          untrustedWireBytes: evidence.wireBytes,
+          trustedRunnerKey: publicKey,
+          lastAcceptedSequence: 0,
+          lastAcceptedEvidenceHashHex: _emptyEvidenceHash,
+        ),
+        BingxFuturesShadowEvidenceVerdict.accepted,
+      );
       expect(
         await Ed25519().verify(
           evidence.signingPayload,
@@ -207,6 +333,74 @@ void main() {
           ),
         ),
         isTrue,
+      );
+
+      final tamperedProposal = jsonEncode(<String, dynamic>{
+        ...Map<String, dynamic>.from(
+          jsonDecode(evidence.marketProposalJson!) as Map,
+        ),
+        'can_prepare_intent': evidence.marketProposalStatus != 'READY',
+      });
+      expect(
+        () => liveService.parseShadowEvidence(
+          _copyEvidence(
+            evidence,
+            marketProposalJson: tamperedProposal,
+          ).wireBytes,
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('accepts a v2 continuation of an existing v1 stream', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final anchor = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+      final fixture = _fixtureLong();
+      final liveService = BingxFuturesDeterministicReplayHarnessService(
+        loadLiveSnapshot: ({required exchange, required symbol}) async {
+          return BingxFuturesLiveSnapshotBuildResult(
+            isSuccess: true,
+            errorCode: '0',
+            errorMessage: 'ok',
+            snapshotInput: fixture.snapshotInput,
+            symbol: symbol,
+          );
+        },
+      );
+
+      final continuation = await liveService.runLivePublicShadow(
+        marketData: _PublicMarketDataStub(),
+        symbol: 'BTC-USDT',
+        signingKey: signingKey,
+        runnerBuildId: 'runner-build-live',
+        pluginId: 'hivra.bingx-futures-trading',
+        pluginVersion: '0.2.7-plugins',
+        packageDigestHex: _packageDigest,
+        hostAbi: 'dart-headless-v1',
+        observedAtUtc: DateTime.fromMillisecondsSinceEpoch(
+          1770000000000,
+          isUtc: true,
+        ),
+        sequence: 2,
+        previousEvidenceHashHex: anchor.evidenceHashHex,
+      );
+
+      expect(anchor.contractVersion, 'trading-shadow-evidence-v1');
+      expect(continuation.contractVersion, 'trading-shadow-evidence-v2');
+      expect(continuation.previousEvidenceHashHex, anchor.evidenceHashHex);
+      expect(
+        await liveService.verifyShadowEvidenceContinuity(
+          untrustedWireBytes: continuation.wireBytes,
+          trustedRunnerKey: publicKey,
+          lastAcceptedSequence: anchor.sequence,
+          lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+        ),
+        BingxFuturesShadowEvidenceVerdict.accepted,
       );
     });
 
@@ -812,6 +1006,8 @@ BingxFuturesShadowEvidence _copyEvidence(
   String? hostAbi,
   String? policyHashHex,
   String? decisionHashHex,
+  String? marketProposalStatus,
+  String? marketProposalJson,
   int? observedAtEpochMs,
   int? validUntilEpochMs,
   int? sequence,
@@ -831,6 +1027,8 @@ BingxFuturesShadowEvidence _copyEvidence(
     featureHashHex: evidence.featureHashHex,
     decisionHashHex: decisionHashHex ?? evidence.decisionHashHex,
     decision: evidence.decision,
+    marketProposalStatus: marketProposalStatus ?? evidence.marketProposalStatus,
+    marketProposalJson: marketProposalJson ?? evidence.marketProposalJson,
     observedAtEpochMs: observedAtEpochMs ?? evidence.observedAtEpochMs,
     validUntilEpochMs: validUntilEpochMs ?? evidence.validUntilEpochMs,
     sequence: sequence ?? evidence.sequence,
