@@ -25,7 +25,7 @@ void main() {
           }
           if (path == '/openApi/swap/v3/quote/klines') {
             klineRequests += 1;
-            if (klineRequests == 7) klineGate.complete();
+            if (klineRequests == 6) klineGate.complete();
             await klineGate.future;
             return const BingxHttpResponse(
               statusCode: 200,
@@ -89,8 +89,12 @@ void main() {
           .timeout(const Duration(seconds: 1));
 
       expect(result.isSuccess, isTrue);
-      expect(klineRequests, 7);
+      expect(klineRequests, 6);
       expect(contextRequests, 5);
+      expect(
+        result.snapshotInput!.candles.any((item) => item.timeframe == '1m'),
+        isFalse,
+      );
     });
 
     test('builds snapshot with OI history and liquidation proxy levels', () async {

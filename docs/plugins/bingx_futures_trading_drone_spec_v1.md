@@ -112,10 +112,12 @@ Data source policy:
    - mark price,
    - index price.
 3. Candles (OHLCV)
-   - 1m, 5m, 15m, 1h, 4h, 1d, 1w timeframes,
+   - 5m, 15m, 1h, 4h, 1d, 1w timeframes,
    - only **closed candles** are used for indicators,
    - recommended depth: at least 300 closed candles (up to 1d) and at least 120 candles on 1w.
    - the all-perpetual signal scan prefilter uses the three latest closed 5m candles and admits only strictly rising volume; the forming candle never participates.
+   - snapshot v1 continues to parse legacy 1m rows for replay compatibility,
+     but the live decision path neither fetches nor requires them.
 4. Recent trades
    - bounded recent market trades, recommended 200+ rows,
    - this sample is recent-flow evidence only and MUST NOT be expanded or
@@ -126,7 +128,7 @@ Data source policy:
    - current funding rate and next funding timestamp.
 7. Liquidity map inputs
    - buyside/sellside external liquidity levels from HTF swings (up to 1w),
-   - internal liquidity levels (local equal highs/lows and range inefficiencies on 1m/5m/15m),
+   - internal liquidity levels (local equal highs/lows on 5m),
    - liquidation-level feed (if provided by data vendor/exchange endpoint).
 8. Session volume context
    - volume by session windows (Asia/London/NY),
