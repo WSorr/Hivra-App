@@ -458,9 +458,25 @@ runner_exact_order_is_fail_closed() {
 }
 
 runner_deterministic_order_is_single_use() {
+  local observation_line
+  local effect_line
+  observation_line="$(rg -n 'capture_deterministic_market_evidence_once' "$1" | tail -1 | cut -d: -f1)"
+  effect_line="$(rg -n -F '"$EFFECT_BINARY_INSTALL_PATH" \' "$1" | tail -1 | cut -d: -f1)"
   rg -q -- '--execute-deterministic-order <artifact-dir>' "$1" &&
     rg -q 'execute_deterministic_order_once' "$1" &&
     rg -q 'deterministic-order.v4.json' "$1" &&
+    rg -q 'deterministic-observations' "$1" &&
+    rg -q 'mandate-symbol' "$1" &&
+    rg -q 'deterministic observation requires an inactive public-shadow runner' "$1" &&
+    rg -q 'deterministic observation requires a disabled public-shadow runner' "$1" &&
+    rg -q 'LoadCredentialEncrypted="runner-seed:' "$1" &&
+    rg -q 'deterministic public-market observation failed' "$1" &&
+    rg -q '"market_symbol": symbol' "$1" &&
+    rg -q 'deterministic public-market observation retained its transient unit' "$1" &&
+    rg -q 'deterministic order found conflicting observation state' "$1" &&
+    ! sed -n '/capture_deterministic_market_evidence_once()/,/^}/p' "$1" | rg -q 'bingx-exchange|EFFECT_BINARY_INSTALL_PATH' &&
+    [ -n "$observation_line" ] && [ -n "$effect_line" ] &&
+    [ "$observation_line" -lt "$effect_line" ] &&
     rg -q -- '--mode deterministic-order' "$1" &&
     rg -q 'LoadCredential=market-evidence:' "$1" &&
     rg -q 'const String deterministicOrderMode = .deterministic-order.' "$2" &&
