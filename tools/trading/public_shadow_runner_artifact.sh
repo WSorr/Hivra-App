@@ -79,6 +79,10 @@ and stores host-encrypted prepared state without exposing it to the runner.
 Account probing uses one collected transient systemd unit, supplies both
 encrypted credentials only to that process, permits exactly balance, positions,
 and open-orders GETs, and emits only a bounded redacted verdict.
+Deterministic execution first captures one operation-scoped public-market
+evidence item for the signed mandate symbol without loading exchange credentials.
+Exact replay reuses those retained evidence bytes before the existing effect
+runner is allowed to access the exchange credential.
 EOF
 }
 
@@ -1116,8 +1120,9 @@ else:
     ]
     if not isinstance(policy, dict) or list(policy) != expected_policy:
         raise SystemExit("deterministic strategy policy is not canonical")
+    policy_text = re.compile(r"[A-Za-z0-9._:-]{1,128}")
     for key in ("runner_build_id", "plugin_id", "plugin_version", "host_abi"):
-        if not isinstance(policy[key], str) or not policy[key] or len(policy[key]) > 128:
+        if not isinstance(policy[key], str) or policy_text.fullmatch(policy[key]) is None:
             raise SystemExit(f"invalid deterministic policy {key}")
     if not isinstance(policy["package_digest_hex"], str) or re.fullmatch(r"[0-9a-f]{64}", policy["package_digest_hex"]) is None:
         raise SystemExit("invalid deterministic package digest")
@@ -1231,6 +1236,16 @@ else:
     pathlib.Path(work, "strategy-policy.json").write_text(
         json.dumps(value["strategy_policy"], separators=(",", ":")), encoding="utf-8"
     )
+    pathlib.Path(work, "mandate-symbol").write_text(
+        mandate["symbol"], encoding="ascii"
+    )
+    for key in (
+        "runner_build_id", "plugin_id", "plugin_version",
+        "package_digest_hex", "host_abi",
+    ):
+        pathlib.Path(work, f"policy-{key.replace('_', '-')}").write_text(
+            str(value["strategy_policy"][key]), encoding="ascii"
+        )
 pathlib.Path(work, "max-uses").write_text(str(value["max_uses"]), encoding="ascii")
 PY
   then
@@ -1957,6 +1972,176 @@ execute_exact_order_once() {
   echo "PASS trading-runner-artifact: exact order lifecycle state=$state effect_operation_id=$effect_operation_id admission_operation_id=$admission_operation_id"
 }
 
+capture_deterministic_market_evidence_once() {
+  local verified_work="$1"
+  local operation_id="$2"
+  local retained_evidence="$3"
+  local work="$4"
+  local observation_dir="$5"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "deterministic observation requires an inactive public-shadow runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "deterministic observation requires a disabled public-shadow runner" ;;
+  esac
+
+  local stream_dir="$STATE_DIRECTORY/stream/evidence"
+  [ -d "$stream_dir" ] && [ ! -L "$stream_dir" ] ||
+    die "deterministic observation requires the canonical evidence stream"
+  local previous_evidence
+  previous_evidence="$(find "$stream_dir" -maxdepth 1 -type f \
+    -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.json' \
+    -print | LC_ALL=C sort | tail -1)"
+  local previous_sequence=0
+  local previous_hash="0000000000000000000000000000000000000000000000000000000000000000"
+  if [ -n "$previous_evidence" ]; then
+    read -r previous_sequence previous_hash <<<"$(python3 - "$previous_evidence" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+value = json.loads(path.read_text(encoding="utf-8"))
+sequence = value.get("sequence")
+match = re.fullmatch(r"([0-9]{12})-([0-9a-f]{64})\.json", path.name)
+if (
+    not isinstance(sequence, int)
+    or sequence < 1
+    or match is None
+    or int(match.group(1)) != sequence
+):
+    raise SystemExit("existing market evidence identity is invalid")
+print(sequence, match.group(2))
+PY
+)" || die "deterministic observation found invalid stream continuity"
+  fi
+
+  local symbol runner_build_id plugin_id plugin_version package_digest host_abi
+  symbol="$(cat "$verified_work/mandate-symbol")"
+  runner_build_id="$(cat "$verified_work/policy-runner-build-id")"
+  plugin_id="$(cat "$verified_work/policy-plugin-id")"
+  plugin_version="$(cat "$verified_work/policy-plugin-version")"
+  package_digest="$(cat "$verified_work/policy-package-digest-hex")"
+  host_abi="$(cat "$verified_work/policy-host-abi")"
+  local transient_name="hivra-trading-market-${operation_id:0:12}-$$"
+  local credential_dir="/run/credentials/$transient_name.service"
+  if ! systemd-run \
+    --unit="$transient_name" \
+    --service-type=exec \
+    --wait --pipe --collect --quiet \
+    --property=DynamicUser=yes \
+    --property=StateDirectory=hivra-trading-public-shadow \
+    --property=StateDirectoryMode=0700 \
+    --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
+    --property=RuntimeMaxSec=90s \
+    --property=TimeoutStartSec=90s \
+    --property=TimeoutStopSec=10s \
+    --property=KillMode=mixed \
+    --property=OOMPolicy=stop \
+    --property=MemoryMax=128M \
+    --property=MemorySwapMax=0 \
+    --property=TasksMax=16 \
+    --property=CPUWeight=10 \
+    --property=IOWeight=10 \
+    --property=Nice=10 \
+    --property=UMask=0077 \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=yes \
+    --property=ProtectProc=invisible \
+    --property=ProcSubset=pid \
+    --property=ProtectKernelTunables=yes \
+    --property=ProtectKernelModules=yes \
+    --property=ProtectKernelLogs=yes \
+    --property=ProtectControlGroups=yes \
+    --property=ProtectClock=yes \
+    --property=ProtectHostname=yes \
+    --property=RestrictRealtime=yes \
+    --property=RestrictSUIDSGID=yes \
+    --property=RestrictNamespaces=yes \
+    --property=LockPersonality=yes \
+    --property=MemoryDenyWriteExecute=yes \
+    --property=CapabilityBoundingSet= \
+    --property=AmbientCapabilities= \
+    --property=SystemCallArchitectures=native \
+    --property=SystemCallFilter=@system-service \
+    --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" \
+    --property=SocketBindDeny=any \
+    --property=IPAccounting=yes \
+    "$BINARY_INSTALL_PATH" \
+      --runner-seed-file "$credential_dir/runner-seed" \
+      --symbol "$symbol" \
+      --runner-build-id "$runner_build_id" \
+      --plugin-id "$plugin_id" \
+      --plugin-version "$plugin_version" \
+      --package-digest-hex "$package_digest" \
+      --host-abi "$host_abi" \
+      --stream-dir "$STATE_DIRECTORY/stream" \
+      --run-count 1 \
+      >"$work/market-stdout" 2>"$work/market-stderr"; then
+    die "deterministic public-market observation failed"
+  fi
+  [ ! -s "$work/market-stderr" ] ||
+    die "deterministic public-market observation produced unexpected standard error"
+  for _ in $(seq 1 50); do
+    [ "$(systemctl show -p LoadState --value "$transient_name.service" 2>/dev/null || true)" = "not-found" ] && break
+    sleep 0.1
+  done
+  [ "$(systemctl show -p LoadState --value "$transient_name.service" 2>/dev/null || true)" = "not-found" ] ||
+    die "deterministic public-market observation retained its transient unit"
+
+  local evidence
+  evidence="$(find "$stream_dir" -maxdepth 1 -type f \
+    -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.json' \
+    -print | LC_ALL=C sort | tail -1)"
+  [ -n "$evidence" ] && [ "$evidence" != "$previous_evidence" ] ||
+    die "deterministic observation produced no new market evidence"
+  python3 - "$evidence" "$((previous_sequence + 1))" "$previous_hash" \
+    "$EXPECTED_RUNNER_KEY_ID" "$symbol" "$runner_build_id" "$plugin_id" \
+    "$plugin_version" "$package_digest" "$host_abi" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+(
+    source, expected_sequence, previous_hash, runner_key_id, symbol,
+    runner_build_id, plugin_id, plugin_version, package_digest, host_abi,
+) = sys.argv[1:]
+raw = pathlib.Path(source).read_bytes()
+if len(raw) < 2 or len(raw) > 8192:
+    raise SystemExit("captured market evidence is not bounded")
+value = json.loads(raw.decode("utf-8"))
+expected = {
+    "contract_version": "trading-shadow-evidence-v2",
+    "runner_build_id": runner_build_id,
+    "plugin_id": plugin_id,
+    "plugin_version": plugin_version,
+    "package_digest_hex": package_digest,
+    "host_abi": host_abi,
+    "market_symbol": symbol,
+    "sequence": int(expected_sequence),
+    "previous_evidence_hash_hex": previous_hash,
+    "runner_key_id": runner_key_id,
+    "signature_suite": "ed25519-v1",
+}
+for key, expected_value in expected.items():
+    if value.get(key) != expected_value:
+        raise SystemExit(f"captured market evidence {key} mismatch")
+if value.get("market_proposal_status") not in ("READY", "BLOCKED"):
+    raise SystemExit("captured market evidence proposal status is invalid")
+if re.fullmatch(r"[0-9a-f]{128}", str(value.get("signature_hex"))) is None:
+    raise SystemExit("captured market evidence signature is invalid")
+PY
+  pending_observation="$(mktemp "$observation_dir/.observation.pending.XXXXXX")"
+  install -m 0600 "$evidence" "$pending_observation"
+  mv "$pending_observation" "$retained_evidence"
+  pending_observation=""
+}
+
 execute_deterministic_order_once() {
   local directory="$1"
   require_expected_runner_key_id
@@ -1974,19 +2159,46 @@ execute_deterministic_order_once() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
-  local work
+  local work pending_observation
   work="$(mktemp -d /run/hivra-trading-deterministic-order.XXXXXX)"
-  trap "rm -rf '$work'; rm -f '$lock_path'" EXIT INT TERM
+  pending_observation=""
+  trap '
+    rm -rf "$work"
+    [ -z "$pending_observation" ] || rm -f "$pending_observation"
+    rm -f "$lock_path"
+  ' EXIT INT TERM
   mkdir "$work/verified"
   verify_remote_mandate_artifact \
     "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
   [ "$(cat "$work/verified/operation-kind")" = "one_deterministic_order" ] ||
     die "deterministic order authority kind mismatch"
+  require_remote_mandate_execution_eligible "$work/verified" ||
+    die "deterministic order authority is not currently eligible for execution"
 
-  local evidence
-  evidence="$(find "$STATE_DIRECTORY/stream/evidence" -maxdepth 1 -type f \
-    -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.json' \
-    -print | LC_ALL=C sort | tail -1)"
+  local operation_id
+  operation_id="$(cat "$work/verified/operation-id")"
+  local observation_dir="$STATE_DIRECTORY/deterministic-observations"
+  if [ -e "$observation_dir" ] || [ -L "$observation_dir" ]; then
+    [ -d "$observation_dir" ] && [ ! -L "$observation_dir" ] ||
+      die "deterministic order refused foreign observation state"
+  else
+    install -d -m 0700 "$observation_dir"
+  fi
+  local retained_evidence="$observation_dir/$operation_id.json"
+  [ -z "$(find "$observation_dir" -mindepth 1 -maxdepth 1 ! -name "$operation_id.json" -print -quit)" ] ||
+    die "deterministic order found conflicting observation state"
+  if [ -e "$retained_evidence" ] || [ -L "$retained_evidence" ]; then
+    [ -f "$retained_evidence" ] && [ ! -L "$retained_evidence" ] ||
+      die "deterministic order retained evidence is invalid"
+    [ "$(file_size "$retained_evidence")" -le 8192 ] ||
+      die "deterministic order retained evidence is oversized"
+  else
+    capture_deterministic_market_evidence_once \
+      "$work/verified" "$operation_id" "$retained_evidence" "$work" \
+      "$observation_dir"
+  fi
+
+  local evidence="$retained_evidence"
   [ -n "$evidence" ] && [ -f "$evidence" ] && [ ! -L "$evidence" ] ||
     die "deterministic order requires one committed market evidence"
   [ "$(file_size "$evidence")" -le 8192 ] ||
@@ -2008,9 +2220,8 @@ if not isinstance(previous, str) or re.fullmatch(r"[0-9a-f]{64}", previous) is N
 print(f"{sequence - 1} {previous}")
 PY
 )" || die "deterministic market evidence continuity is invalid"
-  local last_sequence last_hash operation_id
+  local last_sequence last_hash
   read -r last_sequence last_hash <<<"$continuity"
-  operation_id="$(cat "$work/verified/operation-id")"
   local transient_name="hivra-trading-deterministic-${operation_id:0:12}-$$"
   local credential_dir="/run/credentials/$transient_name.service"
   if ! systemd-run \
