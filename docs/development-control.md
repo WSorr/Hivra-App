@@ -9,8 +9,8 @@ market-only live decision and exposes its exact bounded `READY`/`BLOCKED`
 market proposal rather than only a reduced verdict or opaque hash. A completed
 bounded composition combines that authenticated proposal with one active
 mandate and one fresh transient account-risk snapshot into a non-authorizing order
-candidate. VPS/24/7 activation, new exchange-effect routes, plugin ABI, Core,
-Ledger, tag, Release, and 2.0 runtime work remain blocked.
+candidate. Automatic VPS/24/7 scheduling, new exchange-effect routes, plugin
+ABI, Core, Ledger, tag, Release, and 2.0 runtime work remain blocked.
 The candidate now has one fail-closed adapter into the existing exact-order
 payload shape. The remote effect journal uses that exact intent hash as its
 stable operation identity, while each admission commitment remains approval
@@ -39,7 +39,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next unit is selected automatically after bounded multi-cycle retention. | This board and the relevant product contract |
+| What is the next 1.x step? | No next unit is selected automatically after the bounded VPS session smoke. | This board and the relevant product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -50,7 +50,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Bounded VPS session implementation complete | The existing runner owner accepts one Capsule-signed v5 deterministic session, derives serial child operation ids, and advances one atomic restart-safe session journal after immutable cycle results. The existing effect owner and v4 compatibility remain unchanged. | Focused/session negative vectors, runner self-tests, parity gates, full automated checks, and protected PR pass. No automatic effect scheduler, VPS mutation, plugin ABI, Core, Ledger, or new provider route is included. | After merge, prove one authorized session cycle and restart/replay on the prepared VPS before selecting automatic scheduling. |
+| **1.x maintained runtime** | Bounded VPS session merge-SHA smoke complete | Merge SHA `5e2df39` accepted one Capsule-signed TEST session on the prepared VPS, derived two serial child operation ids across separate processes, retained both blocked results, preserved `consumed_effects=0`, and rejected a third process before its signed cadence. Exact uninstall removed runner, credential, authority, and state while the website and existing Amnezia containers remained active. Evidence is retained outside Git under `/Volumes/Dev/projects/hivra-artifacts/trading-bounded-session-5e2df39-20260823T093246Z`. | Focused/session negative vectors, runner self-tests, parity gates, full automated checks, protected PR/post-merge gates, exact merge-SHA VPS admission, restart/cadence evidence, and cleanup pass. No automatic effect scheduler, plugin ABI, Core, Ledger, or new provider route is included. | No next unit is selected. Before automatic scheduling, explicitly select user-controlled effect-budget and stop/revocation UX plus unattended recovery; the current UI hard-codes `max_effects=32` and is not acceptable as an implicit 24/7 authority choice. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
