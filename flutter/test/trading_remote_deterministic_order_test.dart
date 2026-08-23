@@ -73,6 +73,29 @@ void main() {
     expect(result['effect'], isFalse);
     expect(requests.where((request) => request.method == 'POST'), isEmpty);
   });
+
+  test('bounded session derives one exact child operation', () async {
+    final fixture = await _fixture(sessionCycleIndex: 3);
+    addTearDown(fixture.dispose);
+    final requests = <BingxHttpRequest>[];
+
+    final result = jsonDecode(
+      await runOneDeterministicOrder(
+        options: fixture.options,
+        runnerSeedBytes: fixture.runnerSeed,
+        executeExactOrder: runAuthorizedExactOrder,
+        requestSender: (request) async {
+          requests.add(request);
+          return _providerResponse(request);
+        },
+        nowUtc: () => fixture.now,
+      ),
+    );
+
+    expect(result['state'], 'succeeded');
+    expect(result['operation_id'], fixture.admissionOperationId);
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+  });
 }
 
 BingxHttpResponse _providerResponse(BingxHttpRequest request) {
@@ -100,7 +123,7 @@ Future<
     Future<void> Function() dispose,
   })
 >
-_fixture() async {
+_fixture({int? sessionCycleIndex}) async {
   final directory = await Directory.systemTemp.createTemp(
     'hivra-deterministic-cycle.',
   );
@@ -139,24 +162,29 @@ _fixture() async {
     'stop_loss_percent': 5,
     'minimum_risk_reward': 2,
   };
-  final unsignedAdmission =
-      BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
-        mandate: mandate,
-        runnerKeyId: runnerKeyId,
-        strategyPolicy: policy,
-        signCommitment: (_) => '0' * 128,
-      )!;
+  BingxFuturesRemoteMandateAdmission issue(String? Function(String) signer) =>
+      sessionCycleIndex == null
+          ? BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
+            mandate: mandate,
+            runnerKeyId: runnerKeyId,
+            strategyPolicy: policy,
+            signCommitment: signer,
+          )!
+          : BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+            mandate: mandate,
+            runnerKeyId: runnerKeyId,
+            strategyPolicy: policy,
+            startsAtUtc: now,
+            intervalSeconds: 300,
+            maxCycles: 12,
+            signCommitment: signer,
+          )!;
+  final unsignedAdmission = issue((_) => '0' * 128);
   final admissionSignature = await Ed25519().sign(
     _decodeHex(unsignedAdmission.commitmentHashHex),
     keyPair: capsuleKeyPair,
   );
-  final admission =
-      BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
-        mandate: mandate,
-        runnerKeyId: runnerKeyId,
-        strategyPolicy: policy,
-        signCommitment: (_) => _hex(admissionSignature.bytes),
-      )!;
+  final admission = issue((_) => _hex(admissionSignature.bytes));
   final admissionFile = File('${directory.path}/admission.json');
   await admissionFile.writeAsString(admission.canonicalJson, flush: true);
 
@@ -256,7 +284,8 @@ _fixture() async {
     directory: directory,
     runnerSeed: runnerSeed,
     now: now,
-    admissionOperationId: admission.operationId,
+    admissionOperationId:
+        admission.deterministicCycleOperationId(sessionCycleIndex ?? 0)!,
     options: <String, String>{
       'mode': deterministicOrderMode,
       'runner-seed-file': seedFile.path,
@@ -266,6 +295,8 @@ _fixture() async {
       'deterministic-state-home': '${directory.path}/state',
       'last-accepted-sequence': '0',
       'last-accepted-evidence-hash': _zeroHash,
+      if (sessionCycleIndex != null)
+        'session-cycle-index': sessionCycleIndex.toString(),
     },
     dispose: () => directory.delete(recursive: true),
   );

@@ -15,15 +15,19 @@ The candidate now has one fail-closed adapter into the existing exact-order
 payload shape. The remote effect journal uses that exact intent hash as its
 stable operation identity, while each admission commitment remains approval
 evidence; renewing authority cannot create a second effect for the same intent.
-Each bounded admission can authorize exactly one deterministic remote cycle:
+Compatibility admissions authorize exactly one deterministic remote cycle.
+A bounded v5 session can authorize a signed sequence of serial cycles with an
+exact start, cadence, cycle cap, and the existing mandate effect cap:
 fresh signed market evidence plus fresh complete exchange risk and contract
-rules compose one order through the existing candidate owner and consume the
-admission commitment through the existing effect journal. Completed cycles
+rules compose one order through the existing candidate owner and consume a
+cycle identity derived from the session commitment through the existing effect
+journal. Completed cycles
 retain immutable operation-scoped observation and result evidence. A different
 admission may replace the active slot only after the retained cycle has a valid
-terminal result; exact historical replay returns that result without another
-effect. Both histories fail closed at 4096 records. No admission is issued
-automatically and no continuous scheduler is added.
+terminal result or the retained session is terminal; exact replay returns the
+retained result without another effect. Both histories fail closed at 4096
+records. No admission is issued automatically and no automatic effect scheduler
+is added.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -46,7 +50,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Bounded multi-cycle retention complete | The existing runner owner retains multiple immutable operation-scoped observations/results and rotates its one active deterministic admission only after the prior cycle is terminal. Single-use authority and exact replay remain unchanged. | Runner self-tests, parity gates, full automated checks, and protected PR pass. No scheduler, automatic admission, plugin ABI, Core, Ledger, or new provider route is included. | No next unit is selected. Checkpoint compaction and continuous scheduling require separate product and authority decisions. |
+| **1.x maintained runtime** | Bounded VPS session implementation complete | The existing runner owner accepts one Capsule-signed v5 deterministic session, derives serial child operation ids, and advances one atomic restart-safe session journal after immutable cycle results. The existing effect owner and v4 compatibility remain unchanged. | Focused/session negative vectors, runner self-tests, parity gates, full automated checks, and protected PR pass. No automatic effect scheduler, VPS mutation, plugin ABI, Core, Ledger, or new provider route is included. | After merge, prove one authorized session cycle and restart/replay on the prepared VPS before selecting automatic scheduling. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
