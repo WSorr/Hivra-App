@@ -391,6 +391,31 @@ runner_prepared_session_apply_is_fail_closed() {
     rg -q -- '--apply-prepared-session /path/to/runner-bundle' "$2"
 }
 
+runner_prepared_session_activation_is_fail_closed() {
+  local body
+  body="$(awk '
+    /^activate_prepared_session\(\) \{/ { capture = 1 }
+    capture { print }
+    capture && /^}/ { exit }
+  ' "$1")"
+  rg -q -- '--activate-prepared-session <artifact-dir>' "$1" &&
+    rg -q 'activate_prepared_session()' "$1" &&
+    printf '%s\n' "$body" | rg -q 'require_exact_installed_bundle' &&
+    printf '%s\n' "$body" | rg -q 'read_installed_runner_key_id' &&
+    printf '%s\n' "$body" | rg -q 'verify_remote_mandate_artifact' &&
+    printf '%s\n' "$body" | rg -q 'bounded_deterministic_session' &&
+    printf '%s\n' "$body" | rg -q 'require_remote_mandate_execution_eligible' &&
+    printf '%s\n' "$body" | rg -q 'refused a revoked session' &&
+    printf '%s\n' "$body" | rg -q 'require_retained_exchange_credential_binding' &&
+    printf '%s\n' "$body" | rg -q 'prepare_deterministic_session_cycle' &&
+    printf '%s\n' "$body" | rg -Fq 'activate)' &&
+    rg -q 'deterministic session has not been explicitly activated' "$1" &&
+    printf '%s\n' "$body" | rg -q 'scheduler=false effect=false' &&
+    ! printf '%s\n' "$body" | rg -q 'systemctl (enable|start)|execute_deterministic_order_once|capture_deterministic_market_evidence_once' &&
+    rg -q 'tradingPreparedSessionActivationCommand' "$2" &&
+    rg -q -- '--activate-prepared-session /path/to/runner-bundle' "$2"
+}
+
 runner_account_read_probe_is_fail_closed() {
   local pending_commit_line
   local resolution_line
@@ -894,6 +919,13 @@ else
   fail "prepared session apply lost ordering, expiry, identity, or no-activation boundaries"
 fi
 
+if runner_prepared_session_activation_is_fail_closed \
+  "$RUNNER_ARTIFACT" "$TRADING_SCREEN"; then
+  pass "prepared session activation is explicit, state-only, and scheduler/effect-free"
+else
+  fail "prepared session activation lost identity, mandate, credential, revocation, or no-effect boundaries"
+fi
+
 if runner_account_read_probe_is_fail_closed \
   "$RUNNER_ARTIFACT" "$SHADOW_PROBE" "$RUNNER_SUPERVISOR"; then
   pass "mandate-bound account read is transient, redacted, and effect-free"
@@ -995,6 +1027,7 @@ EXCHANGE_RUNNER_ACCESS_MUTATION="$(mktemp)"
 EXCHANGE_ROLLBACK_MUTATION="$(mktemp)"
 EXCHANGE_VISIBLE_KEY_MUTATION="$(mktemp)"
 PREPARED_SESSION_TIME_MUTATION="$(mktemp)"
+PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION="$(mktemp)"
 ACCOUNT_READ_TRANSIENT_MUTATION="$(mktemp)"
 ACCOUNT_READ_EFFECT_MUTATION="$(mktemp)"
 ACCOUNT_READ_RAW_OUTPUT_MUTATION="$(mktemp)"
@@ -1005,7 +1038,7 @@ LOCAL_SESSION_WIRING_MUTATION="$(mktemp)"
 LIQUIDITY_AUTHORITY_MUTATION="$(mktemp)"
 LIQUIDATION_ANCHOR_MUTATION="$(mktemp)"
 LIQUIDITY_TARGET_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -1094,6 +1127,8 @@ sed 's/IFS= read -r -s -p "BingX API key: "/IFS= read -r -p "BingX API key: "/' 
   "$RUNNER_ARTIFACT" > "$EXCHANGE_VISIBLE_KEY_MUTATION"
 sed '/require_remote_mandate_execution_eligible "$work"/d' \
   "$RUNNER_ARTIFACT" > "$PREPARED_SESSION_TIME_MUTATION"
+sed '/prepared session activation refused a revoked session/d' \
+  "$RUNNER_ARTIFACT" > "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION"
 sed 's/--wait --pipe --collect --quiet/--wait --pipe --quiet/' \
   "$RUNNER_ARTIFACT" > "$ACCOUNT_READ_TRANSIENT_MUTATION"
 sed "s/'effect': false/'effect': true/" \
@@ -1158,6 +1193,7 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_exchange_credential_is_prepared_only "$EXCHANGE_ROLLBACK_MUTATION" "$RUNNER_SUPERVISOR" && \
   ! runner_exchange_credential_is_prepared_only "$EXCHANGE_VISIBLE_KEY_MUTATION" "$RUNNER_SUPERVISOR" && \
   ! runner_prepared_session_apply_is_fail_closed "$PREPARED_SESSION_TIME_MUTATION" "$TRADING_SCREEN" && \
+  ! runner_prepared_session_activation_is_fail_closed "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$TRADING_SCREEN" && \
   ! runner_account_read_probe_is_fail_closed "$ACCOUNT_READ_TRANSIENT_MUTATION" "$SHADOW_PROBE" "$RUNNER_SUPERVISOR" && \
   ! runner_account_read_probe_is_fail_closed "$RUNNER_ARTIFACT" "$ACCOUNT_READ_EFFECT_MUTATION" "$RUNNER_SUPERVISOR" && \
   ! runner_account_read_probe_is_fail_closed "$RUNNER_ARTIFACT" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$RUNNER_SUPERVISOR" && \

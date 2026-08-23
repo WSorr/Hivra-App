@@ -22,6 +22,12 @@ void main() {
       ),
       contains("--mandate-artifact '/path/to/signed-session.json'"),
     );
+    expect(
+      tradingPreparedSessionActivationCommand(runnerKeyId: runner),
+      'sudo ./public_shadow_runner_artifact.sh '
+      '--activate-prepared-session /path/to/runner-bundle '
+      '--expected-runner-key-id $runner',
+    );
   });
 
   test('prepared intent outcome does not claim provider execution', () async {
