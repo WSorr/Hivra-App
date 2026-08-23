@@ -68,6 +68,7 @@ void main() {
     );
 
     expect(result['state'], 'blocked');
+    expect(result['operation_id'], fixture.admissionOperationId);
     expect(result['reason_code'], 'market_evidence_stale');
     expect(result['effect'], isFalse);
     expect(requests.where((request) => request.method == 'POST'), isEmpty);

@@ -110,7 +110,7 @@ Future<String> runOneDeterministicOrder({
     symbol: admission.mandate.symbol,
   );
   if (!rulesResult.isSuccess || rulesResult.rules == null) {
-    return _blocked('contract_rules_unavailable');
+    return _blocked(admission.operationId, 'contract_rules_unavailable');
   }
   final policy = admission.strategyPolicy!;
   final evidenceBytes = await _readBoundedFile(
@@ -141,10 +141,12 @@ Future<String> runOneDeterministicOrder({
     minimumRiskReward: policy['minimum_risk_reward'] as double,
   );
   if (candidate.status != BingxFuturesRemoteOrderCandidateStatus.ready) {
-    return _blocked(candidate.reasonCode);
+    return _blocked(admission.operationId, candidate.reasonCode);
   }
   final intent = candidate.toExactOrderIntent(nowUtc: now);
-  if (intent == null) return _blocked('order_candidate_invalid');
+  if (intent == null) {
+    return _blocked(admission.operationId, 'order_candidate_invalid');
+  }
   return executeExactOrder(
     admission: admission,
     exactOrder: intent.toExactOrderJson(testOrder: admission.mandate.testOrder),
@@ -157,12 +159,14 @@ Future<String> runOneDeterministicOrder({
   );
 }
 
-String _blocked(String reasonCode) => jsonEncode(<String, dynamic>{
-  'contract_version': 'hivra-trading-deterministic-cycle-evidence-v1',
-  'state': 'blocked',
-  'reason_code': reasonCode,
-  'effect': false,
-});
+String _blocked(String operationId, String reasonCode) =>
+    jsonEncode(<String, dynamic>{
+      'contract_version': 'hivra-trading-deterministic-cycle-evidence-v1',
+      'operation_id': operationId,
+      'state': 'blocked',
+      'reason_code': reasonCode,
+      'effect': false,
+    });
 
 Future<List<int>> _readBoundedFile(String path, int maxBytes) async {
   final file = File(path);

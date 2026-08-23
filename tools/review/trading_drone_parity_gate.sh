@@ -471,6 +471,7 @@ runner_deterministic_order_is_single_use() {
     rg -q 'deterministic-observations' "$1" &&
     rg -q 'deterministic-results' "$1" &&
     rg -q 'validate_deterministic_cycle_outcome' "$1" &&
+    rg -Fq 'value.get("operation_id") != expected_operation' "$1" &&
     rg -q 'effect_repeated=false' "$1" &&
     rg -q 'mandate-symbol' "$1" &&
     rg -q 'deterministic observation requires an inactive public-shadow runner' "$1" &&
@@ -479,7 +480,14 @@ runner_deterministic_order_is_single_use() {
     rg -q 'deterministic public-market observation failed' "$1" &&
     rg -q '"market_symbol": symbol' "$1" &&
     rg -q 'deterministic public-market observation retained its transient unit' "$1" &&
-    rg -q 'deterministic order found conflicting observation state' "$1" &&
+    rg -q 'DETERMINISTIC_HISTORY_LIMIT="4096"' "$1" &&
+    rg -q 'validate_deterministic_operation_store' "$1" &&
+    rg -q 'rotated completed deterministic mandate' "$1" &&
+    rg -q 'historical deterministic mandate replay is idempotent' "$1" &&
+    rg -q 'mandate admission refused rotation before the retained cycle completed' "$1" &&
+    rg -q 'bounded multi-cycle operation history' "$1" &&
+    ! rg -q 'deterministic order found conflicting observation state' "$1" &&
+    ! rg -q 'deterministic order found conflicting result state' "$1" &&
     ! sed -n '/capture_deterministic_market_evidence_once()/,/^}/p' "$1" | rg -q 'bingx-exchange|EFFECT_BINARY_INSTALL_PATH' &&
     [ -n "$observation_line" ] && [ -n "$effect_line" ] &&
     [ "$observation_line" -lt "$effect_line" ] &&
