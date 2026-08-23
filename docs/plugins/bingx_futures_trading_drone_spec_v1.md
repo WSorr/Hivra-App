@@ -1153,6 +1153,19 @@ still fails closed against the retained signed state. Pause disables and stops
 the service without mutating the signed session. Uninstall refuses an enabled
 service. No secret is stored in the unit, command line, environment, or log.
 
+User-facing VPS bootstrap is a required later 1.x product unit, not part of the
+current service implementation. It must replace manual terminal assembly with
+one reviewed setup flow that accepts a host, SSH port, and account name;
+verifies and pins the host fingerprint; creates a dedicated SSH key; uses a
+password, when unavoidable, only for the initial connection; and never stores
+that password. Before applying changes it must show the exact installation
+plan. Each `(Capsule, exchange account)` binding must own a distinct runner
+identity, encrypted credential, state directory, lock, and systemd instance.
+Status, pause, update, recovery, and exact uninstall must be available without
+exposing keys or requiring the user to reconstruct filesystem paths. Shared
+credentials, implicit root access, one global runner state, and silent host-key
+replacement are forbidden.
+
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one
 `trading-remote-session-revocation-v1` artifact bound to that session operation

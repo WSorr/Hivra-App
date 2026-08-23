@@ -65,7 +65,7 @@ then open only the contract and tests for the selected product outcome.
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
 | **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
-| **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, and further Moltbook authority remain unselected. | Each requires its own approved contract and capability-closure decision. |
+| **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, further Moltbook authority, and user-facing Storage & Recovery observability with one-time VPS bootstrap and multi-account runner isolation remain unselected. | Each requires its own approved contract and capability-closure decision. |
 
 Unchecked boxes in reusable release/smoke checklists are execution templates,
 not automatically active debt. Historical pass numbering creates no future
