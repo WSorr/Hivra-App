@@ -24,6 +24,7 @@ EXCHANGE_CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-
 STATE_DIRECTORY="/var/lib/hivra-trading-public-shadow"
 ACCOUNT_READ_SCOPE_WIRE="balance,positions,open_orders"
 ACCOUNT_READ_MAX_USES="1"
+DETERMINISTIC_HISTORY_LIMIT="4096"
 MODE=""
 ARTIFACT_DIR=""
 TARGET_OS=""
@@ -130,6 +131,83 @@ exchange_credential_matches_account_binding() {
   local expected_account_hash="$2"
   [ "$(printf '%s' "$credential_json" | exchange_credential_account_hash)" = \
     "$expected_account_hash" ]
+}
+
+validate_deterministic_operation_store() {
+  local directory="$1"
+  local operation_id="$2"
+  local limit="${3:-$DETERMINISTIC_HISTORY_LIMIT}"
+  local max_file_bytes="${4:-8192}"
+  python3 - "$directory" "$operation_id" "$limit" "$max_file_bytes" <<'PY'
+import os
+import re
+import stat
+import sys
+
+directory, operation_id, raw_limit, raw_max_file_bytes = sys.argv[1:]
+if re.fullmatch(r"[0-9a-f]{64}", operation_id) is None:
+    raise SystemExit("deterministic operation store received an invalid operation id")
+try:
+    limit = int(raw_limit)
+    max_file_bytes = int(raw_max_file_bytes)
+except ValueError:
+    raise SystemExit("deterministic operation store bound is invalid")
+if limit < 1 or max_file_bytes < 1:
+    raise SystemExit("deterministic operation store limit is invalid")
+
+entries = list(os.scandir(directory))
+for entry in entries:
+    if re.fullmatch(r"[0-9a-f]{64}\.json", entry.name) is None:
+        raise SystemExit("deterministic operation store contains foreign state")
+    metadata = entry.stat(follow_symlinks=False)
+    mode = metadata.st_mode
+    if not stat.S_ISREG(mode) or entry.is_symlink():
+        raise SystemExit("deterministic operation store contains non-regular state")
+    if metadata.st_size < 2 or metadata.st_size > max_file_bytes:
+        raise SystemExit("deterministic operation store contains unbounded state")
+
+target = f"{operation_id}.json"
+if len(entries) > limit or (len(entries) == limit and target not in {entry.name for entry in entries}):
+    raise SystemExit("deterministic operation store reached its bounded capacity")
+PY
+}
+
+ensure_private_operation_store() {
+  local directory="$1"
+  if [ -e "$directory" ] || [ -L "$directory" ]; then
+    [ -d "$directory" ] && [ ! -L "$directory" ] ||
+      die "deterministic operation store is not one private directory"
+  else
+    install -d -m 0700 "$directory"
+  fi
+}
+
+retain_completed_deterministic_mandate() {
+  local incoming_artifact="$1"
+  local target="$2"
+  local incoming_operation="$3"
+  local retained_operation="$4"
+  local result_dir="$5"
+  local incoming_result="$result_dir/$incoming_operation.json"
+  if [ -f "$incoming_result" ] && [ ! -L "$incoming_result" ]; then
+    validate_deterministic_cycle_outcome "$incoming_result" "$incoming_operation" >/dev/null ||
+      die "mandate admission refused invalid retained deterministic result"
+    echo "historical:$incoming_operation"
+    return
+  fi
+
+  [ -n "$retained_operation" ] ||
+    die "mandate admission lost the retained deterministic operation"
+  local retained_result="$result_dir/$retained_operation.json"
+  [ -f "$retained_result" ] && [ ! -L "$retained_result" ] ||
+    die "mandate admission refused rotation before the retained cycle completed"
+  validate_deterministic_cycle_outcome "$retained_result" "$retained_operation" >/dev/null ||
+    die "mandate admission refused rotation after an invalid retained result"
+  local replacement
+  replacement="$(mktemp "$(dirname "$target")/.deterministic-order.pending.XXXXXX")"
+  install -m 0600 "$incoming_artifact" "$replacement"
+  mv "$replacement" "$target"
+  echo "rotated:$retained_operation:$incoming_operation"
 }
 
 sha256_stdin() {
@@ -1320,9 +1398,42 @@ admit_remote_mandate() {
   if [ -e "$target" ] || [ -L "$target" ]; then
     [ -f "$target" ] && [ ! -L "$target" ] ||
       die "mandate admission refused foreign retained state"
-    cmp -s "$work/input.json" "$target" ||
+    if cmp -s "$work/input.json" "$target"; then
+      echo "PASS trading-runner-artifact: exact remote mandate replay is idempotent"
+    elif [ "$operation_kind" = "one_deterministic_order" ]; then
+      local incoming_operation retained_operation result_dir observation_dir retained_result
+      incoming_operation="$(cat "$work/operation-id")"
+      result_dir="$STATE_DIRECTORY/deterministic-results"
+      observation_dir="$STATE_DIRECTORY/deterministic-observations"
+      ensure_private_operation_store "$result_dir"
+      ensure_private_operation_store "$observation_dir"
+      validate_deterministic_operation_store \
+        "$result_dir" "$incoming_operation" "$DETERMINISTIC_HISTORY_LIMIT" 2048 ||
+        die "mandate admission refused invalid deterministic result history"
+      validate_deterministic_operation_store "$observation_dir" "$incoming_operation" ||
+        die "mandate admission refused invalid deterministic observation history"
+
+      retained_result="$result_dir/$incoming_operation.json"
+      if [ -f "$retained_result" ] && [ ! -L "$retained_result" ]; then
+        retain_completed_deterministic_mandate \
+          "$work/input.json" "$target" "$incoming_operation" "" "$result_dir" \
+          >/dev/null
+        echo "PASS trading-runner-artifact: historical deterministic mandate replay is idempotent operation_id=$incoming_operation"
+      else
+        mkdir "$work/retained"
+        verify_remote_mandate_artifact \
+          "$target" "$EXPECTED_RUNNER_KEY_ID" "$work/retained"
+        [ "$(cat "$work/retained/operation-kind")" = "one_deterministic_order" ] ||
+          die "mandate admission refused a deterministic mandate over another authority kind"
+        retained_operation="$(cat "$work/retained/operation-id")"
+        retain_completed_deterministic_mandate \
+          "$work/input.json" "$target" "$incoming_operation" \
+          "$retained_operation" "$result_dir" >/dev/null
+        echo "PASS trading-runner-artifact: rotated completed deterministic mandate previous_operation_id=$retained_operation operation_id=$incoming_operation effect=false"
+      fi
+    else
       die "mandate admission refused conflicting retained authority"
-    echo "PASS trading-runner-artifact: exact remote mandate replay is idempotent"
+    fi
   else
     local pending
     pending="$(mktemp "$target_dir/.prepared.pending.XXXXXX")"
@@ -1904,11 +2015,12 @@ if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
     raise SystemExit("deterministic cycle outcome bytes are not canonical")
 contract = value.get("contract_version")
 if contract == "hivra-trading-deterministic-cycle-evidence-v1":
-    if list(value) != ["contract_version", "state", "reason_code", "effect"]:
+    if list(value) != ["contract_version", "operation_id", "state", "reason_code", "effect"]:
         raise SystemExit("deterministic blocked outcome shape is invalid")
     reason = value.get("reason_code")
     if (
-        value.get("state") != "blocked"
+        value.get("operation_id") != expected_operation
+        or value.get("state") != "blocked"
         or not isinstance(reason, str)
         or re.fullmatch(r"[a-z0-9_]{1,96}", reason) is None
         or value.get("effect") is not False
@@ -2241,15 +2353,11 @@ execute_deterministic_order_once() {
   local operation_id
   operation_id="$(cat "$work/verified/operation-id")"
   local result_dir="$STATE_DIRECTORY/deterministic-results"
-  if [ -e "$result_dir" ] || [ -L "$result_dir" ]; then
-    [ -d "$result_dir" ] && [ ! -L "$result_dir" ] ||
-      die "deterministic order refused foreign result state"
-  else
-    install -d -m 0700 "$result_dir"
-  fi
+  ensure_private_operation_store "$result_dir"
+  validate_deterministic_operation_store \
+    "$result_dir" "$operation_id" "$DETERMINISTIC_HISTORY_LIMIT" 2048 ||
+    die "deterministic order refused invalid or full result history"
   local retained_result="$result_dir/$operation_id.json"
-  [ -z "$(find "$result_dir" -mindepth 1 -maxdepth 1 ! -name "$operation_id.json" -print -quit)" ] ||
-    die "deterministic order found conflicting result state"
   if [ -e "$retained_result" ] || [ -L "$retained_result" ]; then
     [ -f "$retained_result" ] && [ ! -L "$retained_result" ] ||
       die "deterministic order retained result is invalid"
@@ -2267,15 +2375,10 @@ execute_deterministic_order_once() {
     die "deterministic order authority is not currently eligible for execution"
 
   local observation_dir="$STATE_DIRECTORY/deterministic-observations"
-  if [ -e "$observation_dir" ] || [ -L "$observation_dir" ]; then
-    [ -d "$observation_dir" ] && [ ! -L "$observation_dir" ] ||
-      die "deterministic order refused foreign observation state"
-  else
-    install -d -m 0700 "$observation_dir"
-  fi
+  ensure_private_operation_store "$observation_dir"
+  validate_deterministic_operation_store "$observation_dir" "$operation_id" ||
+    die "deterministic order refused invalid or full observation history"
   local retained_evidence="$observation_dir/$operation_id.json"
-  [ -z "$(find "$observation_dir" -mindepth 1 -maxdepth 1 ! -name "$operation_id.json" -print -quit)" ] ||
-    die "deterministic order found conflicting observation state"
   if [ -e "$retained_evidence" ] || [ -L "$retained_evidence" ]; then
     [ -f "$retained_evidence" ] && [ ! -L "$retained_evidence" ] ||
       die "deterministic order retained evidence is invalid"
@@ -2651,6 +2754,71 @@ self_test() {
   local root
   root="$(mktemp -d)"
   trap "rm -rf '$root'" EXIT
+
+  local operation_store="$root/deterministic-operation-store"
+  local operation_a operation_b operation_c
+  operation_a="$(printf 'operation-a' | sha256_stdin)"
+  operation_b="$(printf 'operation-b' | sha256_stdin)"
+  operation_c="$(printf 'operation-c' | sha256_stdin)"
+  mkdir "$operation_store"
+  printf '{}\n' >"$operation_store/$operation_a.json"
+  validate_deterministic_operation_store "$operation_store" "$operation_b" 2
+  printf '{}\n' >"$operation_store/$operation_b.json"
+  validate_deterministic_operation_store "$operation_store" "$operation_a" 2
+  if (validate_deterministic_operation_store \
+    "$operation_store" "$operation_c" 2) >/dev/null 2>&1; then
+    die "self-test allowed deterministic history beyond its bounded capacity"
+  fi
+  printf '{}\n' >"$operation_store/foreign.json"
+  if (validate_deterministic_operation_store \
+    "$operation_store" "$operation_a" 3) >/dev/null 2>&1; then
+    die "self-test accepted foreign deterministic history state"
+  fi
+  rm "$operation_store/foreign.json"
+  printf 'oversized\n' >"$operation_store/$operation_a.json"
+  if (validate_deterministic_operation_store \
+    "$operation_store" "$operation_a" 2 2) >/dev/null 2>&1; then
+    die "self-test accepted oversized deterministic history state"
+  fi
+  printf '{}\n' >"$operation_store/$operation_a.json"
+  echo "PASS trading-runner-artifact: bounded multi-cycle operation history"
+
+  local lifecycle_store="$root/deterministic-lifecycle-results"
+  local lifecycle_target="$root/deterministic-order.v4.json"
+  local lifecycle_incoming="$root/deterministic-order-next.v4.json"
+  mkdir "$lifecycle_store"
+  printf 'mandate-a\n' >"$lifecycle_target"
+  printf 'mandate-b\n' >"$lifecycle_incoming"
+  printf '%s\n' \
+    "{\"contract_version\":\"hivra-trading-deterministic-cycle-evidence-v1\",\"operation_id\":\"$operation_a\",\"state\":\"blocked\",\"reason_code\":\"market_evidence_stale\",\"effect\":false}" \
+    >"$lifecycle_store/$operation_a.json"
+  [ "$(retain_completed_deterministic_mandate \
+    "$lifecycle_incoming" "$lifecycle_target" "$operation_b" \
+    "$operation_a" "$lifecycle_store")" = \
+    "rotated:$operation_a:$operation_b" ] ||
+    die "self-test did not rotate a completed deterministic mandate"
+  cmp -s "$lifecycle_incoming" "$lifecycle_target" ||
+    die "self-test did not retain the next deterministic mandate"
+  printf '%s\n' \
+    "{\"contract_version\":\"hivra-trading-deterministic-cycle-evidence-v1\",\"operation_id\":\"$operation_b\",\"state\":\"blocked\",\"reason_code\":\"market_evidence_stale\",\"effect\":false}" \
+    >"$lifecycle_store/$operation_b.json"
+  printf 'historical-mandate-a\n' >"$lifecycle_incoming"
+  [ "$(retain_completed_deterministic_mandate \
+    "$lifecycle_incoming" "$lifecycle_target" "$operation_a" "" \
+    "$lifecycle_store")" = "historical:$operation_a" ] ||
+    die "self-test did not recognize historical deterministic replay"
+  printf 'mandate-b\n' | cmp -s - "$lifecycle_target" ||
+    die "self-test changed the active mandate during historical replay"
+  rm "$lifecycle_store/$operation_b.json"
+  printf 'mandate-c\n' >"$lifecycle_incoming"
+  if (retain_completed_deterministic_mandate \
+    "$lifecycle_incoming" "$lifecycle_target" "$operation_c" \
+    "$operation_b" "$lifecycle_store") >/dev/null 2>&1; then
+    die "self-test rotated an unresolved deterministic mandate"
+  fi
+  printf 'mandate-b\n' | cmp -s - "$lifecycle_target" ||
+    die "self-test changed the active mandate after refused rotation"
+  echo "PASS trading-runner-artifact: deterministic mandate lifecycle"
   local artifact="$root/artifact"
   mkdir "$artifact"
   cp /bin/echo "$artifact/$BINARY_NAME"
@@ -2710,12 +2878,17 @@ self_test() {
   deterministic_operation_id="$(printf 'deterministic-outcome' | sha256_stdin)"
   deterministic_outcome="$root/deterministic-blocked.json"
   printf '%s\n' \
-    '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","state":"blocked","reason_code":"account_risk_incomplete","effect":false}' \
+    "{\"contract_version\":\"hivra-trading-deterministic-cycle-evidence-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"blocked\",\"reason_code\":\"account_risk_incomplete\",\"effect\":false}" \
     >"$deterministic_outcome"
   [ "$(validate_deterministic_cycle_outcome \
     "$deterministic_outcome" "$deterministic_operation_id")" = \
     "blocked:account_risk_incomplete" ] ||
     die "self-test rejected a canonical deterministic blocked outcome"
+  if validate_deterministic_cycle_outcome \
+    "$deterministic_outcome" "$(printf 'foreign-operation' | sha256_stdin)" \
+    >/dev/null 2>&1; then
+    die "self-test accepted a blocked deterministic outcome for another operation"
+  fi
   printf '%s\n' \
     "{\"contract_version\":\"hivra-trading-exact-order-evidence-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"succeeded\",\"attempt_count\":1,\"provider_reference_id\":\"test-endpoint\",\"receipt_evidence_hash_hex\":\"$(printf 'receipt' | sha256_stdin)\",\"test_order\":true}" \
     >"$root/deterministic-effect.json"
@@ -2729,7 +2902,7 @@ self_test() {
     die "self-test accepted a deterministic outcome for another operation"
   fi
   printf '%s\n' \
-    '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","state":"blocked","reason_code":"Account Risk","effect":false}' \
+    "{\"contract_version\":\"hivra-trading-deterministic-cycle-evidence-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"blocked\",\"reason_code\":\"Account Risk\",\"effect\":false}" \
     >"$root/deterministic-mutated.json"
   if validate_deterministic_cycle_outcome \
     "$root/deterministic-mutated.json" "$deterministic_operation_id" \

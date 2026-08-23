@@ -15,11 +15,15 @@ The candidate now has one fail-closed adapter into the existing exact-order
 payload shape. The remote effect journal uses that exact intent hash as its
 stable operation identity, while each admission commitment remains approval
 evidence; renewing authority cannot create a second effect for the same intent.
-One additional bounded admission can authorize exactly one deterministic
-remote cycle: fresh signed market evidence plus fresh complete exchange risk
-and contract rules compose one order through the existing candidate owner and
-consume the admission commitment through the existing effect journal. No
-admission is issued automatically and no continuous scheduler is added.
+Each bounded admission can authorize exactly one deterministic remote cycle:
+fresh signed market evidence plus fresh complete exchange risk and contract
+rules compose one order through the existing candidate owner and consume the
+admission commitment through the existing effect journal. Completed cycles
+retain immutable operation-scoped observation and result evidence. A different
+admission may replace the active slot only after the retained cycle has a valid
+terminal result; exact historical replay returns that result without another
+effect. Both histories fail closed at 4096 records. No admission is issued
+automatically and no continuous scheduler is added.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -31,7 +35,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete the bounded Trading remote-cycle authorization UX: one visible use case, runner public-key import, strict identity validation, and packaged macOS smoke. | This board and the relevant product contract |
+| What is the next 1.x step? | No next unit is selected automatically after bounded multi-cycle retention. | This board and the relevant product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -42,7 +46,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Remote-cycle authorization UX consolidation in progress | The existing Trading Drone screen exposes one deterministic remote-cycle use case. It loads the runner public-key file or accepts one validated runner id, then signs and atomically exports the existing single-use admission. Legacy mandate and exact-order export buttons are removed without adding a new authority or effect route. | Focused identity vectors, Flutter analysis, trading parity gates, full automated checks, and packaged macOS smoke must pass. No continuous scheduler, automatic renewal, plugin ABI, or new provider route is included. | Design secure runner-bound exchange credential provisioning as a separate unit. A product flow must not send raw credentials to the VPS or embed SSH authority in Flutter; the existing terminal path remains operator-only until an encrypted fail-closed protocol is approved. |
+| **1.x maintained runtime** | Bounded multi-cycle retention complete | The existing runner owner retains multiple immutable operation-scoped observations/results and rotates its one active deterministic admission only after the prior cycle is terminal. Single-use authority and exact replay remain unchanged. | Runner self-tests, parity gates, full automated checks, and protected PR pass. No scheduler, automatic admission, plugin ABI, Core, Ledger, or new provider route is included. | No next unit is selected. Checkpoint compaction and continuous scheduling require separate product and authority decisions. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
