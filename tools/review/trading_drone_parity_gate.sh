@@ -125,7 +125,7 @@ liquidity_sequence_is_canonical() {
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
     rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
-    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-exact-and-deterministic-order"' "$1" &&
+    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-bounded-account-read-exact-order-and-deterministic-session"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
@@ -460,7 +460,7 @@ runner_exact_order_is_fail_closed() {
     "$artifact" --self-test >/dev/null
 }
 
-runner_deterministic_order_is_single_use() {
+runner_deterministic_order_is_bounded_session() {
   local observation_line
   local effect_line
   observation_line="$(rg -n 'capture_deterministic_market_evidence_once' "$1" | tail -1 | cut -d: -f1)"
@@ -470,6 +470,11 @@ runner_deterministic_order_is_single_use() {
     rg -q 'deterministic-order.v4.json' "$1" &&
     rg -q 'deterministic-observations' "$1" &&
     rg -q 'deterministic-results' "$1" &&
+    rg -q 'deterministic-session.v1.json' "$1" &&
+    rg -q 'prepare_deterministic_session_cycle' "$1" &&
+    rg -q 'advance_deterministic_session_cycle' "$1" &&
+    rg -q 'derive_deterministic_session_cycle_operation_id' "$1" &&
+    rg -q 'bounded restart-safe deterministic session' "$1" &&
     rg -q 'validate_deterministic_cycle_outcome' "$1" &&
     rg -Fq 'value.get("operation_id") != expected_operation' "$1" &&
     rg -q 'effect_repeated=false' "$1" &&
@@ -497,8 +502,10 @@ runner_deterministic_order_is_single_use() {
     rg -q 'runOneDeterministicOrder' "$2" &&
     rg -q 'BingxFuturesRemoteOrderCandidateService' "$2" &&
     rg -q 'BingxFuturesExchangeRiskInputService' "$2" &&
-    rg -q 'effectOperationId: admission.operationId' "$2" &&
+    rg -q 'effectOperationId: cycleOperationId' "$2" &&
     rg -q 'isDeterministicOrder' "$3" &&
+    rg -q 'isDeterministicSession' "$3" &&
+    rg -q "deterministicSessionOperationKind =" "$3" &&
     rg -q "deterministicOrderOperationKind =" "$3" &&
     rg -q "deterministicRunnerBuildId =" "$3" &&
     rg -q "'systemd-public-shadow-v1'" "$3" &&
@@ -506,8 +513,8 @@ runner_deterministic_order_is_single_use() {
     rg -q "deterministicHostAbi = 'wasm32-wasi-preview1'" "$3" &&
     rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
     rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
-    rg -q 'Authorize Remote Cycle' "$5" &&
-    rg -q '_exportSignedRemoteDeterministicCycle' "$5" &&
+    rg -q 'Authorize VPS Session' "$5" &&
+    rg -q '_exportSignedRemoteDeterministicSession' "$5" &&
     rg -q -- '--runner-build-id systemd-public-shadow-v1' "$6" &&
     rg -q -- '--plugin-version 0.2.3' "$6" &&
     rg -q -- '--package-digest-hex 2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889' "$6" &&
@@ -861,12 +868,12 @@ else
   fail "exact remote order lost signed binding, durable handoff, or no-duplicate reconciliation"
 fi
 
-if runner_deterministic_order_is_single_use \
+if runner_deterministic_order_is_bounded_session \
   "$RUNNER_ARTIFACT" "$DETERMINISTIC_ORDER_PROBE" "$TRADING_MODELS" \
   "$DETERMINISTIC_ORDER_TEST" "$TRADING_SCREEN" "$RUNNER_SUPERVISOR"; then
-  pass "deterministic remote cycle composes fresh inputs into one existing effect operation"
+  pass "bounded deterministic session derives serial cycle identities into the existing effect operation"
 else
-  fail "deterministic remote cycle lost policy binding, freshness, or single-use effect identity"
+  fail "bounded deterministic session lost policy binding, cadence, replay, or effect bounds"
 fi
 
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then

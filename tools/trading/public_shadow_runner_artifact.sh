@@ -13,7 +13,7 @@ EFFECT_BINARY_NAME="hivra-trading-exact-order-runner"
 UNIT_NAME="hivra-trading-public-shadow-runner.service"
 MANIFEST_NAME="ARTIFACT-MANIFEST.v1"
 SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"
-AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-exact-and-deterministic-order"
+AUTHORITY_PROFILE="public-market-shadow-plus-bounded-account-read-exact-order-and-deterministic-session"
 BUNDLE_INSTALL_PATH="/opt/hivra/trading-public-shadow"
 BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
 EFFECT_BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$EFFECT_BINARY_NAME"
@@ -89,6 +89,7 @@ EOF
 
 canonicalize_exchange_credential_input() {
   python3 -c '
+import hashlib
 import json
 import re
 import sys
@@ -208,6 +209,254 @@ retain_completed_deterministic_mandate() {
   install -m 0600 "$incoming_artifact" "$replacement"
   mv "$replacement" "$target"
   echo "rotated:$retained_operation:$incoming_operation"
+}
+
+derive_deterministic_session_cycle_operation_id() {
+  local session_operation_id="$1"
+  local cycle_index="$2"
+  python3 - "$session_operation_id" "$cycle_index" <<'PY'
+import hashlib
+import json
+import re
+import sys
+
+session_operation_id, raw_cycle_index = sys.argv[1:]
+if re.fullmatch(r"[0-9a-f]{64}", session_operation_id) is None:
+    raise SystemExit("deterministic session id is invalid")
+try:
+    cycle_index = int(raw_cycle_index)
+except ValueError:
+    raise SystemExit("deterministic session cycle index is invalid")
+if cycle_index < 0 or str(cycle_index) != raw_cycle_index:
+    raise SystemExit("deterministic session cycle index is not canonical")
+semantic = {
+    "session_operation_id": session_operation_id,
+    "cycle_index": cycle_index,
+}
+sys.stdout.write(hashlib.sha256(
+    b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+    json.dumps(semantic, separators=(",", ":")).encode("utf-8")
+).hexdigest())
+PY
+}
+
+prepare_deterministic_session_cycle() {
+  local state="$1"
+  local session_operation_id="$2"
+  local max_cycles="$3"
+  local max_effects="$4"
+  local interval_seconds="$5"
+  local issued_at="$6"
+  local expires_at="$7"
+  python3 - "$state" "$session_operation_id" "$max_cycles" "$max_effects" \
+    "$interval_seconds" "$issued_at" "$expires_at" <<'PY'
+import datetime
+import hashlib
+import json
+import os
+import pathlib
+import re
+import stat
+import sys
+
+path, session_id, raw_cycles, raw_effects, raw_interval, issued_raw, expires_raw = sys.argv[1:]
+hex64 = re.compile(r"[0-9a-f]{64}")
+if hex64.fullmatch(session_id) is None:
+    raise SystemExit("deterministic session state received an invalid session id")
+try:
+    max_cycles = int(raw_cycles)
+    max_effects = int(raw_effects)
+    interval = int(raw_interval)
+except ValueError:
+    raise SystemExit("deterministic session state bounds are invalid")
+if not 1 <= max_cycles <= 288 or not 1 <= max_effects <= 256 or not 60 <= interval <= 3600:
+    raise SystemExit("deterministic session state bounds are invalid")
+
+def instant(raw):
+    if not raw.endswith("Z"):
+        raise SystemExit("deterministic session time is invalid")
+    try:
+        return datetime.datetime.fromisoformat(raw[:-1] + "+00:00")
+    except ValueError:
+        raise SystemExit("deterministic session time is invalid")
+
+issued = instant(issued_raw)
+expires = instant(expires_raw)
+state_path = pathlib.Path(path)
+def write_state(value):
+    pending = state_path.with_name(f".{state_path.name}.pending.{os.getpid()}")
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(value, separators=(",", ":")) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(pending, state_path)
+    finally:
+        if pending.exists():
+            pending.unlink()
+
+expected_keys = [
+    "contract_version", "session_operation_id", "next_cycle_index",
+    "completed_cycles", "consumed_effects", "state",
+    "last_cycle_operation_id",
+]
+if state_path.exists() or state_path.is_symlink():
+    metadata = state_path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or state_path.is_symlink() or not 2 <= metadata.st_size <= 2048:
+        raise SystemExit("deterministic session state is not one bounded regular file")
+    raw = state_path.read_bytes()
+    try:
+        text = raw.decode("utf-8")
+        value = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise SystemExit("deterministic session state is not strict JSON")
+    if not isinstance(value, dict) or list(value) != expected_keys:
+        raise SystemExit("deterministic session state shape is invalid")
+    if json.dumps(value, separators=(",", ":")) + "\n" != text:
+        raise SystemExit("deterministic session state is not canonical")
+else:
+    value = {
+        "contract_version": "hivra-trading-deterministic-session-state-v1",
+        "session_operation_id": session_id,
+        "next_cycle_index": 0,
+        "completed_cycles": 0,
+        "consumed_effects": 0,
+        "state": "active",
+        "last_cycle_operation_id": None,
+    }
+    write_state(value)
+
+if (
+    value["contract_version"] != "hivra-trading-deterministic-session-state-v1"
+    or value["session_operation_id"] != session_id
+    or isinstance(value["next_cycle_index"], bool)
+    or not isinstance(value["next_cycle_index"], int)
+    or value["next_cycle_index"] < 0
+    or value["next_cycle_index"] > max_cycles
+    or value["completed_cycles"] != value["next_cycle_index"]
+    or isinstance(value["consumed_effects"], bool)
+    or not isinstance(value["consumed_effects"], int)
+    or value["consumed_effects"] < 0
+    or value["consumed_effects"] > max_effects
+    or value["state"] not in ("active", "completed", "stopped")
+):
+    raise SystemExit("deterministic session state invariant failed")
+index = value["next_cycle_index"]
+last = value["last_cycle_operation_id"]
+if index == 0:
+    if last is not None:
+        raise SystemExit("deterministic session initial state has a last cycle")
+else:
+    semantic = {"session_operation_id": session_id, "cycle_index": index - 1}
+    expected_last = hashlib.sha256(
+        b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+        json.dumps(semantic, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    if last != expected_last:
+        raise SystemExit("deterministic session last cycle does not match its index")
+if value["state"] == "completed" and index != max_cycles:
+    raise SystemExit("deterministic session completed before its cycle bound")
+now = datetime.datetime.now(datetime.timezone.utc)
+if value["state"] == "active" and (
+    now >= expires or value["consumed_effects"] >= max_effects
+):
+    value["state"] = "stopped"
+    write_state(value)
+if value["state"] != "active":
+    print(f"terminal:{value['state']}:{index}:{value['consumed_effects']}")
+    raise SystemExit(0)
+if index >= max_cycles:
+    raise SystemExit("deterministic session active state exceeded its cycle bound")
+if value["consumed_effects"] >= max_effects:
+    raise SystemExit("deterministic session exhausted its effect bound")
+eligible = issued + datetime.timedelta(seconds=interval * index)
+if now < eligible:
+    raise SystemExit("deterministic session next cycle is not eligible yet")
+if now >= expires:
+    raise SystemExit("deterministic session authority expired")
+print(f"ready:{index}:{value['consumed_effects']}")
+PY
+}
+
+advance_deterministic_session_cycle() {
+  local state="$1"
+  local session_operation_id="$2"
+  local cycle_index="$3"
+  local cycle_operation_id="$4"
+  local outcome="$5"
+  local max_cycles="$6"
+  local max_effects="$7"
+  python3 - "$state" "$session_operation_id" "$cycle_index" \
+    "$cycle_operation_id" "$outcome" "$max_cycles" "$max_effects" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import sys
+
+path, session_id, raw_index, cycle_id, outcome, raw_cycles, raw_effects = sys.argv[1:]
+index = int(raw_index)
+max_cycles = int(raw_cycles)
+max_effects = int(raw_effects)
+state_path = pathlib.Path(path)
+value = json.loads(state_path.read_text(encoding="utf-8"))
+expected_cycle_id = hashlib.sha256(
+    b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+    json.dumps(
+        {"session_operation_id": session_id, "cycle_index": index},
+        separators=(",", ":"),
+    ).encode("utf-8")
+).hexdigest()
+if (
+    value.get("contract_version") != "hivra-trading-deterministic-session-state-v1"
+    or value.get("session_operation_id") != session_id
+    or value.get("state") != "active"
+    or value.get("next_cycle_index") != index
+    or value.get("completed_cycles") != index
+    or cycle_id != expected_cycle_id
+):
+    raise SystemExit("deterministic session advance refused stale state")
+effect = outcome.startswith("effect:")
+if not effect and not outcome.startswith("blocked:"):
+    raise SystemExit("deterministic session advance received an invalid outcome")
+consumed = value.get("consumed_effects")
+if isinstance(consumed, bool) or not isinstance(consumed, int):
+    raise SystemExit("deterministic session effect counter is invalid")
+if effect:
+    consumed += 1
+if consumed > max_effects:
+    raise SystemExit("deterministic session effect bound exceeded")
+next_index = index + 1
+next_state = "active"
+if next_index == max_cycles:
+    next_state = "completed"
+elif consumed == max_effects:
+    next_state = "stopped"
+elif outcome.startswith("effect:unresolved:") or outcome.startswith("effect:terminal_failure:"):
+    next_state = "stopped"
+value = {
+    "contract_version": "hivra-trading-deterministic-session-state-v1",
+    "session_operation_id": session_id,
+    "next_cycle_index": next_index,
+    "completed_cycles": next_index,
+    "consumed_effects": consumed,
+    "state": next_state,
+    "last_cycle_operation_id": cycle_id,
+}
+pending = state_path.with_name(f".{state_path.name}.pending.{os.getpid()}")
+fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(json.dumps(value, separators=(",", ":")) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(pending, state_path)
+finally:
+    if pending.exists():
+        pending.unlink()
+print(f"{next_state}:{next_index}:{consumed}")
+PY
 }
 
 sha256_stdin() {
@@ -596,7 +845,9 @@ PY
     'openApi/swap/v2/trade/order/test' \
     'hivra-trading-exact-order-evidence-v1' \
     'trading-remote-mandate-admission-v4' \
+    'trading-remote-mandate-admission-v5' \
     'one_deterministic_order' \
+    'bounded_deterministic_session' \
     'hivra-trading-deterministic-cycle-evidence-v1'; do
     grep -aFq "$marker" "$effect_binary" ||
       die "artifact effect binary is missing exact-order marker: $marker"
@@ -1118,12 +1369,13 @@ version = value.get("contract_version") if isinstance(value, dict) else None
 is_account_read = version == "trading-remote-mandate-admission-v2"
 is_exact_order = version == "trading-remote-mandate-admission-v3"
 is_deterministic_order = version == "trading-remote-mandate-admission-v4"
-if not is_account_read and not is_exact_order and not is_deterministic_order:
+is_deterministic_session = version == "trading-remote-mandate-admission-v5"
+if not is_account_read and not is_exact_order and not is_deterministic_order and not is_deterministic_session:
     raise SystemExit("mandate contract version mismatch")
 expected_root = [
     "contract_version", "operation_id", "commitment_hash_hex",
     "runner_key_id", "operation_kind",
-    *( ["read_scope"] if is_account_read else ["exact_order"] if is_exact_order else ["strategy_policy"] ),
+    *( ["read_scope"] if is_account_read else ["exact_order"] if is_exact_order else ["strategy_policy", "session_policy"] if is_deterministic_session else ["strategy_policy"] ),
     "max_uses", "mandate", "signature_suite", "signature_hex",
 ]
 expected_mandate = [
@@ -1143,7 +1395,7 @@ if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
     raise SystemExit("mandate artifact bytes are not canonical")
 if value["signature_suite"] != "ed25519-v1":
     raise SystemExit("mandate signature suite mismatch")
-if value["max_uses"] != 1:
+if not is_deterministic_session and value["max_uses"] != 1:
     raise SystemExit("mandate account-read use bound mismatch" if is_account_read else "mandate order use bound mismatch")
 if is_account_read:
     if value["operation_kind"] != "account_read":
@@ -1188,7 +1440,8 @@ elif is_exact_order:
     if float(exact_order["quantity_decimal"]) * float(exact_order["limit_price_decimal"]) > float(mandate["max_order_notional_quote_decimal"]):
         raise SystemExit("exact order exceeds mandate notional")
 else:
-    if value["operation_kind"] != "one_deterministic_order":
+    expected_kind = "bounded_deterministic_session" if is_deterministic_session else "one_deterministic_order"
+    if value["operation_kind"] != expected_kind:
         raise SystemExit("mandate operation kind mismatch")
     policy = value.get("strategy_policy")
     expected_policy = [
@@ -1208,6 +1461,21 @@ else:
         number = policy[key]
         if isinstance(number, bool) or not isinstance(number, (int, float)) or number <= 0:
             raise SystemExit(f"invalid deterministic policy {key}")
+    if is_deterministic_session:
+        session = value.get("session_policy")
+        if not isinstance(session, dict) or list(session) != ["starts_at_utc", "interval_seconds", "max_cycles", "stop_on_failure"]:
+            raise SystemExit("deterministic session policy is not canonical")
+        interval = session["interval_seconds"]
+        cycles = session["max_cycles"]
+        if (
+            isinstance(interval, bool) or not isinstance(interval, int)
+            or interval < 60 or interval > 3600
+            or isinstance(cycles, bool) or not isinstance(cycles, int)
+            or cycles < 1 or cycles > 288
+            or session["stop_on_failure"] is not True
+            or value["max_uses"] != cycles
+        ):
+            raise SystemExit("deterministic session bound is invalid")
 if value["runner_key_id"] != expected_runner_key_id:
     raise SystemExit("mandate runner binding mismatch")
 hex64 = re.compile(r"[0-9a-f]{64}")
@@ -1265,12 +1533,12 @@ commitment_semantic = {
     "contract_version": value["contract_version"],
     "runner_key_id": value["runner_key_id"],
     "operation_kind": value["operation_kind"],
-    **({"read_scope": value["read_scope"]} if is_account_read else {"exact_order": value["exact_order"]} if is_exact_order else {"strategy_policy": value["strategy_policy"]}),
+    **({"read_scope": value["read_scope"]} if is_account_read else {"exact_order": value["exact_order"]} if is_exact_order else {"strategy_policy": value["strategy_policy"], "session_policy": value["session_policy"]} if is_deterministic_session else {"strategy_policy": value["strategy_policy"]}),
     "max_uses": value["max_uses"],
     "mandate": mandate,
 }
 commitment = hashlib.sha256(
-    (b"hivra:bingx-futures-remote-mandate-admission:v2\n" if is_account_read else b"hivra:bingx-futures-remote-mandate-admission:v3\n" if is_exact_order else b"hivra:bingx-futures-remote-mandate-admission:v4\n") +
+    (b"hivra:bingx-futures-remote-mandate-admission:v2\n" if is_account_read else b"hivra:bingx-futures-remote-mandate-admission:v3\n" if is_exact_order else b"hivra:bingx-futures-remote-mandate-admission:v5\n" if is_deterministic_session else b"hivra:bingx-futures-remote-mandate-admission:v4\n") +
     json.dumps(commitment_semantic, separators=(",", ":")).encode("utf-8")
 ).hexdigest()
 if value["commitment_hash_hex"] != commitment:
@@ -1287,6 +1555,20 @@ issued = instant("issued_at_utc")
 expires = instant("expires_at_utc")
 if expires <= issued or expires - issued > datetime.timedelta(hours=24):
     raise SystemExit("mandate time bounds are invalid")
+if is_deterministic_session:
+    raw_starts = value["session_policy"]["starts_at_utc"]
+    if not isinstance(raw_starts, str) or not raw_starts.endswith("Z"):
+        raise SystemExit("deterministic session start is invalid")
+    try:
+        starts = datetime.datetime.fromisoformat(raw_starts[:-1] + "+00:00")
+    except ValueError:
+        raise SystemExit("deterministic session start is invalid")
+    final_cycle = starts + datetime.timedelta(
+        seconds=value["session_policy"]["interval_seconds"] *
+        (value["session_policy"]["max_cycles"] - 1)
+    )
+    if starts < issued or starts >= expires or final_cycle >= expires:
+        raise SystemExit("deterministic session exceeds mandate time bounds")
 pathlib.Path(work, "digest.bin").write_bytes(bytes.fromhex(commitment))
 pathlib.Path(work, "signature.bin").write_bytes(bytes.fromhex(value["signature_hex"]))
 pathlib.Path(work, "capsule-public-key.der").write_bytes(
@@ -1324,7 +1606,20 @@ else:
         pathlib.Path(work, f"policy-{key.replace('_', '-')}").write_text(
             str(value["strategy_policy"][key]), encoding="ascii"
         )
+    if is_deterministic_session:
+        pathlib.Path(work, "session-starts-at").write_text(
+            value["session_policy"]["starts_at_utc"], encoding="ascii"
+        )
+        pathlib.Path(work, "session-interval-seconds").write_text(
+            str(value["session_policy"]["interval_seconds"]), encoding="ascii"
+        )
+        pathlib.Path(work, "session-max-cycles").write_text(
+            str(value["session_policy"]["max_cycles"]), encoding="ascii"
+        )
 pathlib.Path(work, "max-uses").write_text(str(value["max_uses"]), encoding="ascii")
+pathlib.Path(work, "mandate-max-effects").write_text(
+    str(mandate["max_effects"]), encoding="ascii"
+)
 PY
   then
     die "mandate semantic validation failed"
@@ -1384,7 +1679,9 @@ admit_remote_mandate() {
   case "$operation_kind" in
     account_read) target="$target_dir/prepared.v2.json" ;;
     one_exact_order) target="$target_dir/exact-order.v3.json" ;;
-    one_deterministic_order) target="$target_dir/deterministic-order.v4.json" ;;
+    one_deterministic_order|bounded_deterministic_session)
+      target="$target_dir/deterministic-order.v4.json"
+      ;;
     *) die "mandate admission produced an unsupported operation kind" ;;
   esac
   if [ -e "$target_dir" ] || [ -L "$target_dir" ]; then
@@ -1400,7 +1697,8 @@ admit_remote_mandate() {
       die "mandate admission refused foreign retained state"
     if cmp -s "$work/input.json" "$target"; then
       echo "PASS trading-runner-artifact: exact remote mandate replay is idempotent"
-    elif [ "$operation_kind" = "one_deterministic_order" ]; then
+    elif [ "$operation_kind" = "one_deterministic_order" ] ||
+      [ "$operation_kind" = "bounded_deterministic_session" ]; then
       local incoming_operation retained_operation result_dir observation_dir retained_result
       incoming_operation="$(cat "$work/operation-id")"
       result_dir="$STATE_DIRECTORY/deterministic-results"
@@ -1423,12 +1721,40 @@ admit_remote_mandate() {
         mkdir "$work/retained"
         verify_remote_mandate_artifact \
           "$target" "$EXPECTED_RUNNER_KEY_ID" "$work/retained"
-        [ "$(cat "$work/retained/operation-kind")" = "one_deterministic_order" ] ||
+        local retained_kind
+        retained_kind="$(cat "$work/retained/operation-kind")"
+        if [ "$retained_kind" = "bounded_deterministic_session" ]; then
+          local session_state="$STATE_DIRECTORY/deterministic-session.v1.json"
+          [ -f "$session_state" ] && [ ! -L "$session_state" ] ||
+            die "mandate admission refused rotation before the retained session started"
+          local session_status
+          session_status="$(prepare_deterministic_session_cycle \
+            "$session_state" "$(cat "$work/retained/operation-id")" \
+            "$(cat "$work/retained/session-max-cycles")" \
+            "$(cat "$work/retained/mandate-max-effects")" \
+            "$(cat "$work/retained/session-interval-seconds")" \
+            "$(cat "$work/retained/session-starts-at")" \
+            "$(cat "$work/retained/expires-at")")" ||
+            die "mandate admission refused invalid retained session state"
+          case "$session_status" in
+            terminal:completed:*|terminal:stopped:*) ;;
+            *) die "mandate admission refused rotation before the retained session completed" ;;
+          esac
+        elif [ "$retained_kind" != "one_deterministic_order" ]; then
           die "mandate admission refused a deterministic mandate over another authority kind"
+        fi
         retained_operation="$(cat "$work/retained/operation-id")"
-        retain_completed_deterministic_mandate \
-          "$work/input.json" "$target" "$incoming_operation" \
-          "$retained_operation" "$result_dir" >/dev/null
+        if [ "$retained_kind" = "one_deterministic_order" ]; then
+          retain_completed_deterministic_mandate \
+            "$work/input.json" "$target" "$incoming_operation" \
+            "$retained_operation" "$result_dir" >/dev/null
+        else
+          local replacement
+          replacement="$(mktemp "$target_dir/.deterministic-order.pending.XXXXXX")"
+          install -m 0600 "$work/input.json" "$replacement"
+          mv "$replacement" "$target"
+          rm -f "$STATE_DIRECTORY/deterministic-session.v1.json"
+        fi
         echo "PASS trading-runner-artifact: rotated completed deterministic mandate previous_operation_id=$retained_operation operation_id=$incoming_operation effect=false"
       fi
     else
@@ -2347,11 +2673,43 @@ execute_deterministic_order_once() {
   mkdir "$work/verified"
   verify_remote_mandate_artifact \
     "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
-  [ "$(cat "$work/verified/operation-kind")" = "one_deterministic_order" ] ||
-    die "deterministic order authority kind mismatch"
-
-  local operation_id
-  operation_id="$(cat "$work/verified/operation-id")"
+  local operation_kind admission_operation_id operation_id cycle_index
+  operation_kind="$(cat "$work/verified/operation-kind")"
+  admission_operation_id="$(cat "$work/verified/operation-id")"
+  cycle_index=""
+  case "$operation_kind" in
+    one_deterministic_order)
+      operation_id="$admission_operation_id"
+      ;;
+    bounded_deterministic_session)
+      local session_state session_status
+      session_state="$STATE_DIRECTORY/deterministic-session.v1.json"
+      session_status="$(prepare_deterministic_session_cycle \
+        "$session_state" "$admission_operation_id" \
+        "$(cat "$work/verified/session-max-cycles")" \
+        "$(cat "$work/verified/mandate-max-effects")" \
+        "$(cat "$work/verified/session-interval-seconds")" \
+        "$(cat "$work/verified/session-starts-at")" \
+        "$(cat "$work/verified/expires-at")")" ||
+        die "deterministic session is not eligible for its next cycle"
+      case "$session_status" in
+        ready:*) cycle_index="${session_status#ready:}"; cycle_index="${cycle_index%%:*}" ;;
+        terminal:*)
+          trap - EXIT INT TERM
+          rm -rf "$work"
+          rm -f "$lock_path"
+          exec 9>&-
+          echo "PASS trading-runner-artifact: deterministic session already terminal session_operation_id=$admission_operation_id status=$session_status effect_repeated=false"
+          return
+          ;;
+        *) die "deterministic session returned an invalid state" ;;
+      esac
+      operation_id="$(derive_deterministic_session_cycle_operation_id \
+        "$admission_operation_id" "$cycle_index")" ||
+        die "deterministic session cycle identity derivation failed"
+      ;;
+    *) die "deterministic order authority kind mismatch" ;;
+  esac
   local result_dir="$STATE_DIRECTORY/deterministic-results"
   ensure_private_operation_store "$result_dir"
   validate_deterministic_operation_store \
@@ -2364,15 +2722,26 @@ execute_deterministic_order_once() {
     local replay_outcome
     replay_outcome="$(validate_deterministic_cycle_outcome "$retained_result" "$operation_id")" ||
       die "deterministic order retained result validation failed"
+    local replay_session_status=""
+    if [ "$operation_kind" = "bounded_deterministic_session" ]; then
+      replay_session_status="$(advance_deterministic_session_cycle \
+        "$STATE_DIRECTORY/deterministic-session.v1.json" \
+        "$admission_operation_id" "$cycle_index" "$operation_id" \
+        "$replay_outcome" "$(cat "$work/verified/session-max-cycles")" \
+        "$(cat "$work/verified/mandate-max-effects")")" ||
+        die "deterministic session could not reconcile its retained cycle"
+    fi
     trap - EXIT INT TERM
     rm -rf "$work"
     rm -f "$lock_path"
     exec 9>&-
-    echo "PASS trading-runner-artifact: replayed deterministic order cycle operation_id=$operation_id outcome=$replay_outcome effect_repeated=false"
+    echo "PASS trading-runner-artifact: replayed deterministic order cycle operation_id=$operation_id outcome=$replay_outcome session_status=${replay_session_status:-single_use} effect_repeated=false"
     return
   fi
-  require_remote_mandate_execution_eligible "$work/verified" ||
-    die "deterministic order authority is not currently eligible for execution"
+  if [ "$operation_kind" = "one_deterministic_order" ]; then
+    require_remote_mandate_execution_eligible "$work/verified" ||
+      die "deterministic order authority is not currently eligible for execution"
+  fi
 
   local observation_dir="$STATE_DIRECTORY/deterministic-observations"
   ensure_private_operation_store "$observation_dir"
@@ -2414,6 +2783,10 @@ PY
 )" || die "deterministic market evidence continuity is invalid"
   local last_sequence last_hash
   read -r last_sequence last_hash <<<"$continuity"
+  local -a session_cycle_args=()
+  if [ -n "$cycle_index" ]; then
+    session_cycle_args=(--session-cycle-index "$cycle_index")
+  fi
   local transient_name="hivra-trading-deterministic-${operation_id:0:12}-$$"
   local credential_dir="/run/credentials/$transient_name.service"
   if ! systemd-run \
@@ -2466,6 +2839,7 @@ PY
       --deterministic-state-home "$STATE_DIRECTORY/deterministic-order-runtime" \
       --last-accepted-sequence "$last_sequence" \
       --last-accepted-evidence-hash "$last_hash" \
+      "${session_cycle_args[@]}" \
       >"$work/stdout" 2>"$work/stderr"; then
     die "deterministic order failed without exposing provider output"
   fi
@@ -2478,11 +2852,20 @@ PY
   install -m 0600 "$work/stdout" "$pending_result"
   mv "$pending_result" "$retained_result"
   pending_result=""
+  local session_status="single_use"
+  if [ "$operation_kind" = "bounded_deterministic_session" ]; then
+    session_status="$(advance_deterministic_session_cycle \
+      "$STATE_DIRECTORY/deterministic-session.v1.json" \
+      "$admission_operation_id" "$cycle_index" "$operation_id" "$outcome" \
+      "$(cat "$work/verified/session-max-cycles")" \
+      "$(cat "$work/verified/mandate-max-effects")")" ||
+      die "deterministic session could not commit its completed cycle"
+  fi
   trap - EXIT INT TERM
   rm -rf "$work"
   rm -f "$lock_path"
   exec 9>&-
-  echo "PASS trading-runner-artifact: completed one deterministic order cycle operation_id=$operation_id outcome=$outcome"
+  echo "PASS trading-runner-artifact: completed one deterministic order cycle operation_id=$operation_id outcome=$outcome session_status=$session_status"
 }
 
 install_disabled() {
@@ -2819,6 +3202,79 @@ self_test() {
   printf 'mandate-b\n' | cmp -s - "$lifecycle_target" ||
     die "self-test changed the active mandate after refused rotation"
   echo "PASS trading-runner-artifact: deterministic mandate lifecycle"
+
+  local session_state="$root/deterministic-session.v1.json"
+  local session_id session_cycle_0 session_cycle_1 session_status
+  session_id="$(printf 'bounded-session' | sha256_stdin)"
+  session_cycle_0="$(derive_deterministic_session_cycle_operation_id "$session_id" 0)"
+  [ "$session_cycle_0" = "$(python3 - "$session_id" <<'PY'
+import hashlib
+import json
+import sys
+print(hashlib.sha256(
+    b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+    json.dumps({"session_operation_id": sys.argv[1], "cycle_index": 0}, separators=(",", ":")).encode()
+).hexdigest())
+PY
+)" ] || die "self-test found cross-language deterministic session identity drift"
+  session_status="$(prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")"
+  [ "$session_status" = "ready:0:0" ] ||
+    die "self-test did not initialize a deterministic session"
+  [ "$(advance_deterministic_session_cycle \
+    "$session_state" "$session_id" 0 "$session_cycle_0" \
+    "blocked:market_evidence_stale" 4 1)" = "active:1:0" ] ||
+    die "self-test did not advance a blocked deterministic session cycle"
+  if advance_deterministic_session_cycle \
+    "$session_state" "$session_id" 0 "$session_cycle_0" \
+    "blocked:market_evidence_stale" 4 1 >/dev/null 2>&1; then
+    die "self-test replayed an already committed deterministic session cycle"
+  fi
+  session_cycle_1="$(derive_deterministic_session_cycle_operation_id "$session_id" 1)"
+  [ "$(prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
+    "ready:1:0" ] || die "self-test did not recover deterministic session state"
+  if advance_deterministic_session_cycle \
+    "$session_state" "$session_id" 1 "$session_cycle_0" \
+    "effect:succeeded:test=true" 4 1 >/dev/null 2>&1; then
+    die "self-test accepted a caller-selected deterministic session cycle id"
+  fi
+  [ "$(advance_deterministic_session_cycle \
+    "$session_state" "$session_id" 1 "$session_cycle_1" \
+    "effect:succeeded:test=true" 4 1)" = "stopped:2:1" ] ||
+    die "self-test did not stop at the deterministic session effect bound"
+  [ "$(prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
+    "terminal:stopped:2:1" ] ||
+    die "self-test resurrected a terminal deterministic session"
+  python3 - "$session_state" <<'PY'
+import json
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+value = json.loads(path.read_text())
+value["last_cycle_operation_id"] = "0" * 64
+path.write_text(json.dumps(value, separators=(",", ":")) + "\n")
+PY
+  if prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
+    >/dev/null 2>&1; then
+    die "self-test accepted mutated deterministic session state"
+  fi
+  local future_session_state="$root/future-deterministic-session.v1.json"
+  if prepare_deterministic_session_cycle \
+    "$future_session_state" "$(printf 'future-session' | sha256_stdin)" \
+    2 1 300 "2998-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
+    >/dev/null 2>&1; then
+    die "self-test executed a deterministic session cycle before its signed start"
+  fi
+  echo "PASS trading-runner-artifact: bounded restart-safe deterministic session"
+  unset session_state session_id session_cycle_0 session_cycle_1 session_status future_session_state
+
   local artifact="$root/artifact"
   mkdir "$artifact"
   cp /bin/echo "$artifact/$BINARY_NAME"
@@ -2834,7 +3290,9 @@ self_test() {
     'openApi/swap/v2/trade/order/test' \
     'hivra-trading-exact-order-evidence-v1' \
     'trading-remote-mandate-admission-v4' \
+    'trading-remote-mandate-admission-v5' \
     'one_deterministic_order' \
+    'bounded_deterministic_session' \
     'hivra-trading-deterministic-cycle-evidence-v1' >> "$artifact/$EFFECT_BINARY_NAME"
   chmod 700 "$artifact/$BINARY_NAME"
   chmod 700 "$artifact/$EFFECT_BINARY_NAME"
@@ -3224,6 +3682,95 @@ PY
     "$mandate_test/exact-mutated.json" "$expected_runner" \
     "$mandate_test/exact-mutated-verified") >/dev/null 2>&1; then
     die "self-test accepted mutated exact-order semantics"
+  fi
+  python3 - "$mandate_test" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "metadata.json").read_text())
+starts = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+strategy = {
+    "runner_build_id": "systemd-public-shadow-v1",
+    "plugin_id": "hivra.bingx-futures-trading",
+    "plugin_version": "0.2.3",
+    "package_digest_hex": "2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889",
+    "host_abi": "wasm32-wasi-preview1",
+    "stop_loss_percent": 5.0,
+    "minimum_risk_reward": 2.0,
+}
+session = {
+    "starts_at_utc": starts,
+    "interval_seconds": 300,
+    "max_cycles": 12,
+    "stop_on_failure": True,
+}
+semantic = {
+    "contract_version": "trading-remote-mandate-admission-v5",
+    "runner_key_id": metadata["runner"],
+    "operation_kind": "bounded_deterministic_session",
+    "strategy_policy": strategy,
+    "session_policy": session,
+    "max_uses": 12,
+    "mandate": metadata["mandate"],
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-mandate-admission:v5\n" +
+    json.dumps(semantic, separators=(",", ":")).encode()
+).hexdigest()
+(root / "session-digest.bin").write_bytes(bytes.fromhex(commitment))
+(root / "session-metadata.json").write_text(json.dumps({
+    "commitment": commitment,
+    "semantic": semantic,
+}, separators=(",", ":")), encoding="utf-8")
+PY
+  openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
+    -in "$mandate_test/session-digest.bin" -out "$mandate_test/session-signature.bin"
+  python3 - "$mandate_test" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "session-metadata.json").read_text())
+semantic = metadata["semantic"]
+artifact = {
+    "contract_version": semantic["contract_version"],
+    "operation_id": metadata["commitment"],
+    "commitment_hash_hex": metadata["commitment"],
+    "runner_key_id": semantic["runner_key_id"],
+    "operation_kind": semantic["operation_kind"],
+    "strategy_policy": semantic["strategy_policy"],
+    "session_policy": semantic["session_policy"],
+    "max_uses": semantic["max_uses"],
+    "mandate": semantic["mandate"],
+    "signature_suite": "ed25519-v1",
+    "signature_hex": (root / "session-signature.bin").read_bytes().hex(),
+}
+(root / "session-admission.json").write_text(
+    json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
+)
+PY
+  mkdir "$mandate_test/session-verified"
+  verify_remote_mandate_artifact \
+    "$mandate_test/session-admission.json" "$expected_runner" \
+    "$mandate_test/session-verified"
+  [ "$(cat "$mandate_test/session-verified/operation-kind")" = \
+    "bounded_deterministic_session" ] ||
+    die "self-test lost deterministic session operation kind"
+  [ "$(cat "$mandate_test/session-verified/session-max-cycles")" = 12 ] ||
+    die "self-test lost deterministic session cycle bound"
+  cp "$mandate_test/session-admission.json" "$mandate_test/session-mutated.json"
+  sed -i.bak 's/"max_cycles":12/"max_cycles":13/' \
+    "$mandate_test/session-mutated.json"
+  mkdir "$mandate_test/session-mutated-verified"
+  if (verify_remote_mandate_artifact \
+    "$mandate_test/session-mutated.json" "$expected_runner" \
+    "$mandate_test/session-mutated-verified") >/dev/null 2>&1; then
+    die "self-test accepted mutated deterministic session semantics"
   fi
   mkdir "$mandate_test/verified"
   verify_remote_mandate_artifact \

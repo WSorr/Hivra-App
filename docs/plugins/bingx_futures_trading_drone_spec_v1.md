@@ -1047,28 +1047,43 @@ Fields:
 - durable command identity supplies restart-safe anti-replay for the current
   1.x path; a separate plugin execution journal must not duplicate it.
 
-## 16. Remote Single-Effect Boundaries
+## 16. Remote Bounded-Session Boundaries
 
 The remote runner may execute only a Capsule-signed `one_exact_order`
 admission bound to one runner key, one trading mandate, one account binding,
 one symbol, one canonical trigger-limit payload, and `max_uses = 1`.
 
-The same existing effect executable may also run one explicitly triggered
-`one_deterministic_order` cycle. That admission binds one runner key, one
-trading mandate, one account binding, one symbol, the exact runner/plugin
-build identity, and the exact stop-loss/minimum-risk-reward policy. The runner
-must consume one fresh signed market-evidence item, read complete fresh
-account risk and contract rules, compose one candidate through the canonical
-candidate owner, and consume the admission commitment as the single durable
-effect operation identity. A replay or a different candidate under the same
-admission cannot produce a second provider POST.
+The same existing effect executable may also run either a compatibility
+`one_deterministic_order` cycle or one next cycle from a
+`bounded_deterministic_session`. A session admission binds one runner key, one
+trading mandate, one account binding, one symbol, the exact runner/plugin build
+identity, the exact stop-loss/minimum-risk-reward policy, its own start instant,
+a 60-3600 second interval, at most 288 serial cycles, and
+`stop_on_failure = true`. Its final scheduled cycle must remain strictly before
+the mandate expiry.
 
-The 1.x Trading Drone screen may export this admission only after an active
+Every session cycle derives its operation identity from the signed session
+commitment and zero-based cycle index. The caller cannot supply another effect
+identity. The runner must consume one fresh signed market-evidence item, read
+complete fresh account risk and contract rules, compose one candidate through
+the canonical candidate owner, and pass the derived cycle identity to the
+existing effect journal. A replay or a different candidate under the same cycle
+cannot produce a second provider POST.
+
+The host owns one canonical atomic session journal. It records the next cycle,
+completed-cycle count, consumed effect count, terminal state, and exact last
+cycle identity. A retained result is committed before the journal advances, so
+restart between those writes reconciles the exact result without repeating the
+provider call. Blocked evaluations consume a cycle but not an effect. Any
+provider attempt consumes an effect; unresolved or terminal failure stops the
+session. Reaching the signed cycle, effect, or expiry bound is terminal.
+
+The 1.x Trading Drone screen may export a bounded session only after an active
 bounded mandate exists. The user supplies the already verified runner key id;
 the Capsule root signs the exact deployed runner profile plus the currently
-selected stop-loss and minimum-risk-reward values. Export is atomic and creates
-an inert artifact: it does not transfer credentials, schedule execution, or
-contact the exchange.
+selected stop-loss and minimum-risk-reward values and session bounds. Export is
+atomic and creates an inert artifact: it does not transfer credentials, install
+a timer, execute a cycle, or contact the exchange.
 
 - `ExternalEffectService` remains the sole durable effect lifecycle owner.
 - The read-only public-shadow executable has no order-effect imports or routes.
@@ -1081,7 +1096,7 @@ contact the exchange.
   unresolved instead of returning `notFound` to the generic retry transition.
 - Test-order success proves provider-boundary wiring but not live acceptance;
   a live subaccount order requires a separate explicit operator decision.
-- Continuous scheduling, leases, automatic admission, cancellation,
+- Automatic systemd effect scheduling, leases, automatic admission, cancellation,
   leverage/margin mutation, withdrawal,
   transfer, Pair Consensus, AI authority, and multi-symbol execution are out of
   scope.

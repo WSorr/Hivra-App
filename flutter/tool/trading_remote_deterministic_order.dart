@@ -62,7 +62,17 @@ Future<String> runOneDeterministicOrder({
             ),
       );
   if (admission == null || !admission.isDeterministicOrder) {
-    throw const FormatException('deterministic order admission is invalid');
+    if (admission == null || !admission.isDeterministicSession) {
+      throw const FormatException('deterministic order admission is invalid');
+    }
+  }
+  final cycleIndex =
+      admission.isDeterministicSession
+          ? _requiredInt(options, 'session-cycle-index')
+          : 0;
+  final cycleOperationId = admission.deterministicCycleOperationId(cycleIndex);
+  if (cycleOperationId == null) {
+    throw const FormatException('deterministic cycle identity is invalid');
   }
 
   final signingKey = await Ed25519().newKeyPairFromSeed(runnerSeedBytes);
@@ -110,7 +120,7 @@ Future<String> runOneDeterministicOrder({
     symbol: admission.mandate.symbol,
   );
   if (!rulesResult.isSuccess || rulesResult.rules == null) {
-    return _blocked(admission.operationId, 'contract_rules_unavailable');
+    return _blocked(cycleOperationId, 'contract_rules_unavailable');
   }
   final policy = admission.strategyPolicy!;
   final evidenceBytes = await _readBoundedFile(
@@ -141,16 +151,16 @@ Future<String> runOneDeterministicOrder({
     minimumRiskReward: policy['minimum_risk_reward'] as double,
   );
   if (candidate.status != BingxFuturesRemoteOrderCandidateStatus.ready) {
-    return _blocked(admission.operationId, candidate.reasonCode);
+    return _blocked(cycleOperationId, candidate.reasonCode);
   }
   final intent = candidate.toExactOrderIntent(nowUtc: now);
   if (intent == null) {
-    return _blocked(admission.operationId, 'order_candidate_invalid');
+    return _blocked(cycleOperationId, 'order_candidate_invalid');
   }
   return executeExactOrder(
     admission: admission,
     exactOrder: intent.toExactOrderJson(testOrder: admission.mandate.testOrder),
-    effectOperationId: admission.operationId,
+    effectOperationId: cycleOperationId,
     credentials: credentials,
     stateHome: stateHome,
     requestSender: requestSender,
@@ -189,6 +199,7 @@ Map<String, String> parseDeterministicOrderArgs(List<String> args) {
     'deterministic-state-home',
     'last-accepted-sequence',
     'last-accepted-evidence-hash',
+    'session-cycle-index',
   };
   final parsed = <String, String>{};
   for (var index = 0; index < args.length; index++) {
@@ -204,8 +215,20 @@ Map<String, String> parseDeterministicOrderArgs(List<String> args) {
     }
     parsed[key] = args[++index];
   }
+  const required = <String>{
+    'mode',
+    'runner-seed-file',
+    'deterministic-admission-file',
+    'market-evidence-file',
+    'deterministic-credential-file',
+    'deterministic-state-home',
+    'last-accepted-sequence',
+    'last-accepted-evidence-hash',
+  };
   if (parsed['mode'] != deterministicOrderMode ||
-      allowed.any((key) => (parsed[key]?.trim() ?? '').isEmpty)) {
+      required.any((key) => (parsed[key]?.trim() ?? '').isEmpty) ||
+      (parsed.containsKey('session-cycle-index') &&
+          parsed['session-cycle-index']!.trim().isEmpty)) {
     throw const FormatException('deterministic order options are incomplete');
   }
   return parsed;

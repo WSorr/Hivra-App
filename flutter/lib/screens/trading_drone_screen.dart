@@ -797,7 +797,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return result == true;
   }
 
-  Future<void> _exportSignedRemoteDeterministicCycle() async {
+  Future<void> _exportSignedRemoteDeterministicSession() async {
     if (_exportingRemoteMandate) return;
     final mandate = _tradingMandate;
     if (!_droneEnabled ||
@@ -819,14 +819,57 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return;
     }
     if (!Platform.isMacOS) {
-      await _showSnack('Remote cycle export is currently available on macOS.');
+      await _showSnack(
+        'Remote session export is currently available on macOS.',
+      );
       return;
     }
     final runnerKeyId = await _selectRemoteRunnerKeyId(mandate);
     if (runnerKeyId == null) return;
+    if (!mounted) return;
     _lastRemoteRunnerKeyId = runnerKeyId;
+    const intervalSeconds = 300;
+    final startsAtUtc = DateTime.now().toUtc();
+    final expiresAtUtc = DateTime.tryParse(mandate.expiresAtUtc)?.toUtc();
+    if (expiresAtUtc == null) {
+      await _showSnack('The active mandate has an invalid expiry.');
+      return;
+    }
+    final remainingSeconds = expiresAtUtc.difference(startsAtUtc).inSeconds;
+    final maxCycles = ((remainingSeconds - 1) ~/ intervalSeconds + 1).clamp(
+      1,
+      BingxFuturesRemoteMandateAdmission.maxSessionCycles,
+    );
+    final approved = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Authorize VPS trading session?'),
+            content: Text(
+              'Symbol: ${mandate.symbol}\n'
+              'Mode: ${mandate.testOrder ? "test" : "live"}\n'
+              'Check interval: 5 minutes\n'
+              'Maximum checks: $maxCycles\n'
+              'Maximum exchange effects: ${mandate.maxEffects}\n'
+              'Expires: ${mandate.expiresAtUtc}\n\n'
+              'The VPS may evaluate only this signed strategy and mandate. '
+              'Every exchange attempt remains bounded by the existing effect journal.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Authorize session'),
+              ),
+            ],
+          ),
+    );
+    if (approved != true) return;
     final admission =
-        BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
+        BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
           mandate: mandate,
           runnerKeyId: runnerKeyId,
           strategyPolicy:
@@ -834,6 +877,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 stopLossPercent: _stopLossPercent,
                 minimumRiskReward: _takeProfitRiskReward,
               ),
+          startsAtUtc: startsAtUtc,
+          intervalSeconds: intervalSeconds,
+          maxCycles: maxCycles,
           signCommitment: _module.signRootCommitment,
         );
     if (admission == null ||
@@ -851,18 +897,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
             ) ==
             null) {
-      await _showSnack('Capsule could not sign the remote cycle.');
+      await _showSnack('Capsule could not sign the remote session.');
       return;
     }
     final targetPath = await HivraFilePickerService.saveJsonDocument(
       suggestedName:
-          'trading-remote-cycle-${admission.operationId.substring(0, 16)}.json',
-      confirmButtonText: 'Export one cycle',
+          'trading-remote-session-${admission.operationId.substring(0, 16)}.json',
+      confirmButtonText: 'Export session',
     );
     if (targetPath == null || targetPath.trim().isEmpty) return;
     final target = File(targetPath.trim());
     if (await target.exists()) {
-      await _showSnack('The remote cycle artifact already exists.');
+      await _showSnack('The remote session artifact already exists.');
       return;
     }
     setState(() => _exportingRemoteMandate = true);
@@ -872,17 +918,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         admission.canonicalJson,
       );
       await _module.uiLog.log(
-        'bingx.remote_cycle.exported',
+        'bingx.remote_session.exported',
         'operation_id=${admission.operationId} '
-            'runner_key_id=${admission.runnerKeyId} effect=false',
+            'runner_key_id=${admission.runnerKeyId} '
+            'max_cycles=$maxCycles interval_seconds=$intervalSeconds effect=false',
       );
-      await _showSnack('Signed one-cycle authority exported.');
+      await _showSnack('Signed bounded VPS session exported.');
     } catch (error) {
       await _module.uiLog.log(
-        'bingx.remote_cycle.export.error',
+        'bingx.remote_session.export.error',
         'operation_id=${admission.operationId} error=$error effect=false',
       );
-      await _showSnack('Remote cycle export failed.');
+      await _showSnack('Remote session export failed.');
     } finally {
       if (mounted) setState(() => _exportingRemoteMandate = false);
     }
@@ -900,7 +947,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           (dialogContext) => StatefulBuilder(
             builder:
                 (context, setDialogState) => AlertDialog(
-                  title: const Text('Authorize one remote cycle'),
+                  title: const Text('Select trusted VPS runner'),
                   content: SizedBox(
                     width: 560,
                     child: Column(
@@ -4475,7 +4522,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                                 _exportingRemoteMandate ||
                                 !_droneEnabled
                             ? null
-                            : _exportSignedRemoteDeterministicCycle,
+                            : _exportSignedRemoteDeterministicSession,
                     icon:
                         _exportingRemoteMandate
                             ? const SizedBox(
@@ -4486,8 +4533,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                             : const Icon(Icons.verified_user_outlined),
                     label: Text(
                       _exportingRemoteMandate
-                          ? 'Signing remote cycle'
-                          : 'Authorize Remote Cycle',
+                          ? 'Signing VPS session'
+                          : 'Authorize VPS Session',
                     ),
                   ),
                   FilledButton.tonalIcon(

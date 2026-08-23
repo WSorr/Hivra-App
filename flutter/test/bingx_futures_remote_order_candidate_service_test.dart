@@ -143,6 +143,77 @@ void main() {
       );
     });
 
+    test('binds a bounded session and derives exact cycle identities', () async {
+      final fixture = await _fixture();
+      final admission =
+          BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+            mandate: fixture.mandate,
+            runnerKeyId: '7' * 64,
+            strategyPolicy:
+                BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                  stopLossPercent: 5,
+                  minimumRiskReward: 2,
+                ),
+            startsAtUtc: fixture.now,
+            intervalSeconds: 300,
+            maxCycles: 12,
+            signCommitment: (_) => '8' * 128,
+          );
+
+      expect(admission, isNotNull);
+      expect(admission!.isDeterministicSession, isTrue);
+      expect(admission.isDeterministicOrder, isFalse);
+      expect(admission.authorizedUses, 12);
+      expect(admission.deterministicCycleOperationId(0), hasLength(64));
+      expect(
+        admission.deterministicCycleOperationId(1),
+        isNot(admission.deterministicCycleOperationId(0)),
+      );
+      expect(admission.deterministicCycleOperationId(12), isNull);
+      final reparsed = BingxFuturesRemoteMandateAdmission.parseAndVerify(
+        untrustedWireBytes: utf8.encode(admission.canonicalJson),
+        verifySignature:
+            ({
+              required messageHashHex,
+              required participantIdHex,
+              required signatureHex,
+            }) => true,
+      );
+      expect(reparsed?.canonicalJson, admission.canonicalJson);
+
+      final mutated = jsonDecode(admission.canonicalJson);
+      mutated['session_policy']['max_cycles'] = 13;
+      mutated['max_uses'] = 13;
+      expect(
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+          untrustedWireBytes: utf8.encode(jsonEncode(mutated)),
+          verifySignature:
+              ({
+                required messageHashHex,
+                required participantIdHex,
+                required signatureHex,
+              }) => true,
+        ),
+        isNull,
+      );
+      expect(
+        BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+          mandate: fixture.mandate,
+          runnerKeyId: '7' * 64,
+          strategyPolicy:
+              BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                stopLossPercent: 5,
+                minimumRiskReward: 2,
+              ),
+          startsAtUtc: fixture.now,
+          intervalSeconds: 30,
+          maxCycles: 12,
+          signCommitment: (_) => '8' * 128,
+        ),
+        isNull,
+      );
+    });
+
     test('does not adapt stale or mutated candidate bytes', () async {
       final fixture = await _fixture();
       final result = await _compose(fixture);
