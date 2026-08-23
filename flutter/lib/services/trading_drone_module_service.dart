@@ -14,6 +14,7 @@ import 'bingx_futures_order_revalidation_service.dart';
 import 'bingx_futures_order_sizing_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_futures_public_session_stream_service.dart';
+import 'bingx_futures_remote_runner_identity_service.dart';
 import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 import 'bingx_futures_signal_rank_use_case_service.dart';
@@ -45,6 +46,7 @@ class TradingDroneModule {
   final BingxFuturesOrderRevalidationService orderRevalidation;
   final BingxFuturesOrderReplacementService orderReplacement;
   final BingxFuturesPublicSessionStreamService publicSessionStream;
+  final BingxFuturesRemoteRunnerIdentityService remoteRunnerIdentity;
   final BingxFuturesLiveStrategyUseCaseService liveStrategyUseCase;
   final BingxFuturesStrategyNamingService strategyNaming;
   final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
@@ -80,6 +82,7 @@ class TradingDroneModule {
     required this.orderRevalidation,
     required this.orderReplacement,
     required this.publicSessionStream,
+    required this.remoteRunnerIdentity,
     required this.liveStrategyUseCase,
     required this.strategyNaming,
     required this.volumeGrowthFilter,
@@ -163,6 +166,9 @@ class TradingDroneModuleService {
       orderRevalidation: const BingxFuturesOrderRevalidationService(),
       orderReplacement: const BingxFuturesOrderReplacementService(),
       publicSessionStream: publicSessionStream,
+      remoteRunnerIdentity: BingxFuturesRemoteRunnerIdentityService(
+        readActiveCapsuleRootHex: runtime.activeCapsuleRootHex,
+      ),
       liveStrategyUseCase: liveStrategyUseCase,
       strategyNaming: const BingxFuturesStrategyNamingService(),
       volumeGrowthFilter: const BingxFuturesVolumeGrowthFilterService(),

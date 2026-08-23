@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/bingx_futures_exchange_models.dart';
 import '../models/bingx_futures_exchange_execution_models.dart';
@@ -315,8 +314,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const int _signalVolumeGrowthKlineLimit = 10;
 
   late final TradingDroneModule _module;
-  final BingxFuturesRemoteRunnerIdentityService _remoteRunnerIdentity =
-      const BingxFuturesRemoteRunnerIdentityService();
 
   final TextEditingController _peerController = TextEditingController();
   final TextEditingController _symbolController = TextEditingController(
@@ -360,7 +357,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _savingTradingControl = false;
   bool _exportingRemoteMandate = false;
   bool _exportingRemoteRevocation = false;
-  String? _lastRemoteRunnerKeyId;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
   int _maxEffects = 1;
@@ -862,7 +858,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final runnerKeyId = await _selectRemoteRunnerKeyId(mandate);
     if (runnerKeyId == null) return;
     if (!mounted) return;
-    _lastRemoteRunnerKeyId = runnerKeyId;
     const intervalSeconds = 300;
     final startsAtUtc = DateTime.now().toUtc();
     final expiresAtUtc = DateTime.tryParse(mandate.expiresAtUtc)?.toUtc();
@@ -1105,9 +1100,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Future<String?> _selectRemoteRunnerKeyId(
     BingxFuturesTradingMandate mandate,
   ) async {
-    final controller = TextEditingController(text: _lastRemoteRunnerKeyId);
+    final expectedCapsuleRootHex = _module.activeCapsuleRootHex();
+    if (expectedCapsuleRootHex == null) {
+      await _showSnack('Active Capsule is unavailable.');
+      return null;
+    }
     String? errorText;
     var importing = false;
+    BingxFuturesRemoteRunnerBinding? selectedBinding =
+        await _module.remoteRunnerIdentity.loadVerifiedBinding();
+    if (!mounted) return null;
     final result = await showDialog<String>(
       context: context,
       builder:
@@ -1150,25 +1152,22 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                                           errorText = null;
                                         });
                                         try {
-                                          final file =
-                                              await HivraFilePickerService.openRunnerPublicKey();
-                                          if (file == null) return;
-                                          if (await file.length() > 256) {
-                                            throw const FormatException(
-                                              'Runner key file is too large.',
-                                            );
-                                          }
-                                          final runnerKeyId =
-                                              _remoteRunnerIdentity
-                                                  .runnerKeyIdFromPublicKeyFile(
-                                                    await file.readAsString(),
-                                                  );
-                                          if (runnerKeyId == null) {
-                                            throw const FormatException(
-                                              'Runner key file is invalid.',
-                                            );
-                                          }
-                                          controller.text = runnerKeyId;
+                                          final path =
+                                              await HivraFilePickerService.selectDirectory(
+                                                confirmButtonText:
+                                                    'Verify runner anchor',
+                                              );
+                                          if (path == null) return;
+                                          final binding = await _module
+                                              .remoteRunnerIdentity
+                                              .verifyAnchorDirectory(path);
+                                          await _module.remoteRunnerIdentity
+                                              .saveVerifiedBinding(
+                                                binding,
+                                                expectedCapsuleRootHex:
+                                                    expectedCapsuleRootHex,
+                                              );
+                                          selectedBinding = binding;
                                         } on FormatException catch (error) {
                                           errorText = error.message;
                                         } catch (_) {
@@ -1192,54 +1191,28 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                                         ),
                                       )
                                       : const Icon(Icons.key_rounded),
-                              label: const Text('Load runner key file'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed:
-                                  importing
-                                      ? null
-                                      : () async {
-                                        final data = await Clipboard.getData(
-                                          Clipboard.kTextPlain,
-                                        );
-                                        if (!context.mounted) return;
-                                        final runnerKeyId =
-                                            _remoteRunnerIdentity
-                                                .normalizeRunnerKeyId(
-                                                  data?.text ?? '',
-                                                );
-                                        setDialogState(() {
-                                          if (runnerKeyId == null) {
-                                            errorText =
-                                                'Clipboard does not contain a '
-                                                'valid runner ID.';
-                                          } else {
-                                            controller.text = runnerKeyId;
-                                            errorText = null;
-                                          }
-                                        });
-                                      },
-                              icon: const Icon(Icons.content_paste_rounded),
-                              label: const Text('Paste runner ID'),
+                              label: const Text('Verify runner anchor'),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
-                        TextField(
-                          controller: controller,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          keyboardType: TextInputType.visiblePassword,
-                          maxLines: 2,
-                          style: const TextStyle(fontFamily: 'monospace'),
-                          decoration: InputDecoration(
-                            labelText: 'Verified runner ID',
-                            hintText: '64 lowercase hex characters',
-                            errorText: errorText,
-                          ),
-                          onChanged:
-                              (_) => setDialogState(() => errorText = null),
+                        Text(
+                          selectedBinding == null
+                              ? 'No verified runner is bound to this Capsule.'
+                              : 'Verified runner: '
+                                  '${selectedBinding!.runnerKeyId.substring(0, 16)}…\n'
+                                  'Build: ${selectedBinding!.runnerBuildId}\n'
+                                  'Plugin: ${selectedBinding!.pluginVersion}',
                         ),
+                        if (errorText != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            errorText!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1256,12 +1229,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           importing
                               ? null
                               : () {
-                                final runnerKeyId = _remoteRunnerIdentity
-                                    .normalizeRunnerKeyId(controller.text);
+                                final runnerKeyId =
+                                    selectedBinding?.runnerKeyId;
                                 if (runnerKeyId == null) {
                                   setDialogState(() {
                                     errorText =
-                                        'Enter or load one valid runner ID.';
+                                        'Verify one runner anchor first.';
                                   });
                                   return;
                                 }
@@ -1274,7 +1247,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 ),
           ),
     );
-    controller.dispose();
     return result;
   }
 

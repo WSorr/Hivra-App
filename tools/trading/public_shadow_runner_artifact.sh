@@ -43,6 +43,8 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --runtime-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --install-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --initialize-disabled <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --provision-disabled <artifact-dir>
+    --anchor-output <absolute-new-directory>
   tools/trading/public_shadow_runner_artifact.sh --activate <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --deactivate <artifact-dir>
@@ -94,6 +96,9 @@ Exact replay reuses those retained evidence bytes before the existing effect
 runner is allowed to access the exchange credential.
 Session recovery reads only an existing cycle effect and reconciles its provider
 outcome. It cannot capture market data, create an intent, or deliver an order.
+Provisioning composes exact verification, disabled installation, one identity
+initialization, and signed anchor export. The unit remains disabled and inactive;
+any failed initialization or anchor export removes only the exact installed bundle.
 EOF
 }
 
@@ -1231,6 +1236,45 @@ initialize_disabled() {
   exec 9>&-
   printf '%s\n' "$evidence"
   echo "PASS trading-runner-artifact: initialized disabled runner_key_id=$installed_key_id"
+}
+
+provision_disabled() {
+  local directory="$1"
+  [ -n "$ANCHOR_OUTPUT" ] && [ "${ANCHOR_OUTPUT#/}" != "$ANCHOR_OUTPUT" ] ||
+    die "disabled provisioning requires one absolute anchor output path"
+  [ ! -e "$ANCHOR_OUTPUT" ] && [ ! -L "$ANCHOR_OUTPUT" ] ||
+    die "disabled provisioning anchor output already exists"
+
+  "$0" --install-disabled "$directory"
+  rollback_disabled_provisioning() {
+    "$0" --uninstall-disabled "$directory" >/dev/null 2>&1 || true
+    die "$1"
+  }
+  if ! "$0" --initialize-disabled "$directory"; then
+    rollback_disabled_provisioning \
+      "disabled provisioning failed during identity initialization"
+  fi
+  local runner_key_id
+  if ! runner_key_id="$(read_installed_runner_key_id)"; then
+    rollback_disabled_provisioning \
+      "disabled provisioning could not read initialized identity"
+  fi
+  if ! "$0" --export-anchor "$directory" \
+    --expected-runner-key-id "$runner_key_id" \
+    --anchor-output "$ANCHOR_OUTPUT"; then
+    rollback_disabled_provisioning \
+      "disabled provisioning failed during anchor export"
+  fi
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) rollback_disabled_provisioning \
+      "disabled provisioning changed unit enablement" ;;
+  esac
+  if [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" != "inactive" ]; then
+    rollback_disabled_provisioning \
+      "disabled provisioning left the runner active"
+  fi
+  echo "PASS trading-runner-artifact: provisioned disabled runner_key_id=$runner_key_id anchor=$ANCHOR_OUTPUT effect=false"
 }
 
 activate_identity_bound() {
@@ -4622,7 +4666,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -4713,6 +4757,12 @@ case "$MODE" in
       [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "disabled initialization reads identity from exact evidence"
     initialize_disabled "$ARTIFACT_DIR"
+    ;;
+  provision-disabled)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -n "$ANCHOR_OUTPUT" ] ||
+      die "disabled provisioning accepts only one anchor output"
+    provision_disabled "$ARTIFACT_DIR"
     ;;
   activate)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

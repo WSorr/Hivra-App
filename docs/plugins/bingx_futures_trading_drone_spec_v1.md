@@ -1092,12 +1092,25 @@ If an unresolved provider outcome already stopped the session, recovery targets
 that exact last attempted cycle and may replace only its retained result with a
 later verified receipt; it never resumes the stopped session.
 
+Runner provisioning is one canonical host use case. It verifies the exact
+merge-SHA artifact, installs it into empty canonical paths, initializes one
+persistent runner identity, exports the exact public key plus signed evidence,
+and leaves the systemd unit disabled and inactive. Initialization or anchor
+export failure removes only that exact installed bundle. Provisioning cannot
+load exchange credentials, admit a mandate, enable the unit, schedule a cycle,
+or contact the exchange.
+
 The 1.x Trading Drone screen may export a bounded session only after an active
-bounded mandate exists. The user supplies the already verified runner key id;
-the Capsule root signs the exact deployed runner profile plus the currently
-selected stop-loss and minimum-risk-reward values and session bounds. Export is
-atomic and creates an inert artifact: it does not transfer credentials, install
-a timer, execute a cycle, or contact the exchange.
+bounded mandate exists and the active Capsule has imported the exact two-file
+runner anchor. The Capsule verifies the public-key fingerprint, canonical
+evidence bytes, Ed25519 signature, plugin identity, and evidence continuity
+before atomically retaining the public binding in that Capsule's plugin state.
+It repeats this authentication when restoring the binding. A raw runner id, a
+standalone public-key file, clipboard text, or a binding from another Capsule
+is not sufficient authority. The Capsule root then signs the exact deployed
+runner profile plus the selected stop-loss, minimum-risk-reward, and session
+bounds. Export remains inert: it does not transfer credentials, enable a timer,
+execute a cycle, or contact the exchange.
 
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one
@@ -1124,7 +1137,8 @@ fails closed before another market or exchange action.
   unresolved instead of returning `notFound` to the generic retry transition.
 - Test-order success proves provider-boundary wiring but not live acceptance;
   a live subaccount order requires a separate explicit operator decision.
-- Automatic systemd effect scheduling, leases, automatic admission, order cancellation,
+- Automatic systemd effect scheduling, remote credential/session transport,
+  leases, automatic admission, order cancellation,
   leverage/margin mutation, withdrawal,
   transfer, Pair Consensus, AI authority, and multi-symbol execution are out of
   scope.

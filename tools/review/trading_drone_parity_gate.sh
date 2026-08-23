@@ -160,6 +160,10 @@ runner_bundle_install_is_fail_closed() {
     rg -q -- '--ephemeral-install-smoke <artifact-dir>' "$1" &&
     rg -q -- '--install-disabled <artifact-dir>' "$1" &&
     rg -q -- '--initialize-disabled <artifact-dir>' "$1" &&
+    rg -q -- '--provision-disabled <artifact-dir>' "$1" &&
+    rg -q 'rollback_disabled_provisioning' "$1" &&
+    rg -q 'disabled provisioning changed unit enablement' "$1" &&
+    rg -q 'disabled provisioning left the runner active' "$1" &&
     rg -q -- '--activate <artifact-dir>' "$1" &&
     rg -q -- '--deactivate <artifact-dir>' "$1" &&
     rg -q -- '--uninstall-disabled <artifact-dir>' "$1" &&
