@@ -564,6 +564,34 @@ else:
 PY
 }
 
+deterministic_session_scheduler_decision_with_revocation() {
+  local session_status="$1"
+  local revocation_present="$2"
+  local interval_seconds="$3"
+  local starts_at="$4"
+  local expires_at="$5"
+  local now_override="${6:-}"
+  case "$session_status" in
+    completed:*|stopped:*)
+      deterministic_session_scheduler_decision \
+        "$session_status" "$interval_seconds" "$starts_at" \
+        "$expires_at" "$now_override"
+      ;;
+    active:*)
+      if [ "$revocation_present" = "true" ]; then
+        echo "ready:revocation"
+      elif [ "$revocation_present" = "false" ]; then
+        deterministic_session_scheduler_decision \
+          "$session_status" "$interval_seconds" "$starts_at" \
+          "$expires_at" "$now_override"
+      else
+        die "scheduler received invalid revocation state"
+      fi
+      ;;
+    *) die "scheduler received invalid session status" ;;
+  esac
+}
+
 terminalize_stale_deterministic_session() {
   local state="$1"
   local session_operation_id="$2"
@@ -2530,20 +2558,19 @@ run_prepared_session_scheduler() {
   echo "PASS trading-runner-artifact: prepared session scheduler started session_operation_id=$session_id foreground=true serial=true"
   while true; do
     local retained_revocation="$STATE_DIRECTORY/revocations/$session_id.json"
-    local decision
+    local decision revocation_present session_status
+    revocation_present="false"
     if [ -e "$retained_revocation" ] || [ -L "$retained_revocation" ]; then
-      decision="ready:revocation"
-    else
-      local session_status
-      session_status="$(inspect_deterministic_session_cycle \
-        "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
-        "$session_max_cycles" "$mandate_max_effects")" ||
-        die "prepared session scheduler refused invalid canonical state"
-      decision="$(deterministic_session_scheduler_decision \
-        "$session_status" "$interval_seconds" "$session_starts_at" \
-        "$expires_at")" ||
-        die "prepared session scheduler could not evaluate signed cadence"
+      revocation_present="true"
     fi
+    session_status="$(inspect_deterministic_session_cycle \
+      "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
+      "$session_max_cycles" "$mandate_max_effects")" ||
+      die "prepared session scheduler refused invalid canonical state"
+    decision="$(deterministic_session_scheduler_decision_with_revocation \
+      "$session_status" "$revocation_present" "$interval_seconds" \
+      "$session_starts_at" "$expires_at")" ||
+      die "prepared session scheduler could not evaluate signed cadence"
     case "$decision" in
       terminal:*)
         exec 8>&-
@@ -4260,6 +4287,15 @@ PY
     "stopped:1:0" 300 "2000-01-01T00:00:00.000Z" \
     "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
     "terminal:stopped:1" ] || die "self-test scheduler resurrected terminal state"
+  [ "$(deterministic_session_scheduler_decision_with_revocation \
+    "active:1:0" true 300 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
+    "ready:revocation" ] || die "self-test scheduler ignored active revocation"
+  [ "$(deterministic_session_scheduler_decision_with_revocation \
+    "stopped:1:0" true 300 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
+    "terminal:stopped:1" ] ||
+    die "self-test scheduler looped on retained terminal revocation"
   if deterministic_session_scheduler_decision \
     "active:1:0" 30 "2000-01-01T00:00:00.000Z" \
     "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z" \
