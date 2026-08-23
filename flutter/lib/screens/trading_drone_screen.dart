@@ -1299,8 +1299,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'The Capsule signs authority for one cycle and one '
-                          'possible exchange effect. The runner cannot renew it.',
+                          'The Capsule signs authority for this bounded session. '
+                          'The runner cannot extend or renew its limits.',
                         ),
                         const SizedBox(height: 16),
                         Wrap(
