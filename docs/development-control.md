@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-08-22
+Status date: 2026-08-23
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: Hivra 1.x product completion. The Trading Drone has
 proved one bounded live order and restart reconciliation, but it is not yet an
@@ -42,7 +42,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | One deterministic remote cycle complete | A Capsule-signed single-use admission binds one runner and exact strategy policy; fresh market/risk/rules may produce one candidate and consume one existing effect-journal operation. | Replay, stale/incomplete evidence, policy drift, or a second candidate cannot produce a second POST. No continuous scheduler, automatic admission, plugin ABI, or new provider route is included. | No next unit is selected automatically; VPS execution remains a separate explicit decision. |
+| **1.x maintained runtime** | One-cycle authority export complete | The existing Trading Drone screen signs and atomically exports one deterministic admission for the verified runner, active mandate, current stop-loss, and current minimum-risk-reward policy. | Manual macOS smoke verified the canonical commitment, Ed25519 signature, Capsule and runner binding, single-use bound, and absence of credentials or an exchange effect. No continuous scheduler, automatic renewal, plugin ABI, or new provider route is included. | No next unit is selected automatically; merge-SHA VPS test execution remains a separate explicit decision. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

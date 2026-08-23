@@ -1063,6 +1063,13 @@ candidate owner, and consume the admission commitment as the single durable
 effect operation identity. A replay or a different candidate under the same
 admission cannot produce a second provider POST.
 
+The 1.x Trading Drone screen may export this admission only after an active
+bounded mandate exists. The user supplies the already verified runner key id;
+the Capsule root signs the exact deployed runner profile plus the currently
+selected stop-loss and minimum-risk-reward values. Export is atomic and creates
+an inert artifact: it does not transfer credentials, schedule execution, or
+contact the exchange.
+
 - `ExternalEffectService` remains the sole durable effect lifecycle owner.
 - The read-only public-shadow executable has no order-effect imports or routes.
 - A separate bounded effect executable is invoked only by the existing host
