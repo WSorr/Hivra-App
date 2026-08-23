@@ -165,12 +165,6 @@ class BingxFuturesLiveDecisionService {
       zone: zone,
       levels: input.snapshotInput.liquidityLevels,
     );
-    final canPrepareIntent =
-        decisionSide != null &&
-        zone != null &&
-        !zoneConflict &&
-        !trendGateBlocked;
-
     final mergedReasons = <BingxTvhDecisionReason>[
       ...tvhDecision.reasons,
       BingxTvhDecisionReason(
@@ -201,7 +195,6 @@ class BingxFuturesLiveDecisionService {
       zoneConflict: zoneConflict,
       trendGateBlocked: trendGateBlocked,
       trendGateCode: trendGateCode,
-      canPrepareIntent: canPrepareIntent,
       reasons: mergedReasons,
       trend15m: features.trendDirection.name,
       trend4h: zone?.trend4h ?? 'flat',
@@ -219,7 +212,6 @@ class BingxFuturesLiveDecisionService {
     required bool zoneConflict,
     required bool trendGateBlocked,
     required String trendGateCode,
-    required bool canPrepareIntent,
     required List<BingxTvhDecisionReason> reasons,
     required String trend15m,
     required String trend4h,
@@ -249,6 +241,30 @@ class BingxFuturesLiveDecisionService {
         oppositeLiquidityTarget == null
             ? null
             : _formatDecimal(oppositeLiquidityTarget, scale: 8);
+    final hasExecutableTarget =
+        oppositeLiquidityTargetDecimal != null &&
+        oppositeLiquidityTargetSource != null &&
+        oppositeLiquidityTargetSource.isNotEmpty &&
+        oppositeLiquidityTargetAtUtc != null &&
+        oppositeLiquidityTargetAtUtc.endsWith('Z') &&
+        DateTime.tryParse(oppositeLiquidityTargetAtUtc)?.isUtc == true;
+    final canPrepareIntent =
+        side != null &&
+        zone != null &&
+        !zoneConflict &&
+        !trendGateBlocked &&
+        hasExecutableTarget;
+    final effectiveReasons = <BingxTvhDecisionReason>[
+      ...reasons,
+      BingxTvhDecisionReason(
+        code: 'opposite_liquidity_target_available',
+        passed: hasExecutableTarget,
+        detail:
+            hasExecutableTarget
+                ? 'opposite_liquidity_target_bound'
+                : 'opposite_liquidity_target_unavailable',
+      ),
+    ];
     final canonical = jsonEncode(<String, dynamic>{
       'schema_version': 2,
       'contract': 'bingx_futures_live_decision_v2',
@@ -298,7 +314,7 @@ class BingxFuturesLiveDecisionService {
                 'event_at_utc': oppositeLiquidityTargetAtUtc,
               },
       'reason_codes':
-          reasons
+          effectiveReasons
               .map(
                 (reason) => <String, dynamic>{
                   'code': reason.code,
@@ -321,7 +337,7 @@ class BingxFuturesLiveDecisionService {
       tvhDecisionHashHex: tvhDecision.decisionHashHex,
       liveDecisionHashHex: liveHash,
       canonicalJson: canonical,
-      reasons: List<BingxTvhDecisionReason>.unmodifiable(reasons),
+      reasons: List<BingxTvhDecisionReason>.unmodifiable(effectiveReasons),
       trend15m: trend15m,
       trend4h: trend4h,
       trend1d: trend1d,

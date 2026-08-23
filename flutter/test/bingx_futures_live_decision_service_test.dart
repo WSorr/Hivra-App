@@ -12,7 +12,7 @@ void main() {
   group('BingxFuturesLiveDecisionService', () {
     const service = BingxFuturesLiveDecisionService();
 
-    test('prepares deterministic live long decision from TVH pipeline', () {
+    test('blocks deterministic live long without opposite target', () {
       final input = BingxFuturesLiveDecisionInput(
         snapshotInput: _buildInput(permuted: false),
         isConsensusSignable: true,
@@ -21,7 +21,7 @@ void main() {
       final first = service.decide(input);
       final second = service.decide(input);
 
-      expect(first.canPrepareIntent, isTrue);
+      expect(first.canPrepareIntent, isFalse);
       expect(first.decision, BingxTvhDecisionKind.long);
       expect(first.side, 'buy');
       expect(first.zoneSide, 'buyside');
@@ -146,7 +146,7 @@ void main() {
       expect(result.reasons.first.code, 'consensus_guard');
     });
 
-    test('produces deterministic live short decision from TVH pipeline', () {
+    test('blocks deterministic live short without opposite target', () {
       final input = BingxFuturesLiveDecisionInput(
         snapshotInput: _buildShortInput(permuted: false),
         isConsensusSignable: true,
@@ -157,7 +157,7 @@ void main() {
 
       expect(first.decision, BingxTvhDecisionKind.short);
       expect(first.side, 'sell');
-      expect(first.canPrepareIntent, isTrue);
+      expect(first.canPrepareIntent, isFalse);
       expect(first.zoneSide, 'sellside');
       expect(first.zoneLowDecimal, isNotNull);
       expect(first.zoneHighDecimal, isNotNull);
@@ -285,6 +285,8 @@ void main() {
           trend1d: 'bull',
           needsFartherRetest: false,
           targetRetestPct: 0.02,
+          zoneLow: 94,
+          zoneHigh: 94.5,
           externalSellRetest: 120,
           externalBuyRetest: 70,
         ),
@@ -295,10 +297,49 @@ void main() {
         ),
       );
 
+      expect(result.canPrepareIntent, isTrue);
       expect(result.oppositeLiquidityTargetDecimal, '120');
       expect(result.oppositeLiquidityTargetSource, '1d_fresh_high');
       expect(result.canonicalJson, contains('opposite_external_liquidity'));
       expect(result.canonicalJson, contains('"schema_version":2'));
+    });
+
+    test('blocks executable intent without opposite liquidity target', () {
+      final result = BingxFuturesLiveDecisionService(
+        snapshotService: _StubSnapshotService(),
+        featureExtractor: const _StubFeatureExtractor(
+          trendDirection: BingxTrendDirection.bullish,
+        ),
+        ruleEngine: const _StubRuleEngine(decision: BingxTvhDecisionKind.long),
+        zoneDecision: const _StubZoneDecision(
+          side: 'buy',
+          zoneSide: 'buyside',
+          trend4h: 'bull',
+          trend1d: 'bull',
+          needsFartherRetest: false,
+          targetRetestPct: 0.02,
+          zoneLow: 94,
+          zoneHigh: 94.5,
+          externalSellRetest: null,
+        ),
+      ).decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildInput(permuted: false),
+          isConsensusSignable: true,
+        ),
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.long);
+      expect(result.canPrepareIntent, isFalse);
+      expect(result.oppositeLiquidityTargetDecimal, isNull);
+      expect(
+        result.reasons.any(
+          (reason) =>
+              reason.code == 'opposite_liquidity_target_available' &&
+              !reason.passed,
+        ),
+        isTrue,
+      );
     });
 
     test('blocks missed short retest after bearish momentum continuation', () {
@@ -1075,8 +1116,8 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
   final num recentHigh;
   final num recentLow;
   final bool sweepUp;
-  final num externalSellRetest;
-  final num externalBuyRetest;
+  final num? externalSellRetest;
+  final num? externalBuyRetest;
 
   const _StubZoneDecision({
     required this.side,

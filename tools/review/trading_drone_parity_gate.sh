@@ -156,6 +156,7 @@ runner_bundle_install_is_fail_closed() {
   final_bundle_remove_line="$(rg -n 'rm -rf "\$BUNDLE_INSTALL_PATH"' "$1" | tail -1 | cut -d: -f1)"
   final_state_remove_line="$(rg -n 'rm -rf "\$STATE_DIRECTORY" "\$state_private"' "$1" | tail -1 | cut -d: -f1)"
   [ -x "$1" ] &&
+    ! rg -q "trap '[^']*\\\$lock_path" "$1" &&
     rg -q -- '--ephemeral-install-smoke <artifact-dir>' "$1" &&
     rg -q -- '--install-disabled <artifact-dir>' "$1" &&
     rg -q -- '--initialize-disabled <artifact-dir>' "$1" &&

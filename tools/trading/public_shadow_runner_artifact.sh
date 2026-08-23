@@ -779,7 +779,7 @@ initialize_disabled() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
-  trap 'systemctl stop "$UNIT_NAME" >/dev/null 2>&1 || true; rm -f "$lock_path"' EXIT INT TERM
+  trap "systemctl stop '$UNIT_NAME' >/dev/null 2>&1 || true; rm -f '$lock_path'" EXIT INT TERM
 
   local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
   case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
@@ -885,7 +885,7 @@ deactivate_identity_bound() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
-  trap 'rm -f "$lock_path"' EXIT INT TERM
+  trap "rm -f '$lock_path'" EXIT INT TERM
 
   [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
     die "identity-bound deactivation refused the installed runner key id"
@@ -1279,7 +1279,7 @@ admit_remote_mandate() {
   flock -n 9 || die "another public-shadow install operation is active"
   local work
   work="$(mktemp -d)"
-  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+  trap "rm -rf '$work'; rm -f '$lock_path'" EXIT INT TERM
   install -m 0600 "$MANDATE_ARTIFACT" "$work/input.json"
   verify_remote_mandate_artifact \
     "$work/input.json" "$EXPECTED_RUNNER_KEY_ID" "$work"
@@ -1687,7 +1687,7 @@ probe_exchange_account_once() {
   flock -n 9 || die "another public-shadow install operation is active"
   local work
   work="$(mktemp -d /run/hivra-trading-account-read.XXXXXX)"
-  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+  trap "rm -rf '$work'; rm -f '$lock_path'" EXIT INT TERM
 
   local mandate="$STATE_DIRECTORY/mandates/prepared.v2.json"
   [ ! -e "$STATE_DIRECTORY/mandates/prepared.v1.json" ] &&
@@ -1886,7 +1886,7 @@ execute_exact_order_once() {
   flock -n 9 || die "another public-shadow install operation is active"
   local work
   work="$(mktemp -d /run/hivra-trading-exact-order.XXXXXX)"
-  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+  trap "rm -rf '$work'; rm -f '$lock_path'" EXIT INT TERM
   mkdir "$work/verified"
   verify_remote_mandate_artifact \
     "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
@@ -1976,7 +1976,7 @@ execute_deterministic_order_once() {
   flock -n 9 || die "another public-shadow install operation is active"
   local work
   work="$(mktemp -d /run/hivra-trading-deterministic-order.XXXXXX)"
-  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+  trap "rm -rf '$work'; rm -f '$lock_path'" EXIT INT TERM
   mkdir "$work/verified"
   verify_remote_mandate_artifact \
     "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
@@ -2100,7 +2100,7 @@ install_disabled() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
-  trap 'rm -f "$lock_path"' EXIT
+  trap "rm -f '$lock_path'" EXIT
 
   local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
   local state_private="/var/lib/private/hivra-trading-public-shadow"
@@ -2218,7 +2218,7 @@ uninstall_disabled() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
-  trap 'rm -f "$lock_path"' EXIT INT TERM
+  trap "rm -f '$lock_path'" EXIT INT TERM
 
   local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
   local state_private="/var/lib/private/hivra-trading-public-shadow"
