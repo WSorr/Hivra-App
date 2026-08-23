@@ -2,6 +2,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
+  test('prepared VPS session command is exact and bounded', () {
+    const runner =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    expect(
+      tradingPreparedSessionApplyCommand(
+        runnerKeyId: runner,
+        mandateFileName: 'trading-remote-session-deadbeef.json',
+      ),
+      'sudo ./public_shadow_runner_artifact.sh '
+      '--apply-prepared-session /path/to/runner-bundle '
+      '--expected-runner-key-id $runner '
+      "--mandate-artifact '/path/to/trading-remote-session-deadbeef.json'",
+    );
+    expect(
+      tradingPreparedSessionApplyCommand(
+        runnerKeyId: runner,
+        mandateFileName: '../foreign.json',
+      ),
+      contains("--mandate-artifact '/path/to/signed-session.json'"),
+    );
+  });
+
   test('prepared intent outcome does not claim provider execution', () async {
     final events = <String>[];
 

@@ -1112,6 +1112,17 @@ runner profile plus the selected stop-loss, minimum-risk-reward, and session
 bounds. Export remains inert: it does not transfer credentials, enable a timer,
 execute a cycle, or contact the exchange.
 
+Applying that prepared session is one canonical host use case. It accepts only
+the exact signed bounded-session artifact and expected installed runner identity,
+revalidates signature, semantics, account binding, and current time, then reads
+the BingX key and secret through hidden terminal input. It first commits one
+host-encrypted, account-bound credential, which remains inert without admitted
+authority, and then admits that exact session. A crash between those commits
+may leave only the inert credential; exact replay completes the same apply or
+rejects conflicting state. Success still leaves the runner disabled and
+inactive. This use case does not transfer files over SSH, activate the runner,
+schedule a cycle, contact BingX, or create an exchange effect.
+
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one
 `trading-remote-session-revocation-v1` artifact bound to that session operation
