@@ -230,6 +230,57 @@ void main() {
   );
 
   test(
+    'reconcile-only recovers interrupted delivery without redelivery',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        reconcileResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.notFound,
+          ),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+
+      final capsuleDir = await files.capsuleDirForHex(_rootA);
+      final raw = await files.readPluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+      );
+      final journal = Map<String, dynamic>.from(
+        jsonDecode(raw!) as Map<dynamic, dynamic>,
+      );
+      final operations = List<dynamic>.from(journal['operations'] as List);
+      final operation = Map<String, dynamic>.from(
+        operations.single as Map<dynamic, dynamic>,
+      );
+      operation['state'] = ExternalEffectState.delivering.wireName;
+      operation['attempt_count'] = 1;
+      operation['revision'] = (operation['revision'] as int) + 1;
+      operation['updated_at_utc'] = '2026-07-26T12:29:00.000Z';
+      journal['operations'] = <dynamic>[operation];
+      await files.writePluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+        jsonEncode(journal),
+      );
+
+      final recovered = await service.reconcileOnly(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      expect(recovered.state, ExternalEffectState.unresolved);
+      expect(recovered.lastErrorCode, 'not_found');
+      expect(recovered.attemptCount, 1);
+      expect(adapter.reconcileCount, 1);
+      expect(adapter.deliverCount, 0);
+    },
+  );
+
+  test(
     'explicit reauthorization retries one rejected delivery with the same id',
     () async {
       final adapter = _FakeExternalEffectAdapter(
@@ -288,33 +339,36 @@ void main() {
     },
   );
 
-  test('explicit reauthorization rejects ambiguous terminal failures', () async {
-    final adapter = _FakeExternalEffectAdapter(
-      deliverResults: const <Object>[
-        ExternalEffectAdapterResult(
-          status: ExternalEffectAdapterStatus.terminalFailure,
-          errorCode: 'provider_conflict',
-          errorMessage: 'Remote state conflicts',
-        ),
-      ],
-    );
-    final service = build(adapter);
-    await prepareApprovedQueued(service);
-    await service.process(
-      pluginId: moltbookAmbassadorPluginId,
-      operationId: 'post-1',
-    );
-
-    await expectLater(
-      service.reauthorizeRejectedDelivery(
+  test(
+    'explicit reauthorization rejects ambiguous terminal failures',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'provider_conflict',
+            errorMessage: 'Remote state conflicts',
+          ),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+      await service.process(
         pluginId: moltbookAmbassadorPluginId,
         operationId: 'post-1',
-        approvalEvidenceHashHex: _approvalHash,
-      ),
-      throwsStateError,
-    );
-    expect(adapter.deliverCount, 1);
-  });
+      );
+
+      await expectLater(
+        service.reauthorizeRejectedDelivery(
+          pluginId: moltbookAmbassadorPluginId,
+          operationId: 'post-1',
+          approvalEvidenceHashHex: _approvalHash,
+        ),
+        throwsStateError,
+      );
+      expect(adapter.deliverCount, 1);
+    },
+  );
 
   test(
     'reconcile-only persists and binds an exact provider reference',

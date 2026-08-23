@@ -20,7 +20,20 @@ const String exactOrderMode = 'exact-order';
 
 Future<void> main(List<String> args) async {
   try {
-    if (_requestedMode(args) == deterministicOrderMode) {
+    final requestedMode = _requestedMode(args);
+    if (requestedMode == deterministicOrderRecoveryMode) {
+      final options = parseDeterministicRecoveryArgs(args);
+      final seedBytes = await readRunnerSeedBytes(options);
+      stdout.writeln(
+        await recoverOneDeterministicOrder(
+          options: options,
+          runnerSeedBytes: seedBytes,
+          reconcileExactOrder: reconcileAuthorizedExactOrder,
+        ),
+      );
+      return;
+    }
+    if (requestedMode == deterministicOrderMode) {
       final options = parseDeterministicOrderArgs(args);
       final seedBytes = await readRunnerSeedBytes(options);
       stdout.writeln(
@@ -156,33 +169,17 @@ Future<String> runAuthorizedExactOrder({
   if (normalizedOrder == null) {
     throw const FormatException('authorized exact order is invalid');
   }
-  final accountBinding =
-      sha256.convert(utf8.encode(credentials.apiKey)).toString();
-  if (accountBinding != admission.mandate.accountBindingHashHex) {
-    throw const FormatException('exchange account binding mismatch');
-  }
   final now = nowUtc ?? () => DateTime.now().toUtc();
-  final adapter = BingxFuturesExternalEffectAdapter(
-    exchange: BingxFuturesExchangeService(
-      requestSender: requestSender,
-      clockMs: clockMs,
-    ),
+  final context = _authorizedEffectContext(
+    admission: admission,
     credentials: credentials,
-    accountBindingId: accountBinding,
-    clock: now,
+    stateHome: stateHome,
+    requestSender: requestSender,
+    now: now,
+    clockMs: clockMs,
   );
-  final effects = ExternalEffectService(
-    readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
-    resolveAdapter:
-        (providerId) =>
-            providerId == BingxFuturesExternalEffectAdapter.providerId
-                ? adapter
-                : null,
-    fileStore: CapsuleFileStore(
-      dirs: UserVisibleDataDirectoryService(homeOverride: stateHome),
-    ),
-    clock: now,
-  );
+  final accountBinding = context.accountBinding;
+  final effects = context.effects;
   ExternalEffectOperation? existing;
   for (final operation in await effects.list(
     pluginId: bingxFuturesTradingPluginId,
@@ -232,17 +229,116 @@ Future<String> runAuthorizedExactOrder({
     pluginId: bingxFuturesTradingPluginId,
     operationId: effectOperationId,
   );
-  return jsonEncode(<String, dynamic>{
-    'contract_version': 'hivra-trading-exact-order-evidence-v1',
-    'operation_id': operation.operationId,
-    'state': operation.state.wireName,
-    'attempt_count': operation.attemptCount,
-    'provider_reference_id':
-        operation.providerReferenceId ?? operation.receipt?.providerReceiptId,
-    'receipt_evidence_hash_hex': operation.receipt?.evidenceHashHex,
-    'test_order': admission.mandate.testOrder,
-  });
+  return _exactOrderEvidence(operation, admission.mandate.testOrder);
 }
+
+Future<String> reconcileAuthorizedExactOrder({
+  required BingxFuturesRemoteMandateAdmission admission,
+  required String effectOperationId,
+  required BingxFuturesApiCredentials credentials,
+  required String stateHome,
+  BingxHttpRequestSender? requestSender,
+  DateTime Function()? nowUtc,
+  int Function()? clockMs,
+}) async {
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(effectOperationId) ||
+      !Directory(stateHome).isAbsolute) {
+    throw const FormatException('authorized exact order recovery is invalid');
+  }
+  final now = nowUtc ?? () => DateTime.now().toUtc();
+  final context = _authorizedEffectContext(
+    admission: admission,
+    credentials: credentials,
+    stateHome: stateHome,
+    requestSender: requestSender,
+    now: now,
+    clockMs: clockMs,
+  );
+  ExternalEffectOperation? operation;
+  for (final candidate in await context.effects.list(
+    pluginId: bingxFuturesTradingPluginId,
+  )) {
+    if (candidate.operationId == effectOperationId) {
+      operation = candidate;
+      break;
+    }
+  }
+  if (operation == null) {
+    return _noEffectRecoveryEvidence(effectOperationId, 'absent');
+  }
+  if (operation.state == ExternalEffectState.delivering ||
+      operation.state == ExternalEffectState.unresolved ||
+      operation.state == ExternalEffectState.terminalFailure) {
+    operation = await context.effects.reconcileOnly(
+      pluginId: bingxFuturesTradingPluginId,
+      operationId: effectOperationId,
+    );
+  }
+  if (operation.attemptCount == 0) {
+    return _noEffectRecoveryEvidence(effectOperationId, 'not_delivered');
+  }
+  return _exactOrderEvidence(operation, admission.mandate.testOrder);
+}
+
+String _noEffectRecoveryEvidence(String operationId, String state) =>
+    jsonEncode(<String, dynamic>{
+      'contract_version': 'hivra-trading-exact-order-recovery-v1',
+      'operation_id': operationId,
+      'state': state,
+      'effect': false,
+    });
+
+({ExternalEffectService effects, String accountBinding})
+_authorizedEffectContext({
+  required BingxFuturesRemoteMandateAdmission admission,
+  required BingxFuturesApiCredentials credentials,
+  required String stateHome,
+  required DateTime Function() now,
+  BingxHttpRequestSender? requestSender,
+  int Function()? clockMs,
+}) {
+  final accountBinding =
+      sha256.convert(utf8.encode(credentials.apiKey)).toString();
+  if (accountBinding != admission.mandate.accountBindingHashHex) {
+    throw const FormatException('exchange account binding mismatch');
+  }
+  final adapter = BingxFuturesExternalEffectAdapter(
+    exchange: BingxFuturesExchangeService(
+      requestSender: requestSender,
+      clockMs: clockMs,
+    ),
+    credentials: credentials,
+    accountBindingId: accountBinding,
+    clock: now,
+  );
+  return (
+    effects: ExternalEffectService(
+      readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
+      resolveAdapter:
+          (providerId) =>
+              providerId == BingxFuturesExternalEffectAdapter.providerId
+                  ? adapter
+                  : null,
+      fileStore: CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: stateHome),
+      ),
+      clock: now,
+    ),
+    accountBinding: accountBinding,
+  );
+}
+
+String _exactOrderEvidence(ExternalEffectOperation operation, bool testOrder) =>
+    jsonEncode(<String, dynamic>{
+      'contract_version': 'hivra-trading-exact-order-evidence-v1',
+      'operation_id': operation.operationId,
+      'state': operation.state.wireName,
+      'attempt_count': operation.attemptCount,
+      'provider_reference_id':
+          operation.providerReferenceId ?? operation.receipt?.providerReceiptId,
+      'receipt_evidence_hash_hex': operation.receipt?.evidenceHashHex,
+      'test_order': testOrder,
+    });
 
 Map<String, String> _parseExactOrderArgs(List<String> args) {
   const allowed = <String>{

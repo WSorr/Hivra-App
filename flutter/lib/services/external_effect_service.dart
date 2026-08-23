@@ -308,6 +308,23 @@ class ExternalEffectService {
     if (current.requiredAction != null) {
       throw StateError('Required provider action must be completed first');
     }
+    if (current.state == ExternalEffectState.delivering) {
+      current = await _replace(
+        ownerHex,
+        pluginId,
+        operationId,
+        expectedState: ExternalEffectState.delivering,
+        expectedRevision: current.revision,
+        update:
+            (value) => _copy(
+              value,
+              state: ExternalEffectState.unresolved,
+              lastErrorCode: 'restart_during_delivery',
+              lastErrorMessage:
+                  'Delivery outcome must be reconciled after interruption',
+            ),
+      );
+    }
     if (current.state != ExternalEffectState.unresolved &&
         current.state != ExternalEffectState.terminalFailure) {
       throw StateError(
@@ -619,7 +636,8 @@ class ExternalEffectService {
             return _copy(
               current,
               state: ExternalEffectState.unresolved,
-              lastErrorCode: result.errorCode ?? result.status.name,
+              lastErrorCode:
+                  result.errorCode ?? _adapterStatusErrorCode(result.status),
               lastErrorMessage: _boundedError(
                 result.errorMessage ?? 'Provider outcome is unresolved',
               ),
@@ -645,6 +663,15 @@ class ExternalEffectService {
       },
     );
   }
+
+  String _adapterStatusErrorCode(ExternalEffectAdapterStatus status) =>
+      switch (status) {
+        ExternalEffectAdapterStatus.notFound => 'not_found',
+        ExternalEffectAdapterStatus.unresolved => 'unresolved',
+        ExternalEffectAdapterStatus.retryableFailure => 'retryable_failure',
+        ExternalEffectAdapterStatus.succeeded => 'succeeded',
+        ExternalEffectAdapterStatus.terminalFailure => 'terminal_failure',
+      };
 
   Future<ExternalEffectOperation> _transition({
     required String ownerHex,

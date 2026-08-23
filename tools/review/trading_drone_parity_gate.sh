@@ -496,6 +496,10 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'stop_deterministic_session_state' "$1" &&
     rg -q 'revoked exact deterministic session' "$1" &&
     rg -q 'self-test resumed revoked deterministic session' "$1" &&
+    rg -q -- '--recover-deterministic-session <artifact-dir>' "$1" &&
+    rg -q 'recover_deterministic_session_once' "$1" &&
+    rg -q -- '--mode deterministic-order-recovery' "$1" &&
+    rg -q 'inspect_deterministic_session_cycle' "$1" &&
     ! rg -q 'deterministic order found conflicting observation state' "$1" &&
     ! rg -q 'deterministic order found conflicting result state' "$1" &&
     ! sed -n '/capture_deterministic_market_evidence_once()/,/^}/p' "$1" | rg -q 'bingx-exchange|EFFECT_BINARY_INSTALL_PATH' &&
@@ -505,6 +509,8 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'LoadCredential=market-evidence:' "$1" &&
     rg -q 'const String deterministicOrderMode = .deterministic-order.' "$2" &&
     rg -q 'runOneDeterministicOrder' "$2" &&
+    rg -q 'recoverOneDeterministicOrder' "$2" &&
+    rg -q 'deterministicOrderRecoveryMode' "$2" &&
     rg -q 'BingxFuturesRemoteOrderCandidateService' "$2" &&
     rg -q 'BingxFuturesExchangeRiskInputService' "$2" &&
     rg -q 'effectOperationId: cycleOperationId' "$2" &&
@@ -518,6 +524,7 @@ runner_deterministic_order_is_bounded_session() {
     rg -q "deterministicHostAbi = 'wasm32-wasi-preview1'" "$3" &&
     rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
     rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
+    rg -q 'session recovery reconciles one existing effect without POST' "$4" &&
     rg -q 'Authorize VPS Session' "$5" &&
     rg -q '_exportSignedRemoteDeterministicSession' "$5" &&
     rg -q 'Revoke VPS Session' "$5" &&
