@@ -1132,9 +1132,15 @@ session journal in `active` state. A conflicting, malformed, terminal, expired,
 revoked, wrong-runner, or wrong-account state fails closed. Activation leaves
 the public-shadow systemd unit disabled and inactive and performs no market
 capture, account read, scheduler tick, provider request, or exchange effect.
-The future scheduler may call only the existing single-cycle
-`execute-deterministic-order` use case after this state exists; it may not own a
-parallel decision or effect path.
+The bounded foreground scheduler may call only the existing single-cycle
+`execute-deterministic-order` use case after this state exists; it owns no
+parallel decision or effect path. One host lock permits only one scheduler for
+the installed Runner. The scheduler waits for the signed cadence, polls for an
+exact retained revocation at least every five seconds, executes cycles serially,
+and exits on any cycle error, missed cadence window, or terminal session state.
+It never catches up missed cycles by executing them in a burst. It installs no daemon,
+timer, boot enablement, or retry policy. Persistent systemd packaging remains a
+separate deployment concern and may not weaken these semantics.
 
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one

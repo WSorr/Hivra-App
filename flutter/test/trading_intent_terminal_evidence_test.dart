@@ -28,6 +28,12 @@ void main() {
       '--activate-prepared-session /path/to/runner-bundle '
       '--expected-runner-key-id $runner',
     );
+    expect(
+      tradingPreparedSessionRunCommand(runnerKeyId: runner),
+      'sudo ./public_shadow_runner_artifact.sh '
+      '--run-prepared-session /path/to/runner-bundle '
+      '--expected-runner-key-id $runner',
+    );
   });
 
   test('prepared intent outcome does not claim provider execution', () async {

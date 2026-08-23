@@ -33,6 +33,7 @@ EXPECTED_RUNNER_KEY_ID=""
 ANCHOR_OUTPUT=""
 MANDATE_ARTIFACT=""
 REVOCATION_ARTIFACT=""
+SCHEDULER_SESSION_OPERATION_ID=""
 
 usage() {
   cat <<'EOF'
@@ -65,6 +66,8 @@ Usage:
     --expected-runner-key-id <64-lowercase-hex>
     --mandate-artifact <absolute-json-file>
   tools/trading/public_shadow_runner_artifact.sh --activate-prepared-session <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --run-prepared-session <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
@@ -102,6 +105,10 @@ identity, account-bound encrypted credential, time bounds, and revocation
 state, then atomically creates only the canonical active session state. It does
 not start or enable the public-shadow unit, schedule a cycle, read market data,
 or expose the exchange credential to an effect process.
+Prepared-session run holds one scheduler lock, waits only for the signed
+cadence, checks revocation at least every five seconds, and serially invokes
+the existing deterministic-order cycle owner. It runs in the foreground,
+stops on any failure or terminal session state, and installs no daemon or timer.
 Account probing uses one collected transient systemd unit, supplies both
 encrypted credentials only to that process, permits exactly balance, positions,
 and open-orders GETs, and emits only a bounded redacted verdict.
@@ -500,6 +507,60 @@ else:
     if last != expected_last:
         raise SystemExit("deterministic recovery last cycle is invalid")
 print(f"{value['state']}:{index}:{consumed}")
+PY
+}
+
+deterministic_session_scheduler_decision() {
+  local session_status="$1"
+  local interval_seconds="$2"
+  local starts_at="$3"
+  local expires_at="$4"
+  local now_override="${5:-}"
+  python3 - "$session_status" "$interval_seconds" "$starts_at" \
+    "$expires_at" "$now_override" <<'PY'
+import datetime
+import math
+import re
+import sys
+
+status, raw_interval, starts_raw, expires_raw, now_raw = sys.argv[1:]
+match = re.fullmatch(r"(active|completed|stopped):([0-9]+):([0-9]+)", status)
+if match is None:
+    raise SystemExit("scheduler received invalid session status")
+state, raw_index, _ = match.groups()
+index = int(raw_index)
+try:
+    interval = int(raw_interval)
+except ValueError:
+    raise SystemExit("scheduler received invalid cadence")
+if not 60 <= interval <= 3600:
+    raise SystemExit("scheduler received invalid cadence")
+
+def instant(raw):
+    if not raw.endswith("Z"):
+        raise SystemExit("scheduler received invalid time")
+    try:
+        return datetime.datetime.fromisoformat(raw[:-1] + "+00:00")
+    except ValueError:
+        raise SystemExit("scheduler received invalid time")
+
+starts = instant(starts_raw)
+expires = instant(expires_raw)
+now = instant(now_raw) if now_raw else datetime.datetime.now(datetime.timezone.utc)
+if starts >= expires:
+    raise SystemExit("scheduler received invalid session window")
+if state != "active":
+    print(f"terminal:{state}:{index}")
+    raise SystemExit(0)
+eligible = starts + datetime.timedelta(seconds=interval * index)
+if now >= expires:
+    print(f"ready:{index}")
+elif now >= eligible + datetime.timedelta(seconds=interval):
+    print(f"stale:{index}")
+elif now >= eligible:
+    print(f"ready:{index}")
+else:
+    print(f"wait:{max(1, math.ceil((eligible - now).total_seconds()))}")
 PY
 }
 
@@ -2415,6 +2476,91 @@ activate_prepared_session() {
   echo "PASS trading-runner-artifact: activated prepared session session_operation_id=$session_id state=$session_status scheduler=false effect=false"
 }
 
+run_prepared_session_scheduler() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "prepared session scheduler refused the installed runner key id"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "prepared session scheduler requires an inactive public-shadow runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "prepared session scheduler requires a disabled public-shadow runner" ;;
+  esac
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "prepared session scheduler refused boot enablement"
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "prepared session scheduler requires one retained signed session"
+
+  local scheduler_lock="/run/lock/hivra-trading-deterministic-scheduler.lock"
+  exec 8>"$scheduler_lock"
+  flock -n 8 || die "another deterministic session scheduler is active"
+  local work
+  work="$(mktemp -d /run/hivra-trading-session-scheduler.XXXXXX)"
+  trap "rm -rf '$work'" EXIT INT TERM
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+  [ "$(cat "$work/verified/operation-kind")" = \
+    "bounded_deterministic_session" ] ||
+    die "prepared session scheduler requires bounded session authority"
+  require_retained_exchange_credential_binding \
+    "$(cat "$work/verified/account-binding")"
+  local session_id session_max_cycles mandate_max_effects interval_seconds
+  local session_starts_at expires_at
+  session_id="$(cat "$work/verified/operation-id")"
+  session_max_cycles="$(cat "$work/verified/session-max-cycles")"
+  mandate_max_effects="$(cat "$work/verified/mandate-max-effects")"
+  interval_seconds="$(cat "$work/verified/session-interval-seconds")"
+  session_starts_at="$(cat "$work/verified/session-starts-at")"
+  expires_at="$(cat "$work/verified/expires-at")"
+  trap - EXIT INT TERM
+  rm -rf "$work"
+
+  echo "PASS trading-runner-artifact: prepared session scheduler started session_operation_id=$session_id foreground=true serial=true"
+  while true; do
+    local retained_revocation="$STATE_DIRECTORY/revocations/$session_id.json"
+    local decision
+    if [ -e "$retained_revocation" ] || [ -L "$retained_revocation" ]; then
+      decision="ready:revocation"
+    else
+      local session_status
+      session_status="$(inspect_deterministic_session_cycle \
+        "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
+        "$session_max_cycles" "$mandate_max_effects")" ||
+        die "prepared session scheduler refused invalid canonical state"
+      decision="$(deterministic_session_scheduler_decision \
+        "$session_status" "$interval_seconds" "$session_starts_at" \
+        "$expires_at")" ||
+        die "prepared session scheduler could not evaluate signed cadence"
+    fi
+    case "$decision" in
+      terminal:*)
+        exec 8>&-
+        echo "PASS trading-runner-artifact: prepared session scheduler stopped session_operation_id=$session_id status=$decision effect_repeated=false"
+        return
+        ;;
+      wait:*)
+        local wait_seconds="${decision#wait:}"
+        [ "$wait_seconds" -le 5 ] || wait_seconds=5
+        sleep "$wait_seconds"
+        ;;
+      ready:*)
+        SCHEDULER_SESSION_OPERATION_ID="$session_id"
+        execute_deterministic_order_once "$directory"
+        SCHEDULER_SESSION_OPERATION_ID=""
+        ;;
+      stale:*)
+        die "prepared session scheduler refused a missed signed cycle window"
+        ;;
+      *) die "prepared session scheduler received an invalid decision" ;;
+    esac
+  done
+}
+
 validate_account_read_evidence() {
   local source="$1"
   local expected_operation="$2"
@@ -3271,6 +3417,10 @@ execute_deterministic_order_once() {
   local operation_kind admission_operation_id operation_id cycle_index
   operation_kind="$(cat "$work/verified/operation-kind")"
   admission_operation_id="$(cat "$work/verified/operation-id")"
+  if [ -n "$SCHEDULER_SESSION_OPERATION_ID" ] &&
+    [ "$admission_operation_id" != "$SCHEDULER_SESSION_OPERATION_ID" ]; then
+    die "deterministic scheduler refused mandate rotation during its session"
+  fi
   cycle_index=""
   case "$operation_kind" in
     one_deterministic_order)
@@ -4065,6 +4215,32 @@ PY
     >/dev/null 2>&1; then
     die "self-test executed a deterministic session cycle before its signed start"
   fi
+  [ "$(deterministic_session_scheduler_decision \
+    "active:0:0" 300 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
+    "ready:0" ] || die "self-test scheduler missed an eligible first cycle"
+  [ "$(deterministic_session_scheduler_decision \
+    "active:1:0" 300 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
+    "wait:300" ] || die "self-test scheduler changed the signed cadence"
+  [ "$(deterministic_session_scheduler_decision \
+    "active:1:0" 300 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T00:04:00.000Z" "2000-01-01T00:04:00.000Z")" = \
+    "ready:1" ] || die "self-test scheduler did not settle an expired session"
+  [ "$(deterministic_session_scheduler_decision \
+    "active:0:0" 300 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T01:00:00.000Z" "2000-01-01T00:05:00.000Z")" = \
+    "stale:0" ] || die "self-test scheduler attempted cadence catch-up"
+  [ "$(deterministic_session_scheduler_decision \
+    "stopped:1:0" 300 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
+    "terminal:stopped:1" ] || die "self-test scheduler resurrected terminal state"
+  if deterministic_session_scheduler_decision \
+    "active:1:0" 30 "2000-01-01T00:00:00.000Z" \
+    "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z" \
+    >/dev/null 2>&1; then
+    die "self-test scheduler accepted an invalid cadence"
+  fi
   echo "PASS trading-runner-artifact: bounded restart-safe deterministic session"
   unset session_state session_id session_cycle_0 session_cycle_1 session_status future_session_state
 
@@ -4846,7 +5022,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--run-prepared-session|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -4995,6 +5171,12 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
       die "prepared-session activation requires only runner identity and prepared host state"
     activate_prepared_session "$ARTIFACT_DIR"
+    ;;
+  run-prepared-session)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "prepared-session scheduler requires only runner identity and prepared host state"
+    run_prepared_session_scheduler "$ARTIFACT_DIR"
     ;;
   probe-exchange-account)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
