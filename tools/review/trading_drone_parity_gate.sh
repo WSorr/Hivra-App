@@ -440,6 +440,8 @@ runner_prepared_session_scheduler_is_bounded() {
     rg -q 'deterministic scheduler refused mandate rotation during its session' "$1" &&
     printf '%s\n' "$body" | rg -q '\[ "\$wait_seconds" -le 5 \]' &&
     printf '%s\n' "$body" | rg -q 'refused a missed signed cycle window' &&
+    printf '%s\n' "$body" | rg -q 'terminalize_stale_deterministic_session' &&
+    rg -q 'self-test resurrected terminalized stale session state' "$1" &&
     [ "$(printf '%s\n' "$body" | rg -c 'execute_deterministic_order_once')" -eq 1 ] &&
     printf '%s\n' "$body" | rg -q 'foreground=true serial=true' &&
     ! printf '%s\n' "$body" | rg -q 'systemctl (enable|start)|capture_deterministic_market_evidence_once|systemd-run' &&
