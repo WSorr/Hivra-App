@@ -1085,6 +1085,18 @@ selected stop-loss and minimum-risk-reward values and session bounds. Export is
 atomic and creates an inert artifact: it does not transfer credentials, install
 a timer, execute a cycle, or contact the exchange.
 
+Remote stop is a separate narrowing operation. The Capsule imports and verifies
+the exact signed session artifact, then signs one
+`trading-remote-session-revocation-v1` artifact bound to that session operation
+id, runner key id, Capsule root, and revocation instant. Creating the artifact
+also pauses the local mandate, but cannot claim that the VPS has stopped. The
+runner stops only after the operator applies the artifact to the exact installed
+runner. It verifies both Capsule signatures, persists bounded revocation
+evidence, and atomically changes only the matching session journal to
+`stopped`. Exact replay is idempotent. Wrong runner, session, Capsule,
+signature, future time, malformed state, or conflicting retained revocation
+fails closed before another market or exchange action.
+
 - `ExternalEffectService` remains the sole durable effect lifecycle owner.
 - The read-only public-shadow executable has no order-effect imports or routes.
 - A separate bounded effect executable is invoked only by the existing host
@@ -1096,7 +1108,7 @@ a timer, execute a cycle, or contact the exchange.
   unresolved instead of returning `notFound` to the generic retry transition.
 - Test-order success proves provider-boundary wiring but not live acceptance;
   a live subaccount order requires a separate explicit operator decision.
-- Automatic systemd effect scheduling, leases, automatic admission, cancellation,
+- Automatic systemd effect scheduling, leases, automatic admission, order cancellation,
   leverage/margin mutation, withdrawal,
   transfer, Pair Consensus, AI authority, and multi-symbol execution are out of
   scope.

@@ -31,7 +31,10 @@ is added. The user now selects the exact 24-hour exchange-order budget before
 authorizing a mandate. The product UI defaults to one effect, offers only the
 bounded set `1, 2, 4, 8, 16, 32`, restores an exact supported budget, and
 requires re-authorization when the selected budget differs from the signed
-mandate.
+mandate. A separate Capsule-signed revocation now binds one exact session,
+runner key, and Capsule root. The runner verifies both admission and revocation,
+retains bounded evidence, and atomically stops that session without creating an
+exchange effect. Local pause and VPS application remain truthfully distinct.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -43,7 +46,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next unit is selected automatically after the user-controlled effect-budget pass. | This board and the relevant product contract |
+| What is the next 1.x step? | No next unit is selected automatically after the signed VPS session-revocation pass. | This board and the relevant product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -54,7 +57,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | User-controlled VPS effect budget implemented | The existing bounded session remains unchanged. Before signing its mandate, the user selects an exact 24-hour exchange-order budget from `1, 2, 4, 8, 16, 32`; the safe default is one, restored unsupported values fall back to one, and any selection drift blocks remote export until re-authorization. The prior merge-SHA smoke evidence remains under `/Volumes/Dev/projects/hivra-artifacts/trading-bounded-session-5e2df39-20260823T093246Z`. | Product-feedback regressions, full Flutter suite, architecture/release gates, protected PR, and post-merge gates. No scheduler, runner mutation, provider route, plugin ABI, Core, or Ledger change is included. | No next unit is selected. Before automatic scheduling, explicitly select stop/revocation UX and unattended recovery/reconciliation. |
+| **1.x maintained runtime** | Signed VPS session revocation implemented | The user selects an exact signed bounded-session artifact and creates a separate Capsule-signed stop file bound to its session operation, runner key, and Capsule root. Export pauses local trading when persistence succeeds but does not claim remote completion. The runner re-verifies the retained admission and revocation, stores bounded evidence, atomically marks only that session stopped, and treats exact replay idempotently without an exchange effect. | Contract mutation regressions, runner self-tests, full Flutter and Rust suites, architecture/release gates, protected PR, and post-merge gates. No scheduler, provider route, plugin ABI, Core, Ledger, tag, or Release change is included. | No next unit is selected. Before automatic scheduling, explicitly select unattended recovery/reconciliation and a user-safe runner provisioning/apply journey. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

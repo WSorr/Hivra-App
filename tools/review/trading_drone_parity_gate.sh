@@ -491,6 +491,11 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'historical deterministic mandate replay is idempotent' "$1" &&
     rg -q 'mandate admission refused rotation before the retained cycle completed' "$1" &&
     rg -q 'bounded multi-cycle operation history' "$1" &&
+    rg -q 'trading-remote-session-revocation-v1' "$1" &&
+    rg -q 'verify_remote_session_revocation_artifact' "$1" &&
+    rg -q 'stop_deterministic_session_state' "$1" &&
+    rg -q 'revoked exact deterministic session' "$1" &&
+    rg -q 'self-test resumed revoked deterministic session' "$1" &&
     ! rg -q 'deterministic order found conflicting observation state' "$1" &&
     ! rg -q 'deterministic order found conflicting result state' "$1" &&
     ! sed -n '/capture_deterministic_market_evidence_once()/,/^}/p' "$1" | rg -q 'bingx-exchange|EFFECT_BINARY_INSTALL_PATH' &&
@@ -515,6 +520,8 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
     rg -q 'Authorize VPS Session' "$5" &&
     rg -q '_exportSignedRemoteDeterministicSession' "$5" &&
+    rg -q 'Revoke VPS Session' "$5" &&
+    rg -q '_exportSignedRemoteSessionRevocation' "$5" &&
     rg -q -- '--runner-build-id systemd-public-shadow-v1' "$6" &&
     rg -q -- '--plugin-version 0.2.3' "$6" &&
     rg -q -- '--package-digest-hex 2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889' "$6" &&

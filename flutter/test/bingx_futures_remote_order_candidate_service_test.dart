@@ -214,6 +214,93 @@ void main() {
       );
     });
 
+    test('session revocation binds exact session runner and Capsule', () async {
+      final fixture = await _fixture();
+      final session =
+          BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+            mandate: fixture.mandate,
+            runnerKeyId: '7' * 64,
+            strategyPolicy:
+                BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                  stopLossPercent: 5,
+                  minimumRiskReward: 2,
+                ),
+            startsAtUtc: fixture.now,
+            intervalSeconds: 300,
+            maxCycles: 12,
+            signCommitment: (_) => '8' * 128,
+          )!;
+      final revocation = BingxFuturesRemoteSessionRevocation.issue(
+        session: session,
+        revokedAtUtc: fixture.now.add(const Duration(minutes: 1)),
+        signCommitment: (_) => '9' * 128,
+      );
+
+      expect(revocation, isNotNull);
+      expect(revocation!.targetSessionOperationId, session.operationId);
+      expect(revocation.runnerKeyId, session.runnerKeyId);
+      expect(revocation.capsuleRootHex, session.mandate.capsuleRootHex);
+      expect(
+        BingxFuturesRemoteSessionRevocation.parseAndVerify(
+          untrustedWireBytes: utf8.encode(revocation.canonicalJson),
+          verifySignature:
+              ({
+                required messageHashHex,
+                required participantIdHex,
+                required signatureHex,
+              }) => true,
+        )?.canonicalJson,
+        revocation.canonicalJson,
+      );
+
+      for (final key in <String>[
+        'target_session_operation_id',
+        'runner_key_id',
+        'capsule_root_hex',
+        'revoked_at_utc',
+        'signature_hex',
+      ]) {
+        final mutated = jsonDecode(revocation.canonicalJson);
+        mutated[key] =
+            key == 'revoked_at_utc'
+                ? '2026-08-22T12:02:00.000Z'
+                : key == 'signature_hex'
+                ? 'a' * 128
+                : 'a' * 64;
+        expect(
+          BingxFuturesRemoteSessionRevocation.parseAndVerify(
+            untrustedWireBytes: utf8.encode(jsonEncode(mutated)),
+            verifySignature:
+                ({
+                  required messageHashHex,
+                  required participantIdHex,
+                  required signatureHex,
+                }) => key != 'signature_hex',
+          ),
+          isNull,
+          reason: key,
+        );
+      }
+      expect(
+        BingxFuturesRemoteSessionRevocation.issue(
+          session:
+              BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
+                mandate: fixture.mandate,
+                runnerKeyId: '7' * 64,
+                strategyPolicy:
+                    BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                      stopLossPercent: 5,
+                      minimumRiskReward: 2,
+                    ),
+                signCommitment: (_) => '8' * 128,
+              )!,
+          revokedAtUtc: fixture.now,
+          signCommitment: (_) => '9' * 128,
+        ),
+        isNull,
+      );
+    });
+
     test('does not adapt stale or mutated candidate bytes', () async {
       final fixture = await _fixture();
       final result = await _compose(fixture);

@@ -1009,6 +1009,176 @@ class BingxFuturesRemoteMandateAdmission {
   }
 }
 
+class BingxFuturesRemoteSessionRevocation {
+  static const String contractVersion = 'trading-remote-session-revocation-v1';
+  static const String signatureSuite = 'ed25519-v1';
+  static const int maxWireBytes = 2048;
+
+  final String revocationId;
+  final String targetSessionOperationId;
+  final String runnerKeyId;
+  final String capsuleRootHex;
+  final String revokedAtUtc;
+  final String signatureHex;
+
+  const BingxFuturesRemoteSessionRevocation._({
+    required this.revocationId,
+    required this.targetSessionOperationId,
+    required this.runnerKeyId,
+    required this.capsuleRootHex,
+    required this.revokedAtUtc,
+    required this.signatureHex,
+  });
+
+  static BingxFuturesRemoteSessionRevocation? issue({
+    required BingxFuturesRemoteMandateAdmission session,
+    required DateTime revokedAtUtc,
+    required String? Function(String commitmentHashHex) signCommitment,
+  }) {
+    if (!session.isDeterministicSession) return null;
+    final semantic = _normalizeSemantic(
+      targetSessionOperationId: session.operationId,
+      runnerKeyId: session.runnerKeyId,
+      capsuleRootHex: session.mandate.capsuleRootHex,
+      revokedAtUtc: revokedAtUtc.toUtc().toIso8601String(),
+    );
+    if (semantic == null) return null;
+    final revocationId = _deriveCommitmentHash(semantic);
+    final signatureHex =
+        signCommitment(revocationId)?.trim().toLowerCase() ?? '';
+    if (!RegExp(r'^[0-9a-f]{128}$').hasMatch(signatureHex)) return null;
+    return BingxFuturesRemoteSessionRevocation._(
+      revocationId: revocationId,
+      targetSessionOperationId:
+          semantic['target_session_operation_id']! as String,
+      runnerKeyId: semantic['runner_key_id']! as String,
+      capsuleRootHex: semantic['capsule_root_hex']! as String,
+      revokedAtUtc: semantic['revoked_at_utc']! as String,
+      signatureHex: signatureHex,
+    );
+  }
+
+  static BingxFuturesRemoteSessionRevocation? parseAndVerify({
+    required List<int> untrustedWireBytes,
+    required bool Function({
+      required String messageHashHex,
+      required String participantIdHex,
+      required String signatureHex,
+    })
+    verifySignature,
+  }) {
+    if (untrustedWireBytes.isEmpty ||
+        untrustedWireBytes.length > maxWireBytes) {
+      return null;
+    }
+    try {
+      final raw = utf8.decode(untrustedWireBytes, allowMalformed: false);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      const keys = <String>{
+        'contract_version',
+        'revocation_id',
+        'target_session_operation_id',
+        'runner_key_id',
+        'capsule_root_hex',
+        'revoked_at_utc',
+        'signature_suite',
+        'signature_hex',
+      };
+      if (decoded.keys.toSet().difference(keys).isNotEmpty ||
+          keys.difference(decoded.keys.toSet()).isNotEmpty ||
+          decoded['contract_version'] != contractVersion ||
+          decoded['signature_suite'] != signatureSuite) {
+        return null;
+      }
+      final semantic = _normalizeSemantic(
+        targetSessionOperationId:
+            decoded['target_session_operation_id']?.toString() ?? '',
+        runnerKeyId: decoded['runner_key_id']?.toString() ?? '',
+        capsuleRootHex: decoded['capsule_root_hex']?.toString() ?? '',
+        revokedAtUtc: decoded['revoked_at_utc']?.toString() ?? '',
+      );
+      if (semantic == null) return null;
+      final revocationId = decoded['revocation_id']?.toString() ?? '';
+      final signatureHex = decoded['signature_hex']?.toString() ?? '';
+      if (revocationId != _deriveCommitmentHash(semantic) ||
+          !RegExp(r'^[0-9a-f]{128}$').hasMatch(signatureHex)) {
+        return null;
+      }
+      final result = BingxFuturesRemoteSessionRevocation._(
+        revocationId: revocationId,
+        targetSessionOperationId:
+            semantic['target_session_operation_id']! as String,
+        runnerKeyId: semantic['runner_key_id']! as String,
+        capsuleRootHex: semantic['capsule_root_hex']! as String,
+        revokedAtUtc: semantic['revoked_at_utc']! as String,
+        signatureHex: signatureHex,
+      );
+      if (raw != result.canonicalJson ||
+          !verifySignature(
+            messageHashHex: result.revocationId,
+            participantIdHex: result.capsuleRootHex,
+            signatureHex: result.signatureHex,
+          )) {
+        return null;
+      }
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'contract_version': contractVersion,
+    'revocation_id': revocationId,
+    'target_session_operation_id': targetSessionOperationId,
+    'runner_key_id': runnerKeyId,
+    'capsule_root_hex': capsuleRootHex,
+    'revoked_at_utc': revokedAtUtc,
+    'signature_suite': signatureSuite,
+    'signature_hex': signatureHex,
+  };
+
+  String get canonicalJson => jsonEncode(toJson());
+
+  static Map<String, dynamic>? _normalizeSemantic({
+    required String targetSessionOperationId,
+    required String runnerKeyId,
+    required String capsuleRootHex,
+    required String revokedAtUtc,
+  }) {
+    final target = targetSessionOperationId.trim().toLowerCase();
+    final runner = runnerKeyId.trim().toLowerCase();
+    final capsule = capsuleRootHex.trim().toLowerCase();
+    final revoked = DateTime.tryParse(revokedAtUtc)?.toUtc();
+    final hex64 = RegExp(r'^[0-9a-f]{64}$');
+    if (!hex64.hasMatch(target) ||
+        !hex64.hasMatch(runner) ||
+        !hex64.hasMatch(capsule) ||
+        revoked == null ||
+        !revokedAtUtc.endsWith('Z')) {
+      return null;
+    }
+    return <String, dynamic>{
+      'contract_version': contractVersion,
+      'target_session_operation_id': target,
+      'runner_key_id': runner,
+      'capsule_root_hex': capsule,
+      'revoked_at_utc': revoked.toIso8601String(),
+    };
+  }
+
+  static String _deriveCommitmentHash(Map<String, dynamic> semantic) =>
+      sha256
+          .convert(
+            utf8.encode(
+              'hivra:bingx-futures-remote-session-revocation:v1\n'
+              '${jsonEncode(semantic)}',
+            ),
+          )
+          .toString();
+}
+
 class BingxLiquidityEventEffectClaim {
   final String liquidityEventId;
   final String clientOrderId;
