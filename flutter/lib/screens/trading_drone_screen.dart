@@ -274,6 +274,30 @@ bool tradingMandateMatchesSelection({
 }
 
 @visibleForTesting
+bool tradingHasExecutableIntent({
+  required PluginHostApiStatus? status,
+  required bool hasResult,
+  required BingxFuturesTradingMandate? mandate,
+  required bool droneEnabled,
+  required String selectedSymbol,
+  required String selectedMaxNotional,
+  required int selectedMaxEffects,
+  required bool testOrder,
+  required DateTime nowUtc,
+}) =>
+    status == PluginHostApiStatus.executed &&
+    hasResult &&
+    tradingMandateMatchesSelection(
+      mandate: mandate,
+      droneEnabled: droneEnabled,
+      selectedSymbol: selectedSymbol,
+      selectedMaxNotional: selectedMaxNotional,
+      selectedMaxEffects: selectedMaxEffects,
+      testOrder: testOrder,
+      nowUtc: nowUtc,
+    );
+
+@visibleForTesting
 String? tradingMandateSelectionNotice({
   required BingxFuturesTradingMandate? mandate,
   required bool droneEnabled,
@@ -814,11 +838,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     setState(() {
       _droneEnabled = value;
       _tradingMandate = nextMandate;
-      if (value) {
-        _lastIntentResponse = null;
-        _lastPreparedLiveDecision = null;
-        _intentBlockingMessage = null;
-      }
+      _lastIntentResponse = null;
+      _lastPreparedLiveDecision = null;
+      _intentBlockingMessage = null;
       _savingTradingControl = true;
     });
     try {
@@ -4340,10 +4362,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasExecutableIntent =
-        _lastIntentResponse?.status == PluginHostApiStatus.executed &&
-        _lastIntentResponse?.result != null;
     final selectedSymbol = _symbolController.text.trim().toUpperCase();
+    final nowUtc = DateTime.now().toUtc();
+    final hasExecutableIntent = tradingHasExecutableIntent(
+      status: _lastIntentResponse?.status,
+      hasResult: _lastIntentResponse?.result != null,
+      mandate: _tradingMandate,
+      droneEnabled: _droneEnabled,
+      selectedSymbol: selectedSymbol,
+      selectedMaxNotional: _maxNotionalUsdtController.text,
+      selectedMaxEffects: _maxEffects,
+      testOrder: _useTestOrderEndpoint,
+      nowUtc: nowUtc,
+    );
     final mandateSelectionNotice = tradingMandateSelectionNotice(
       mandate: _tradingMandate,
       droneEnabled: _droneEnabled,
@@ -4351,7 +4382,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       selectedMaxNotional: _maxNotionalUsdtController.text,
       selectedMaxEffects: _maxEffects,
       testOrder: _useTestOrderEndpoint,
-      nowUtc: DateTime.now().toUtc(),
+      nowUtc: nowUtc,
     );
     final tradingControlSubtitle =
         !_tradingControlLoaded || _savingTradingControl
