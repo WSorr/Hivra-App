@@ -31,7 +31,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Select one observed user-facing failure that blocks the next complete Chat, Moltbook, or Trading journey. No implementation unit is currently selected. | This board and the relevant product contract |
+| What is the next 1.x step? | Complete the bounded Trading remote-cycle authorization UX: one visible use case, runner public-key import, strict identity validation, and packaged macOS smoke. | This board and the relevant product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -42,7 +42,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | One-cycle authority export complete | The existing Trading Drone screen signs and atomically exports one deterministic admission for the verified runner, active mandate, current stop-loss, and current minimum-risk-reward policy. | Manual macOS smoke verified the canonical commitment, Ed25519 signature, Capsule and runner binding, single-use bound, and absence of credentials or an exchange effect. No continuous scheduler, automatic renewal, plugin ABI, or new provider route is included. | No next unit is selected automatically; merge-SHA VPS test execution remains a separate explicit decision. |
+| **1.x maintained runtime** | Remote-cycle authorization UX consolidation in progress | The existing Trading Drone screen exposes one deterministic remote-cycle use case. It loads the runner public-key file or accepts one validated runner id, then signs and atomically exports the existing single-use admission. Legacy mandate and exact-order export buttons are removed without adding a new authority or effect route. | Focused identity vectors, Flutter analysis, trading parity gates, full automated checks, and packaged macOS smoke must pass. No continuous scheduler, automatic renewal, plugin ABI, or new provider route is included. | Design secure runner-bound exchange credential provisioning as a separate unit. A product flow must not send raw credentials to the VPS or embed SSH authority in Flutter; the existing terminal path remains operator-only until an encrypted fail-closed protocol is approved. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
