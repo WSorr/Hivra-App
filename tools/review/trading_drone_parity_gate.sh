@@ -469,8 +469,18 @@ runner_deterministic_order_is_single_use() {
     rg -q 'effectOperationId: admission.operationId' "$2" &&
     rg -q 'isDeterministicOrder' "$3" &&
     rg -q "deterministicOrderOperationKind =" "$3" &&
+    rg -q "deterministicRunnerBuildId =" "$3" &&
+    rg -q "'systemd-public-shadow-v1'" "$3" &&
+    rg -q "deterministicPluginVersion = '0.2.3'" "$3" &&
+    rg -q "deterministicHostAbi = 'wasm32-wasi-preview1'" "$3" &&
     rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
-    rg -q 'stale market evidence blocks without an exchange effect' "$4"
+    rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
+    rg -q 'Export One Remote Cycle' "$5" &&
+    rg -q '_exportSignedRemoteDeterministicCycle' "$5" &&
+    rg -q -- '--runner-build-id systemd-public-shadow-v1' "$6" &&
+    rg -q -- '--plugin-version 0.2.3' "$6" &&
+    rg -q -- '--package-digest-hex 2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889' "$6" &&
+    rg -q -- '--host-abi wasm32-wasi-preview1' "$6"
 }
 
 runner_package_is_pinned() {
@@ -822,7 +832,7 @@ fi
 
 if runner_deterministic_order_is_single_use \
   "$RUNNER_ARTIFACT" "$DETERMINISTIC_ORDER_PROBE" "$TRADING_MODELS" \
-  "$DETERMINISTIC_ORDER_TEST"; then
+  "$DETERMINISTIC_ORDER_TEST" "$TRADING_SCREEN" "$RUNNER_SUPERVISOR"; then
   pass "deterministic remote cycle composes fresh inputs into one existing effect operation"
 else
   fail "deterministic remote cycle lost policy binding, freshness, or single-use effect identity"

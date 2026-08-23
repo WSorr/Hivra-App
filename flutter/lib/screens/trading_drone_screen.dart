@@ -837,13 +837,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Capsule could not sign the exact remote mandate.');
       return;
     }
-    final directory = await HivraFilePickerService.selectDirectory(
+    final targetPath = await HivraFilePickerService.saveJsonDocument(
+      suggestedName:
+          'trading-remote-mandate-${admission.operationId.substring(0, 16)}.json',
       confirmButtonText: 'Export mandate',
     );
-    if (directory == null || directory.trim().isEmpty) return;
-    final target = File(
-      '${directory.trim()}/trading-remote-mandate-${admission.operationId.substring(0, 16)}.json',
-    );
+    if (targetPath == null || targetPath.trim().isEmpty) return;
+    final target = File(targetPath.trim());
     if (await target.exists()) {
       await _showSnack('The exact remote mandate artifact already exists.');
       return;
@@ -992,13 +992,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Capsule could not sign the exact remote order.');
       return;
     }
-    final directory = await HivraFilePickerService.selectDirectory(
+    final targetPath = await HivraFilePickerService.saveJsonDocument(
+      suggestedName:
+          'trading-remote-order-${admission.operationId.substring(0, 16)}.json',
       confirmButtonText: 'Export exact order',
     );
-    if (directory == null || directory.trim().isEmpty) return;
-    final target = File(
-      '${directory.trim()}/trading-remote-order-${admission.operationId.substring(0, 16)}.json',
-    );
+    if (targetPath == null || targetPath.trim().isEmpty) return;
+    final target = File(targetPath.trim());
     if (await target.exists()) {
       await _showSnack('The exact remote order artifact already exists.');
       return;
@@ -1015,6 +1015,130 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'runner_key_id=${admission.runnerKeyId} effect=false',
       );
       await _showSnack('Signed exact remote order exported.');
+    } finally {
+      if (mounted) setState(() => _exportingRemoteMandate = false);
+    }
+  }
+
+  Future<void> _exportSignedRemoteDeterministicCycle() async {
+    if (_exportingRemoteMandate) return;
+    final mandate = _tradingMandate;
+    if (!_droneEnabled ||
+        mandate == null ||
+        !mandate.isActiveAt(DateTime.now().toUtc())) {
+      await _showSnack('An active bounded trading mandate is required.');
+      return;
+    }
+    if (!Platform.isMacOS) {
+      await _showSnack('Remote cycle export is currently available on macOS.');
+      return;
+    }
+    final runnerKeyController = TextEditingController();
+    final runnerKeyId = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Authorize one remote trading cycle'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${mandate.symbol} · '
+                  '${mandate.testOrder ? "TEST" : "LIVE"}\n'
+                  'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}% · '
+                  'Minimum RR: ${_takeProfitRiskReward.toStringAsFixed(1)}\n\n'
+                  'This authorizes at most one exchange effect. It does not '
+                  'authorize scheduling or renewal.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: runnerKeyController,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Verified runner key id',
+                    hintText: '64 lowercase hex characters',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed:
+                    () => Navigator.of(
+                      context,
+                    ).pop(runnerKeyController.text.trim()),
+                child: const Text('Sign one cycle'),
+              ),
+            ],
+          ),
+    );
+    runnerKeyController.dispose();
+    if (runnerKeyId == null) return;
+    final admission =
+        BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
+          mandate: mandate,
+          runnerKeyId: runnerKeyId,
+          strategyPolicy:
+              BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                stopLossPercent: _stopLossPercent,
+                minimumRiskReward: _takeProfitRiskReward,
+              ),
+          signCommitment: _module.signRootCommitment,
+        );
+    if (admission == null ||
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+              untrustedWireBytes: utf8.encode(admission.canonicalJson),
+              verifySignature:
+                  ({
+                    required messageHashHex,
+                    required participantIdHex,
+                    required signatureHex,
+                  }) => _module.verifyRootCommitmentSignature(
+                    commitmentHashHex: messageHashHex,
+                    capsuleRootHex: participantIdHex,
+                    signatureHex: signatureHex,
+                  ),
+            ) ==
+            null) {
+      await _showSnack('Capsule could not sign the remote cycle.');
+      return;
+    }
+    final targetPath = await HivraFilePickerService.saveJsonDocument(
+      suggestedName:
+          'trading-remote-cycle-${admission.operationId.substring(0, 16)}.json',
+      confirmButtonText: 'Export one cycle',
+    );
+    if (targetPath == null || targetPath.trim().isEmpty) return;
+    final target = File(targetPath.trim());
+    if (await target.exists()) {
+      await _showSnack('The remote cycle artifact already exists.');
+      return;
+    }
+    setState(() => _exportingRemoteMandate = true);
+    try {
+      await const AtomicFileWriteService().writeString(
+        target,
+        admission.canonicalJson,
+      );
+      await _module.uiLog.log(
+        'bingx.remote_cycle.exported',
+        'operation_id=${admission.operationId} '
+            'runner_key_id=${admission.runnerKeyId} effect=false',
+      );
+      await _showSnack('Signed one-cycle authority exported.');
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.remote_cycle.export.error',
+        'operation_id=${admission.operationId} error=$error effect=false',
+      );
+      await _showSnack('Remote cycle export failed.');
     } finally {
       if (mounted) setState(() => _exportingRemoteMandate = false);
     }
@@ -4438,6 +4562,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           ? 'Exporting mandate'
                           : 'Export Remote Mandate',
                     ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent ||
+                                _savingTradingControl ||
+                                _exportingRemoteMandate ||
+                                !_droneEnabled
+                            ? null
+                            : _exportSignedRemoteDeterministicCycle,
+                    icon: const Icon(Icons.schedule_send_outlined),
+                    label: const Text('Export One Remote Cycle'),
                   ),
                   FilledButton.tonalIcon(
                     onPressed:

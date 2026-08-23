@@ -35,6 +35,21 @@ class HivraFilePickerService {
     );
   }
 
+  static Future<String?> saveJsonDocument({
+    required String suggestedName,
+    required String confirmButtonText,
+  }) async {
+    final location = await getSaveLocation(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+      initialDirectory: initialDirectoryFor(isAndroid: Platform.isAndroid),
+      suggestedName: suggestedName,
+      confirmButtonText: confirmButtonText,
+    );
+    return location?.path;
+  }
+
   static Future<XFile?> _openDocument({
     required List<XTypeGroup> acceptedTypeGroups,
   }) {

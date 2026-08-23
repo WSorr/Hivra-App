@@ -342,6 +342,12 @@ class BingxFuturesRemoteMandateAdmission {
   static const String exactOrderOperationKind = 'one_exact_order';
   static const String deterministicOrderOperationKind =
       'one_deterministic_order';
+  static const String deterministicRunnerBuildId = 'systemd-public-shadow-v1';
+  static const String deterministicPluginId = 'hivra.bingx-futures-trading';
+  static const String deterministicPluginVersion = '0.2.3';
+  static const String deterministicPackageDigestHex =
+      '2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889';
+  static const String deterministicHostAbi = 'wasm32-wasi-preview1';
   static const List<String> accountReadScope = <String>[
     'balance',
     'positions',
@@ -453,6 +459,19 @@ class BingxFuturesRemoteMandateAdmission {
       signatureHex: signatureHex,
     );
   }
+
+  static Map<String, dynamic> deterministicStrategyPolicy({
+    required double stopLossPercent,
+    required double minimumRiskReward,
+  }) => <String, dynamic>{
+    'runner_build_id': deterministicRunnerBuildId,
+    'plugin_id': deterministicPluginId,
+    'plugin_version': deterministicPluginVersion,
+    'package_digest_hex': deterministicPackageDigestHex,
+    'host_abi': deterministicHostAbi,
+    'stop_loss_percent': stopLossPercent,
+    'minimum_risk_reward': minimumRiskReward,
+  };
 
   static BingxFuturesRemoteMandateAdmission? parseAndVerify({
     required List<int> untrustedWireBytes,

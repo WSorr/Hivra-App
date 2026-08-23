@@ -86,19 +86,26 @@ void main() {
 
     test('binds one deterministic cycle to exact runner policy', () async {
       final fixture = await _fixture();
+      final canonicalPolicy =
+          BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+            stopLossPercent: 5,
+            minimumRiskReward: 2,
+          );
+      expect(canonicalPolicy, <String, dynamic>{
+        'runner_build_id': 'systemd-public-shadow-v1',
+        'plugin_id': 'hivra.bingx-futures-trading',
+        'plugin_version': '0.2.3',
+        'package_digest_hex':
+            '2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889',
+        'host_abi': 'wasm32-wasi-preview1',
+        'stop_loss_percent': 5.0,
+        'minimum_risk_reward': 2.0,
+      });
       final admission =
           BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
             mandate: fixture.mandate,
             runnerKeyId: '7' * 64,
-            strategyPolicy: <String, dynamic>{
-              'runner_build_id': 'runner-build',
-              'plugin_id': 'hivra.bingx-futures-trading',
-              'plugin_version': '0.2.7-plugins',
-              'package_digest_hex': 'a' * 64,
-              'host_abi': 'dart-headless-v1',
-              'stop_loss_percent': 5,
-              'minimum_risk_reward': 2,
-            },
+            strategyPolicy: canonicalPolicy,
             signCommitment: (_) => '8' * 128,
           );
 
