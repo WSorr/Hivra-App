@@ -322,6 +322,8 @@ runner_mandate_admission_is_fail_closed() {
     rg -q 'verifySignature' "$2" &&
     ! rg -q 'Export Remote Mandate|Export Exact Order' "$3" &&
     ! rg -q '_exportSignedRemoteMandate|_exportSignedRemoteExactOrder' "$3" &&
+    rg -q 'selectedMaxNotional: _maxNotionalUsdtController\.text' "$3" &&
+    rg -q 'risk_autofit_mandate_revoked' "$3" &&
     rg -q -- '--admit-mandate <artifact-dir>' "$1" &&
     rg -q 'mandate artifact must contain bounded bytes' "$1" &&
     rg -q 'mandate artifact bytes are not canonical' "$1" &&

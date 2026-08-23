@@ -180,10 +180,27 @@ String? tradingReconciliationResumeSymbol(
 }
 
 @visibleForTesting
+bool tradingMandateMaxNotionalMatches({
+  required BingxFuturesTradingMandate mandate,
+  required String selectedMaxNotional,
+}) {
+  final authorizedMax = num.tryParse(
+    mandate.maxOrderNotionalQuoteDecimal.trim(),
+  );
+  final selectedMax = num.tryParse(selectedMaxNotional.trim());
+  return authorizedMax != null &&
+      authorizedMax.isFinite &&
+      selectedMax != null &&
+      selectedMax.isFinite &&
+      authorizedMax == selectedMax;
+}
+
+@visibleForTesting
 bool tradingMandateMatchesSelection({
   required BingxFuturesTradingMandate? mandate,
   required bool droneEnabled,
   required String selectedSymbol,
+  required String selectedMaxNotional,
   required bool testOrder,
   required DateTime nowUtc,
 }) {
@@ -191,7 +208,12 @@ bool tradingMandateMatchesSelection({
     return false;
   }
   final normalizedSymbol = selectedSymbol.trim().toUpperCase();
-  return mandate.symbol == normalizedSymbol && mandate.testOrder == testOrder;
+  return mandate.symbol == normalizedSymbol &&
+      mandate.testOrder == testOrder &&
+      tradingMandateMaxNotionalMatches(
+        mandate: mandate,
+        selectedMaxNotional: selectedMaxNotional,
+      );
 }
 
 @visibleForTesting
@@ -199,6 +221,7 @@ String? tradingMandateSelectionNotice({
   required BingxFuturesTradingMandate? mandate,
   required bool droneEnabled,
   required String selectedSymbol,
+  required String selectedMaxNotional,
   required bool testOrder,
   required DateTime nowUtc,
 }) {
@@ -211,6 +234,7 @@ String? tradingMandateSelectionNotice({
     mandate: mandate,
     droneEnabled: droneEnabled,
     selectedSymbol: selectedSymbol,
+    selectedMaxNotional: selectedMaxNotional,
     testOrder: testOrder,
     nowUtc: nowUtc,
   )) {
@@ -218,8 +242,10 @@ String? tradingMandateSelectionNotice({
   }
   final authorizedMode = mandate.testOrder ? 'TEST' : 'LIVE';
   final selectedMode = testOrder ? 'TEST' : 'LIVE';
-  return 'Authorized for ${mandate.symbol} $authorizedMode. '
-      'Selected $normalizedSymbol $selectedMode. Re-authorize before exact export.';
+  return 'Authorized for ${mandate.symbol} $authorizedMode at max '
+      '${mandate.maxOrderNotionalQuoteDecimal} USDT. Selected '
+      '$normalizedSymbol $selectedMode at max '
+      '${selectedMaxNotional.trim()} USDT. Re-authorize before remote export.';
 }
 
 @visibleForTesting
@@ -778,6 +804,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         mandate == null ||
         !mandate.isActiveAt(DateTime.now().toUtc())) {
       await _showSnack('An active bounded trading mandate is required.');
+      return;
+    }
+    final selectionNotice = tradingMandateSelectionNotice(
+      mandate: mandate,
+      droneEnabled: _droneEnabled,
+      selectedSymbol: _symbolController.text,
+      selectedMaxNotional: _maxNotionalUsdtController.text,
+      testOrder: _useTestOrderEndpoint,
+      nowUtc: DateTime.now().toUtc(),
+    );
+    if (selectionNotice != null) {
+      await _showSnack(selectionNotice, seconds: 5);
       return;
     }
     if (!Platform.isMacOS) {
@@ -1998,7 +2036,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         }
       }
       final fitted = _formatDecimal(fittedNotional, scale: 4);
-      _maxNotionalUsdtController.text = fitted;
       if (symbol.isNotEmpty && sizing != null) {
         await _module.uiLog.log(
           'bingx.risk.sizing',
@@ -2031,6 +2068,31 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               'quantity=${sizing.quantityDecimal}',
         );
       }
+      _maxNotionalUsdtController.text = fitted;
+      final mandate = _tradingMandate;
+      final mandateNeedsReauthorization =
+          _droneEnabled &&
+          mandate != null &&
+          mandate.isActiveAt(DateTime.now().toUtc()) &&
+          !tradingMandateMaxNotionalMatches(
+            mandate: mandate,
+            selectedMaxNotional: fitted,
+          );
+      if (mandateNeedsReauthorization) {
+        final revokedAt = DateTime.now().toUtc();
+        setState(() {
+          _droneEnabled = false;
+          _tradingMandate = mandate.revoke(revokedAt);
+        });
+        await _persistOpenOrdersTrackingState(
+          source: 'risk_autofit_mandate_revoked',
+        );
+        await _module.uiLog.log(
+          'bingx.risk.autofit.mandate_revoked',
+          'previous_max_notional=${mandate.maxOrderNotionalQuoteDecimal} '
+              'fitted_max_notional=$fitted effect=false',
+        );
+      }
       await _module.uiLog.log(
         'bingx.risk.autofit',
         'equity=${riskInput.accountEquityQuoteDecimal} '
@@ -2039,7 +2101,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'max_notional=$fitted '
             'safe_notional=${_formatDecimal(safeNotional, scale: 4)}',
       );
-      await _showSnack('Max notional auto-fit: $fitted USDT');
+      await _showSnack(
+        mandateNeedsReauthorization
+            ? 'Max notional auto-fit: $fitted USDT. Trading paused; Resume to authorize this limit.'
+            : 'Max notional auto-fit: $fitted USDT',
+        seconds: mandateNeedsReauthorization ? 5 : 2,
+      );
     } catch (error) {
       await _module.uiLog.log('bingx.risk.autofit.error', '$error');
       await _showSnack('Auto-fit failed: $error', seconds: 3);
@@ -3929,6 +3996,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       mandate: _tradingMandate,
       droneEnabled: _droneEnabled,
       selectedSymbol: selectedSymbol,
+      selectedMaxNotional: _maxNotionalUsdtController.text,
       testOrder: _useTestOrderEndpoint,
       nowUtc: DateTime.now().toUtc(),
     );
@@ -4070,6 +4138,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     width: 180,
                     child: TextField(
                       controller: _maxNotionalUsdtController,
+                      onChanged: (_) => setState(() {}),
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
