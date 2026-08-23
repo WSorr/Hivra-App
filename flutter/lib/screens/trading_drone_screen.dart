@@ -77,6 +77,28 @@ String tradingPreparedSessionRunCommand({required String runnerKeyId}) {
 }
 
 @visibleForTesting
+String tradingPreparedSessionServiceEnableCommand({
+  required String runnerKeyId,
+}) {
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(runnerKeyId)) {
+    throw const FormatException('Invalid prepared-session command input.');
+  }
+  return 'sudo ./public_shadow_runner_artifact.sh '
+      '--enable-prepared-session-service /path/to/runner-bundle '
+      '--expected-runner-key-id $runnerKeyId';
+}
+
+@visibleForTesting
+String tradingPreparedSessionServicePauseCommand() =>
+    'sudo ./public_shadow_runner_artifact.sh '
+    '--pause-prepared-session-service /path/to/runner-bundle';
+
+@visibleForTesting
+String tradingPreparedSessionServiceStatusCommand() =>
+    'sudo ./public_shadow_runner_artifact.sh '
+    '--prepared-session-service-status /path/to/runner-bundle';
+
+@visibleForTesting
 Future<String> runTradingIntentWithTerminalEvidence({
   required Future<String> Function() pipeline,
   required Future<void> Function(String source, String message) log,
@@ -1051,6 +1073,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final runCommand = tradingPreparedSessionRunCommand(
       runnerKeyId: runnerKeyId,
     );
+    final serviceEnableCommand = tradingPreparedSessionServiceEnableCommand(
+      runnerKeyId: runnerKeyId,
+    );
+    final servicePauseCommand = tradingPreparedSessionServicePauseCommand();
+    final serviceStatusCommand = tradingPreparedSessionServiceStatusCommand();
     await showDialog<void>(
       context: context,
       builder:
@@ -1114,9 +1141,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       'does not start scheduling or submit an exchange order.',
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      '3. Run the activated session in the foreground:',
-                    ),
+                    const Text('3. Enable continuous VPS operation:'),
                     const SizedBox(height: 12),
                     DecoratedBox(
                       decoration: BoxDecoration(
@@ -1127,16 +1152,30 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: SelectableText(
-                          runCommand,
+                          serviceEnableCommand,
                           style: const TextStyle(fontFamily: 'monospace'),
                         ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Keep this terminal open. The scheduler is serial, uses '
-                      'the signed cadence, and stops on failure, revocation, '
-                      'expiry, or another terminal session state.',
+                      'The service resumes after a VPS reboot only while the '
+                      'same signed session remains valid. It never retries a '
+                      'failed cycle or catches up missed cycles.',
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Service status and explicit pause:'),
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      '$serviceStatusCommand\n$servicePauseCommand',
+                      style: const TextStyle(fontFamily: 'monospace'),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Diagnostic foreground run (optional):'),
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      runCommand,
+                      style: const TextStyle(fontFamily: 'monospace'),
                     ),
                   ],
                 ),

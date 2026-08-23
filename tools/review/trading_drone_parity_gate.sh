@@ -17,6 +17,7 @@ RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
 RUNNER_PACKAGE="$ROOT/tools/trading/public_shadow_runner_package/pubspec.yaml"
 RUNNER_PACKAGE_LOCK="$ROOT/tools/trading/public_shadow_runner_package/pubspec.lock"
 RUNNER_SUPERVISOR="$ROOT/tools/trading/hivra-trading-public-shadow-runner.service"
+RUNNER_SESSION_SUPERVISOR="$ROOT/tools/trading/hivra-trading-deterministic-session.service"
 CI_REPOSITORY_GATES="$ROOT/.github/workflows/release-gates.yml"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
@@ -124,12 +125,14 @@ liquidity_sequence_is_canonical() {
 
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
-    rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
+    rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v2"' "$1" &&
     rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-bounded-account-read-exact-order-and-deterministic-session"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
     rg -q 'unit_sha256=' "$1" &&
+    rg -q 'session_unit_sha256=' "$1" &&
+    rg -q 'lifecycle_sha256=' "$1" &&
     rg -q 'bundle_install_path=' "$1" &&
     rg -q 'unit_link_path=' "$1" &&
     rg -q 'dependency_lock_sha256=' "$1" &&
@@ -144,6 +147,29 @@ runner_artifact_is_verifiable() {
     rg -q 'dart compile exe' "$1" &&
     rg -q '"tool/trading_remote_shadow_probe.dart"' "$1" &&
     rg -q '"tool/trading_remote_exact_order.dart"' "$1"
+}
+
+runner_persistent_session_service_is_fail_closed() {
+  local owner="$1"
+  local unit="$2"
+  [ -f "$unit" ] &&
+    rg -q '^Conflicts=hivra-trading-public-shadow-runner.service$' "$unit" &&
+    rg -q '^ExecStart=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --run-installed-prepared-session$' "$unit" &&
+    rg -q '^Restart=no$' "$unit" &&
+    rg -q '^NoNewPrivileges=yes$' "$unit" &&
+    rg -q '^ProtectSystem=strict$' "$unit" &&
+    rg -q '^ProtectHome=yes$' "$unit" &&
+    rg -q '^ReadWritePaths=/var/lib/hivra-trading-public-shadow /var/lib/private/hivra-trading-public-shadow$' "$unit" &&
+    rg -q '^SocketBindDeny=any$' "$unit" &&
+    rg -q -- '--enable-prepared-session-service <artifact-dir>' "$owner" &&
+    rg -q -- '--pause-prepared-session-service <artifact-dir>' "$owner" &&
+    rg -q -- '--prepared-session-service-status <artifact-dir>' "$owner" &&
+    rg -q 'run_installed_prepared_session' "$owner" &&
+    rg -q 'session service refused a revoked session' "$owner" &&
+    rg -q 'require_retained_exchange_credential_binding' "$owner" &&
+    rg -q 'systemctl enable "\$SESSION_UNIT_NAME"' "$owner" &&
+    rg -q 'systemctl disable --now "\$SESSION_UNIT_NAME"' "$owner" &&
+    ! rg -q '^Restart=(always|on-success|on-failure)$' "$unit"
 }
 
 runner_bundle_install_is_fail_closed() {
@@ -964,6 +990,13 @@ if runner_prepared_session_scheduler_is_bounded \
   pass "prepared session scheduler is serial, cadence-bound, revocation-aware, and reuses one cycle owner"
 else
   fail "prepared session scheduler lost serial, cadence, revocation, identity, or one-owner boundaries"
+fi
+
+if runner_persistent_session_service_is_fail_closed \
+  "$RUNNER_ARTIFACT" "$RUNNER_SESSION_SUPERVISOR"; then
+  pass "persistent session service reuses the bounded scheduler with explicit lifecycle and no restart"
+else
+  fail "persistent session service lost scheduler ownership, explicit lifecycle, or no-retry boundaries"
 fi
 
 if runner_account_read_probe_is_fail_closed \

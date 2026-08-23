@@ -1132,16 +1132,26 @@ session journal in `active` state. A conflicting, malformed, terminal, expired,
 revoked, wrong-runner, or wrong-account state fails closed. Activation leaves
 the public-shadow systemd unit disabled and inactive and performs no market
 capture, account read, scheduler tick, provider request, or exchange effect.
-The bounded foreground scheduler may call only the existing single-cycle
+The bounded scheduler may call only the existing single-cycle
 `execute-deterministic-order` use case after this state exists; it owns no
 parallel decision or effect path. One host lock permits only one scheduler for
 the installed Runner. The scheduler waits for the signed cadence, polls for an
 exact retained revocation at least every five seconds, executes cycles serially,
 and exits on any cycle error, missed cadence window, or terminal session state.
 It atomically marks a missed-window session `stopped` so replacement authority
-can be admitted, but never catches up missed cycles by executing them in a burst. It installs no daemon,
-timer, boot enablement, or retry policy. Persistent systemd packaging remains a
-separate deployment concern and may not weaken these semantics.
+can be admitted, but never catches up missed cycles by executing them in a burst.
+
+The exact Runner bundle also contains one persistent systemd session service.
+It invokes that same scheduler owner from the hash-verified installed bundle;
+it does not implement another cycle, decision, reconciliation, or effect path.
+Enablement is explicit and allowed only after the retained signed session,
+Runner identity, account-bound encrypted credential, current time, and absence
+of revocation are revalidated. The service conflicts with the public-shadow
+unit, has `Restart=no`, and exits on every scheduler terminal or error outcome.
+After host reboot it starts only because the operator explicitly enabled it and
+still fails closed against the retained signed state. Pause disables and stops
+the service without mutating the signed session. Uninstall refuses an enabled
+service. No secret is stored in the unit, command line, environment, or log.
 
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one
@@ -1168,8 +1178,7 @@ fails closed before another market or exchange action.
   unresolved instead of returning `notFound` to the generic retry transition.
 - Test-order success proves provider-boundary wiring but not live acceptance;
   a live subaccount order requires a separate explicit operator decision.
-- Automatic systemd effect scheduling, remote credential/session transport,
-  leases, automatic admission, order cancellation,
+- Remote credential/session transport, leases, automatic admission, order cancellation,
   leverage/margin mutation, withdrawal,
   transfer, Pair Consensus, AI authority, and multi-symbol execution are out of
   scope.
