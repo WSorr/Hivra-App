@@ -1138,7 +1138,8 @@ parallel decision or effect path. One host lock permits only one scheduler for
 the installed Runner. The scheduler waits for the signed cadence, polls for an
 exact retained revocation at least every five seconds, executes cycles serially,
 and exits on any cycle error, missed cadence window, or terminal session state.
-It never catches up missed cycles by executing them in a burst. It installs no daemon,
+It atomically marks a missed-window session `stopped` so replacement authority
+can be admitted, but never catches up missed cycles by executing them in a burst. It installs no daemon,
 timer, boot enablement, or retry policy. Persistent systemd packaging remains a
 separate deployment concern and may not weaken these semantics.
 

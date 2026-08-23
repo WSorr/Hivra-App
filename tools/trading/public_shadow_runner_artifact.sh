@@ -564,6 +564,13 @@ else:
 PY
 }
 
+terminalize_stale_deterministic_session() {
+  local state="$1"
+  local session_operation_id="$2"
+  [ "$(stop_deterministic_session_state "$state" "$session_operation_id")" = \
+    "stopped" ] || return 1
+}
+
 advance_deterministic_session_cycle() {
   local state="$1"
   local session_operation_id="$2"
@@ -2554,6 +2561,9 @@ run_prepared_session_scheduler() {
         SCHEDULER_SESSION_OPERATION_ID=""
         ;;
       stale:*)
+        terminalize_stale_deterministic_session \
+          "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" ||
+          die "prepared session scheduler could not stop a stale session"
         die "prepared session scheduler refused a missed signed cycle window"
         ;;
       *) die "prepared session scheduler received an invalid decision" ;;
@@ -4231,6 +4241,21 @@ PY
     "active:0:0" 300 "2000-01-01T00:00:00.000Z" \
     "2000-01-01T01:00:00.000Z" "2000-01-01T00:05:00.000Z")" = \
     "stale:0" ] || die "self-test scheduler attempted cadence catch-up"
+  local stale_session_state="$root/stale-deterministic-session.v1.json"
+  local stale_session_id
+  stale_session_id="$(printf 'stale-session' | sha256_stdin)"
+  [ "$(prepare_deterministic_session_cycle \
+    "$stale_session_state" "$stale_session_id" 2 1 300 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)" = \
+    "active:0:0" ] || die "self-test did not activate stale session state"
+  terminalize_stale_deterministic_session \
+    "$stale_session_state" "$stale_session_id" ||
+    die "self-test did not terminalize stale session state"
+  [ "$(prepare_deterministic_session_cycle \
+    "$stale_session_state" "$stale_session_id" 2 1 300 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
+    "terminal:stopped:0:0" ] ||
+    die "self-test resurrected terminalized stale session state"
   [ "$(deterministic_session_scheduler_decision \
     "stopped:1:0" 300 "2000-01-01T00:00:00.000Z" \
     "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
@@ -4242,7 +4267,7 @@ PY
     die "self-test scheduler accepted an invalid cadence"
   fi
   echo "PASS trading-runner-artifact: bounded restart-safe deterministic session"
-  unset session_state session_id session_cycle_0 session_cycle_1 session_status future_session_state
+  unset session_state session_id session_cycle_0 session_cycle_1 session_status future_session_state stale_session_state stale_session_id
 
   local artifact="$root/artifact"
   mkdir "$artifact"
