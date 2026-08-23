@@ -32,6 +32,7 @@ TARGET_ARCH=""
 EXPECTED_RUNNER_KEY_ID=""
 ANCHOR_OUTPUT=""
 MANDATE_ARTIFACT=""
+REVOCATION_ARTIFACT=""
 
 usage() {
   cat <<'EOF'
@@ -52,6 +53,9 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --admit-mandate <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
     --mandate-artifact <absolute-json-file>
+  tools/trading/public_shadow_runner_artifact.sh --revoke-session <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+    --revocation-artifact <absolute-json-file>
   tools/trading/public_shadow_runner_artifact.sh --provision-exchange-credential <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
@@ -74,6 +78,8 @@ or foreign-owned paths. Anchor export atomically copies the exact latest signed
 evidence and its public key; acceptance happens only after off-host verification.
 Mandate admission verifies the exact Capsule signature and runner binding, then
 stores one prepared artifact without activating exchange authority.
+Session revocation verifies the retained admission and one separate Capsule-
+signed stop artifact, then atomically stops only that exact bounded session.
 Credential provisioning accepts the API key and secret only from a hidden TTY
 prompt or exact two-line stdin, verifies the prepared mandate account binding,
 and stores host-encrypted prepared state without exposing it to the runner.
@@ -1578,6 +1584,9 @@ pathlib.Path(work, "operation-id").write_text(value["operation_id"], encoding="a
 pathlib.Path(work, "account-binding").write_text(
     mandate["account_binding_hash_hex"], encoding="ascii"
 )
+pathlib.Path(work, "capsule-root").write_text(
+    mandate["capsule_root_hex"], encoding="ascii"
+)
 pathlib.Path(work, "issued-at").write_text(mandate["issued_at_utc"], encoding="ascii")
 pathlib.Path(work, "expires-at").write_text(mandate["expires_at_utc"], encoding="ascii")
 pathlib.Path(work, "operation-kind").write_text(value["operation_kind"], encoding="ascii")
@@ -1628,6 +1637,176 @@ PY
     -inkey "$work/capsule-public-key.der" -keyform DER -rawin \
     -in "$work/digest.bin" -sigfile "$work/signature.bin" >/dev/null 2>&1 ||
     die "mandate Capsule signature is invalid"
+}
+
+verify_remote_session_revocation_artifact() {
+  local source="$1"
+  local expected_runner_key_id="$2"
+  local expected_session_operation_id="$3"
+  local expected_capsule_root="$4"
+  local work="$5"
+  [ -f "$source" ] && [ ! -L "$source" ] ||
+    die "session revocation artifact must be one regular file"
+  local size
+  size="$(file_size "$source")"
+  [ "$size" -ge 1 ] && [ "$size" -le 2048 ] ||
+    die "session revocation artifact must contain bounded bytes"
+  python3 - "$source" "$expected_runner_key_id" \
+    "$expected_session_operation_id" "$expected_capsule_root" "$work" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import re
+import sys
+
+source, expected_runner, expected_session, expected_capsule, work = sys.argv[1:]
+raw = pathlib.Path(source).read_bytes()
+try:
+    text = raw.decode("utf-8")
+    value = json.loads(text)
+except (UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("session revocation is not strict UTF-8 JSON")
+keys = [
+    "contract_version", "revocation_id", "target_session_operation_id",
+    "runner_key_id", "capsule_root_hex", "revoked_at_utc",
+    "signature_suite", "signature_hex",
+]
+if not isinstance(value, dict) or list(value) != keys:
+    raise SystemExit("session revocation shape is not canonical")
+if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
+    raise SystemExit("session revocation bytes are not canonical")
+hex64 = re.compile(r"[0-9a-f]{64}")
+hex128 = re.compile(r"[0-9a-f]{128}")
+for key in ("revocation_id", "target_session_operation_id", "runner_key_id", "capsule_root_hex"):
+    if not isinstance(value[key], str) or hex64.fullmatch(value[key]) is None:
+        raise SystemExit(f"invalid session revocation {key}")
+if value["signature_suite"] != "ed25519-v1" or hex128.fullmatch(str(value["signature_hex"])) is None:
+    raise SystemExit("invalid session revocation signature")
+if value["contract_version"] != "trading-remote-session-revocation-v1":
+    raise SystemExit("session revocation contract mismatch")
+if value["runner_key_id"] != expected_runner:
+    raise SystemExit("session revocation runner mismatch")
+if value["target_session_operation_id"] != expected_session:
+    raise SystemExit("session revocation target mismatch")
+if value["capsule_root_hex"] != expected_capsule:
+    raise SystemExit("session revocation Capsule mismatch")
+raw_time = value["revoked_at_utc"]
+if not isinstance(raw_time, str) or not raw_time.endswith("Z"):
+    raise SystemExit("session revocation time is invalid")
+try:
+    revoked = datetime.datetime.fromisoformat(raw_time[:-1] + "+00:00")
+except ValueError:
+    raise SystemExit("session revocation time is invalid")
+if revoked > datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5):
+    raise SystemExit("session revocation time is in the future")
+semantic = {
+    "contract_version": value["contract_version"],
+    "target_session_operation_id": value["target_session_operation_id"],
+    "runner_key_id": value["runner_key_id"],
+    "capsule_root_hex": value["capsule_root_hex"],
+    "revoked_at_utc": value["revoked_at_utc"],
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-session-revocation:v1\n" +
+    json.dumps(semantic, separators=(",", ":")).encode("utf-8")
+).hexdigest()
+if value["revocation_id"] != commitment:
+    raise SystemExit("session revocation commitment mismatch")
+root = pathlib.Path(work)
+(root / "revocation-digest.bin").write_bytes(bytes.fromhex(commitment))
+(root / "revocation-signature.bin").write_bytes(bytes.fromhex(value["signature_hex"]))
+(root / "revocation-capsule-public-key.der").write_bytes(
+    bytes.fromhex("302a300506032b6570032100" + value["capsule_root_hex"])
+)
+(root / "revocation-id").write_text(commitment, encoding="ascii")
+PY
+  openssl pkeyutl -verify -pubin \
+    -inkey "$work/revocation-capsule-public-key.der" -keyform DER -rawin \
+    -in "$work/revocation-digest.bin" \
+    -sigfile "$work/revocation-signature.bin" >/dev/null 2>&1 ||
+    die "session revocation Capsule signature is invalid"
+}
+
+stop_deterministic_session_state() {
+  local state="$1"
+  local session_operation_id="$2"
+  python3 - "$state" "$session_operation_id" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import re
+import stat
+import sys
+
+path = pathlib.Path(sys.argv[1])
+session_id = sys.argv[2]
+keys = [
+    "contract_version", "session_operation_id", "next_cycle_index",
+    "completed_cycles", "consumed_effects", "state",
+    "last_cycle_operation_id",
+]
+if path.exists() or path.is_symlink():
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink() or not 2 <= metadata.st_size <= 2048:
+        raise SystemExit("session revocation refused invalid session state")
+    text = path.read_text(encoding="utf-8")
+    value = json.loads(text)
+    if not isinstance(value, dict) or list(value) != keys or json.dumps(value, separators=(",", ":")) + "\n" != text:
+        raise SystemExit("session revocation refused non-canonical state")
+    if value.get("contract_version") != "hivra-trading-deterministic-session-state-v1" or value.get("session_operation_id") != session_id:
+        raise SystemExit("session revocation refused mismatched state")
+    index = value.get("next_cycle_index")
+    completed = value.get("completed_cycles")
+    consumed = value.get("consumed_effects")
+    state = value.get("state")
+    last = value.get("last_cycle_operation_id")
+    if (
+        isinstance(index, bool) or not isinstance(index, int) or index < 0
+        or completed != index
+        or isinstance(consumed, bool) or not isinstance(consumed, int) or consumed < 0
+        or state not in ("active", "completed", "stopped")
+    ):
+        raise SystemExit("session revocation refused invalid state invariant")
+    if index == 0:
+        if last is not None:
+            raise SystemExit("session revocation refused invalid initial state")
+    else:
+        expected_last = hashlib.sha256(
+            b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+            json.dumps(
+                {"session_operation_id": session_id, "cycle_index": index - 1},
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if not isinstance(last, str) or re.fullmatch(r"[0-9a-f]{64}", last) is None or last != expected_last:
+            raise SystemExit("session revocation refused invalid cycle lineage")
+    if value.get("state") == "active":
+        value["state"] = "stopped"
+else:
+    value = {
+        "contract_version": "hivra-trading-deterministic-session-state-v1",
+        "session_operation_id": session_id,
+        "next_cycle_index": 0,
+        "completed_cycles": 0,
+        "consumed_effects": 0,
+        "state": "stopped",
+        "last_cycle_operation_id": None,
+    }
+pending = path.with_name(f".{path.name}.pending.{os.getpid()}")
+fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(json.dumps(value, separators=(",", ":")) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(pending, path)
+finally:
+    if pending.exists():
+        pending.unlink()
+print(value["state"])
+PY
 }
 
 require_remote_mandate_execution_eligible() {
@@ -1771,6 +1950,81 @@ admit_remote_mandate() {
   rm -rf "$work"
   rm -f "$lock_path"
   exec 9>&-
+}
+
+revoke_remote_session() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ -n "$REVOCATION_ARTIFACT" ] &&
+    [ "${REVOCATION_ARTIFACT#/}" != "$REVOCATION_ARTIFACT" ] ||
+    die "session revocation artifact path must be absolute"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "session revocation refused the installed runner key id"
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "session revocation requires one prepared deterministic authority"
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work
+  work="$(mktemp -d)"
+  trap "rm -rf '$work'; rm -f '$lock_path'" EXIT INT TERM
+  mkdir "$work/admission" "$work/revocation"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/admission"
+  [ "$(cat "$work/admission/operation-kind")" = \
+    "bounded_deterministic_session" ] ||
+    die "session revocation requires bounded session authority"
+  local session_operation_id capsule_root
+  session_operation_id="$(cat "$work/admission/operation-id")"
+  capsule_root="$(cat "$work/admission/capsule-root")"
+  verify_remote_session_revocation_artifact \
+    "$REVOCATION_ARTIFACT" "$EXPECTED_RUNNER_KEY_ID" \
+    "$session_operation_id" "$capsule_root" "$work/revocation"
+
+  local revocation_dir="$STATE_DIRECTORY/revocations"
+  if [ -e "$revocation_dir" ] || [ -L "$revocation_dir" ]; then
+    [ -d "$revocation_dir" ] && [ ! -L "$revocation_dir" ] ||
+      die "session revocation refused foreign state directory"
+  else
+    install -d -m 0700 "$revocation_dir"
+  fi
+  [ -z "$(find "$revocation_dir" -mindepth 1 -maxdepth 1 \
+    \( ! -type f -o -type l \) -print -quit)" ] ||
+    die "session revocation refused invalid retained history"
+  [ -z "$(find "$revocation_dir" -mindepth 1 -maxdepth 1 \
+    -type f \( -size 0 -o -size +2048c \) -print -quit)" ] ||
+    die "session revocation refused unbounded retained evidence"
+  local revocation_count
+  revocation_count="$(find "$revocation_dir" -mindepth 1 -maxdepth 1 \
+    -type f | wc -l | tr -d '[:space:]')"
+  [ "$revocation_count" -le "$DETERMINISTIC_HISTORY_LIMIT" ] ||
+    die "session revocation history exceeds its bound"
+  local retained="$revocation_dir/$session_operation_id.json"
+  if [ -e "$retained" ] || [ -L "$retained" ]; then
+    [ -f "$retained" ] && [ ! -L "$retained" ] &&
+      cmp -s "$REVOCATION_ARTIFACT" "$retained" ||
+      die "session revocation refused conflicting retained evidence"
+  else
+    [ "$revocation_count" -lt "$DETERMINISTIC_HISTORY_LIMIT" ] ||
+      die "session revocation history is full"
+    local pending
+    pending="$(mktemp "$revocation_dir/.revocation.pending.XXXXXX")"
+    install -m 0600 "$REVOCATION_ARTIFACT" "$pending"
+    mv "$pending" "$retained"
+  fi
+  local terminal_state
+  terminal_state="$(stop_deterministic_session_state \
+    "$STATE_DIRECTORY/deterministic-session.v1.json" \
+    "$session_operation_id")" ||
+    die "session revocation could not stop its exact state"
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: revoked exact deterministic session session_operation_id=$session_operation_id state=$terminal_state effect=false"
 }
 
 provision_exchange_credential() {
@@ -2682,8 +2936,21 @@ execute_deterministic_order_once() {
       operation_id="$admission_operation_id"
       ;;
     bounded_deterministic_session)
-      local session_state session_status
+      local session_state session_status retained_revocation
       session_state="$STATE_DIRECTORY/deterministic-session.v1.json"
+      retained_revocation="$STATE_DIRECTORY/revocations/$admission_operation_id.json"
+      if [ -e "$retained_revocation" ] || [ -L "$retained_revocation" ]; then
+        [ -f "$retained_revocation" ] && [ ! -L "$retained_revocation" ] ||
+          die "deterministic session retained revocation is invalid"
+        mkdir "$work/revocation"
+        verify_remote_session_revocation_artifact \
+          "$retained_revocation" "$EXPECTED_RUNNER_KEY_ID" \
+          "$admission_operation_id" "$(cat "$work/verified/capsule-root")" \
+          "$work/revocation"
+        stop_deterministic_session_state \
+          "$session_state" "$admission_operation_id" >/dev/null ||
+          die "deterministic session could not apply retained revocation"
+      fi
       session_status="$(prepare_deterministic_session_cycle \
         "$session_state" "$admission_operation_id" \
         "$(cat "$work/verified/session-max-cycles")" \
@@ -3772,6 +4039,109 @@ PY
     "$mandate_test/session-mutated-verified") >/dev/null 2>&1; then
     die "self-test accepted mutated deterministic session semantics"
   fi
+  python3 - "$mandate_test" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+session = json.loads((root / "session-admission.json").read_text())
+semantic = {
+    "contract_version": "trading-remote-session-revocation-v1",
+    "target_session_operation_id": session["operation_id"],
+    "runner_key_id": session["runner_key_id"],
+    "capsule_root_hex": session["mandate"]["capsule_root_hex"],
+    "revoked_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="milliseconds"
+    ).replace("+00:00", "Z"),
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-session-revocation:v1\n" +
+    json.dumps(semantic, separators=(",", ":")).encode()
+).hexdigest()
+(root / "revocation-digest.bin").write_bytes(bytes.fromhex(commitment))
+(root / "revocation-metadata.json").write_text(json.dumps({
+    "commitment": commitment,
+    "semantic": semantic,
+}, separators=(",", ":")), encoding="utf-8")
+PY
+  openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
+    -in "$mandate_test/revocation-digest.bin" \
+    -out "$mandate_test/revocation-signature.bin"
+  python3 - "$mandate_test" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "revocation-metadata.json").read_text())
+semantic = metadata["semantic"]
+artifact = {
+    **semantic,
+    "revocation_id": metadata["commitment"],
+}
+artifact = {
+    "contract_version": semantic["contract_version"],
+    "revocation_id": metadata["commitment"],
+    "target_session_operation_id": semantic["target_session_operation_id"],
+    "runner_key_id": semantic["runner_key_id"],
+    "capsule_root_hex": semantic["capsule_root_hex"],
+    "revoked_at_utc": semantic["revoked_at_utc"],
+    "signature_suite": "ed25519-v1",
+    "signature_hex": (root / "revocation-signature.bin").read_bytes().hex(),
+}
+(root / "session-revocation.json").write_text(
+    json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
+)
+PY
+  mkdir "$mandate_test/revocation-verified"
+  verify_remote_session_revocation_artifact \
+    "$mandate_test/session-revocation.json" "$expected_runner" \
+    "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/revocation-verified"
+  cp "$mandate_test/session-revocation.json" \
+    "$mandate_test/session-revocation-mutated.json"
+  sed -i.bak 's/"runner_key_id":"[0-9a-f]*"/"runner_key_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/' \
+    "$mandate_test/session-revocation-mutated.json"
+  mkdir "$mandate_test/revocation-mutated-verified"
+  if (verify_remote_session_revocation_artifact \
+    "$mandate_test/session-revocation-mutated.json" "$expected_runner" \
+    "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/revocation-mutated-verified") >/dev/null 2>&1; then
+    die "self-test accepted mutated session revocation"
+  fi
+  local revoked_state="$mandate_test/revoked-session-state.json"
+  prepare_deterministic_session_cycle \
+    "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")" \
+    12 32 300 \
+    "$(cat "$mandate_test/session-verified/session-starts-at")" \
+    "$(cat "$mandate_test/session-verified/expires-at")" >/dev/null
+  [ "$(stop_deterministic_session_state \
+    "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")")" = \
+    stopped ] || die "self-test did not stop deterministic session"
+  [ "$(stop_deterministic_session_state \
+    "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")")" = \
+    stopped ] || die "self-test lost idempotent session revocation"
+  case "$(prepare_deterministic_session_cycle \
+    "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")" \
+    12 32 300 \
+    "$(cat "$mandate_test/session-verified/session-starts-at")" \
+    "$(cat "$mandate_test/session-verified/expires-at")")" in
+    terminal:stopped:0:0) ;;
+    *) die "self-test resumed revoked deterministic session" ;;
+  esac
+  cp "$revoked_state" "$mandate_test/revoked-session-state-mutated.json"
+  sed -i.bak 's/"consumed_effects":0/"consumed_effects":-1/' \
+    "$mandate_test/revoked-session-state-mutated.json"
+  if (stop_deterministic_session_state \
+    "$mandate_test/revoked-session-state-mutated.json" \
+    "$(cat "$mandate_test/session-verified/operation-id")") >/dev/null 2>&1; then
+    die "self-test accepted malformed session state during revocation"
+  fi
   mkdir "$mandate_test/verified"
   verify_remote_mandate_artifact \
     "$mandate_test/admission.json" "$expected_runner" "$mandate_test/verified"
@@ -3927,7 +4297,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -3966,6 +4336,12 @@ while [ $# -gt 0 ]; do
       MANDATE_ARTIFACT="$2"
       shift 2
       ;;
+    --revocation-artifact)
+      [ $# -ge 2 ] && [ -z "$REVOCATION_ARTIFACT" ] ||
+        die "invalid revocation-artifact arguments"
+      REVOCATION_ARTIFACT="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -3978,6 +4354,9 @@ done
 
 if [ "$MODE" != "admit-mandate" ] && [ -n "$MANDATE_ARTIFACT" ]; then
   die "mandate-artifact is accepted only by mandate admission"
+fi
+if [ "$MODE" != "revoke-session" ] && [ -n "$REVOCATION_ARTIFACT" ]; then
+  die "revocation-artifact is accepted only by session revocation"
 fi
 
 case "$MODE" in
@@ -4034,6 +4413,13 @@ case "$MODE" in
       die "mandate admission requires only runner identity and artifact"
     admit_remote_mandate "$ARTIFACT_DIR"
     ;;
+  revoke-session)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] &&
+      [ -n "$REVOCATION_ARTIFACT" ] ||
+      die "session revocation requires only runner identity and artifact"
+    revoke_remote_session "$ARTIFACT_DIR"
+    ;;
   provision-exchange-credential)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
       [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
@@ -4073,7 +4459,7 @@ case "$MODE" in
   self-test)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
       [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] &&
-      [ -z "$MANDATE_ARTIFACT" ] ||
+      [ -z "$MANDATE_ARTIFACT" ] && [ -z "$REVOCATION_ARTIFACT" ] ||
       die "self-test does not accept a target"
     self_test
     ;;

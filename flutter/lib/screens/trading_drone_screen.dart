@@ -359,6 +359,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _tradingControlLoaded = false;
   bool _savingTradingControl = false;
   bool _exportingRemoteMandate = false;
+  bool _exportingRemoteRevocation = false;
   String? _lastRemoteRunnerKeyId;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
@@ -679,7 +680,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     await _fetchOpenOrders(silent: true);
   }
 
-  Future<void> _persistOpenOrdersTrackingState({required String source}) async {
+  Future<void> _persistOpenOrdersTrackingState({
+    required String source,
+    bool propagateError = false,
+  }) async {
     try {
       final state = BingxFuturesOrderTrackingState(
         trackedSymbol: _trackedOrdersSymbol,
@@ -711,18 +715,22 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.exchange.tracking.persist.error',
         'source=$source error=$error',
       );
+      if (propagateError) rethrow;
     }
   }
 
-  Future<void> _changeDroneEnabled(bool value) async {
-    if (!_tradingControlLoaded || _savingTradingControl) return;
+  Future<bool> _changeDroneEnabled(
+    bool value, {
+    bool requirePersistence = false,
+  }) async {
+    if (!_tradingControlLoaded || _savingTradingControl) return false;
     BingxFuturesTradingMandate? nextMandate = _tradingMandate;
     if (value) {
       if (_orderType != 'limit') {
         await _showSnack(
           'Bounded trading currently requires the Limit strategy path.',
         );
-        return;
+        return false;
       }
       final credentials = await _ensureCredentialsLoaded();
       final capsuleRootHex = _module.orderTrackingStore.activeCapsuleRootHex;
@@ -732,17 +740,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       if (credentials == null || capsuleRootHex == null) {
         await _showSnack('Capsule and BingX credentials are required.');
-        return;
+        return false;
       }
       if (symbol.isEmpty || maxNotional == null || maxNotional <= 0) {
         await _showSnack('Symbol and positive max notional are required.');
-        return;
+        return false;
       }
       final confirmed = await _confirmTradingMandate(
         symbol: symbol,
         maxNotional: maxNotional,
       );
-      if (!confirmed) return;
+      if (!confirmed) return false;
       final now = DateTime.now().toUtc();
       nextMandate = BingxFuturesTradingMandate.issue(
         capsuleRootHex: capsuleRootHex,
@@ -772,12 +780,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
       _savingTradingControl = true;
     });
-    await _persistOpenOrdersTrackingState(source: 'drone_control_changed');
-    if (mounted) {
-      setState(() {
-        _savingTradingControl = false;
-      });
+    try {
+      await _persistOpenOrdersTrackingState(
+        source: 'drone_control_changed',
+        propagateError: requirePersistence,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingTradingControl = false;
+        });
+      }
     }
+    return true;
   }
 
   Future<bool> _confirmTradingMandate({
@@ -952,6 +967,138 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Remote session export failed.');
     } finally {
       if (mounted) setState(() => _exportingRemoteMandate = false);
+    }
+  }
+
+  Future<void> _exportSignedRemoteSessionRevocation() async {
+    if (_exportingRemoteRevocation) return;
+    final selected = await HivraFilePickerService.openJsonDocument();
+    if (selected == null) return;
+    final session = BingxFuturesRemoteMandateAdmission.parseAndVerify(
+      untrustedWireBytes: await selected.readAsBytes(),
+      verifySignature:
+          ({
+            required messageHashHex,
+            required participantIdHex,
+            required signatureHex,
+          }) => _module.verifyRootCommitmentSignature(
+            commitmentHashHex: messageHashHex,
+            capsuleRootHex: participantIdHex,
+            signatureHex: signatureHex,
+          ),
+    );
+    if (session == null || !session.isDeterministicSession) {
+      await _showSnack('Select one valid signed VPS session artifact.');
+      return;
+    }
+    final activeRoot = _module.orderTrackingStore.activeCapsuleRootHex;
+    if (activeRoot == null || session.mandate.capsuleRootHex != activeRoot) {
+      await _showSnack('The selected session belongs to another Capsule.');
+      return;
+    }
+    if (!mounted) return;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Revoke this VPS session?'),
+            content: Text(
+              'Session: ${session.operationId.substring(0, 16)}…\n'
+              'Runner: ${session.runnerKeyId.substring(0, 16)}…\n'
+              'Symbol: ${session.mandate.symbol}\n\n'
+              'This immediately pauses local trading and creates a signed '
+              'stop file. The VPS stops only after that file is applied to '
+              'the exact runner.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Create stop file'),
+              ),
+            ],
+          ),
+    );
+    if (approved != true) return;
+    final revocation = BingxFuturesRemoteSessionRevocation.issue(
+      session: session,
+      revokedAtUtc: DateTime.now().toUtc(),
+      signCommitment: _module.signRootCommitment,
+    );
+    if (revocation == null ||
+        BingxFuturesRemoteSessionRevocation.parseAndVerify(
+              untrustedWireBytes: utf8.encode(revocation.canonicalJson),
+              verifySignature:
+                  ({
+                    required messageHashHex,
+                    required participantIdHex,
+                    required signatureHex,
+                  }) => _module.verifyRootCommitmentSignature(
+                    commitmentHashHex: messageHashHex,
+                    capsuleRootHex: participantIdHex,
+                    signatureHex: signatureHex,
+                  ),
+            ) ==
+            null) {
+      await _showSnack('Capsule could not sign the session stop file.');
+      return;
+    }
+    final targetPath = await HivraFilePickerService.saveJsonDocument(
+      suggestedName:
+          'trading-session-stop-${session.operationId.substring(0, 16)}.json',
+      confirmButtonText: 'Export stop file',
+    );
+    if (targetPath == null || targetPath.trim().isEmpty) return;
+    final target = File(targetPath.trim());
+    if (await target.exists()) {
+      await _showSnack('The session stop file already exists.');
+      return;
+    }
+    setState(() => _exportingRemoteRevocation = true);
+    try {
+      await const AtomicFileWriteService().writeString(
+        target,
+        revocation.canonicalJson,
+      );
+      var localPausePersisted = true;
+      if (_droneEnabled) {
+        try {
+          localPausePersisted = await _changeDroneEnabled(
+            false,
+            requirePersistence: true,
+          );
+        } catch (error) {
+          localPausePersisted = false;
+          await _module.uiLog.log(
+            'bingx.remote_session.revocation.local_pause.error',
+            'session_operation_id=${session.operationId} error=$error effect=false',
+          );
+        }
+      }
+      await _module.uiLog.log(
+        'bingx.remote_session.revocation.exported',
+        'session_operation_id=${session.operationId} '
+            'revocation_id=${revocation.revocationId} '
+            'runner_key_id=${session.runnerKeyId} effect=false',
+      );
+      await _showSnack(
+        localPausePersisted
+            ? 'Signed stop file exported. Apply it to the exact VPS runner.'
+            : 'Stop file exported, but local pause was not persisted. Pause '
+                'the Drone and apply the file to the exact VPS runner.',
+        seconds: 5,
+      );
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.remote_session.revocation.export.error',
+        'session_operation_id=${session.operationId} error=$error effect=false',
+      );
+      await _showSnack('VPS session stop export failed.');
+    } finally {
+      if (mounted) setState(() => _exportingRemoteRevocation = false);
     }
   }
 
@@ -4541,6 +4688,28 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                             : const Icon(Icons.bolt_rounded),
                     label: Text(
                       _runningIntent ? _intentProgressLabel : 'Run Intent',
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent ||
+                                _savingTradingControl ||
+                                _exportingRemoteMandate ||
+                                _exportingRemoteRevocation
+                            ? null
+                            : _exportSignedRemoteSessionRevocation,
+                    icon:
+                        _exportingRemoteRevocation
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.stop_circle_outlined),
+                    label: Text(
+                      _exportingRemoteRevocation
+                          ? 'Signing stop file'
+                          : 'Revoke VPS Session',
                     ),
                   ),
                   FilledButton.tonalIcon(
