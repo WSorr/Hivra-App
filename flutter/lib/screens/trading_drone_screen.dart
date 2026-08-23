@@ -32,6 +32,31 @@ const String preparedTradingIntentTerminalOutcome = 'intent:prepared';
 const List<int> tradingEffectBudgetOptions = <int>[1, 2, 4, 8, 16, 32];
 
 @visibleForTesting
+String tradingPreparedSessionApplyCommand({
+  required String runnerKeyId,
+  required String mandateFileName,
+}) {
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(runnerKeyId)) {
+    throw const FormatException('Invalid prepared-session command input.');
+  }
+  final safeFileName =
+      mandateFileName.isNotEmpty &&
+              utf8.encode(mandateFileName).length <= 255 &&
+              !mandateFileName.contains('/') &&
+              !mandateFileName.contains('\\') &&
+              !mandateFileName.contains('\n') &&
+              !mandateFileName.contains('\r')
+          ? mandateFileName
+          : 'signed-session.json';
+  final quotedRemotePath =
+      "'/path/to/${safeFileName.replaceAll("'", "'\"'\"'")}'";
+  return 'sudo ./public_shadow_runner_artifact.sh '
+      '--apply-prepared-session /path/to/runner-bundle '
+      '--expected-runner-key-id $runnerKeyId '
+      '--mandate-artifact $quotedRemotePath';
+}
+
+@visibleForTesting
 Future<String> runTradingIntentWithTerminalEvidence({
   required Future<String> Function() pipeline,
   required Future<void> Function(String source, String message) log,
@@ -953,7 +978,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'runner_key_id=${admission.runnerKeyId} '
             'max_cycles=$maxCycles interval_seconds=$intervalSeconds effect=false',
       );
-      await _showSnack('Signed bounded VPS session exported.');
+      if (mounted) {
+        await _showPreparedSessionApplyInstructions(
+          runnerKeyId: admission.runnerKeyId,
+          mandateFileName: target.path.split(Platform.pathSeparator).last,
+        );
+      }
     } catch (error) {
       await _module.uiLog.log(
         'bingx.remote_session.export.error',
@@ -963,6 +993,62 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     } finally {
       if (mounted) setState(() => _exportingRemoteMandate = false);
     }
+  }
+
+  Future<void> _showPreparedSessionApplyInstructions({
+    required String runnerKeyId,
+    required String mandateFileName,
+  }) async {
+    final command = tradingPreparedSessionApplyCommand(
+      runnerKeyId: runnerKeyId,
+      mandateFileName: mandateFileName,
+    );
+    await showDialog<void>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Session ready for VPS'),
+            content: SizedBox(
+              width: 640,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Transfer the signed session file to the already verified '
+                    'Runner, then run this command from tools/trading:',
+                  ),
+                  const SizedBox(height: 12),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: SelectableText(
+                        command,
+                        style: const TextStyle(fontFamily: 'monospace'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'BingX credentials are entered in the hidden VPS prompt. '
+                    'The command prepares the credential and exact signed '
+                    'session but leaves the Runner disabled and inactive.',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+    );
   }
 
   Future<void> _exportSignedRemoteSessionRevocation() async {

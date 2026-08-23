@@ -60,6 +60,10 @@ Usage:
     --revocation-artifact <absolute-json-file>
   tools/trading/public_shadow_runner_artifact.sh --provision-exchange-credential <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
+    [--mandate-artifact <absolute-json-file>]
+  tools/trading/public_shadow_runner_artifact.sh --apply-prepared-session <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+    --mandate-artifact <absolute-json-file>
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --execute-exact-order <artifact-dir>
@@ -87,6 +91,10 @@ signed stop artifact, then atomically stops only that exact bounded session.
 Credential provisioning accepts the API key and secret only from a hidden TTY
 prompt or exact two-line stdin, verifies the prepared mandate account binding,
 and stores host-encrypted prepared state without exposing it to the runner.
+Prepared-session apply verifies one bounded signed session, prepares its
+account-bound encrypted credential first, then admits that exact session. A
+crash between those commits leaves only an inert credential and exact replay
+finishes the same apply; the runner stays disabled and inactive.
 Account probing uses one collected transient systemd unit, supplies both
 encrypted credentials only to that process, permits exactly balance, positions,
 and open-orders GETs, and emits only a bounded redacted verdict.
@@ -2170,7 +2178,12 @@ provision_exchange_credential() {
   ' EXIT INT TERM
 
   local mandate
-  if [ -f "$STATE_DIRECTORY/mandates/deterministic-order.v4.json" ] &&
+  if [ -n "$MANDATE_ARTIFACT" ]; then
+    [ "${MANDATE_ARTIFACT#/}" != "$MANDATE_ARTIFACT" ] &&
+      [ -f "$MANDATE_ARTIFACT" ] && [ ! -L "$MANDATE_ARTIFACT" ] ||
+      die "credential provisioning mandate artifact must be one absolute regular file"
+    mandate="$MANDATE_ARTIFACT"
+  elif [ -f "$STATE_DIRECTORY/mandates/deterministic-order.v4.json" ] &&
     [ ! -L "$STATE_DIRECTORY/mandates/deterministic-order.v4.json" ]; then
     mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
   elif [ -f "$STATE_DIRECTORY/mandates/exact-order.v3.json" ] &&
@@ -2254,6 +2267,52 @@ PY
   rm -rf "$work"
   rm -f "$lock_path"
   exec 9>&-
+}
+
+apply_prepared_session() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ -n "$MANDATE_ARTIFACT" ] &&
+    [ "${MANDATE_ARTIFACT#/}" != "$MANDATE_ARTIFACT" ] &&
+    [ -f "$MANDATE_ARTIFACT" ] && [ ! -L "$MANDATE_ARTIFACT" ] ||
+    die "prepared session must be one absolute regular file"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "prepared-session apply refused the installed runner key id"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "prepared-session apply requires an inactive runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "prepared-session apply requires a disabled runner" ;;
+  esac
+
+  local work
+  work="$(mktemp -d)"
+  trap "rm -rf '$work'" EXIT INT TERM
+  install -m 0600 "$MANDATE_ARTIFACT" "$work/input.json"
+  verify_remote_mandate_artifact \
+    "$work/input.json" "$EXPECTED_RUNNER_KEY_ID" "$work"
+  [ "$(cat "$work/operation-kind")" = "bounded_deterministic_session" ] ||
+    die "prepared-session apply requires bounded deterministic session authority"
+  require_remote_mandate_execution_eligible "$work"
+  trap - EXIT INT TERM
+  rm -rf "$work"
+
+  "$0" --provision-exchange-credential "$directory" \
+    --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
+    --mandate-artifact "$MANDATE_ARTIFACT"
+  if ! "$0" --admit-mandate "$directory" \
+    --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
+    --mandate-artifact "$MANDATE_ARTIFACT"; then
+    die "prepared-session admission failed; the account-bound credential remains prepared but inert"
+  fi
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "prepared-session apply activated the runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "prepared-session apply enabled the runner" ;;
+  esac
+  echo "PASS trading-runner-artifact: applied one prepared session runner_key_id=$EXPECTED_RUNNER_KEY_ID activation=false scheduler=false effect=false"
 }
 
 validate_account_read_evidence() {
@@ -4666,7 +4725,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -4721,8 +4780,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$MODE" != "admit-mandate" ] && [ -n "$MANDATE_ARTIFACT" ]; then
-  die "mandate-artifact is accepted only by mandate admission"
+if [ "$MODE" != "admit-mandate" ] &&
+  [ "$MODE" != "provision-exchange-credential" ] &&
+  [ "$MODE" != "apply-prepared-session" ] &&
+  [ -n "$MANDATE_ARTIFACT" ]; then
+  die "mandate-artifact is accepted only by mandate preparation"
 fi
 if [ "$MODE" != "revoke-session" ] && [ -n "$REVOCATION_ARTIFACT" ]; then
   die "revocation-artifact is accepted only by session revocation"
@@ -4797,9 +4859,15 @@ case "$MODE" in
     ;;
   provision-exchange-credential)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
-      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
-      die "credential provisioning requires only runner identity and stdin"
+      [ -z "$ANCHOR_OUTPUT" ] ||
+      die "credential provisioning requires runner identity, optional mandate, and stdin"
     provision_exchange_credential "$ARTIFACT_DIR"
+    ;;
+  apply-prepared-session)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -n "$MANDATE_ARTIFACT" ] ||
+      die "prepared-session apply requires runner identity and one mandate artifact"
+    apply_prepared_session "$ARTIFACT_DIR"
     ;;
   probe-exchange-account)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
