@@ -1123,6 +1123,19 @@ rejects conflicting state. Success still leaves the runner disabled and
 inactive. This use case does not transfer files over SSH, activate the runner,
 schedule a cycle, contact BingX, or create an exchange effect.
 
+Activating the prepared session is a second explicit canonical host use case.
+It accepts no caller-supplied session bytes: it revalidates the exact retained
+Capsule-signed session, installed Runner identity, current time, absence of an
+exact retained revocation, and the account binding of the host-encrypted
+credential. It then atomically creates or exact-replays the one canonical
+session journal in `active` state. A conflicting, malformed, terminal, expired,
+revoked, wrong-runner, or wrong-account state fails closed. Activation leaves
+the public-shadow systemd unit disabled and inactive and performs no market
+capture, account read, scheduler tick, provider request, or exchange effect.
+The future scheduler may call only the existing single-cycle
+`execute-deterministic-order` use case after this state exists; it may not own a
+parallel decision or effect path.
+
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one
 `trading-remote-session-revocation-v1` artifact bound to that session operation

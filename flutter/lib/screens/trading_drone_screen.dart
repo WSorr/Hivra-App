@@ -57,6 +57,16 @@ String tradingPreparedSessionApplyCommand({
 }
 
 @visibleForTesting
+String tradingPreparedSessionActivationCommand({required String runnerKeyId}) {
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(runnerKeyId)) {
+    throw const FormatException('Invalid prepared-session command input.');
+  }
+  return 'sudo ./public_shadow_runner_artifact.sh '
+      '--activate-prepared-session /path/to/runner-bundle '
+      '--expected-runner-key-id $runnerKeyId';
+}
+
+@visibleForTesting
 Future<String> runTradingIntentWithTerminalEvidence({
   required Future<String> Function() pipeline,
   required Future<void> Function(String source, String message) log,
@@ -1003,6 +1013,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       runnerKeyId: runnerKeyId,
       mandateFileName: mandateFileName,
     );
+    final activationCommand = tradingPreparedSessionActivationCommand(
+      runnerKeyId: runnerKeyId,
+    );
     await showDialog<void>(
       context: context,
       builder:
@@ -1010,35 +1023,63 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             title: const Text('Session ready for VPS'),
             content: SizedBox(
               width: 640,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Transfer the signed session file to the already verified '
-                    'Runner, then run this command from tools/trading:',
-                  ),
-                  const SizedBox(height: 12),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(10),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '1. Transfer the signed session file to the already verified '
+                      'Runner, then apply it from tools/trading:',
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: SelectableText(
-                        command,
-                        style: const TextStyle(fontFamily: 'monospace'),
+                    const SizedBox(height: 12),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(
+                          command,
+                          style: const TextStyle(fontFamily: 'monospace'),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'BingX credentials are entered in the hidden VPS prompt. '
-                    'The command prepares the credential and exact signed '
-                    'session but leaves the Runner disabled and inactive.',
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    const Text(
+                      'BingX credentials are entered in the hidden VPS prompt. '
+                      'The command prepares the credential and exact signed '
+                      'session but leaves the Runner disabled and inactive.',
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '2. After Apply succeeds, explicitly activate only that '
+                      'prepared session:',
+                    ),
+                    const SizedBox(height: 12),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(
+                          activationCommand,
+                          style: const TextStyle(fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Activation creates bounded local session state only. It '
+                      'does not start scheduling or submit an exchange order.',
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [

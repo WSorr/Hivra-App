@@ -64,6 +64,8 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --apply-prepared-session <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
     --mandate-artifact <absolute-json-file>
+  tools/trading/public_shadow_runner_artifact.sh --activate-prepared-session <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --execute-exact-order <artifact-dir>
@@ -95,6 +97,11 @@ Prepared-session apply verifies one bounded signed session, prepares its
 account-bound encrypted credential first, then admits that exact session. A
 crash between those commits leaves only an inert credential and exact replay
 finishes the same apply; the runner stays disabled and inactive.
+Prepared-session activation revalidates the retained signed session, Runner
+identity, account-bound encrypted credential, time bounds, and revocation
+state, then atomically creates only the canonical active session state. It does
+not start or enable the public-shadow unit, schedule a cycle, read market data,
+or expose the exchange credential to an effect process.
 Account probing uses one collected transient systemd unit, supplies both
 encrypted credentials only to that process, permits exactly balance, positions,
 and open-orders GETs, and emits only a bounded redacted verdict.
@@ -155,6 +162,24 @@ exchange_credential_matches_account_binding() {
   local expected_account_hash="$2"
   [ "$(printf '%s' "$credential_json" | exchange_credential_account_hash)" = \
     "$expected_account_hash" ]
+}
+
+require_retained_exchange_credential_binding() {
+  local expected_account_hash="$1"
+  [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+    [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    die "prepared session activation requires one encrypted exchange credential"
+  local credential_json
+  credential_json="$(
+    systemd-creds decrypt --name=bingx-exchange \
+      "$EXCHANGE_CREDENTIAL_INSTALL_PATH" - 2>/dev/null
+  )" || die "prepared session activation could not decrypt the exchange credential"
+  exchange_credential_matches_account_binding \
+    "$credential_json" "$expected_account_hash" || {
+    unset credential_json
+    die "prepared session activation refused the exchange account binding"
+  }
+  unset credential_json
 }
 
 validate_deterministic_operation_store() {
@@ -271,8 +296,9 @@ prepare_deterministic_session_cycle() {
   local interval_seconds="$5"
   local issued_at="$6"
   local expires_at="$7"
+  local mode="${8:-cycle}"
   python3 - "$state" "$session_operation_id" "$max_cycles" "$max_effects" \
-    "$interval_seconds" "$issued_at" "$expires_at" <<'PY'
+    "$interval_seconds" "$issued_at" "$expires_at" "$mode" <<'PY'
 import datetime
 import hashlib
 import json
@@ -282,7 +308,7 @@ import re
 import stat
 import sys
 
-path, session_id, raw_cycles, raw_effects, raw_interval, issued_raw, expires_raw = sys.argv[1:]
+path, session_id, raw_cycles, raw_effects, raw_interval, issued_raw, expires_raw, mode = sys.argv[1:]
 hex64 = re.compile(r"[0-9a-f]{64}")
 if hex64.fullmatch(session_id) is None:
     raise SystemExit("deterministic session state received an invalid session id")
@@ -294,6 +320,8 @@ except ValueError:
     raise SystemExit("deterministic session state bounds are invalid")
 if not 1 <= max_cycles <= 288 or not 1 <= max_effects <= 256 or not 60 <= interval <= 3600:
     raise SystemExit("deterministic session state bounds are invalid")
+if mode not in ("cycle", "activate"):
+    raise SystemExit("deterministic session state mode is invalid")
 
 def instant(raw):
     if not raw.endswith("Z"):
@@ -339,6 +367,8 @@ if state_path.exists() or state_path.is_symlink():
     if json.dumps(value, separators=(",", ":")) + "\n" != text:
         raise SystemExit("deterministic session state is not canonical")
 else:
+    if mode != "activate":
+        raise SystemExit("deterministic session has not been explicitly activated")
     value = {
         "contract_version": "hivra-trading-deterministic-session-state-v1",
         "session_operation_id": session_id,
@@ -388,6 +418,9 @@ if value["state"] == "active" and (
     write_state(value)
 if value["state"] != "active":
     print(f"terminal:{value['state']}:{index}:{value['consumed_effects']}")
+    raise SystemExit(0)
+if mode == "activate":
+    print(f"active:{index}:{value['consumed_effects']}")
     raise SystemExit(0)
 if index >= max_cycles:
     raise SystemExit("deterministic session active state exceeded its cycle bound")
@@ -2315,6 +2348,73 @@ apply_prepared_session() {
   echo "PASS trading-runner-artifact: applied one prepared session runner_key_id=$EXPECTED_RUNNER_KEY_ID activation=false scheduler=false effect=false"
 }
 
+activate_prepared_session() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "prepared session activation refused the installed runner key id"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "prepared session activation requires an inactive public-shadow runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "prepared session activation requires a disabled public-shadow runner" ;;
+  esac
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "prepared session activation refused boot enablement"
+
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "prepared session activation requires one retained signed session"
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work
+  work="$(mktemp -d /run/hivra-trading-session-activation.XXXXXX)"
+  trap "rm -rf '$work'; rm -f '$lock_path'" EXIT INT TERM
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+  [ "$(cat "$work/verified/operation-kind")" = \
+    "bounded_deterministic_session" ] ||
+    die "prepared session activation requires bounded session authority"
+  require_remote_mandate_execution_eligible "$work/verified"
+  local session_id
+  session_id="$(cat "$work/verified/operation-id")"
+  local retained_revocation="$STATE_DIRECTORY/revocations/$session_id.json"
+  [ ! -e "$retained_revocation" ] && [ ! -L "$retained_revocation" ] ||
+    die "prepared session activation refused a revoked session"
+  require_retained_exchange_credential_binding \
+    "$(cat "$work/verified/account-binding")"
+
+  local session_status
+  session_status="$(prepare_deterministic_session_cycle \
+    "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
+    "$(cat "$work/verified/session-max-cycles")" \
+    "$(cat "$work/verified/mandate-max-effects")" \
+    "$(cat "$work/verified/session-interval-seconds")" \
+    "$(cat "$work/verified/session-starts-at")" \
+    "$(cat "$work/verified/expires-at")" activate)" ||
+    die "prepared session activation could not create canonical state"
+  case "$session_status" in
+    active:*) ;;
+    *) die "prepared session activation refused terminal session state" ;;
+  esac
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "prepared session activation started the public-shadow runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "prepared session activation enabled the public-shadow runner" ;;
+  esac
+
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: activated prepared session session_operation_id=$session_id state=$session_status scheduler=false effect=false"
+}
+
 validate_account_read_evidence() {
   local source="$1"
   local expected_operation="$2"
@@ -3885,7 +3985,23 @@ print(hashlib.sha256(
     json.dumps({"session_operation_id": sys.argv[1], "cycle_index": 0}, separators=(",", ":")).encode()
 ).hexdigest())
 PY
-)" ] || die "self-test found cross-language deterministic session identity drift"
+  )" ] || die "self-test found cross-language deterministic session identity drift"
+  if prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
+    >/dev/null 2>&1; then
+    die "self-test executed a deterministic session before explicit activation"
+  fi
+  [ "$(prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
+    activate)" = "active:0:0" ] ||
+    die "self-test did not explicitly activate deterministic session state"
+  [ "$(prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
+    activate)" = "active:0:0" ] ||
+    die "self-test did not replay deterministic session activation"
   session_status="$(prepare_deterministic_session_cycle \
     "$session_state" "$session_id" 4 1 60 \
     "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")"
@@ -3938,6 +4054,11 @@ PY
     die "self-test accepted mutated deterministic session state"
   fi
   local future_session_state="$root/future-deterministic-session.v1.json"
+  [ "$(prepare_deterministic_session_cycle \
+    "$future_session_state" "$(printf 'future-session' | sha256_stdin)" \
+    2 1 300 "2998-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
+    activate)" = "active:0:0" ] ||
+    die "self-test did not activate a future bounded session without execution"
   if prepare_deterministic_session_cycle \
     "$future_session_state" "$(printf 'future-session' | sha256_stdin)" \
     2 1 300 "2998-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
@@ -4547,7 +4668,7 @@ PY
     "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")" \
     12 32 300 \
     "$(cat "$mandate_test/session-verified/session-starts-at")" \
-    "$(cat "$mandate_test/session-verified/expires-at")" >/dev/null
+    "$(cat "$mandate_test/session-verified/expires-at")" activate >/dev/null
   [ "$(stop_deterministic_session_state \
     "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")")" = \
     stopped ] || die "self-test did not stop deterministic session"
@@ -4725,7 +4846,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -4868,6 +4989,12 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -n "$MANDATE_ARTIFACT" ] ||
       die "prepared-session apply requires runner identity and one mandate artifact"
     apply_prepared_session "$ARTIFACT_DIR"
+    ;;
+  activate-prepared-session)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "prepared-session activation requires only runner identity and prepared host state"
+    activate_prepared_session "$ARTIFACT_DIR"
     ;;
   probe-exchange-account)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
