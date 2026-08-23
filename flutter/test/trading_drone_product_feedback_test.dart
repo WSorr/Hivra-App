@@ -112,6 +112,39 @@ void main() {
     expect(tradingIntentStatusLabel(PluginHostApiStatus.executed), 'prepared');
   });
 
+  test('prepared intent is executable only under its active exact mandate', () {
+    final now = issuedAt.add(const Duration(minutes: 1));
+
+    expect(
+      tradingHasExecutableIntent(
+        status: PluginHostApiStatus.executed,
+        hasResult: true,
+        mandate: mandate,
+        droneEnabled: true,
+        selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '100',
+        selectedMaxEffects: 32,
+        testOrder: true,
+        nowUtc: now,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingHasExecutableIntent(
+        status: PluginHostApiStatus.executed,
+        hasResult: true,
+        mandate: mandate.revoke(now),
+        droneEnabled: false,
+        selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '100',
+        selectedMaxEffects: 32,
+        testOrder: true,
+        nowUtc: now,
+      ),
+      isFalse,
+    );
+  });
+
   test('exact export selection must match active mandate symbol and mode', () {
     final now = issuedAt.add(const Duration(minutes: 1));
 
