@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/bingx_futures_exchange_models.dart';
 import '../models/bingx_futures_exchange_execution_models.dart';
@@ -23,6 +24,7 @@ import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../services/bingx_futures_trading_cycle_use_case_service.dart';
+import '../services/bingx_futures_remote_runner_identity_service.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../utils/bingx_futures_zone_evidence_formatter.dart';
 import '../utils/peer_identity_format.dart';
@@ -178,10 +180,27 @@ String? tradingReconciliationResumeSymbol(
 }
 
 @visibleForTesting
+bool tradingMandateMaxNotionalMatches({
+  required BingxFuturesTradingMandate mandate,
+  required String selectedMaxNotional,
+}) {
+  final authorizedMax = num.tryParse(
+    mandate.maxOrderNotionalQuoteDecimal.trim(),
+  );
+  final selectedMax = num.tryParse(selectedMaxNotional.trim());
+  return authorizedMax != null &&
+      authorizedMax.isFinite &&
+      selectedMax != null &&
+      selectedMax.isFinite &&
+      authorizedMax == selectedMax;
+}
+
+@visibleForTesting
 bool tradingMandateMatchesSelection({
   required BingxFuturesTradingMandate? mandate,
   required bool droneEnabled,
   required String selectedSymbol,
+  required String selectedMaxNotional,
   required bool testOrder,
   required DateTime nowUtc,
 }) {
@@ -189,7 +208,12 @@ bool tradingMandateMatchesSelection({
     return false;
   }
   final normalizedSymbol = selectedSymbol.trim().toUpperCase();
-  return mandate.symbol == normalizedSymbol && mandate.testOrder == testOrder;
+  return mandate.symbol == normalizedSymbol &&
+      mandate.testOrder == testOrder &&
+      tradingMandateMaxNotionalMatches(
+        mandate: mandate,
+        selectedMaxNotional: selectedMaxNotional,
+      );
 }
 
 @visibleForTesting
@@ -197,6 +221,7 @@ String? tradingMandateSelectionNotice({
   required BingxFuturesTradingMandate? mandate,
   required bool droneEnabled,
   required String selectedSymbol,
+  required String selectedMaxNotional,
   required bool testOrder,
   required DateTime nowUtc,
 }) {
@@ -209,6 +234,7 @@ String? tradingMandateSelectionNotice({
     mandate: mandate,
     droneEnabled: droneEnabled,
     selectedSymbol: selectedSymbol,
+    selectedMaxNotional: selectedMaxNotional,
     testOrder: testOrder,
     nowUtc: nowUtc,
   )) {
@@ -216,8 +242,10 @@ String? tradingMandateSelectionNotice({
   }
   final authorizedMode = mandate.testOrder ? 'TEST' : 'LIVE';
   final selectedMode = testOrder ? 'TEST' : 'LIVE';
-  return 'Authorized for ${mandate.symbol} $authorizedMode. '
-      'Selected $normalizedSymbol $selectedMode. Re-authorize before exact export.';
+  return 'Authorized for ${mandate.symbol} $authorizedMode at max '
+      '${mandate.maxOrderNotionalQuoteDecimal} USDT. Selected '
+      '$normalizedSymbol $selectedMode at max '
+      '${selectedMaxNotional.trim()} USDT. Re-authorize before remote export.';
 }
 
 @visibleForTesting
@@ -269,6 +297,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const int _signalVolumeGrowthKlineLimit = 10;
 
   late final TradingDroneModule _module;
+  final BingxFuturesRemoteRunnerIdentityService _remoteRunnerIdentity =
+      const BingxFuturesRemoteRunnerIdentityService();
 
   final TextEditingController _peerController = TextEditingController();
   final TextEditingController _symbolController = TextEditingController(
@@ -311,6 +341,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _tradingControlLoaded = false;
   bool _savingTradingControl = false;
   bool _exportingRemoteMandate = false;
+  String? _lastRemoteRunnerKeyId;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
 
@@ -766,260 +797,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return result == true;
   }
 
-  Future<void> _exportSignedRemoteMandate() async {
-    if (_exportingRemoteMandate) return;
-    final mandate = _tradingMandate;
-    if (!_droneEnabled ||
-        mandate == null ||
-        !mandate.isActiveAt(DateTime.now().toUtc())) {
-      await _showSnack('An active bounded trading mandate is required.');
-      return;
-    }
-    if (!Platform.isMacOS) {
-      await _showSnack(
-        'Remote mandate export is currently available on macOS.',
-      );
-      return;
-    }
-    final runnerKeyController = TextEditingController();
-    final runnerKeyId = await showDialog<String>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Prepare remote mandate'),
-            content: TextField(
-              controller: runnerKeyController,
-              autocorrect: false,
-              enableSuggestions: false,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Runner key id',
-                hintText: '64 lowercase hex characters',
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed:
-                    () => Navigator.of(
-                      context,
-                    ).pop(runnerKeyController.text.trim()),
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-    );
-    runnerKeyController.dispose();
-    if (runnerKeyId == null) return;
-    final admission = BingxFuturesRemoteMandateAdmission.issue(
-      mandate: mandate,
-      runnerKeyId: runnerKeyId,
-      signCommitment: _module.signRootCommitment,
-    );
-    if (admission == null ||
-        BingxFuturesRemoteMandateAdmission.parseAndVerify(
-              untrustedWireBytes: utf8.encode(admission.canonicalJson),
-              verifySignature:
-                  ({
-                    required messageHashHex,
-                    required participantIdHex,
-                    required signatureHex,
-                  }) => _module.verifyRootCommitmentSignature(
-                    commitmentHashHex: messageHashHex,
-                    capsuleRootHex: participantIdHex,
-                    signatureHex: signatureHex,
-                  ),
-            ) ==
-            null) {
-      await _showSnack('Capsule could not sign the exact remote mandate.');
-      return;
-    }
-    final targetPath = await HivraFilePickerService.saveJsonDocument(
-      suggestedName:
-          'trading-remote-mandate-${admission.operationId.substring(0, 16)}.json',
-      confirmButtonText: 'Export mandate',
-    );
-    if (targetPath == null || targetPath.trim().isEmpty) return;
-    final target = File(targetPath.trim());
-    if (await target.exists()) {
-      await _showSnack('The exact remote mandate artifact already exists.');
-      return;
-    }
-    setState(() {
-      _exportingRemoteMandate = true;
-    });
-    try {
-      await const AtomicFileWriteService().writeString(
-        target,
-        admission.canonicalJson,
-      );
-      await _module.uiLog.log(
-        'bingx.remote_mandate.exported',
-        'operation_id=${admission.operationId} '
-            'runner_key_id=${admission.runnerKeyId} effect=false',
-      );
-      await _showSnack('Signed remote mandate exported.');
-    } catch (error) {
-      await _module.uiLog.log(
-        'bingx.remote_mandate.export.error',
-        'operation_id=${admission.operationId} error=$error effect=false',
-      );
-      await _showSnack('Remote mandate export failed.');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _exportingRemoteMandate = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _exportSignedRemoteExactOrder() async {
-    if (_exportingRemoteMandate) return;
-    final mandate = _tradingMandate;
-    final result = _lastIntentResponse?.result;
-    if (!_droneEnabled ||
-        mandate == null ||
-        !mandate.isActiveAt(DateTime.now().toUtc()) ||
-        result == null) {
-      await _showSnack('An active mandate and fresh intent are required.');
-      return;
-    }
-    if (!Platform.isMacOS) {
-      await _showSnack('Remote order export is currently available on macOS.');
-      return;
-    }
-    final intent = BingxFuturesIntentPayload.fromPluginResult(result);
-    final mandateMismatch = tradingMandateSelectionNotice(
-      mandate: mandate,
-      droneEnabled: _droneEnabled,
-      selectedSymbol: intent.symbol,
-      testOrder: _useTestOrderEndpoint,
-      nowUtc: DateTime.now().toUtc(),
-    );
-    if (mandateMismatch != null) {
-      await _showSnack(mandateMismatch, seconds: 4);
-      return;
-    }
-    final fresh = await _module.executionUseCase
-        .isPreparedLiquidityDecisionFresh(
-          payload: intent,
-          rawIntentResult: result,
-          preparedDecision: _lastPreparedLiveDecision,
-          refreshDecision:
-              () => _computeLiveDecision(
-                symbol: intent.symbol,
-                peerHex: result['peer_hex']?.toString().trim() ?? '',
-                silent: true,
-                forceConsensusSignable: true,
-                zoneEvaluationSide: intent.side,
-              ),
-        );
-    if (!fresh) {
-      await _showSnack('Market structure changed. Run a fresh intent first.');
-      return;
-    }
-    if (!mounted) return;
-    final runnerKeyController = TextEditingController();
-    final runnerKeyId = await showDialog<String>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Prepare one exact remote order'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${intent.symbol} · ${intent.side.toUpperCase()} · '
-                  '${intent.quantityDecimal} · '
-                  '${mandate.testOrder ? "TEST" : "LIVE"}',
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: runnerKeyController,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Runner key id',
-                    hintText: '64 lowercase hex characters',
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed:
-                    () => Navigator.of(
-                      context,
-                    ).pop(runnerKeyController.text.trim()),
-                child: const Text('Sign exact order'),
-              ),
-            ],
-          ),
-    );
-    runnerKeyController.dispose();
-    if (runnerKeyId == null) return;
-    final admission = BingxFuturesRemoteMandateAdmission.issueExactOrder(
-      mandate: mandate,
-      runnerKeyId: runnerKeyId,
-      exactOrder: intent.toExactOrderJson(testOrder: mandate.testOrder),
-      signCommitment: _module.signRootCommitment,
-    );
-    if (admission == null ||
-        BingxFuturesRemoteMandateAdmission.parseAndVerify(
-              untrustedWireBytes: utf8.encode(admission.canonicalJson),
-              verifySignature:
-                  ({
-                    required messageHashHex,
-                    required participantIdHex,
-                    required signatureHex,
-                  }) => _module.verifyRootCommitmentSignature(
-                    commitmentHashHex: messageHashHex,
-                    capsuleRootHex: participantIdHex,
-                    signatureHex: signatureHex,
-                  ),
-            ) ==
-            null) {
-      await _showSnack('Capsule could not sign the exact remote order.');
-      return;
-    }
-    final targetPath = await HivraFilePickerService.saveJsonDocument(
-      suggestedName:
-          'trading-remote-order-${admission.operationId.substring(0, 16)}.json',
-      confirmButtonText: 'Export exact order',
-    );
-    if (targetPath == null || targetPath.trim().isEmpty) return;
-    final target = File(targetPath.trim());
-    if (await target.exists()) {
-      await _showSnack('The exact remote order artifact already exists.');
-      return;
-    }
-    setState(() => _exportingRemoteMandate = true);
-    try {
-      await const AtomicFileWriteService().writeString(
-        target,
-        admission.canonicalJson,
-      );
-      await _module.uiLog.log(
-        'bingx.remote_order.exported',
-        'operation_id=${admission.operationId} '
-            'runner_key_id=${admission.runnerKeyId} effect=false',
-      );
-      await _showSnack('Signed exact remote order exported.');
-    } finally {
-      if (mounted) setState(() => _exportingRemoteMandate = false);
-    }
-  }
-
   Future<void> _exportSignedRemoteDeterministicCycle() async {
     if (_exportingRemoteMandate) return;
     final mandate = _tradingMandate;
@@ -1029,58 +806,25 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('An active bounded trading mandate is required.');
       return;
     }
+    final selectionNotice = tradingMandateSelectionNotice(
+      mandate: mandate,
+      droneEnabled: _droneEnabled,
+      selectedSymbol: _symbolController.text,
+      selectedMaxNotional: _maxNotionalUsdtController.text,
+      testOrder: _useTestOrderEndpoint,
+      nowUtc: DateTime.now().toUtc(),
+    );
+    if (selectionNotice != null) {
+      await _showSnack(selectionNotice, seconds: 5);
+      return;
+    }
     if (!Platform.isMacOS) {
       await _showSnack('Remote cycle export is currently available on macOS.');
       return;
     }
-    final runnerKeyController = TextEditingController();
-    final runnerKeyId = await showDialog<String>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Authorize one remote trading cycle'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${mandate.symbol} · '
-                  '${mandate.testOrder ? "TEST" : "LIVE"}\n'
-                  'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}% · '
-                  'Minimum RR: ${_takeProfitRiskReward.toStringAsFixed(1)}\n\n'
-                  'This authorizes at most one exchange effect. It does not '
-                  'authorize scheduling or renewal.',
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: runnerKeyController,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Verified runner key id',
-                    hintText: '64 lowercase hex characters',
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed:
-                    () => Navigator.of(
-                      context,
-                    ).pop(runnerKeyController.text.trim()),
-                child: const Text('Sign one cycle'),
-              ),
-            ],
-          ),
-    );
-    runnerKeyController.dispose();
+    final runnerKeyId = await _selectRemoteRunnerKeyId(mandate);
     if (runnerKeyId == null) return;
+    _lastRemoteRunnerKeyId = runnerKeyId;
     final admission =
         BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
           mandate: mandate,
@@ -1142,6 +886,182 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     } finally {
       if (mounted) setState(() => _exportingRemoteMandate = false);
     }
+  }
+
+  Future<String?> _selectRemoteRunnerKeyId(
+    BingxFuturesTradingMandate mandate,
+  ) async {
+    final controller = TextEditingController(text: _lastRemoteRunnerKeyId);
+    String? errorText;
+    var importing = false;
+    final result = await showDialog<String>(
+      context: context,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Authorize one remote cycle'),
+                  content: SizedBox(
+                    width: 560,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${mandate.symbol} · '
+                          '${mandate.testOrder ? "TEST" : "LIVE"}\n'
+                          'Max order: '
+                          '${mandate.maxOrderNotionalQuoteDecimal} USDT · '
+                          'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}% · '
+                          'Minimum RR: '
+                          '${_takeProfitRiskReward.toStringAsFixed(1)}',
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'The Capsule signs authority for one cycle and one '
+                          'possible exchange effect. The runner cannot renew it.',
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            FilledButton.tonalIcon(
+                              onPressed:
+                                  importing
+                                      ? null
+                                      : () async {
+                                        setDialogState(() {
+                                          importing = true;
+                                          errorText = null;
+                                        });
+                                        try {
+                                          final file =
+                                              await HivraFilePickerService.openRunnerPublicKey();
+                                          if (file == null) return;
+                                          if (await file.length() > 256) {
+                                            throw const FormatException(
+                                              'Runner key file is too large.',
+                                            );
+                                          }
+                                          final runnerKeyId =
+                                              _remoteRunnerIdentity
+                                                  .runnerKeyIdFromPublicKeyFile(
+                                                    await file.readAsString(),
+                                                  );
+                                          if (runnerKeyId == null) {
+                                            throw const FormatException(
+                                              'Runner key file is invalid.',
+                                            );
+                                          }
+                                          controller.text = runnerKeyId;
+                                        } on FormatException catch (error) {
+                                          errorText = error.message;
+                                        } catch (_) {
+                                          errorText =
+                                              'Runner key file could not be read.';
+                                        } finally {
+                                          if (context.mounted) {
+                                            setDialogState(() {
+                                              importing = false;
+                                            });
+                                          }
+                                        }
+                                      },
+                              icon:
+                                  importing
+                                      ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                      : const Icon(Icons.key_rounded),
+                              label: const Text('Load runner key file'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed:
+                                  importing
+                                      ? null
+                                      : () async {
+                                        final data = await Clipboard.getData(
+                                          Clipboard.kTextPlain,
+                                        );
+                                        if (!context.mounted) return;
+                                        final runnerKeyId =
+                                            _remoteRunnerIdentity
+                                                .normalizeRunnerKeyId(
+                                                  data?.text ?? '',
+                                                );
+                                        setDialogState(() {
+                                          if (runnerKeyId == null) {
+                                            errorText =
+                                                'Clipboard does not contain a '
+                                                'valid runner ID.';
+                                          } else {
+                                            controller.text = runnerKeyId;
+                                            errorText = null;
+                                          }
+                                        });
+                                      },
+                              icon: const Icon(Icons.content_paste_rounded),
+                              label: const Text('Paste runner ID'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: controller,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          keyboardType: TextInputType.visiblePassword,
+                          maxLines: 2,
+                          style: const TextStyle(fontFamily: 'monospace'),
+                          decoration: InputDecoration(
+                            labelText: 'Verified runner ID',
+                            hintText: '64 lowercase hex characters',
+                            errorText: errorText,
+                          ),
+                          onChanged:
+                              (_) => setDialogState(() => errorText = null),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          importing
+                              ? null
+                              : () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton.icon(
+                      onPressed:
+                          importing
+                              ? null
+                              : () {
+                                final runnerKeyId = _remoteRunnerIdentity
+                                    .normalizeRunnerKeyId(controller.text);
+                                if (runnerKeyId == null) {
+                                  setDialogState(() {
+                                    errorText =
+                                        'Enter or load one valid runner ID.';
+                                  });
+                                  return;
+                                }
+                                Navigator.of(dialogContext).pop(runnerKeyId);
+                              },
+                      icon: const Icon(Icons.draw_rounded),
+                      label: const Text('Review and sign'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    controller.dispose();
+    return result;
   }
 
   Future<void> _restoreOpenOrdersTrackingState() async {
@@ -2116,7 +2036,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         }
       }
       final fitted = _formatDecimal(fittedNotional, scale: 4);
-      _maxNotionalUsdtController.text = fitted;
       if (symbol.isNotEmpty && sizing != null) {
         await _module.uiLog.log(
           'bingx.risk.sizing',
@@ -2149,6 +2068,31 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               'quantity=${sizing.quantityDecimal}',
         );
       }
+      _maxNotionalUsdtController.text = fitted;
+      final mandate = _tradingMandate;
+      final mandateNeedsReauthorization =
+          _droneEnabled &&
+          mandate != null &&
+          mandate.isActiveAt(DateTime.now().toUtc()) &&
+          !tradingMandateMaxNotionalMatches(
+            mandate: mandate,
+            selectedMaxNotional: fitted,
+          );
+      if (mandateNeedsReauthorization) {
+        final revokedAt = DateTime.now().toUtc();
+        setState(() {
+          _droneEnabled = false;
+          _tradingMandate = mandate.revoke(revokedAt);
+        });
+        await _persistOpenOrdersTrackingState(
+          source: 'risk_autofit_mandate_revoked',
+        );
+        await _module.uiLog.log(
+          'bingx.risk.autofit.mandate_revoked',
+          'previous_max_notional=${mandate.maxOrderNotionalQuoteDecimal} '
+              'fitted_max_notional=$fitted effect=false',
+        );
+      }
       await _module.uiLog.log(
         'bingx.risk.autofit',
         'equity=${riskInput.accountEquityQuoteDecimal} '
@@ -2157,7 +2101,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'max_notional=$fitted '
             'safe_notional=${_formatDecimal(safeNotional, scale: 4)}',
       );
-      await _showSnack('Max notional auto-fit: $fitted USDT');
+      await _showSnack(
+        mandateNeedsReauthorization
+            ? 'Max notional auto-fit: $fitted USDT. Trading paused; Resume to authorize this limit.'
+            : 'Max notional auto-fit: $fitted USDT',
+        seconds: mandateNeedsReauthorization ? 5 : 2,
+      );
     } catch (error) {
       await _module.uiLog.log('bingx.risk.autofit.error', '$error');
       await _showSnack('Auto-fit failed: $error', seconds: 3);
@@ -4047,6 +3996,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       mandate: _tradingMandate,
       droneEnabled: _droneEnabled,
       selectedSymbol: selectedSymbol,
+      selectedMaxNotional: _maxNotionalUsdtController.text,
       testOrder: _useTestOrderEndpoint,
       nowUtc: DateTime.now().toUtc(),
     );
@@ -4057,18 +4007,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 (_droneEnabled
                     ? 'Strategy can prepare and execute orders.'
                     : 'Paused. New strategy runs are blocked.');
-    final preparedSymbol =
-        _lastIntentResponse?.result?['symbol']?.toString().trim().toUpperCase();
-    final exactOrderMandateMatches =
-        hasExecutableIntent &&
-        preparedSymbol != null &&
-        tradingMandateMatchesSelection(
-          mandate: _tradingMandate,
-          droneEnabled: _droneEnabled,
-          selectedSymbol: preparedSymbol,
-          testOrder: _useTestOrderEndpoint,
-          nowUtc: DateTime.now().toUtc(),
-        );
     final canBroadcast = hasExecutableIntent;
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
@@ -4200,6 +4138,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     width: 180,
                     child: TextField(
                       controller: _maxNotionalUsdtController,
+                      onChanged: (_) => setState(() {}),
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -4439,18 +4378,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       _fittingMaxNotional ? 'Fitting' : 'Auto-fit Notional',
                     ),
                   ),
-                  OutlinedButton.icon(
-                    onPressed:
-                        _runningIntent ||
-                                _savingTradingControl ||
-                                _exportingRemoteMandate ||
-                                !_droneEnabled ||
-                                !exactOrderMandateMatches
-                            ? null
-                            : _exportSignedRemoteExactOrder,
-                    icon: const Icon(Icons.outbox_outlined),
-                    label: const Text('Export Exact Order'),
-                  ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -4548,7 +4475,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                                 _exportingRemoteMandate ||
                                 !_droneEnabled
                             ? null
-                            : _exportSignedRemoteMandate,
+                            : _exportSignedRemoteDeterministicCycle,
                     icon:
                         _exportingRemoteMandate
                             ? const SizedBox(
@@ -4559,20 +4486,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                             : const Icon(Icons.verified_user_outlined),
                     label: Text(
                       _exportingRemoteMandate
-                          ? 'Exporting mandate'
-                          : 'Export Remote Mandate',
+                          ? 'Signing remote cycle'
+                          : 'Authorize Remote Cycle',
                     ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed:
-                        _runningIntent ||
-                                _savingTradingControl ||
-                                _exportingRemoteMandate ||
-                                !_droneEnabled
-                            ? null
-                            : _exportSignedRemoteDeterministicCycle,
-                    icon: const Icon(Icons.schedule_send_outlined),
-                    label: const Text('Export One Remote Cycle'),
                   ),
                   FilledButton.tonalIcon(
                     onPressed:

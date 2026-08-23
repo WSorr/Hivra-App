@@ -94,6 +94,7 @@ void main() {
         mandate: mandate,
         droneEnabled: true,
         selectedSymbol: 'xrp-usdt',
+        selectedMaxNotional: '100.0',
         testOrder: true,
         nowUtc: now,
       ),
@@ -104,6 +105,7 @@ void main() {
         mandate: mandate,
         droneEnabled: true,
         selectedSymbol: 'ADA-USDT',
+        selectedMaxNotional: '100',
         testOrder: true,
         nowUtc: now,
       ),
@@ -114,8 +116,44 @@ void main() {
         mandate: mandate,
         droneEnabled: true,
         selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '100',
         testOrder: false,
         nowUtc: now,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingMandateMatchesSelection(
+        mandate: mandate,
+        droneEnabled: true,
+        selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '6.969',
+        testOrder: true,
+        nowUtc: now,
+      ),
+      isFalse,
+    );
+  });
+
+  test('mandate notional comparison is numeric and fail-closed', () {
+    expect(
+      tradingMandateMaxNotionalMatches(
+        mandate: mandate,
+        selectedMaxNotional: '100.0000',
+      ),
+      isTrue,
+    );
+    expect(
+      tradingMandateMaxNotionalMatches(
+        mandate: mandate,
+        selectedMaxNotional: '6.969',
+      ),
+      isFalse,
+    );
+    expect(
+      tradingMandateMaxNotionalMatches(
+        mandate: mandate,
+        selectedMaxNotional: 'not-a-number',
       ),
       isFalse,
     );
@@ -129,6 +167,7 @@ void main() {
         mandate: mandate,
         droneEnabled: true,
         selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '100',
         testOrder: true,
         nowUtc: expiredAt,
       ),
@@ -139,6 +178,7 @@ void main() {
         mandate: mandate,
         droneEnabled: true,
         selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '100',
         testOrder: true,
         nowUtc: expiredAt,
       ),

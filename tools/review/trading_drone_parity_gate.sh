@@ -320,7 +320,10 @@ runner_mandate_admission_is_fail_closed() {
     rg -q 'raw != admission\.canonicalJson' "$2" &&
     rg -q 'mandate\.revokedAtUtc != null' "$2" &&
     rg -q 'verifySignature' "$2" &&
-    rg -q 'Export Remote Mandate' "$3" &&
+    ! rg -q 'Export Remote Mandate|Export Exact Order' "$3" &&
+    ! rg -q '_exportSignedRemoteMandate|_exportSignedRemoteExactOrder' "$3" &&
+    rg -q 'selectedMaxNotional: _maxNotionalUsdtController\.text' "$3" &&
+    rg -q 'risk_autofit_mandate_revoked' "$3" &&
     rg -q -- '--admit-mandate <artifact-dir>' "$1" &&
     rg -q 'mandate artifact must contain bounded bytes' "$1" &&
     rg -q 'mandate artifact bytes are not canonical' "$1" &&
@@ -495,7 +498,7 @@ runner_deterministic_order_is_single_use() {
     rg -q "deterministicHostAbi = 'wasm32-wasi-preview1'" "$3" &&
     rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
     rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
-    rg -q 'Export One Remote Cycle' "$5" &&
+    rg -q 'Authorize Remote Cycle' "$5" &&
     rg -q '_exportSignedRemoteDeterministicCycle' "$5" &&
     rg -q -- '--runner-build-id systemd-public-shadow-v1' "$6" &&
     rg -q -- '--plugin-version 0.2.3' "$6" &&

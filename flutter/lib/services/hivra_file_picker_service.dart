@@ -20,6 +20,14 @@ class HivraFilePickerService {
     );
   }
 
+  static Future<XFile?> openRunnerPublicKey() {
+    return _openDocument(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Runner public key', extensions: ['hex', 'txt']),
+      ],
+    );
+  }
+
   static Future<XFile?> openPluginPackage() {
     return _openDocument(
       acceptedTypeGroups: const [
