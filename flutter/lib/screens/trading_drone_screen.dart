@@ -30,6 +30,7 @@ import '../utils/bingx_futures_zone_evidence_formatter.dart';
 import '../utils/peer_identity_format.dart';
 
 const String preparedTradingIntentTerminalOutcome = 'intent:prepared';
+const List<int> tradingEffectBudgetOptions = <int>[1, 2, 4, 8, 16, 32];
 
 @visibleForTesting
 Future<String> runTradingIntentWithTerminalEvidence({
@@ -59,6 +60,16 @@ Future<String> runTradingIntentWithTerminalEvidence({
 @visibleForTesting
 String tradingSignalScanActionLabel({required bool scanning}) =>
     scanning ? 'Scanning' : 'Refresh Scan';
+
+@visibleForTesting
+String tradingOrderBudgetLabel(int value) =>
+    '$value exchange order${value == 1 ? '' : 's'}';
+
+@visibleForTesting
+int tradingRestoredEffectBudget(BingxFuturesTradingMandate mandate) =>
+    tradingEffectBudgetOptions.contains(mandate.maxEffects)
+        ? mandate.maxEffects
+        : tradingEffectBudgetOptions.first;
 
 @visibleForTesting
 String tradingIntentStatusLabel(PluginHostApiStatus? status) {
@@ -201,6 +212,7 @@ bool tradingMandateMatchesSelection({
   required bool droneEnabled,
   required String selectedSymbol,
   required String selectedMaxNotional,
+  required int selectedMaxEffects,
   required bool testOrder,
   required DateTime nowUtc,
 }) {
@@ -210,6 +222,7 @@ bool tradingMandateMatchesSelection({
   final normalizedSymbol = selectedSymbol.trim().toUpperCase();
   return mandate.symbol == normalizedSymbol &&
       mandate.testOrder == testOrder &&
+      mandate.maxEffects == selectedMaxEffects &&
       tradingMandateMaxNotionalMatches(
         mandate: mandate,
         selectedMaxNotional: selectedMaxNotional,
@@ -222,6 +235,7 @@ String? tradingMandateSelectionNotice({
   required bool droneEnabled,
   required String selectedSymbol,
   required String selectedMaxNotional,
+  required int selectedMaxEffects,
   required bool testOrder,
   required DateTime nowUtc,
 }) {
@@ -235,6 +249,7 @@ String? tradingMandateSelectionNotice({
     droneEnabled: droneEnabled,
     selectedSymbol: selectedSymbol,
     selectedMaxNotional: selectedMaxNotional,
+    selectedMaxEffects: selectedMaxEffects,
     testOrder: testOrder,
     nowUtc: nowUtc,
   )) {
@@ -243,9 +258,12 @@ String? tradingMandateSelectionNotice({
   final authorizedMode = mandate.testOrder ? 'TEST' : 'LIVE';
   final selectedMode = testOrder ? 'TEST' : 'LIVE';
   return 'Authorized for ${mandate.symbol} $authorizedMode at max '
-      '${mandate.maxOrderNotionalQuoteDecimal} USDT. Selected '
+      '${mandate.maxOrderNotionalQuoteDecimal} USDT and '
+      '${tradingOrderBudgetLabel(mandate.maxEffects)}. Selected '
       '$normalizedSymbol $selectedMode at max '
-      '${selectedMaxNotional.trim()} USDT. Re-authorize before remote export.';
+      '${selectedMaxNotional.trim()} USDT and '
+      '${tradingOrderBudgetLabel(selectedMaxEffects)}. '
+      'Re-authorize before remote export.';
 }
 
 @visibleForTesting
@@ -344,6 +362,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   String? _lastRemoteRunnerKeyId;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
+  int _maxEffects = 1;
 
   String _side = 'buy';
   String _orderType = 'limit';
@@ -738,7 +757,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         maxConcurrentPositions: _executionRiskPolicy.maxConcurrentPositions,
         cooldownAfterLossStreak: _executionRiskPolicy.cooldownAfterLossStreak,
         cooldownMinutes: _executionRiskPolicy.cooldownMinutes,
-        maxEffects: 32,
+        maxEffects: _maxEffects,
       );
     } else {
       nextMandate = nextMandate?.revoke(DateTime.now().toUtc());
@@ -778,7 +797,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               'Max order: ${maxNotional.toStringAsFixed(2)} USDT\n'
               'Risk: ${_executionRiskPolicy.maxRiskPerTradePercent}% per trade, '
               '${_executionRiskPolicy.maxDailyLossPercent}% daily\n'
-              'Maximum effects: 32\n'
+              'Maximum orders: ${tradingOrderBudgetLabel(_maxEffects)}\n'
               'Expires: 24 hours\n\n'
               'Emergency Pause revokes this mandate.',
             ),
@@ -811,6 +830,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       droneEnabled: _droneEnabled,
       selectedSymbol: _symbolController.text,
       selectedMaxNotional: _maxNotionalUsdtController.text,
+      selectedMaxEffects: _maxEffects,
       testOrder: _useTestOrderEndpoint,
       nowUtc: DateTime.now().toUtc(),
     );
@@ -1129,6 +1149,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       final mandateActive =
           _tradingMandate?.isActiveAt(DateTime.now().toUtc()) == true;
       if (mandateActive) {
+        _maxEffects = tradingRestoredEffectBudget(_tradingMandate!);
         _useTestOrderEndpoint = tradingUsesTestEndpointAfterRestore(
           mandate: _tradingMandate,
           nowUtc: DateTime.now().toUtc(),
@@ -4044,6 +4065,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       droneEnabled: _droneEnabled,
       selectedSymbol: selectedSymbol,
       selectedMaxNotional: _maxNotionalUsdtController.text,
+      selectedMaxEffects: _maxEffects,
       testOrder: _useTestOrderEndpoint,
       nowUtc: DateTime.now().toUtc(),
     );
@@ -4406,6 +4428,27 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                                   source: 'risk_settings_rr_change',
                                 ),
                               );
+                            },
+                  ),
+                  DropdownButton<int>(
+                    value: _maxEffects,
+                    dropdownColor: const Color(0xFF121821),
+                    items: tradingEffectBudgetOptions
+                        .map(
+                          (value) => DropdownMenuItem<int>(
+                            value: value,
+                            child: Text(
+                              '${tradingOrderBudgetLabel(value)} / 24h',
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged:
+                        _runningIntent || _savingTradingControl
+                            ? null
+                            : (value) {
+                              if (value == null) return;
+                              setState(() => _maxEffects = value);
                             },
                   ),
                   OutlinedButton.icon(

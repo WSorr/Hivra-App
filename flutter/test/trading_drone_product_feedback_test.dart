@@ -81,6 +81,32 @@ void main() {
     expect(tradingSignalScanActionLabel(scanning: true), 'Scanning');
   });
 
+  test('order budget label is explicit and grammatical', () {
+    expect(tradingOrderBudgetLabel(1), '1 exchange order');
+    expect(tradingOrderBudgetLabel(8), '8 exchange orders');
+  });
+
+  test('unsupported restored effect budget falls back fail-closed', () {
+    final oversized = BingxFuturesTradingMandate.issue(
+      capsuleRootHex: 'a' * 64,
+      accountBindingHashHex: 'b' * 64,
+      symbol: 'BTC-USDT',
+      testOrder: false,
+      issuedAtUtc: issuedAt,
+      expiresAtUtc: issuedAt.add(const Duration(hours: 1)),
+      maxOrderNotionalQuoteDecimal: '10',
+      maxRiskPerTradePercent: 2,
+      maxDailyLossPercent: 5,
+      maxConcurrentPositions: 1,
+      cooldownAfterLossStreak: 2,
+      cooldownMinutes: 60,
+      maxEffects: 256,
+    );
+
+    expect(tradingRestoredEffectBudget(oversized), 1);
+    expect(tradingRestoredEffectBudget(mandate), 32);
+  });
+
   test('prepared intent is not labelled as executed effect', () {
     expect(tradingIntentStatusLabel(null), 'idle');
     expect(tradingIntentStatusLabel(PluginHostApiStatus.executed), 'prepared');
@@ -95,6 +121,7 @@ void main() {
         droneEnabled: true,
         selectedSymbol: 'xrp-usdt',
         selectedMaxNotional: '100.0',
+        selectedMaxEffects: 32,
         testOrder: true,
         nowUtc: now,
       ),
@@ -106,6 +133,7 @@ void main() {
         droneEnabled: true,
         selectedSymbol: 'ADA-USDT',
         selectedMaxNotional: '100',
+        selectedMaxEffects: 32,
         testOrder: true,
         nowUtc: now,
       ),
@@ -117,6 +145,7 @@ void main() {
         droneEnabled: true,
         selectedSymbol: 'XRP-USDT',
         selectedMaxNotional: '100',
+        selectedMaxEffects: 32,
         testOrder: false,
         nowUtc: now,
       ),
@@ -128,10 +157,43 @@ void main() {
         droneEnabled: true,
         selectedSymbol: 'XRP-USDT',
         selectedMaxNotional: '6.969',
+        selectedMaxEffects: 32,
         testOrder: true,
         nowUtc: now,
       ),
       isFalse,
+    );
+  });
+
+  test('effect budget is an exact part of the authorized selection', () {
+    final now = issuedAt.add(const Duration(minutes: 1));
+
+    expect(
+      tradingMandateMatchesSelection(
+        mandate: mandate,
+        droneEnabled: true,
+        selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '100',
+        selectedMaxEffects: 1,
+        testOrder: true,
+        nowUtc: now,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingMandateSelectionNotice(
+        mandate: mandate,
+        droneEnabled: true,
+        selectedSymbol: 'XRP-USDT',
+        selectedMaxNotional: '100',
+        selectedMaxEffects: 1,
+        testOrder: true,
+        nowUtc: now,
+      ),
+      contains(
+        '32 exchange orders. Selected XRP-USDT TEST at max 100 USDT and '
+        '1 exchange order',
+      ),
     );
   });
 
@@ -168,6 +230,7 @@ void main() {
         droneEnabled: true,
         selectedSymbol: 'XRP-USDT',
         selectedMaxNotional: '100',
+        selectedMaxEffects: 32,
         testOrder: true,
         nowUtc: expiredAt,
       ),
@@ -179,6 +242,7 @@ void main() {
         droneEnabled: true,
         selectedSymbol: 'XRP-USDT',
         selectedMaxNotional: '100',
+        selectedMaxEffects: 32,
         testOrder: true,
         nowUtc: expiredAt,
       ),
