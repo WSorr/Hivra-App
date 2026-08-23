@@ -466,6 +466,9 @@ runner_deterministic_order_is_single_use() {
     rg -q 'execute_deterministic_order_once' "$1" &&
     rg -q 'deterministic-order.v4.json' "$1" &&
     rg -q 'deterministic-observations' "$1" &&
+    rg -q 'deterministic-results' "$1" &&
+    rg -q 'validate_deterministic_cycle_outcome' "$1" &&
+    rg -q 'effect_repeated=false' "$1" &&
     rg -q 'mandate-symbol' "$1" &&
     rg -q 'deterministic observation requires an inactive public-shadow runner' "$1" &&
     rg -q 'deterministic observation requires a disabled public-shadow runner' "$1" &&

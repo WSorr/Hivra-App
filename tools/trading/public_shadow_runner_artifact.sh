@@ -1882,6 +1882,69 @@ print(value["state"])
 PY
 }
 
+validate_deterministic_cycle_outcome() {
+  local source="$1"
+  local expected_operation="$2"
+  python3 - "$source" "$expected_operation" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+source, expected_operation = sys.argv[1:]
+raw = pathlib.Path(source).read_bytes()
+if len(raw) < 2 or len(raw) > 2048 or not raw.endswith(b"\n") or raw.endswith(b"\n\n"):
+    raise SystemExit("deterministic cycle outcome is not one bounded line")
+try:
+    text = raw[:-1].decode("utf-8")
+    value = json.loads(text)
+except (UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("deterministic cycle outcome is not strict UTF-8 JSON")
+if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
+    raise SystemExit("deterministic cycle outcome bytes are not canonical")
+contract = value.get("contract_version")
+if contract == "hivra-trading-deterministic-cycle-evidence-v1":
+    if list(value) != ["contract_version", "state", "reason_code", "effect"]:
+        raise SystemExit("deterministic blocked outcome shape is invalid")
+    reason = value.get("reason_code")
+    if (
+        value.get("state") != "blocked"
+        or not isinstance(reason, str)
+        or re.fullmatch(r"[a-z0-9_]{1,96}", reason) is None
+        or value.get("effect") is not False
+    ):
+        raise SystemExit("deterministic blocked outcome is invalid")
+    print(f"blocked:{reason}")
+elif contract == "hivra-trading-exact-order-evidence-v1":
+    expected_keys = [
+        "contract_version", "operation_id", "state", "attempt_count",
+        "provider_reference_id", "receipt_evidence_hash_hex", "test_order",
+    ]
+    if list(value) != expected_keys or value.get("operation_id") != expected_operation:
+        raise SystemExit("deterministic effect outcome identity is invalid")
+    state = value.get("state")
+    if state not in ("succeeded", "unresolved", "terminal_failure"):
+        raise SystemExit("deterministic effect outcome state is invalid")
+    if value.get("attempt_count") != 1 or not isinstance(value.get("test_order"), bool):
+        raise SystemExit("deterministic effect outcome use bound is invalid")
+    provider = value.get("provider_reference_id")
+    if provider is not None and (
+        not isinstance(provider, str) or not 1 <= len(provider) <= 256
+    ):
+        raise SystemExit("deterministic effect provider reference is invalid")
+    receipt = value.get("receipt_evidence_hash_hex")
+    if receipt is not None and (
+        not isinstance(receipt, str) or re.fullmatch(r"[0-9a-f]{64}", receipt) is None
+    ):
+        raise SystemExit("deterministic effect receipt is invalid")
+    if state == "succeeded" and receipt is None:
+        raise SystemExit("successful deterministic effect lacks receipt")
+    print(f"effect:{state}:test={str(value['test_order']).lower()}")
+else:
+    raise SystemExit("deterministic cycle outcome version mismatch")
+PY
+}
+
 execute_exact_order_once() {
   local directory="$1"
   require_expected_runner_key_id
@@ -2159,12 +2222,14 @@ execute_deterministic_order_once() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
-  local work pending_observation
+  local work pending_observation pending_result
   work="$(mktemp -d /run/hivra-trading-deterministic-order.XXXXXX)"
   pending_observation=""
+  pending_result=""
   trap '
     rm -rf "$work"
     [ -z "$pending_observation" ] || rm -f "$pending_observation"
+    [ -z "$pending_result" ] || rm -f "$pending_result"
     rm -f "$lock_path"
   ' EXIT INT TERM
   mkdir "$work/verified"
@@ -2172,11 +2237,35 @@ execute_deterministic_order_once() {
     "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
   [ "$(cat "$work/verified/operation-kind")" = "one_deterministic_order" ] ||
     die "deterministic order authority kind mismatch"
-  require_remote_mandate_execution_eligible "$work/verified" ||
-    die "deterministic order authority is not currently eligible for execution"
 
   local operation_id
   operation_id="$(cat "$work/verified/operation-id")"
+  local result_dir="$STATE_DIRECTORY/deterministic-results"
+  if [ -e "$result_dir" ] || [ -L "$result_dir" ]; then
+    [ -d "$result_dir" ] && [ ! -L "$result_dir" ] ||
+      die "deterministic order refused foreign result state"
+  else
+    install -d -m 0700 "$result_dir"
+  fi
+  local retained_result="$result_dir/$operation_id.json"
+  [ -z "$(find "$result_dir" -mindepth 1 -maxdepth 1 ! -name "$operation_id.json" -print -quit)" ] ||
+    die "deterministic order found conflicting result state"
+  if [ -e "$retained_result" ] || [ -L "$retained_result" ]; then
+    [ -f "$retained_result" ] && [ ! -L "$retained_result" ] ||
+      die "deterministic order retained result is invalid"
+    local replay_outcome
+    replay_outcome="$(validate_deterministic_cycle_outcome "$retained_result" "$operation_id")" ||
+      die "deterministic order retained result validation failed"
+    trap - EXIT INT TERM
+    rm -rf "$work"
+    rm -f "$lock_path"
+    exec 9>&-
+    echo "PASS trading-runner-artifact: replayed deterministic order cycle operation_id=$operation_id outcome=$replay_outcome effect_repeated=false"
+    return
+  fi
+  require_remote_mandate_execution_eligible "$work/verified" ||
+    die "deterministic order authority is not currently eligible for execution"
+
   local observation_dir="$STATE_DIRECTORY/deterministic-observations"
   if [ -e "$observation_dir" ] || [ -L "$observation_dir" ]; then
     [ -d "$observation_dir" ] && [ ! -L "$observation_dir" ] ||
@@ -2279,30 +2368,18 @@ PY
   fi
   [ ! -s "$work/stderr" ] ||
     die "deterministic order produced unexpected standard error"
-  python3 - "$work/stdout" "$operation_id" <<'PY'
-import json
-import pathlib
-import sys
-
-source, operation_id = sys.argv[1:]
-text = pathlib.Path(source).read_text(encoding="utf-8")
-if not text.endswith("\n") or text.endswith("\n\n"):
-    raise SystemExit("deterministic evidence is not one line")
-value = json.loads(text[:-1])
-if value.get("contract_version") == "hivra-trading-deterministic-cycle-evidence-v1":
-    if list(value) != ["contract_version", "state", "reason_code", "effect"] or value["state"] != "blocked" or value["effect"] is not False:
-        raise SystemExit("deterministic blocked evidence is invalid")
-elif value.get("contract_version") == "hivra-trading-exact-order-evidence-v1":
-    if value.get("operation_id") != operation_id:
-        raise SystemExit("deterministic effect operation mismatch")
-else:
-    raise SystemExit("deterministic evidence version mismatch")
-PY
+  local outcome
+  outcome="$(validate_deterministic_cycle_outcome "$work/stdout" "$operation_id")" ||
+    die "deterministic order outcome validation failed"
+  pending_result="$(mktemp "$result_dir/.result.pending.XXXXXX")"
+  install -m 0600 "$work/stdout" "$pending_result"
+  mv "$pending_result" "$retained_result"
+  pending_result=""
   trap - EXIT INT TERM
   rm -rf "$work"
   rm -f "$lock_path"
   exec 9>&-
-  echo "PASS trading-runner-artifact: completed one deterministic order cycle operation_id=$operation_id"
+  echo "PASS trading-runner-artifact: completed one deterministic order cycle operation_id=$operation_id outcome=$outcome"
 }
 
 install_disabled() {
@@ -2628,6 +2705,38 @@ self_test() {
     die "self-test accepted malformed exchange credential input"
   fi
   unset credential_json
+
+  local deterministic_operation_id deterministic_outcome
+  deterministic_operation_id="$(printf 'deterministic-outcome' | sha256_stdin)"
+  deterministic_outcome="$root/deterministic-blocked.json"
+  printf '%s\n' \
+    '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","state":"blocked","reason_code":"account_risk_incomplete","effect":false}' \
+    >"$deterministic_outcome"
+  [ "$(validate_deterministic_cycle_outcome \
+    "$deterministic_outcome" "$deterministic_operation_id")" = \
+    "blocked:account_risk_incomplete" ] ||
+    die "self-test rejected a canonical deterministic blocked outcome"
+  printf '%s\n' \
+    "{\"contract_version\":\"hivra-trading-exact-order-evidence-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"succeeded\",\"attempt_count\":1,\"provider_reference_id\":\"test-endpoint\",\"receipt_evidence_hash_hex\":\"$(printf 'receipt' | sha256_stdin)\",\"test_order\":true}" \
+    >"$root/deterministic-effect.json"
+  [ "$(validate_deterministic_cycle_outcome \
+    "$root/deterministic-effect.json" "$deterministic_operation_id")" = \
+    "effect:succeeded:test=true" ] ||
+    die "self-test rejected a canonical deterministic effect outcome"
+  if validate_deterministic_cycle_outcome \
+    "$root/deterministic-effect.json" "$(printf 'foreign-operation' | sha256_stdin)" \
+    >/dev/null 2>&1; then
+    die "self-test accepted a deterministic outcome for another operation"
+  fi
+  printf '%s\n' \
+    '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","state":"blocked","reason_code":"Account Risk","effect":false}' \
+    >"$root/deterministic-mutated.json"
+  if validate_deterministic_cycle_outcome \
+    "$root/deterministic-mutated.json" "$deterministic_operation_id" \
+    >/dev/null 2>&1; then
+    die "self-test accepted a non-canonical deterministic reason code"
+  fi
+  unset deterministic_operation_id deterministic_outcome
 
   sed -i.bak 's/^binary_sha256=./binary_sha256=0/' "$artifact/$MANIFEST_NAME"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
