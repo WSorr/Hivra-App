@@ -67,6 +67,16 @@ String tradingPreparedSessionActivationCommand({required String runnerKeyId}) {
 }
 
 @visibleForTesting
+String tradingPreparedSessionRunCommand({required String runnerKeyId}) {
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(runnerKeyId)) {
+    throw const FormatException('Invalid prepared-session command input.');
+  }
+  return 'sudo ./public_shadow_runner_artifact.sh '
+      '--run-prepared-session /path/to/runner-bundle '
+      '--expected-runner-key-id $runnerKeyId';
+}
+
+@visibleForTesting
 Future<String> runTradingIntentWithTerminalEvidence({
   required Future<String> Function() pipeline,
   required Future<void> Function(String source, String message) log,
@@ -1016,6 +1026,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final activationCommand = tradingPreparedSessionActivationCommand(
       runnerKeyId: runnerKeyId,
     );
+    final runCommand = tradingPreparedSessionRunCommand(
+      runnerKeyId: runnerKeyId,
+    );
     await showDialog<void>(
       context: context,
       builder:
@@ -1077,6 +1090,31 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     const Text(
                       'Activation creates bounded local session state only. It '
                       'does not start scheduling or submit an exchange order.',
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '3. Run the activated session in the foreground:',
+                    ),
+                    const SizedBox(height: 12),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(
+                          runCommand,
+                          style: const TextStyle(fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Keep this terminal open. The scheduler is serial, uses '
+                      'the signed cadence, and stops on failure, revocation, '
+                      'expiry, or another terminal session state.',
                     ),
                   ],
                 ),
