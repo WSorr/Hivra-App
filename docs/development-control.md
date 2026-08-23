@@ -9,7 +9,10 @@ market-only live decision and exposes its exact bounded `READY`/`BLOCKED`
 market proposal rather than only a reduced verdict or opaque hash. A completed
 bounded composition combines that authenticated proposal with one active
 mandate and one fresh transient account-risk snapshot into a non-authorizing order
-candidate. Automatic VPS/24/7 scheduling, new exchange-effect routes, plugin
+candidate. Interrupted VPS delivery now has a recovery-only path through the
+existing effect owner. It reconciles only an already attempted exact cycle and
+cannot build an intent or issue another provider POST. Automatic VPS/24/7
+scheduling, new exchange-effect routes, plugin
 ABI, Core, Ledger, tag, Release, and 2.0 runtime work remain blocked.
 The candidate now has one fail-closed adapter into the existing exact-order
 payload shape. The remote effect journal uses that exact intent hash as its
@@ -46,7 +49,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next unit is selected automatically after the signed VPS session-revocation pass. | This board and the relevant product contract |
+| What is the next 1.x step? | No unit is selected automatically after deterministic session recovery. The next product candidate is the user-safe runner provisioning/apply journey, not scheduling. | This board and the Trading Drone product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -57,7 +60,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Signed VPS session revocation implemented | The user selects an exact signed bounded-session artifact and creates a separate Capsule-signed stop file bound to its session operation, runner key, and Capsule root. Export pauses local trading when persistence succeeds but does not claim remote completion. The runner re-verifies the retained admission and revocation, stores bounded evidence, atomically marks only that session stopped, and treats exact replay idempotently without an exchange effect. | Contract mutation regressions, runner self-tests, full Flutter and Rust suites, architecture/release gates, protected PR, and post-merge gates. No scheduler, provider route, plugin ABI, Core, Ledger, tag, or Release change is included. | No next unit is selected. Before automatic scheduling, explicitly select unattended recovery/reconciliation and a user-safe runner provisioning/apply journey. |
+| **1.x maintained runtime** | Deterministic VPS session recovery implemented | The runner exposes a recovery-only command for an existing current-cycle effect. It derives the operation id from retained signed session state and calls only the canonical effect owner's reconciliation path. Missing or never-delivered operations remain no-effect; retained `delivering` state becomes unresolved and is queried without another POST. | Focused recovery regressions, runner self-tests, full Flutter and Rust suites, architecture/release gates, protected PR, and post-merge gates. No scheduler, provider route, plugin ABI, Core, Ledger, tag, or Release change is included. | Explicitly select the user-safe runner provisioning/apply journey before any scheduler. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

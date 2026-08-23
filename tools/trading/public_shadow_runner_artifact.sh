@@ -64,6 +64,8 @@ Usage:
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --execute-deterministic-order <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --recover-deterministic-session <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
@@ -90,6 +92,8 @@ Deterministic execution first captures one operation-scoped public-market
 evidence item for the signed mandate symbol without loading exchange credentials.
 Exact replay reuses those retained evidence bytes before the existing effect
 runner is allowed to access the exchange credential.
+Session recovery reads only an existing cycle effect and reconciles its provider
+outcome. It cannot capture market data, create an intent, or deliver an order.
 EOF
 }
 
@@ -382,6 +386,74 @@ if now < eligible:
 if now >= expires:
     raise SystemExit("deterministic session authority expired")
 print(f"ready:{index}:{value['consumed_effects']}")
+PY
+}
+
+inspect_deterministic_session_cycle() {
+  local state="$1"
+  local session_operation_id="$2"
+  local max_cycles="$3"
+  local max_effects="$4"
+  python3 - "$state" "$session_operation_id" "$max_cycles" "$max_effects" <<'PY'
+import json
+import pathlib
+import re
+import stat
+import sys
+
+path, session_id, raw_cycles, raw_effects = sys.argv[1:]
+state_path = pathlib.Path(path)
+if not state_path.exists() or state_path.is_symlink():
+    raise SystemExit("deterministic recovery requires existing session state")
+metadata = state_path.lstat()
+if not stat.S_ISREG(metadata.st_mode) or not 2 <= metadata.st_size <= 2048:
+    raise SystemExit("deterministic recovery state is not bounded regular state")
+raw = state_path.read_bytes()
+try:
+    text = raw.decode("utf-8")
+    value = json.loads(text)
+    max_cycles = int(raw_cycles)
+    max_effects = int(raw_effects)
+except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+    raise SystemExit("deterministic recovery state is invalid")
+expected_keys = [
+    "contract_version", "session_operation_id", "next_cycle_index",
+    "completed_cycles", "consumed_effects", "state",
+    "last_cycle_operation_id",
+]
+index = value.get("next_cycle_index")
+consumed = value.get("consumed_effects")
+if (
+    not isinstance(value, dict)
+    or list(value) != expected_keys
+    or json.dumps(value, separators=(",", ":")) + "\n" != text
+    or value.get("contract_version") != "hivra-trading-deterministic-session-state-v1"
+    or value.get("session_operation_id") != session_id
+    or re.fullmatch(r"[0-9a-f]{64}", session_id) is None
+    or isinstance(index, bool) or not isinstance(index, int)
+    or index < 0 or index > max_cycles
+    or value.get("completed_cycles") != index
+    or isinstance(consumed, bool) or not isinstance(consumed, int)
+    or consumed < 0 or consumed > max_effects
+    or value.get("state") not in ("active", "completed", "stopped")
+):
+    raise SystemExit("deterministic recovery state invariant failed")
+last = value.get("last_cycle_operation_id")
+if index == 0:
+    if last is not None:
+        raise SystemExit("deterministic recovery initial state has a last cycle")
+else:
+    import hashlib
+    expected_last = hashlib.sha256(
+        b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+        json.dumps(
+            {"session_operation_id": session_id, "cycle_index": index - 1},
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    if last != expected_last:
+        raise SystemExit("deterministic recovery last cycle is invalid")
+print(f"{value['state']}:{index}:{consumed}")
 PY
 }
 
@@ -854,7 +926,8 @@ PY
     'trading-remote-mandate-admission-v5' \
     'one_deterministic_order' \
     'bounded_deterministic_session' \
-    'hivra-trading-deterministic-cycle-evidence-v1'; do
+    'hivra-trading-deterministic-cycle-evidence-v1' \
+    'hivra-trading-exact-order-recovery-v1'; do
     grep -aFq "$marker" "$effect_binary" ||
       die "artifact effect binary is missing exact-order marker: $marker"
   done
@@ -2637,6 +2710,71 @@ else:
 PY
 }
 
+validate_deterministic_recovery_outcome() {
+  local source="$1"
+  local expected_operation="$2"
+  if validate_deterministic_cycle_outcome \
+    "$source" "$expected_operation" 2>/dev/null; then
+    return
+  fi
+  python3 - "$source" "$expected_operation" <<'PY'
+import json
+import pathlib
+import sys
+
+source, expected_operation = sys.argv[1:]
+raw = pathlib.Path(source).read_bytes()
+if len(raw) < 2 or len(raw) > 512 or not raw.endswith(b"\n") or raw.endswith(b"\n\n"):
+    raise SystemExit("deterministic recovery outcome is not one bounded line")
+try:
+    text = raw[:-1].decode("utf-8")
+    value = json.loads(text)
+except (UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("deterministic recovery outcome is not strict JSON")
+if (
+    not isinstance(value, dict)
+    or list(value) != ["contract_version", "operation_id", "state", "effect"]
+    or json.dumps(value, separators=(",", ":")) != text
+    or value.get("contract_version") != "hivra-trading-exact-order-recovery-v1"
+    or value.get("operation_id") != expected_operation
+    or value.get("state") not in ("absent", "not_delivered")
+    or value.get("effect") is not False
+):
+    raise SystemExit("deterministic recovery outcome is invalid")
+print(f"no_effect:{value['state']}")
+PY
+}
+
+select_deterministic_recovery_cycle() {
+  local session_status="$1"
+  local session_id="$2"
+  local result_dir="$3"
+  local has_revocation="$4"
+  local index="${session_status#*:}"
+  index="${index%%:*}"
+  if [[ "$session_status" != stopped:* ]] || [ "$index" -eq 0 ] ||
+    [ "$has_revocation" = "true" ]; then
+    echo "$index"
+    return
+  fi
+  local previous_index previous_operation previous_result previous_outcome
+  previous_index="$((index - 1))"
+  previous_operation="$(derive_deterministic_session_cycle_operation_id \
+    "$session_id" "$previous_index")" || return 1
+  previous_result="$result_dir/$previous_operation.json"
+  if [ -f "$previous_result" ] && [ ! -L "$previous_result" ]; then
+    previous_outcome="$(validate_deterministic_cycle_outcome \
+      "$previous_result" "$previous_operation")" || return 1
+    case "$previous_outcome" in
+      effect:unresolved:*|effect:terminal_failure:*)
+        echo "$previous_index"
+        return
+        ;;
+    esac
+  fi
+  echo "$index"
+}
+
 execute_exact_order_once() {
   local directory="$1"
   require_expected_runner_key_id
@@ -3135,6 +3273,167 @@ PY
   echo "PASS trading-runner-artifact: completed one deterministic order cycle operation_id=$operation_id outcome=$outcome session_status=$session_status"
 }
 
+recover_deterministic_session_once() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  command -v systemd-run >/dev/null 2>&1 || die "systemd-run is required"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "deterministic recovery refused the installed runner key id"
+  [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+    [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    die "deterministic recovery requires one prepared exchange credential"
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "deterministic recovery requires one prepared authority"
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work pending_result
+  work="$(mktemp -d /run/hivra-trading-deterministic-recovery.XXXXXX)"
+  pending_result=""
+  trap '
+    rm -rf "$work"
+    [ -z "$pending_result" ] || rm -f "$pending_result"
+    rm -f "$lock_path"
+  ' EXIT INT TERM
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+  [ "$(cat "$work/verified/operation-kind")" = "bounded_deterministic_session" ] ||
+    die "deterministic recovery requires bounded session authority"
+  local session_id session_state session_status cycle_index operation_id
+  session_id="$(cat "$work/verified/operation-id")"
+  session_state="$STATE_DIRECTORY/deterministic-session.v1.json"
+  session_status="$(inspect_deterministic_session_cycle \
+    "$session_state" "$session_id" \
+    "$(cat "$work/verified/session-max-cycles")" \
+    "$(cat "$work/verified/mandate-max-effects")")" ||
+    die "deterministic recovery refused invalid session state"
+  local has_revocation="false"
+  [ ! -e "$STATE_DIRECTORY/revocations/$session_id.json" ] ||
+    has_revocation="true"
+  cycle_index="$(select_deterministic_recovery_cycle \
+    "$session_status" "$session_id" \
+    "$STATE_DIRECTORY/deterministic-results" "$has_revocation")" ||
+    die "deterministic recovery cycle selection failed"
+  if [ "$cycle_index" = "$(cat "$work/verified/session-max-cycles")" ]; then
+    echo "PASS trading-runner-artifact: deterministic recovery found no current cycle effect=false"
+    return
+  fi
+  local result_dir="$STATE_DIRECTORY/deterministic-results"
+  ensure_private_operation_store "$result_dir"
+  operation_id="$(derive_deterministic_session_cycle_operation_id \
+    "$session_id" "$cycle_index")" ||
+    die "deterministic recovery cycle identity derivation failed"
+  validate_deterministic_operation_store \
+    "$result_dir" "$operation_id" "$DETERMINISTIC_HISTORY_LIMIT" 2048 ||
+    die "deterministic recovery refused invalid result history"
+  local retained_result="$result_dir/$operation_id.json"
+  if [ -f "$retained_result" ] && [ ! -L "$retained_result" ]; then
+    local retained_outcome
+    retained_outcome="$(validate_deterministic_cycle_outcome \
+      "$retained_result" "$operation_id")" ||
+      die "deterministic recovery retained result is invalid"
+    case "$retained_outcome" in
+      effect:unresolved:*|effect:terminal_failure:*) ;;
+      *)
+        if [[ "$session_status" == active:* ]]; then
+          advance_deterministic_session_cycle \
+            "$session_state" "$session_id" "$cycle_index" "$operation_id" \
+            "$retained_outcome" "$(cat "$work/verified/session-max-cycles")" \
+            "$(cat "$work/verified/mandate-max-effects")" >/dev/null ||
+            die "deterministic recovery could not commit retained cycle"
+        fi
+        echo "PASS trading-runner-artifact: deterministic recovery committed retained result operation_id=$operation_id outcome=$retained_outcome effect_repeated=false"
+        return
+        ;;
+    esac
+  fi
+
+  local transient_name="hivra-trading-recovery-${operation_id:0:12}-$$"
+  local credential_dir="/run/credentials/$transient_name.service"
+  if ! systemd-run \
+    --unit="$transient_name" \
+    --service-type=exec \
+    --wait --pipe --collect --quiet \
+    --property=DynamicUser=yes \
+    --property=StateDirectory=hivra-trading-public-shadow \
+    --property=StateDirectoryMode=0700 \
+    --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
+    --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
+    --property="LoadCredential=deterministic-admission:$mandate" \
+    --property=RuntimeMaxSec=90s \
+    --property=TimeoutStartSec=90s \
+    --property=TimeoutStopSec=10s \
+    --property=KillMode=mixed \
+    --property=OOMPolicy=stop \
+    --property=MemoryMax=160M \
+    --property=MemorySwapMax=0 \
+    --property=TasksMax=16 \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=yes \
+    --property=ProtectProc=invisible \
+    --property=ProcSubset=pid \
+    --property=ProtectKernelTunables=yes \
+    --property=ProtectKernelModules=yes \
+    --property=ProtectKernelLogs=yes \
+    --property=ProtectControlGroups=yes \
+    --property=RestrictSUIDSGID=yes \
+    --property=RestrictNamespaces=yes \
+    --property=LockPersonality=yes \
+    --property=MemoryDenyWriteExecute=yes \
+    --property=CapabilityBoundingSet= \
+    --property=AmbientCapabilities= \
+    --property=SystemCallArchitectures=native \
+    --property=SystemCallFilter=@system-service \
+    --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" \
+    --property=SocketBindDeny=any \
+    --property=IPAccounting=yes \
+    "$EFFECT_BINARY_INSTALL_PATH" \
+      --mode deterministic-order-recovery \
+      --runner-seed-file "$credential_dir/runner-seed" \
+      --deterministic-credential-file "$credential_dir/bingx-exchange" \
+      --deterministic-admission-file "$credential_dir/deterministic-admission" \
+      --deterministic-state-home "$STATE_DIRECTORY/deterministic-order-runtime" \
+      --session-cycle-index "$cycle_index" \
+      >"$work/stdout" 2>"$work/stderr"; then
+    die "deterministic recovery failed without exposing provider output"
+  fi
+  [ ! -s "$work/stderr" ] ||
+    die "deterministic recovery produced unexpected standard error"
+  local outcome
+  outcome="$(validate_deterministic_recovery_outcome \
+    "$work/stdout" "$operation_id")" ||
+    die "deterministic recovery outcome validation failed"
+  case "$outcome" in
+    no_effect:*) ;;
+    effect:*)
+      pending_result="$(mktemp "$result_dir/.result.pending.XXXXXX")"
+      install -m 0600 "$work/stdout" "$pending_result"
+      mv "$pending_result" "$retained_result"
+      pending_result=""
+      if [[ "$session_status" == active:* ]]; then
+        advance_deterministic_session_cycle \
+          "$session_state" "$session_id" "$cycle_index" "$operation_id" \
+          "$outcome" "$(cat "$work/verified/session-max-cycles")" \
+          "$(cat "$work/verified/mandate-max-effects")" >/dev/null ||
+          die "deterministic recovery could not commit its cycle"
+      fi
+      ;;
+    *) die "deterministic recovery returned an unsupported outcome" ;;
+  esac
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: deterministic recovery completed operation_id=$operation_id outcome=$outcome effect_repeated=false"
+}
+
 install_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -3517,6 +3816,9 @@ PY
     "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
     "terminal:stopped:2:1" ] ||
     die "self-test resurrected a terminal deterministic session"
+  [ "$(inspect_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1)" = "stopped:2:1" ] ||
+    die "self-test did not inspect terminal session state without mutation"
   python3 - "$session_state" <<'PY'
 import json
 import pathlib
@@ -3560,7 +3862,8 @@ PY
     'trading-remote-mandate-admission-v5' \
     'one_deterministic_order' \
     'bounded_deterministic_session' \
-    'hivra-trading-deterministic-cycle-evidence-v1' >> "$artifact/$EFFECT_BINARY_NAME"
+    'hivra-trading-deterministic-cycle-evidence-v1' \
+    'hivra-trading-exact-order-recovery-v1' >> "$artifact/$EFFECT_BINARY_NAME"
   chmod 700 "$artifact/$BINARY_NAME"
   chmod 700 "$artifact/$EFFECT_BINARY_NAME"
   cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
@@ -3621,6 +3924,28 @@ PY
     "$root/deterministic-effect.json" "$deterministic_operation_id")" = \
     "effect:succeeded:test=true" ] ||
     die "self-test rejected a canonical deterministic effect outcome"
+  printf '%s\n' \
+    "{\"contract_version\":\"hivra-trading-exact-order-recovery-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"absent\",\"effect\":false}" \
+    >"$root/deterministic-recovery-empty.json"
+  [ "$(validate_deterministic_recovery_outcome \
+    "$root/deterministic-recovery-empty.json" "$deterministic_operation_id")" = \
+    "no_effect:absent" ] ||
+    die "self-test rejected canonical no-effect recovery evidence"
+  local recovery_store="$root/deterministic-recovery-results"
+  local recovery_session recovery_operation
+  mkdir "$recovery_store"
+  recovery_session="$(printf 'recovery-session' | sha256_stdin)"
+  recovery_operation="$(derive_deterministic_session_cycle_operation_id \
+    "$recovery_session" 0)"
+  printf '%s\n' \
+    "{\"contract_version\":\"hivra-trading-exact-order-evidence-v1\",\"operation_id\":\"$recovery_operation\",\"state\":\"unresolved\",\"attempt_count\":1,\"provider_reference_id\":null,\"receipt_evidence_hash_hex\":null,\"test_order\":false}" \
+    >"$recovery_store/$recovery_operation.json"
+  [ "$(select_deterministic_recovery_cycle \
+    'stopped:1:1' "$recovery_session" "$recovery_store" false)" = 0 ] ||
+    die "self-test did not select the stopped unresolved cycle"
+  [ "$(select_deterministic_recovery_cycle \
+    'stopped:1:1' "$recovery_session" "$recovery_store" true)" = 1 ] ||
+    die "self-test crossed an explicit session revocation"
   if validate_deterministic_cycle_outcome \
     "$root/deterministic-effect.json" "$(printf 'foreign-operation' | sha256_stdin)" \
     >/dev/null 2>&1; then
@@ -3634,7 +3959,7 @@ PY
     >/dev/null 2>&1; then
     die "self-test accepted a non-canonical deterministic reason code"
   fi
-  unset deterministic_operation_id deterministic_outcome
+  unset deterministic_operation_id deterministic_outcome recovery_store recovery_session recovery_operation
 
   sed -i.bak 's/^binary_sha256=./binary_sha256=0/' "$artifact/$MANIFEST_NAME"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
@@ -4297,7 +4622,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -4443,6 +4768,12 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
       die "deterministic order requires only runner identity and prepared host state"
     execute_deterministic_order_once "$ARTIFACT_DIR"
+    ;;
+  recover-deterministic-session)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "deterministic recovery requires only runner identity and prepared host state"
+    recover_deterministic_session_once "$ARTIFACT_DIR"
     ;;
   uninstall-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

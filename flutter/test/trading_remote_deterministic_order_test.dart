@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,7 +11,8 @@ import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
 
 import '../tool/trading_remote_deterministic_order.dart';
-import '../tool/trading_remote_exact_order.dart' show runAuthorizedExactOrder;
+import '../tool/trading_remote_exact_order.dart'
+    show reconcileAuthorizedExactOrder, runAuthorizedExactOrder;
 
 void main() {
   test('one signed deterministic cycle composes and executes once', () async {
@@ -96,6 +98,97 @@ void main() {
     expect(result['operation_id'], fixture.admissionOperationId);
     expect(requests.where((request) => request.method == 'POST'), hasLength(1));
   });
+
+  test(
+    'session recovery reconciles one existing effect without POST',
+    () async {
+      final fixture = await _fixture(sessionCycleIndex: 0, testOrder: false);
+      addTearDown(fixture.dispose);
+      final initialRequests = <BingxHttpRequest>[];
+      final unresolved = jsonDecode(
+        await runOneDeterministicOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          requestSender: (request) async {
+            initialRequests.add(request);
+            if (request.method == 'POST') {
+              throw TimeoutException('provider timeout');
+            }
+            return _providerResponse(request);
+          },
+          nowUtc: () => fixture.now,
+        ),
+      );
+      final recoveryRequests = <BingxHttpRequest>[];
+      final recoveryOptions = <String, String>{
+        'mode': deterministicOrderRecoveryMode,
+        'runner-seed-file': fixture.options['runner-seed-file']!,
+        'deterministic-admission-file':
+            fixture.options['deterministic-admission-file']!,
+        'deterministic-credential-file':
+            fixture.options['deterministic-credential-file']!,
+        'deterministic-state-home':
+            fixture.options['deterministic-state-home']!,
+        'session-cycle-index': '0',
+      };
+      final recovered = jsonDecode(
+        await recoverOneDeterministicOrder(
+          options: recoveryOptions,
+          runnerSeedBytes: fixture.runnerSeed,
+          reconcileExactOrder: reconcileAuthorizedExactOrder,
+          requestSender: (request) async {
+            recoveryRequests.add(request);
+            if (request.method == 'POST') {
+              throw StateError('recovery attempted delivery');
+            }
+            final clientOrderId =
+                request.uri.queryParameters['clientOrderId'] ?? '';
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: jsonEncode(<String, dynamic>{
+                'code': 0,
+                'msg': 'success',
+                'data': <String, dynamic>{
+                  'order': <String, dynamic>{
+                    'orderId': 'order-1',
+                    'clientOrderId': clientOrderId,
+                    'symbol': 'BTC-USDT',
+                    'side': 'BUY',
+                    'positionSide': 'LONG',
+                    'type': 'TRIGGER_LIMIT',
+                    'status': 'NEW',
+                    'price': '100',
+                    'stopPrice': '99',
+                    'origQty': '0.01',
+                    'executedQty': '0',
+                    'time': 1770000000000,
+                  },
+                },
+              }),
+            );
+          },
+          nowUtc: () => fixture.now.add(const Duration(hours: 2)),
+        ),
+      );
+
+      expect(unresolved['state'], 'unresolved');
+      expect(recovered['state'], 'succeeded');
+      expect(recovered['operation_id'], fixture.admissionOperationId);
+      expect(
+        initialRequests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+      expect(
+        recoveryRequests.where((request) => request.method == 'POST'),
+        isEmpty,
+      );
+      expect(
+        recoveryRequests.where((request) => request.method == 'GET'),
+        hasLength(1),
+      );
+    },
+  );
 }
 
 BingxHttpResponse _providerResponse(BingxHttpRequest request) {
@@ -123,7 +216,7 @@ Future<
     Future<void> Function() dispose,
   })
 >
-_fixture({int? sessionCycleIndex}) async {
+_fixture({int? sessionCycleIndex, bool testOrder = true}) async {
   final directory = await Directory.systemTemp.createTemp(
     'hivra-deterministic-cycle.',
   );
@@ -142,7 +235,7 @@ _fixture({int? sessionCycleIndex}) async {
     capsuleRootHex: _hex(capsulePublicKey.bytes),
     accountBindingHashHex: sha256.convert(utf8.encode(apiKey)).toString(),
     symbol: 'BTC-USDT',
-    testOrder: true,
+    testOrder: testOrder,
     issuedAtUtc: now.subtract(const Duration(minutes: 1)),
     expiresAtUtc: now.add(const Duration(hours: 1)),
     maxOrderNotionalQuoteDecimal: '10',

@@ -1078,6 +1078,20 @@ provider call. Blocked evaluations consume a cycle but not an effect. Any
 provider attempt consumes an effect; unresolved or terminal failure stops the
 session. Reaching the signed cycle, effect, or expiry bound is terminal.
 
+Interrupted delivery has one separate recovery-only entry point. It requires
+the retained signed session, exact runner identity, existing session journal,
+derived current-cycle operation id, exchange account binding, and the existing
+`ExternalEffectService` journal. Recovery may query the provider only through
+`reconcileOnly`; it cannot capture market evidence, compose an intent,
+prepare/approve/enqueue an effect, or call provider delivery. An operation that
+does not exist or has never attempted delivery returns bounded no-effect
+evidence. A retained or recovered terminal result is committed before an active
+session advances. Recovery remains valid after mandate expiry because it
+settles an already attempted effect rather than authorizing a new one.
+If an unresolved provider outcome already stopped the session, recovery targets
+that exact last attempted cycle and may replace only its retained result with a
+later verified receipt; it never resumes the stopped session.
+
 The 1.x Trading Drone screen may export a bounded session only after an active
 bounded mandate exists. The user supplies the already verified runner key id;
 the Capsule root signs the exact deployed runner profile plus the currently
@@ -1102,6 +1116,8 @@ fails closed before another market or exchange action.
 - A separate bounded effect executable is invoked only by the existing host
   lifecycle with transient systemd credentials and a 128 MiB memory limit.
 - `delivering` is durable before the provider POST.
+- A restart converts retained `delivering` to `unresolved` only inside the
+  canonical effect owner, then reconciles without redelivery.
 - Timeout, interruption, or missing query evidence is `unresolved`, never
   success and never permission for a second POST.
 - Live reconciliation uses the exact `client_order_id`; a missing order remains

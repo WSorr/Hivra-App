@@ -16,6 +16,7 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'trading_remote_shadow_probe.dart' show readExchangeCredentialFile;
 
 const String deterministicOrderMode = 'deterministic-order';
+const String deterministicOrderRecoveryMode = 'deterministic-order-recovery';
 const int _maxEvidenceBytes = 8192;
 
 typedef AuthorizedExactOrderExecutor =
@@ -29,6 +30,80 @@ typedef AuthorizedExactOrderExecutor =
       DateTime Function()? nowUtc,
       int Function()? clockMs,
     });
+
+typedef AuthorizedExactOrderReconciler =
+    Future<String> Function({
+      required BingxFuturesRemoteMandateAdmission admission,
+      required String effectOperationId,
+      required BingxFuturesApiCredentials credentials,
+      required String stateHome,
+      BingxHttpRequestSender? requestSender,
+      DateTime Function()? nowUtc,
+      int Function()? clockMs,
+    });
+
+Future<String> recoverOneDeterministicOrder({
+  required Map<String, String> options,
+  required List<int> runnerSeedBytes,
+  required AuthorizedExactOrderReconciler reconcileExactOrder,
+  BingxHttpRequestSender? requestSender,
+  DateTime Function()? nowUtc,
+  int Function()? clockMs,
+}) async {
+  final admissionBytes = await _readBoundedFile(
+    _required(options, 'deterministic-admission-file'),
+    BingxFuturesRemoteMandateAdmission.maxWireBytes,
+  );
+  final admission =
+      await BingxFuturesRemoteMandateAdmission.parseAndVerifyAsync(
+        untrustedWireBytes: admissionBytes,
+        verifySignature:
+            ({
+              required messageHashHex,
+              required participantIdHex,
+              required signatureHex,
+            }) async => Ed25519().verify(
+              _decodeHex(messageHashHex),
+              signature: Signature(
+                _decodeHex(signatureHex),
+                publicKey: SimplePublicKey(
+                  _decodeHex(participantIdHex),
+                  type: KeyPairType.ed25519,
+                ),
+              ),
+            ),
+      );
+  if (admission == null || !admission.isDeterministicSession) {
+    throw const FormatException('deterministic recovery admission is invalid');
+  }
+  final cycleIndex = _requiredInt(options, 'session-cycle-index');
+  final operationId = admission.deterministicCycleOperationId(cycleIndex);
+  if (operationId == null) {
+    throw const FormatException('deterministic recovery identity is invalid');
+  }
+  final signingKey = await Ed25519().newKeyPairFromSeed(runnerSeedBytes);
+  final runnerPublicKey = await signingKey.extractPublicKey();
+  if (sha256.convert(runnerPublicKey.bytes).toString() !=
+      admission.runnerKeyId) {
+    throw const FormatException('runner identity mismatch');
+  }
+  final credentials = await readExchangeCredentialFile(
+    _required(options, 'deterministic-credential-file'),
+  );
+  final stateHome = _required(options, 'deterministic-state-home');
+  if (!Directory(stateHome).isAbsolute) {
+    throw const FormatException('deterministic state home must be absolute');
+  }
+  return reconcileExactOrder(
+    admission: admission,
+    effectOperationId: operationId,
+    credentials: credentials,
+    stateHome: stateHome,
+    requestSender: requestSender,
+    nowUtc: nowUtc,
+    clockMs: clockMs,
+  );
+}
 
 Future<String> runOneDeterministicOrder({
   required Map<String, String> options,
@@ -230,6 +305,38 @@ Map<String, String> parseDeterministicOrderArgs(List<String> args) {
       (parsed.containsKey('session-cycle-index') &&
           parsed['session-cycle-index']!.trim().isEmpty)) {
     throw const FormatException('deterministic order options are incomplete');
+  }
+  return parsed;
+}
+
+Map<String, String> parseDeterministicRecoveryArgs(List<String> args) {
+  const allowed = <String>{
+    'mode',
+    'runner-seed-file',
+    'deterministic-admission-file',
+    'deterministic-credential-file',
+    'deterministic-state-home',
+    'session-cycle-index',
+  };
+  final parsed = <String, String>{};
+  for (var index = 0; index < args.length; index++) {
+    final argument = args[index];
+    if (!argument.startsWith('--') ||
+        index + 1 >= args.length ||
+        args[index + 1].startsWith('--')) {
+      throw FormatException('invalid argument: $argument');
+    }
+    final key = argument.substring(2);
+    if (!allowed.contains(key) || parsed.containsKey(key)) {
+      throw FormatException('unsupported or duplicate argument: $argument');
+    }
+    parsed[key] = args[++index];
+  }
+  if (parsed['mode'] != deterministicOrderRecoveryMode ||
+      allowed.any((key) => (parsed[key]?.trim() ?? '').isEmpty)) {
+    throw const FormatException(
+      'deterministic recovery options are incomplete',
+    );
   }
   return parsed;
 }
