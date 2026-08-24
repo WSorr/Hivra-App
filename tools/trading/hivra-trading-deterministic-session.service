@@ -8,6 +8,9 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=exec
+DynamicUser=yes
+StateDirectory=hivra-trading-public-shadow
+StateDirectoryMode=0700
 WorkingDirectory=/var/lib/hivra-trading-public-shadow
 ExecStartPre=/usr/bin/test -x /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle
 ExecStart=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --run-installed-prepared-session
@@ -25,7 +28,6 @@ PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/hivra-trading-public-shadow /var/lib/private/hivra-trading-public-shadow
 ProtectProc=invisible
 ProcSubset=pid
 ProtectKernelTunables=yes
