@@ -165,13 +165,13 @@ runner_persistent_session_service_is_fail_closed() {
     rg -q '^Conflicts=hivra-trading-public-shadow-runner.service$' "$unit" &&
     rg -q '^ExecStart=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --run-installed-prepared-session$' "$unit" &&
     rg -q '^Restart=no$' "$unit" &&
-    rg -q '^DynamicUser=yes$' "$unit" &&
-    rg -q '^StateDirectory=hivra-trading-public-shadow$' "$unit" &&
-    rg -q '^StateDirectoryMode=0700$' "$unit" &&
+    ! rg -q '^DynamicUser=' "$unit" &&
     rg -q '^NoNewPrivileges=yes$' "$unit" &&
     rg -q '^ProtectSystem=strict$' "$unit" &&
     rg -q '^ProtectHome=yes$' "$unit" &&
-    ! rg -q '^ReadWritePaths=' "$unit" &&
+    rg -q '^ReadWritePaths=/var/lib/hivra-trading-public-shadow /var/lib/private/hivra-trading-public-shadow$' "$unit" &&
+    rg -q '^CapabilityBoundingSet=CAP_DAC_OVERRIDE$' "$unit" &&
+    rg -q '^AmbientCapabilities=CAP_DAC_OVERRIDE$' "$unit" &&
     rg -q '^SocketBindDeny=any$' "$unit" &&
     rg -q -- '--enable-prepared-session-service <artifact-dir>' "$owner" &&
     rg -q -- '--pause-prepared-session-service <artifact-dir>' "$owner" &&
