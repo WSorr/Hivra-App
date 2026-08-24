@@ -1,512 +1,218 @@
 # Hivra Conceptual Model
 
-Hive Integrated Value & Relationship Architecture
+This document explains Hivra in product language. It does not define protocol
+fields, event transitions, storage schemas, or release state. Those belong to
+`specification.md` and the focused architecture contracts.
 
-Version: 1.0.0
-Status: Final
-Date: 2026-02-20
+## 1. Person-First Runtime
 
----
+Conventional applications create their own account, contacts, permissions,
+history, and continuity. The person exists as a record inside each application
+and starts again when the application changes.
 
-## Documentation and Comment Language Requirements
+Hivra reverses that ownership. A **Person-First Runtime (PFR)** gives the person
+a persistent local execution context before any individual application. Hivra
+calls that context a **Capsule**.
 
-### 1. Repository Language
+A Capsule can operate alone. It owns its recovery path, keeps authenticated
+history, runs replaceable WASM drones, and may establish optional trusted links
+with other Capsules. Chat, trading, AI, staking, and public agents are tools
+around the Capsule rather than owners of the person.
 
-All tracked text, including documentation, source, tests, fixtures, commit
-messages, and pull request descriptions, MUST be written in ENGLISH.
+**Applications are temporary. The person's runtime is not.**
 
-This includes (but is not limited to):
+## 2. Product Boundary
 
-- README.md in the root and in every crate
-- API docs (/// comments generating rustdoc)
-- Code examples in examples/
-- Commit messages
-- Pull Request descriptions
-- Wiki pages (if used)
+Hivra is not a social network, global account directory, public graph, or
+hosted shared computer.
 
-### 2. Code Comment Language
+- There is no global discovery or people search.
+- A relationship begins through an explicit invitation between Capsules.
+- Relationships are private trust facts, not likes, follows, or public edges.
+- A Capsule does not need a relationship to run solo drones.
+- External services and transports are replaceable adapters.
+- External effects require explicit bounded authority and durable receipts.
 
-All comments in production code MUST be in ENGLISH.
+The permanent engineering direction is defined in `product-axis.md`:
+authenticated input becomes reproducible local truth through one owner, while
+every external effect follows one idempotent lifecycle.
 
-```rust
-// Correct:
-/// Returns the current timestamp from the time source.
-pub fn now(&self) -> Timestamp {
-    self.time.now()
-}
+## 3. Capsule
 
-// Incorrect: a non-English comment.
-/// [Non-English description omitted.]
-pub fn now(&self) -> Timestamp {
-    self.time.now()
-}
-```
+A Capsule is a persistent, recoverable runtime context. It is not an
+application account and not merely a public key.
 
-### 3. Exceptions
+Conceptually it owns:
 
-Spoken conversation may use the language chosen by its participants. No
-non-English conversation text may be copied into tracked repository content.
-Technical names that have no translation remain identifiers, not prose.
+- a canonical root identity;
+- recovery authority;
+- a local signed Ledger;
+- five Starter slots;
+- optional trusted relationships;
+- isolated drone state and permissions;
+- transport-independent addressing information.
 
-### 4. Rationale
+Multiple Capsules on one device remain independent. They have different
+recovery material, Ledgers, relationships, plugin state, credentials, and
+active UI context. Switching the visible Capsule must never switch background
+truth or leak state between them.
 
-1. Global audience: code and documentation are read by developers worldwide
-2. Open Source: English is the standard for open source
-3. Tooling: Rust ecosystem (rustdoc, crates.io) is oriented around English
-4. Onboarding: new non-Russian-speaking developers must be able to contribute
+The root identity is transport-agnostic. Nostr and future transports use their
+own endpoint keys and routing details without replacing Capsule identity.
 
-### 5. Enforcement
+## 4. Ledger and Projections
 
-Commits containing non-English tracked text must not pass review and must be
-corrected. The repository gate rejects Cyrillic text as a deterministic minimum
-enforcement rule.
+The Ledger is the append-only signed history of Capsule domain facts. Current
+screens do not become truth stores: they display canonical projections derived
+from the Ledger or from the dedicated owner of operational state.
 
----
+Not every local record is a Ledger fact. Delivery queues, routing caches,
+pair-attestation evidence, plugin state, external-effect journals, and secrets
+have dedicated stores because they represent operations or private capability
+state rather than Capsule domain history.
 
-## 0. Introduction
+This distinction gives the user two useful views:
 
-For decades, software has been built around applications. Each application
-creates its own account, identity, contacts, permissions, and history. A person
-enters that architecture as a record inside someone else's system, and the
-application defines which actions and states are available.
+- **current state:** what exists and can be acted on now;
+- **history:** how that state was reached.
 
-Hivra begins from the opposite direction: the person exists before any
-application. Relationships, trust, history, intentions, and continuity are not
-application features. They are the foundation on which applications should
-operate.
+A repaired relationship should look healthy in the primary UI even though its
+earlier break remains available in history. Past facts are not erased, but they
+do not masquerade as current actionable state.
 
-Hivra calls this architecture a **Person-First Runtime (PFR)**: a local-first
-runtime whose primary durable execution context is the person rather than the
-application. `Person` names the enduring owner, `user` is a temporary role
-inside an application, and the Capsule is the persistent, recoverable execution
-context of the PFR.
+## 5. Starters and Slots
 
-A Capsule can exist and work alone: it keeps its own ledger, owns its recovery
-path, runs WASM drones, and does not require relationships to be useful. It
-binds identity, signed history, trusted relationships, rules, and recovery
-authority without exposing raw private keys, transport sessions, or ledger
-mutation to applications.
+A Capsule has exactly five Starter slots. Starter type names are `Juice`,
+`Spark`, `Seed`, `Pulse`, and `Kick`; the names do not grant different
+functions or economic value.
 
-Hivra is not a global shared computer. It is closer to a pocket capsule computer:
+A Starter is a unique lifecycle instance used to establish trusted links. It
+is not transferable, mineable, or a token. One active Starter can support more
+than one relationship, so five Starters do not limit a Capsule to five peers.
 
-- a personal runtime for local-first truth
-- a capsule-owned history and recovery model
-- a Core Trust Layer built from optional trusted links, not discovery
+A slot is capacity for the Capsule's own Starter lineage. When one lifecycle is
+permanently burned, its identifier is never reused. A later accepted invitation
+may create a new generation in that slot with a new identifier while preserving
+lineage history.
 
-The important architectural point is that capsule state is primary. Transport exists to exchange messages between capsules, but capsule identity, ledger truth, and recovery must remain owned by the capsule itself.
+The exact acceptance, rejection, cancellation, burn, and generation rules are
+normative only in `specification.md`.
 
-In a Person-First Runtime, applications are tools rather than destinations.
-Chat is a drone. AI is a replaceable capability. Transport is an adapter. Any
-of them may appear, evolve, or disappear without breaking the person's digital
-continuity.
+## 6. Invitations and Relationships
 
-Applications no longer define the person. The person's runtime defines the
-boundaries within which applications may operate.
+An invitation is an explicit proposal from one Capsule to establish a trusted
+link through a Starter. The sender's Starter remains locked until the pair
+reaches a terminal response or the sender cancels.
 
-**Apps are temporary. The person is not.**
+Acceptance may create a missing local Starter generation and establishes the
+relationship in each Capsule's own Ledger. Rejection can burn the sender's
+specific active Starter lifecycle only in the protocol-defined empty-slot
+case. Breaking a relationship does not burn its Starters.
 
-The permanent product axis is therefore simple: a user-owned Capsule turns
-explicit intent and authenticated input into reproducible local truth through
-one deterministic capability path, while every external effect follows one
-durable, idempotent lifecycle. New drones and transports extend the edges of
-this system; they do not change who owns Capsule truth.
+A **Relationship** is a private Trust Layer fact of mutual recognition. Drones
+may use the Trust Layer when their capability needs a trusted peer:
 
-Trusted links are not the product and Hivra is not a social network. There are no likes, followers, algorithmic feeds, global discovery, people search, or public network maps. Trusted links are internal trust facts created through real-world invitations and reused by drones when they need safe interaction with other Capsules.
+- Chat can restrict delivery to trusted Capsules.
+- A collaborative contract can require pair evidence.
+- Trading can operate solo and does not require consensus unless the user
+  explicitly chooses collaborative behavior.
+- Staking or local AI may ignore relationships entirely.
 
-Applications normally own user relationships. Hivra moves trusted relationships into the user-owned Capsule. A Chat Drone can use the Trust Layer to know which Capsules can communicate; a Trading Drone can use it for trusted counterparties; an AI Drone can use it for shared context; a Staking Drone may work alone and not use it at all.
+The Trust Layer is reusable infrastructure, not the product itself.
 
-Metaphor: Imagine you have 5 unique slippers. Each has its own distinct pattern (Juice, Spark, Seed, Pulse, Kick). You cannot give your slipper away — it always stays with you. But you can invite someone so they create their own slipper with the same pattern. When you both have slippers with the same pattern, a relationship forms.
+## 7. Pair Consensus
 
-If you invite someone who does not have that slipper and they refuse to create it — your slipper is destroyed. Forever.
+Pair Consensus answers a narrow question: do two Capsules possess compatible,
+authenticated evidence for the pair-scoped state required by one operation?
 
----
+It is computed from canonical pair-scoped views, not by comparing whole
+Ledgers. Events involving unrelated Capsules must not affect the result.
+Consensus is checked on demand for capabilities that declare it as a
+precondition; it is not a universal requirement for every drone.
 
-## 1. Fundamental Principles (DO NOT VIOLATE)
+Pair Consensus is not global consensus and does not by itself define groups,
+voting, multisignature, or DAO semantics. Those require explicit higher-level
+contracts rather than hidden Core expansion.
 
-1. No global discovery — only manual add via pubkey
-2. Trusted links are created through invitations, not search
-3. Relay is a future optional runtime role, independent from capsule birth
-4. Starters are unique identifiers, not economic tokens
-5. Starter names are just names (Juice/Spark/Seed/Pulse/Kick), not functions
-6. Transport is an abstraction layer (currently Nostr, others can be added)
-7. Reputation is local only (for relay scoring)
-8. No VPS (except seed, but we do not host them)
-9. Trust is more important than convenience
-10. Starter always stays with the creator
+## 8. Drones
 
----
+Drones are isolated WASM extensions that provide user-facing capabilities.
+They consume bounded host capabilities instead of receiving direct access to
+keys, filesystems, networks, provider credentials, or Ledger mutation.
 
-## 2. Entities
+The Capsule owns intent and authority. A drone may compute a proposal; the host
+validates policy and grants only the exact capability required for an effect.
+The external adapter performs the effect and returns evidence to its one
+durable lifecycle owner.
 
-### 2.1 Capsule
+This keeps inference, trading strategy, chat behavior, staking logic, and
+external social agents replaceable without changing Core identity or history.
 
-Capsule is your persistent runtime context. It is not an application account:
-it is the recoverable execution context through which you retain identity,
-history, relationships, rules, and authority across changing applications.
+## 9. Transport
 
-What a capsule has:
+Transport is a neutral rail for authenticated Capsule envelopes, closer to a
+banking message network than to a social application.
 
-- Canonical capsule root public key — the primary identity
-- 5 slots — exactly five, no more, no less
-- Birth mode — Genesis (five initial starters) or Proto (starts empty)
-- Runtime role — Leaf today; Relay is planned independently from birth mode
-- Trusted peers — list of capsules allowed to store your messages (Relay only)
-- Ledger — local signed log of all events
-- Network — Neste in 1.x; Hood may be introduced in 2.0+ only with fully
-  isolated state
+Nostr is the current built-in host adapter. Adapter-specific relay sessions,
+cursor behavior, acknowledgements, retries, and protocol formats remain behind
+the transport boundary. Core receives authenticated Hivra inputs and does not
+decide truth from transport-specific metadata.
 
-Identity model:
+WASM drones can request bounded delivery through host capabilities but cannot
+open transport sessions or access transport keys. Spam protection,
+deduplication, payload limits, sender policy, and quarantine occur before
+domain materialization.
 
-- A capsule has one canonical root identity.
-- The canonical root identity is transport-agnostic.
-- Transport adapters derive their own transport-specific keys from the same seed.
-- A transport key must not replace the capsule identity in the product model.
+## 10. Networks and Roles
 
-Capsule states on first launch:
+Hivra 1.x uses the `Neste` network and the implemented runtime roles described
+in `specification.md`.
 
-- No capsules → user creates the first (Proto or Genesis)
-- Capsules exist → show capsule selector
+`Genesis` and `Proto` describe how Starter history begins; they are not runtime
+roles. A future `Relay` role or experimental `Hood` network cannot be inferred
+from birth mode. Any additional network must isolate Ledger, slots, operational
+stores, drone state, delivery state, and consensus evidence from every other
+network.
 
-Managing multiple capsules:
+## 11. User Journeys
 
-- Capsules are independent (different seed, different ledger)
-- Switch at any time
-- Create new capsule from selector
+### Start alone
 
-### 2.2 Starter
+The user creates or restores a Capsule, sees its current state, and can install
+solo drones without creating any relationship.
 
-Starter is a unique, non-fungible asset. Your DNA in the network.
+### Establish trust
 
-Properties:
+Two people exchange Capsule cards out of band. One sends an invitation, the
+other reviews and accepts it, and both Capsules eventually project the same
+trusted relationship from their own authenticated history.
 
-- ID — 32 bytes, globally unique
-- Type — Juice, Spark, Seed, Pulse, Kick (just names)
-- Owner — creator (always one, never changes)
-- Origin — who invited you
-- Network — Neste or Hood
-- Creation time
+### Work through a drone
 
-Rules:
+The user opens a drone, supplies or approves bounded intent, reviews relevant
+state, and authorizes an exact effect when required. The effect remains
+traceable and recoverable after timeout or restart.
 
-- Starter cannot be transferred
-- Type never changes
-- Starter can only be burned (when recipient rejects with empty slot)
+### Recover
 
-### 2.3 Slot
+The recovery phrase restores Capsule identity. A backup restores the richer
+local history and operational state included by its explicit format. External
+service credentials are separate and are never silently reconstructed from the
+Capsule seed.
 
-Slot is a place for your starter.
+## 12. Glossary
 
-Characteristics:
-
-- Exactly 5 slots per capsule (indices 0-4)
-- Slot holds ONLY your starter
-- Type is not bound to position (Juice can be in any slot)
-- Slot can be locked (during invitation)
-
-### 2.4 Ledger (Local Register)
-
-Ledger is the heart of Core domain truth. Capsule birth, starters,
-invitations, and relationship facts are recorded here and reconstructed by
-replay. Operational delivery state, contact-card routing caches,
-pair-attestation evidence, plugin records, private drone journals, and secrets
-remain in their dedicated stores and are not ledger facts.
-
-What it stores:
-
-- All signed events (who, when, with whom)
-- Current relationship projection (built from events)
-
-Event types:
-
-- InvitationSent — invitation sent
-- InvitationReceived — incoming invitation materialized in the local ledger
-- InvitationAccepted — invitation accepted
-- InvitationRejected — invitation rejected
-- InvitationExpired — sender cancellation/revocation or terminal expiry record
-- StarterCreated — local starter lifecycle created
-- StarterBurned — local starter lifecycle permanently burned
-- RelationshipEstablished — relationship created
-- RelationshipBroken — relationship broken
-
-### 2.5 Relationship
-
-Relationship is an internal Trust Layer fact of mutual recognition between two capsules.
-
-It is not a social-network edge and not a public graph entry. It is a ledger-derived trust fact that drones may consume through the Trust Layer API when they need pair-scoped safety.
-
-Properties:
-
-- Peer (pubkey)
-- Starter type (which type the relationship is based on)
-- Peer starter ID
-- Own starter ID
-- Timestamp
-
-Important: One starter can participate in multiple relationships. 5 starters != 5 relationships.
-
-### 2.6 Birth Modes and Runtime Roles
-
-Genesis and Proto describe how starter history begins:
-
-- Genesis starts with five locally generated starters.
-- Proto starts empty and obtains starter generations through accepted
-  invitation lineage.
-
-Leaf and Relay describe runtime behavior. They do not alter starter birth.
-
-Leaf — regular capsule:
-
-- Can send invitations (if free starters exist)
-- Can accept invitations
-- Can reject invitations
-- Can break relationships
-
-Relay — planned role, not implemented in the current runtime:
-
-- Same as Leaf
-- Can store messages for trusted peers
-- Can relay (battery-aware)
-
-### 2.7 Trusted Peers
-
-List of capsules allowed to store your messages.
-
-How to add: manual only (QR, NFC, manual pubkey)
-
-What it enables: Relay stores messages for the peer
-
-What it does NOT enable: auto-accept invitations, starter access
-
-### 2.8 Networks
-
-Hivra 1.x supports Neste. Hood is a 2.0+ experimental-network design target,
-not a second active state inside the current Capsule. When implemented, the
-networks are fully isolated universes:
-
-Network | Purpose
---- | ---
-Neste | Main, production
-Hood | Test, sandbox
-
-Rules:
-
-- Full isolation (events from Neste do not affect Hood)
-- Each network-scoped Capsule state has an independent ledger, slots,
-  operational stores, drone state, delivery queues, and consensus evidence
-- Same type in different networks = different starters
-- Cross-network transport events are rejected before projection
-
----
-
-## 3. Mechanics
-
-### 3.1 Invitations (Full Flow)
-
-Phase 1: Initiation (A → B)
-
-1. A selects their starter of type X
-2. Starter is locked (cannot be used in other invitations)
-3. A creates InvitationSent in their ledger
-4. Invitation is delivered to B via transport layer
-
-Phase 2: Receive and Decide (B)
-
-B receives invitation and checks:
-
-1. Do they already have a starter of type X?
-2. Is there any empty slot?
-
-Case A: No own X + empty slot + ACCEPT
-
-- B activates local starter of type X in an empty slot as the next slot lineage instance (new lifecycle ID)
-- B creates InvitationAccepted
-- B creates RelationshipEstablished with A
-- A receives confirmation, unlocks their starter
-- A creates RelationshipEstablished with B
-- Result: relationship established using B's active local X
-
-Case B: Empty slot + REJECT (BURN)
-
-- UI warns: "Starter A will be destroyed"
-- B confirms rejection
-- B creates InvitationRejected with reason EmptySlot
-- A receives, DELETES their starter (burned)
-- Result: A lost starter, no relationship
-
-Case C: Own X exists + empty slot + ACCEPT
-
-- B keeps using their existing X for the relationship
-- B activates one missing starter type in the empty slot as the next slot lineage instance (new lifecycle ID)
-- B creates InvitationAccepted
-- B creates RelationshipEstablished
-- A receives, unlocks their starter
-- A creates RelationshipEstablished
-- Result: relationship established on existing X, and B fills one missing type
-
-Case D: Own X exists + no empty slot + ACCEPT
-
-- B creates InvitationAccepted
-- B creates RelationshipEstablished
-- A receives, unlocks their starter
-- A creates RelationshipEstablished
-- Result: relationship established, no new starter created
-
-Case E: Slot occupied + REJECT
-
-- B creates InvitationRejected with reason Other
-- A receives, unlocks their starter
-- Result: no relationship
-
-Case F: No response yet
-
-- A keeps the starter locked while waiting for a pair-terminal response
-- A may explicitly cancel the invitation to unlock the starter
-- No local clock timeout creates a pair-terminal ledger fact
-
-### 3.2 Burn Rule (CRITICAL)
-
-A starter is burned ONLY when ALL conditions are met:
-
-1. Recipient has no starter of that type and has an empty slot
-2. Recipient explicitly rejects the invitation
-3. Recipient confirmed the burn warning
-
-Burn invariants:
-
-- Burn applies to the current active lifecycle, not to slot capacity.
-- A burned starter ID is terminal and is never reactivated.
-- The slot remains available for future accepts, but each new activation creates the next linear starter generation with a new ID.
-- Lineage ancestry (invitation and inviter provenance) is preserved in ledger history, not by reusing burned IDs.
-
-### 3.3 Relationships
-
-Establishing:
-
-- Happens automatically on successful acceptance
-- Recorded in both ledgers
-
-Breaking:
-
-- Either side can break at any time
-- RelationshipBroken recorded in ledger
-- Starters are NOT burned on break
-
-### 3.4 Relay (planned, not implemented in the current runtime)
-
-Relay conditions:
-
-1. Relay role enabled in settings
-2. Recipient is in trusted_peers
-3. Battery > 20%
-4. Free space available
-
-Process:
-
-1. A sends message to B
-2. Relay V (trusted by B) stores message
-3. B comes online
-4. Relay V forwards message
-5. Relay V deletes stored message
-
-Relay retention is transport policy, not capsule truth.
-
-Relay off: all stored foreign messages are deleted immediately
-
-### 3.5 Local Reputation (planned, not implemented in the current runtime)
-
-Only for rating relay reliability. Local only.
-
-Signals:
-
-- How many times relay delivered
-- How many times relay failed
-
-Used for: UI hints only, no protocol influence
-
----
-
-## 4. Exceptional Cases
-
-Scenario | Outcome
---- | ---
-Invitation received, no own type, empty slot, accepted | New starter for B, relationship, starter A unlocked
-Invitation received, own type exists, empty slot, accepted | Relationship established on existing type, one missing starter created, starter A unlocked
-Invitation received, own type exists, no empty slot, accepted | Relationship established on existing type, starter A unlocked
-Invitation received, empty slot, rejected | STARTER A BURNED
-Invitation received, slot occupied, rejected | Starter A unlocked, no relationship
-Recipient offline | Relay may retain or drop the message according to transport policy
-No response | Starter remains locked until accept/reject arrives or sender explicitly cancels
-Relay turned off | All stored messages deleted
-Relationship broken | Relationship removed, starters remain
-Invite with locked starter | Error: starter busy
-
----
-
-## 5. Transport Layer (Extensibility)
-
-Hivra currently ships with Nostr as the main transport, but the architecture allows others:
-
-Supported host transport adapters:
-
-- Nostr (built-in)
-- Matrix (planned host adapter)
-- Bluetooth LE (planned host adapter, mesh)
-- Local network (planned host adapter, offline enclaves)
-
-How it works:
-
-- Capsule can use one or multiple transports
-- Message is broadcast to all recipient transports
-- Recipient accepts the first delivered
-- Transport is a neutral message rail, closer to a banking message network than
-  to a social protocol client
-- Adapter-specific details such as Nostr NIPs, relay cursors, relay `OK`
-  messages, Matrix rooms, or BLE sessions stay inside the adapter
-- Core receives only Hivra delivery envelopes and verified domain facts
-
-Boundary:
-
-- transport adapters are not WASM drones
-- transport adapters perform effectful delivery work: network, relay, retry, and transport-specific routing
-- WASM drones may ask the host to deliver deterministic envelopes, but never receive direct network or keychain access
-- transport adapters do not decide relationship state, consensus, or UI truth
-
-Guarantees:
-
-- Ledger does not know which transport delivered the event
-- Determinism is preserved
-- spam protection happens before ledger materialization and remains
-  transport-neutral: authenticate, deduplicate, rate-limit unknown senders, cap
-  payloads, and quarantine suspicious envelopes
-
----
-
-## 6. Current Limitations (Not Implemented)
-
-- Friend-based recovery (planned for v4.x)
-- Kick mechanic (forced break)
-- Multisignatures
-- Temporary starters
-- Group capsules
-- Economy and tokens
-
----
-
-## 7. Glossary
-
-Term | Definition
---- | ---
-Capsule | App instance, your identity
-Starter | Unique non-fungible asset
-Slot | Place for your starter (exactly 5)
-Ledger | Local signed log of events
-Relationship | Fact of mutual recognition
-Relay | Android capsule storing others' messages
-Trusted peer | Capsule allowed to store messages
-Neste | Main network
-Hood | Test network
-Burning | Destroying a starter after empty-slot rejection
-
----
-
-End of document 1
+| Term | Meaning |
+| --- | --- |
+| Person-First Runtime | User-owned runtime that precedes individual apps |
+| Capsule | Persistent local identity, history, recovery, and capability context |
+| Ledger | Append-only signed domain history |
+| Projection | Canonical current or historical view derived by its owner |
+| Starter | Unique local lifecycle instance used in trusted-link creation |
+| Slot | One of five positions for local Starter lineage |
+| Invitation | Explicit proposal to establish a trusted relationship |
+| Relationship | Private Trust Layer fact between Capsules |
+| Pair Consensus | Authenticated agreement over one pair-scoped view |
+| Drone | Isolated WASM extension using bounded host capabilities |
+| Transport | Replaceable host adapter for authenticated envelope delivery |
+| External effect | Durable provider action performed under bounded authority |

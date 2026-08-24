@@ -758,150 +758,9 @@ Broadcast behavior:
 
 ---
 
-## 11. Open Decisions for v1.1
+## 11. Test Matrix
 
-1. Add liquidation feed as mandatory confirmation or keep optional.
-2. Include long/short ratio as regime filter.
-3. Introduce symbol-specific threshold profiles (BTC/ETH vs alts).
-4. Add deterministic session windows (for example, London/NY overlap filters).
-
----
-
-## 12. Implementation Work Packages (Step-by-Step)
-
-WP order is strict and mirrors dependency-down discipline.
-
-### WP-1. Market Snapshot DTO + Canonicalizer
-
-Target:
-
-- add normalized snapshot model and canonical serializer.
-
-Implementation:
-
-- create `flutter/lib/services/bingx_futures_market_snapshot_service.dart`
-- include:
-  - snapshot DTOs (instrument, prices, candles, orderbook, trades, oi, funding),
-  - normalization helpers,
-  - deterministic canonical JSON + `market_snapshot_hash`.
-
-Tests:
-
-- `flutter/test/bingx_futures_market_snapshot_service_test.dart`.
-
-### WP-2. Feature Extractor (pure deterministic math)
-
-Target:
-
-- compute EMA/ATR/sweeps/microstructure/funding flags from normalized snapshot.
-
-Implementation:
-
-- create `flutter/lib/services/bingx_futures_feature_extractor_service.dart`
-- no transport or UI calls allowed.
-
-Tests:
-
-- `flutter/test/bingx_futures_feature_extractor_service_test.dart`
-- fixed fixtures with exact expected numeric outputs.
-
-### WP-3. TVH Rule Engine
-
-Target:
-
-- deterministic decision: `LONG | SHORT | NO_SIGNAL` plus reason codes.
-
-Implementation:
-
-- create `flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart`
-- input: feature model + policy thresholds.
-- output: rule-set evaluation object with matched/missed criteria.
-
-Tests:
-
-- `flutter/test/bingx_futures_tvh_rule_engine_service_test.dart`
-- include:
-  - bullish pass,
-  - bearish pass,
-  - funding block,
-  - insufficient data block.
-
-### WP-4. Intent Builder
-
-Target:
-
-- map TVH decision into host-api-ready futures intent payload.
-
-Implementation:
-
-- keep intent mapping in
-  `flutter/lib/services/bingx_futures_intent_use_case_service.dart`.
-- do not reintroduce the removed `bingx_trading_contract_service.dart`
-  boundary; futures intent preparation belongs to the futures application
-  service layer.
-- must emit:
-  - `rule_set`,
-  - `market_snapshot_hash`,
-  - risk block,
-  - deterministic `intent_hash`.
-
-Tests:
-
-- maintain `flutter/test/bingx_futures_intent_use_case_service_test.dart`.
-
-### WP-5. Host API Wiring + Guard
-
-Target:
-
-- route drone output through current plugin host API boundary.
-
-Implementation:
-
-- keep using:
-  - `plugin_id = hivra.contract.bingx-futures-trading.v1`
-  - `method = place_bingx_futures_order_intent`
-- keep capability gate:
-  - `consensus_guard.read`
-  - `exchange.trade.bingx.futures`
-
-Files:
-
-- `flutter/lib/services/plugin_host_api_service.dart`
-- `flutter/lib/services/wasm_plugin_capability_policy_service.dart`
-- `flutter/lib/services/app_runtime_service.dart`
-
-Tests:
-
-- extend `flutter/test/plugin_host_api_service_test.dart`
-- extend `flutter/test/wasm_plugin_capability_policy_service_test.dart`.
-
-### WP-6. UI Projection and Explainability
-
-Target:
-
-- show deterministic decision and reasons without embedding domain logic in UI.
-
-Implementation:
-
-- keep calculation in services,
-- UI only renders:
-  - rule-set outcome,
-  - top blocking reason,
-  - short hash preview.
-
-Files:
-
-- `flutter/lib/screens/wasm_plugins_screen.dart`.
-
-Tests:
-
-- widget tests for rendering state transitions only.
-
----
-
-## 13. Test Matrix
-
-### 13.1 Unit Tests (mandatory)
+### 11.1 Unit Tests (mandatory)
 
 1. Snapshot normalization:
    - unordered input -> stable canonical output.
@@ -914,21 +773,21 @@ Tests:
 5. Intent builder:
    - stable `intent_hash` and required fields for equal inputs.
 
-### 13.2 Contract/Boundary Tests (mandatory)
+### 11.2 Contract/Boundary Tests (mandatory)
 
 1. Host method mismatch -> `unsupported_method`.
 2. Missing futures capability -> `runtime_capability_mismatch`.
 3. Contract kind mismatch -> `runtime_contract_kind_mismatch`.
 4. Guard blocked consensus -> `blocked` response with fact codes.
 
-### 13.3 Integration Tests (recommended)
+### 11.3 Integration Tests (recommended)
 
 1. End-to-end dry run:
    - snapshot fixture -> TVH decision -> host response -> broadcast payload.
 2. Replay determinism:
    - rerun identical fixture N times and compare all hashes.
 
-### 13.4 Manual Smoke (release gate)
+### 11.4 Manual Smoke (release gate)
 
 1. Run futures intent from plugin screen.
 2. Verify snackbar/result hash stable for same fixture inputs.
@@ -937,11 +796,12 @@ Tests:
 
 ---
 
-## 14. Definition of Done (v1 Drone)
+## 12. Definition of Done (v1 Drone)
 
 All conditions must hold:
 
-1. Work packages WP-1..WP-6 merged.
+1. The canonical decision, risk, intent, effect, and reconciliation owners are
+   implemented without a parallel screen or host evaluator path.
 2. New tests added and passing in CI.
 3. No dependency-rule violations in review gates.
 4. Futures plugin package installable from source catalog.
@@ -949,11 +809,11 @@ All conditions must hold:
 
 ---
 
-## 15. Execution Command Flow v1 (Capsule Integration)
+## 13. Execution Command Flow v1 (Capsule Integration)
 
 This section defines how a capsule receives and authorizes entry commands.
 
-### 15.1 Command Envelope (incoming)
+### 13.1 Command Envelope (incoming)
 
 Command payload kind:
 
@@ -977,7 +837,7 @@ Required fields:
 - `expires_at_utc`
 - `target_capsule_root_hex` (exact local capsule root identity)
 
-### 15.2 Local Execution Gate (mandatory)
+### 13.2 Local Execution Gate (mandatory)
 
 Each recipient capsule MUST run a local gate before exchange execution.
 
@@ -999,7 +859,7 @@ Gate checks (in order):
 
 If any check fails: reject command and emit deterministic receipt.
 
-### 15.3 Exchange Execution Responsibility
+### 13.3 Exchange Execution Responsibility
 
 If gate passes:
 
@@ -1014,7 +874,7 @@ If gate passes:
   confirm it from a successful provider result,
 - no remote capsule can force direct exchange mutation.
 
-### 15.4 Receipt Envelope (outgoing)
+### 13.4 Receipt Envelope (outgoing)
 
 Receipt payload kind:
 
@@ -1033,7 +893,7 @@ Fields:
 - `receipt_created_at_utc`
 - `receipt_hash_hex` (sha256 of canonical receipt JSON)
 
-### 15.5 Storage Policy
+### 13.5 Storage Policy
 
 - command/receipt envelopes are plugin-domain artifacts (inbox/journal projection),
 - do not extend Core ledger invariants for exchange noise,
@@ -1047,7 +907,7 @@ Fields:
 - durable command identity supplies restart-safe anti-replay for the current
   1.x path; a separate plugin execution journal must not duplicate it.
 
-## 16. Remote Bounded-Session Boundaries
+## 14. Remote Bounded-Session Boundaries
 
 The remote runner may execute only a Capsule-signed `one_exact_order`
 admission bound to one runner key, one trading mandate, one account binding,

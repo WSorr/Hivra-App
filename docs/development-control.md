@@ -1,45 +1,19 @@
 # Hivra Development Control
 
 Status date: 2026-08-24
-Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: Hivra 1.x product completion. The Trading Drone has
-proved one bounded live order and restart reconciliation, but it is not yet an
-operational product. Remote public-shadow evidence now reproduces the full
-market-only live decision and exposes its exact bounded `READY`/`BLOCKED`
-market proposal rather than only a reduced verdict or opaque hash. A completed
-bounded composition combines that authenticated proposal with one active
-mandate and one fresh transient account-risk snapshot into a non-authorizing order
-candidate. Interrupted VPS delivery now has a recovery-only path through the
-existing effect owner. It reconciles only an already attempted exact cycle and
-cannot build an intent or issue another provider POST. The exact merge-SHA bundle
-now has one disabled provisioning command; the Trading Drone accepts a signed
-runner anchor, retained per Capsule and re-authenticated after restart. Raw ids
-and standalone key files grant no authority. A local host apply command composes
-hidden-input credential preparation and exact session admission while leaving the
-Runner disabled. Explicit activation creates only canonical active session state. A bounded scheduler serially calls the existing one-cycle owner under the signed cadence and stops on failure or terminal state. The current product candidate packages that same owner as an explicit persistent systemd service with `Restart=no`, exact bundle verification, status, and pause controls. It has local automated evidence only; protected-PR and merge-SHA VPS lifecycle evidence remain required before it is reference-grade. Automated remote transport or provisioning, new exchange-effect routes, plugin ABI, Core, Ledger, tag, Release, and 2.0 runtime work remain blocked.
-The candidate has one fail-closed adapter into the existing exact-order payload shape.
-The remote effect journal uses that exact intent hash as its stable operation identity, while each admission commitment remains approval evidence; renewing authority cannot create a second effect for the same intent.
-Compatibility admissions authorize exactly one deterministic remote cycle.
-A bounded v5 session can authorize a signed sequence of serial cycles with an
-exact start, cadence, cycle cap, and the existing mandate effect cap:
-fresh signed market evidence plus fresh complete exchange risk and contract
-rules compose one order through the existing candidate owner and consume a
-cycle identity derived from the session commitment through the existing effect
-journal. Completed cycles retain immutable operation-scoped observation and result evidence. A different
-admission may replace the active slot only after the retained cycle has a valid
-terminal result or the retained session is terminal; exact replay returns the
-retained result without another effect. Both histories fail closed at 4096
-records. No admission is issued automatically and no automatic effect scheduler
-is added. The user now selects the exact 24-hour exchange-order budget before
-authorizing a mandate. The product UI defaults to one effect, offers only the
-bounded set `1, 2, 4, 8, 16, 32`, restores an exact supported budget, and
-requires re-authorization when the selected budget differs from the signed
-mandate. A separate Capsule-signed revocation now binds one exact session,
-runner key, and Capsule root. The runner verifies both admission and revocation,
-retains bounded evidence, and atomically stops that session without creating an
-exchange effect. Local pause and VPS application remain truthfully distinct.
-Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
-withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
+Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and
+Android manual signoff recorded)
+
+Current selected unit: validate the Hivra 1.x Trading Remote Runner persistent
+session-service candidate. It must reuse the existing bounded scheduler and
+external-effect owner, remain disabled until explicit activation, use
+`Restart=no`, and expose exact status, pause, terminal stop, and uninstall.
+Protected-PR verification and merge-SHA VPS lifecycle evidence are still
+required before it is reference-grade.
+
+No automatic provisioning, second scheduler/effect route, new exchange
+endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
+work is authorized by this checkpoint.
 
 ## 1. Read This First
 
