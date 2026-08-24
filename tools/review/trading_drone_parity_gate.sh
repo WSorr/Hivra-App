@@ -165,10 +165,13 @@ runner_persistent_session_service_is_fail_closed() {
     rg -q '^Conflicts=hivra-trading-public-shadow-runner.service$' "$unit" &&
     rg -q '^ExecStart=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --run-installed-prepared-session$' "$unit" &&
     rg -q '^Restart=no$' "$unit" &&
+    rg -q '^DynamicUser=yes$' "$unit" &&
+    rg -q '^StateDirectory=hivra-trading-public-shadow$' "$unit" &&
+    rg -q '^StateDirectoryMode=0700$' "$unit" &&
     rg -q '^NoNewPrivileges=yes$' "$unit" &&
     rg -q '^ProtectSystem=strict$' "$unit" &&
     rg -q '^ProtectHome=yes$' "$unit" &&
-    rg -q '^ReadWritePaths=/var/lib/hivra-trading-public-shadow /var/lib/private/hivra-trading-public-shadow$' "$unit" &&
+    ! rg -q '^ReadWritePaths=' "$unit" &&
     rg -q '^SocketBindDeny=any$' "$unit" &&
     rg -q -- '--enable-prepared-session-service <artifact-dir>' "$owner" &&
     rg -q -- '--pause-prepared-session-service <artifact-dir>' "$owner" &&
@@ -177,7 +180,8 @@ runner_persistent_session_service_is_fail_closed() {
     rg -q 'session service refused a revoked session' "$owner" &&
     rg -q 'require_retained_exchange_credential_binding' "$owner" &&
     rg -q 'systemctl enable "\$SESSION_UNIT_NAME"' "$owner" &&
-    rg -q 'systemctl disable --now "\$SESSION_UNIT_NAME"' "$owner" &&
+    rg -q 'remove_session_boot_enablement' "$owner" &&
+    ! rg -q 'systemctl disable[^\n]*\$SESSION_UNIT_NAME' "$owner" &&
     ! rg -q '^Restart=(always|on-success|on-failure)$' "$unit"
 }
 

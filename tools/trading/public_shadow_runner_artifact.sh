@@ -186,6 +186,24 @@ exchange_credential_matches_account_binding() {
     "$expected_account_hash" ]
 }
 
+remove_exact_enablement_link() {
+  local wants_path="$1"
+  local expected_target="$2"
+  if [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ]; then
+    return
+  fi
+  [ -L "$wants_path" ] &&
+    [ "$(readlink -f "$wants_path")" = "$(readlink -f "$expected_target")" ] ||
+    die "session service refused foreign boot enablement"
+  rm -f "$wants_path"
+}
+
+remove_session_boot_enablement() {
+  remove_exact_enablement_link \
+    "/etc/systemd/system/multi-user.target.wants/$SESSION_UNIT_NAME" \
+    "$SESSION_UNIT_INSTALL_PATH"
+}
+
 require_retained_exchange_credential_binding() {
   local expected_account_hash="$1"
   [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
@@ -2717,7 +2735,11 @@ enable_prepared_session_service() {
     die "session service requires one retained signed session"
   local work
   work="$(mktemp -d /run/hivra-trading-session-service.XXXXXX)"
-  trap "rm -rf '$work'; systemctl disable --now '$SESSION_UNIT_NAME' >/dev/null 2>&1 || true" EXIT INT TERM
+  rollback_session_service_enablement() {
+    systemctl stop "$SESSION_UNIT_NAME" >/dev/null 2>&1 || true
+    remove_session_boot_enablement >/dev/null 2>&1 || true
+  }
+  trap "rm -rf '$work'; rollback_session_service_enablement" EXIT INT TERM
   mkdir "$work/verified"
   verify_remote_mandate_artifact \
     "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
@@ -2745,7 +2767,8 @@ enable_prepared_session_service() {
 pause_prepared_session_service() {
   local directory="$1"
   require_exact_installed_bundle "$directory"
-  systemctl disable --now "$SESSION_UNIT_NAME" >/dev/null
+  systemctl stop "$SESSION_UNIT_NAME" >/dev/null
+  remove_session_boot_enablement
   [ "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")" = "inactive" ] ||
     die "session service did not stop"
   case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
@@ -4319,6 +4342,28 @@ self_test() {
   local root
   root="$(mktemp -d)"
   trap "rm -rf '$root'" EXIT
+
+  local unit_target="$root/session-unit"
+  local unit_link="$root/session-unit-link"
+  local wants_link="$root/session-wants-link"
+  : >"$unit_target"
+  ln -s "$unit_target" "$unit_link"
+  ln -s "$unit_target" "$wants_link"
+  remove_exact_enablement_link "$wants_link" "$unit_target"
+  [ ! -e "$wants_link" ] && [ ! -L "$wants_link" ] ||
+    die "self-test retained session boot enablement"
+  [ -L "$unit_link" ] &&
+    [ "$(readlink -f "$unit_link")" = "$(readlink -f "$unit_target")" ] ||
+    die "self-test removed the canonical session unit link"
+  : >"$root/foreign-unit"
+  ln -s "$root/foreign-unit" "$wants_link"
+  if (remove_exact_enablement_link "$wants_link" "$unit_target") \
+    >/dev/null 2>&1; then
+    die "self-test removed foreign session boot enablement"
+  fi
+  rm -f "$wants_link"
+  unset unit_target unit_link wants_link
+  echo "PASS trading-runner-artifact: persistent session ownership and pause boundary"
 
   local operation_store="$root/deterministic-operation-store"
   local operation_a operation_b operation_c
