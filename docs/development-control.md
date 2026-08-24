@@ -1,15 +1,16 @@
 # Hivra Development Control
 
-Status date: 2026-08-24
+Status date: 2026-08-25
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and
 Android manual signoff recorded)
 
-Current selected unit: validate the Hivra 1.x Trading Remote Runner persistent
-session-service candidate. It must reuse the existing bounded scheduler and
-external-effect owner, remain disabled until explicit activation, use
-`Restart=no`, and expose exact status, pause, terminal stop, and uninstall.
-Protected-PR verification and merge-SHA VPS lifecycle evidence are still
-required before it is reference-grade.
+Current selected unit: make the Hivra 1.x Trading Remote Runner pause operation
+idempotent after a fail-closed session-service error. The merge-SHA persistent
+service already proved two bounded LIVE effects and explicit restart without
+replay while preserving the existing scheduler and external-effect owner. The
+remediation must clear only failed state and boot enablement, preserve the
+canonical unit link and signed session, pass protected-PR verification, and be
+reproved from its exact merge SHA on the VPS.
 
 No automatic provisioning, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
@@ -23,7 +24,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Validate the persistent session-service candidate, merge it through protected PR, then prove exact enable, reboot continuity, pause, terminal stop, and uninstall from the merge SHA on VPS. | This board and the Trading Drone product contract |
+| What is the next 1.x step? | Close the reproduced failed-service pause defect in the existing lifecycle owner, merge it through protected PR, and prove exact pause from the merge SHA on VPS. | This board and the Trading Drone product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -34,7 +35,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Persistent session-service candidate under validation | One explicit service invokes the existing bounded scheduler from the verified installed bundle. It conflicts with public shadow, has no restart/catch-up policy, and exposes explicit enable, pause, and status lifecycle. | Focused lifecycle regressions, full suites and gates, protected PR, then merge-SHA VPS proof. No parallel scheduler/effect route, automatic provisioning, plugin ABI, Core, Ledger, tag, or Release change is included. | Prove enable, reboot continuity, pause, terminal stop, exact uninstall, and unchanged co-hosted workloads before calling it reference-grade. |
+| **1.x maintained runtime** | Persistent session service live-validated; pause remediation in progress | One explicit service invokes the existing bounded scheduler from the verified installed bundle. Exact-`f24630b` VPS evidence proved activation, two bounded LIVE effects, and explicit restart without replay. | Failed-service pause must converge to disabled/inactive without deleting the canonical unit link or changing the signed session; focused regression, full gates, protected PR, and exact merge-SHA VPS proof are required. | After pause remediation, address the reproduced first-cycle provisioning-window UX defect without adding a scheduler or effect route. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

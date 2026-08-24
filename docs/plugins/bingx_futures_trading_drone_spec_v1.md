@@ -1010,8 +1010,11 @@ of revocation are revalidated. The service conflicts with the public-shadow
 unit, has `Restart=no`, and exits on every scheduler terminal or error outcome.
 After host reboot it starts only because the operator explicitly enabled it and
 still fails closed against the retained signed state. Pause disables and stops
-the service without mutating the signed session. Uninstall refuses an enabled
-service. No secret is stored in the unit, command line, environment, or log.
+the service without mutating the signed session. Pause is idempotent after a
+fail-closed service error: it clears only the systemd failed state and boot
+enablement while preserving the canonical unit link. Uninstall refuses an
+enabled service. No secret is stored in the unit, command line, environment,
+or log.
 
 User-facing VPS bootstrap is a required later 1.x product unit, not part of the
 current service implementation. It must replace manual terminal assembly with
