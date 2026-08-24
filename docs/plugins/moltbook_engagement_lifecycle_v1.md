@@ -1,9 +1,5 @@
 # Moltbook Engagement Lifecycle v1
 
-Status: normative design contract; Assisted remote-engagement cycle released;
-foreground Bounded exact-reply implementation is under Pass C verification;
-packaged-artifact evidence remains required before reference-grade closure
-
 Owner: external Moltbook Drone plus host External Effects boundary
 
 Related contracts:
@@ -337,46 +333,7 @@ Remote Moltbook content and model output are untrusted data.
 - If inference or draft binding fails, the selected feed target is excluded
   from the committed checkpoint so a later cycle may retry it.
 
-## 12. Implementation work packages
-
-1. **Identity and projection (implemented)**: canonical `engagement_id`,
-   Capsule-scoped target lookup, legacy duplicate freeze before approval or
-   delivery, and projection/restart/concurrency tests.
-2. **Single orchestration port (implemented)**: Assisted and Bounded writes use
-   one `advanceMoltbookEngagement` use case; the screen cannot authorize,
-   queue, deliver, or compensate an engagement through a parallel route.
-3. **Cycle engine (implemented)**: one Capsule/account-scoped in-flight cycle
-   reconciles unresolved effects, performs paginated heartbeat observation and
-   filters journal-owned targets before deterministic WASM planning, selects at
-   most one remaining target, obtains one bounded AI proposal, binds it through
-   WASM, and prepares one local immutable effect.
-   Assisted stops for exact review; explicitly enabled Bounded may authorize,
-   queue, and process that exact nested reply through the same use case. It
-   commits the checkpoint only after ownership checks and never solves a
-   challenge automatically.
-4. **Trigger policies (implemented)**: a single application controller mounts
-   `on_demand`, once-per-process `session`, and sequential
-   `continuous_while_running` triggers over the same cycle port. Continuous
-   wake-ups never overlap, are scoped by Capsule/plugin/account, and stop
-   without deleting checkpoints or effect evidence. Existing schema-v1
-   profiles migrate to `on_demand`; no autonomous mode is enabled implicitly.
-5. **UI projection (implemented)**: one canonical workspace projection gives
-   active challenged/unresolved/queued effects priority over every new draft
-   path, exposes one primary next action, shows write and trigger policy
-   separately, keeps Stop visible, projects bounded cycle/effect counts, and
-   moves provider ids, hashes, attempts, checkpoints, and manual provider reads
-   into secondary technical details. Bounded nested replies are exposed only
-   through explicit schema-v3 configuration; older profiles cannot acquire the
-   authority during migration.
-6. **Release evidence (in progress)**: hostile input, duplicate target,
-   restart, timeout, challenge, Capsule switch, rate limit, kill switch, macOS,
-   and Android.
-   Deterministic tests cover the hostile-input boundary, semantic
-   deduplication, restart reconciliation, provider timeout/challenge/rate-limit
-   mapping, Capsule/account changes, and the generation-bound Stop contract.
-   Packaged-artifact evidence remains mandatory on both platforms.
-
-## 13. Release gates
+## 12. Release gates
 
 Bounded mode remains non-reference-grade until all are true:
 

@@ -8,17 +8,24 @@ BASELINE="$ROOT/toolchains/hivra-baseline.conf"
 PACKAGE_DIR="$ROOT/tools/trading/public_shadow_runner_package"
 PACKAGE_LOCK="$PACKAGE_DIR/pubspec.lock"
 UNIT_SOURCE="$ROOT/tools/trading/hivra-trading-public-shadow-runner.service"
+SESSION_UNIT_SOURCE="$ROOT/tools/trading/hivra-trading-deterministic-session.service"
+LIFECYCLE_SOURCE="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
 BINARY_NAME="hivra-trading-public-shadow-runner"
 EFFECT_BINARY_NAME="hivra-trading-exact-order-runner"
 UNIT_NAME="hivra-trading-public-shadow-runner.service"
-MANIFEST_NAME="ARTIFACT-MANIFEST.v1"
-SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"
+SESSION_UNIT_NAME="hivra-trading-deterministic-session.service"
+LIFECYCLE_NAME="hivra-trading-runner-lifecycle"
+MANIFEST_NAME="ARTIFACT-MANIFEST.v2"
+SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v2"
 AUTHORITY_PROFILE="public-market-shadow-plus-bounded-account-read-exact-order-and-deterministic-session"
 BUNDLE_INSTALL_PATH="/opt/hivra/trading-public-shadow"
 BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
 EFFECT_BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$EFFECT_BINARY_NAME"
 UNIT_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$UNIT_NAME"
 UNIT_LINK_PATH="/etc/systemd/system/$UNIT_NAME"
+SESSION_UNIT_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$SESSION_UNIT_NAME"
+SESSION_UNIT_LINK_PATH="/etc/systemd/system/$SESSION_UNIT_NAME"
+LIFECYCLE_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$LIFECYCLE_NAME"
 CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.seed"
 EXCHANGE_CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.bingx"
 STATE_DIRECTORY="/var/lib/hivra-trading-public-shadow"
@@ -34,6 +41,7 @@ ANCHOR_OUTPUT=""
 MANDATE_ARTIFACT=""
 REVOCATION_ARTIFACT=""
 SCHEDULER_SESSION_OPERATION_ID=""
+INSTALLED_BUNDLE_MODE=0
 
 usage() {
   cat <<'EOF'
@@ -69,6 +77,10 @@ Usage:
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --run-prepared-session <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --enable-prepared-session-service <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --pause-prepared-session-service <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --prepared-session-service-status <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --execute-exact-order <artifact-dir>
@@ -82,10 +94,10 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --self-test
 
 The build mode requires a completely clean worktree and the pinned Dart SDK.
-It produces one host-native executable, the exact systemd unit, and one exact
-provenance manifest. Host lifecycle modes require a root Linux systemd host.
-Installation requires empty canonical target paths and leaves the exact unit
-disabled and inactive. Initialization proves its persistent identity without
+It produces two host-native executables, two exact systemd units, one lifecycle
+owner, and one exact provenance manifest. Host lifecycle modes require a root
+Linux systemd host. Installation requires empty canonical target paths and
+leaves both exact units disabled and inactive. Initialization proves its persistent identity without
 enabling it. Activation requires that exact identity. Uninstall refuses drifted
 or foreign-owned paths. Anchor export atomically copies the exact latest signed
 evidence and its public key; acceptance happens only after off-host verification.
@@ -108,7 +120,10 @@ or expose the exchange credential to an effect process.
 Prepared-session run holds one scheduler lock, waits only for the signed
 cadence, checks revocation at least every five seconds, and serially invokes
 the existing deterministic-order cycle owner. It runs in the foreground,
-stops on any failure or terminal session state, and installs no daemon or timer.
+stops on any failure or terminal session state, and installs no timer. The
+persistent session service invokes that same owner from the verified installed
+bundle, has no restart policy, and requires explicit enable, pause, and status
+operations.
 Account probing uses one collected transient systemd unit, supplies both
 encrypted credentials only to that process, permits exactly balance, positions,
 and open-orders GETs, and emits only a bounded redacted verdict.
@@ -824,6 +839,8 @@ write_manifest() {
   local binary="$directory/$BINARY_NAME"
   local effect_binary="$directory/$EFFECT_BINARY_NAME"
   local unit="$directory/$UNIT_NAME"
+  local session_unit="$directory/$SESSION_UNIT_NAME"
+  local lifecycle="$directory/$LIFECYCLE_NAME"
   cat > "$directory/$MANIFEST_NAME" <<EOF
 schema_version=$SCHEMA_VERSION
 source_commit=$source_commit
@@ -843,11 +860,18 @@ effect_binary_sha256=$(sha256_file "$effect_binary")
 effect_binary_size=$(file_size "$effect_binary")
 unit_file=$UNIT_NAME
 unit_sha256=$(sha256_file "$unit")
+session_unit_file=$SESSION_UNIT_NAME
+session_unit_sha256=$(sha256_file "$session_unit")
+lifecycle_file=$LIFECYCLE_NAME
+lifecycle_sha256=$(sha256_file "$lifecycle")
 bundle_install_path=$BUNDLE_INSTALL_PATH
 binary_install_path=$BINARY_INSTALL_PATH
 effect_binary_install_path=$EFFECT_BINARY_INSTALL_PATH
 unit_install_path=$UNIT_INSTALL_PATH
 unit_link_path=$UNIT_LINK_PATH
+session_unit_install_path=$SESSION_UNIT_INSTALL_PATH
+session_unit_link_path=$SESSION_UNIT_LINK_PATH
+lifecycle_install_path=$LIFECYCLE_INSTALL_PATH
 credential_install_path=$CREDENTIAL_INSTALL_PATH
 state_directory=$STATE_DIRECTORY
 EOF
@@ -858,6 +882,8 @@ verify_artifact() {
   local binary="$directory/$BINARY_NAME"
   local effect_binary="$directory/$EFFECT_BINARY_NAME"
   local unit="$directory/$UNIT_NAME"
+  local session_unit="$directory/$SESSION_UNIT_NAME"
+  local lifecycle="$directory/$LIFECYCLE_NAME"
   local manifest="$directory/$MANIFEST_NAME"
   [ -d "$directory" ] && [ ! -L "$directory" ] ||
     die "artifact directory must be a real directory"
@@ -867,9 +893,13 @@ verify_artifact() {
     die "artifact effect binary must be one executable regular file"
   [ -f "$unit" ] && [ ! -L "$unit" ] && [ ! -x "$unit" ] ||
     die "artifact unit must be one non-executable regular file"
+  [ -f "$session_unit" ] && [ ! -L "$session_unit" ] && [ ! -x "$session_unit" ] ||
+    die "artifact session unit must be one non-executable regular file"
+  [ -f "$lifecycle" ] && [ ! -L "$lifecycle" ] && [ -x "$lifecycle" ] ||
+    die "artifact lifecycle must be one executable regular file"
   [ -f "$manifest" ] && [ ! -L "$manifest" ] ||
     die "artifact manifest must be one regular file"
-  [ "$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = "4" ] ||
+  [ "$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = "6" ] ||
     die "artifact directory contains unknown entries"
 
   python3 - \
@@ -879,11 +909,16 @@ verify_artifact() {
     "$BINARY_NAME" \
     "$EFFECT_BINARY_NAME" \
     "$UNIT_NAME" \
+    "$SESSION_UNIT_NAME" \
+    "$LIFECYCLE_NAME" \
     "$BUNDLE_INSTALL_PATH" \
     "$BINARY_INSTALL_PATH" \
     "$EFFECT_BINARY_INSTALL_PATH" \
     "$UNIT_INSTALL_PATH" \
     "$UNIT_LINK_PATH" \
+    "$SESSION_UNIT_INSTALL_PATH" \
+    "$SESSION_UNIT_LINK_PATH" \
+    "$LIFECYCLE_INSTALL_PATH" \
     "$CREDENTIAL_INSTALL_PATH" \
     "$STATE_DIRECTORY" <<'PY'
 import re
@@ -896,11 +931,16 @@ import sys
     binary_name,
     effect_binary_name,
     unit_name,
+    session_unit_name,
+    lifecycle_name,
     bundle_install_path,
     binary_install_path,
     effect_binary_install_path,
     unit_install_path,
     unit_link_path,
+    session_unit_install_path,
+    session_unit_link_path,
+    lifecycle_install_path,
     credential_install_path,
     state_directory,
 ) = sys.argv[1:]
@@ -923,11 +963,18 @@ expected = [
     "effect_binary_size",
     "unit_file",
     "unit_sha256",
+    "session_unit_file",
+    "session_unit_sha256",
+    "lifecycle_file",
+    "lifecycle_sha256",
     "bundle_install_path",
     "binary_install_path",
     "effect_binary_install_path",
     "unit_install_path",
     "unit_link_path",
+    "session_unit_install_path",
+    "session_unit_link_path",
+    "lifecycle_install_path",
     "credential_install_path",
     "state_directory",
 ]
@@ -978,6 +1025,14 @@ if parsed["unit_file"] != unit_name:
     raise SystemExit("unit filename mismatch")
 if not re.fullmatch(r"[0-9a-f]{64}", parsed["unit_sha256"]):
     raise SystemExit("invalid unit SHA-256")
+if parsed["session_unit_file"] != session_unit_name:
+    raise SystemExit("session unit filename mismatch")
+if not re.fullmatch(r"[0-9a-f]{64}", parsed["session_unit_sha256"]):
+    raise SystemExit("invalid session unit SHA-256")
+if parsed["lifecycle_file"] != lifecycle_name:
+    raise SystemExit("lifecycle filename mismatch")
+if not re.fullmatch(r"[0-9a-f]{64}", parsed["lifecycle_sha256"]):
+    raise SystemExit("invalid lifecycle SHA-256")
 if parsed["bundle_install_path"] != bundle_install_path:
     raise SystemExit("bundle install path mismatch")
 if parsed["binary_install_path"] != binary_install_path:
@@ -988,6 +1043,12 @@ if parsed["unit_install_path"] != unit_install_path:
     raise SystemExit("unit install path mismatch")
 if parsed["unit_link_path"] != unit_link_path:
     raise SystemExit("unit link path mismatch")
+if parsed["session_unit_install_path"] != session_unit_install_path:
+    raise SystemExit("session unit install path mismatch")
+if parsed["session_unit_link_path"] != session_unit_link_path:
+    raise SystemExit("session unit link path mismatch")
+if parsed["lifecycle_install_path"] != lifecycle_install_path:
+    raise SystemExit("lifecycle install path mismatch")
 if parsed["credential_install_path"] != credential_install_path:
     raise SystemExit("credential install path mismatch")
 if parsed["state_directory"] != state_directory:
@@ -1000,6 +1061,8 @@ PY
   local expected_effect_size
   local expected_lock_sha
   local expected_unit_sha
+  local expected_session_unit_sha
+  local expected_lifecycle_sha
   local source_commit
   local target_os
   local target_arch
@@ -1009,6 +1072,8 @@ PY
   expected_effect_size="$(sed -n 's/^effect_binary_size=//p' "$manifest")"
   expected_lock_sha="$(sed -n 's/^dependency_lock_sha256=//p' "$manifest")"
   expected_unit_sha="$(sed -n 's/^unit_sha256=//p' "$manifest")"
+  expected_session_unit_sha="$(sed -n 's/^session_unit_sha256=//p' "$manifest")"
+  expected_lifecycle_sha="$(sed -n 's/^lifecycle_sha256=//p' "$manifest")"
   source_commit="$(sed -n 's/^source_commit=//p' "$manifest")"
   target_os="$(sed -n 's/^target_os=//p' "$manifest")"
   target_arch="$(sed -n 's/^target_arch=//p' "$manifest")"
@@ -1022,13 +1087,23 @@ PY
     die "artifact effect binary size mismatch"
   [ "$(sha256_file "$unit")" = "$expected_unit_sha" ] ||
     die "artifact unit SHA-256 mismatch"
-  cmp -s "$unit" "$UNIT_SOURCE" ||
-    die "artifact unit does not match the canonical source"
-  [ -f "$PACKAGE_LOCK" ] &&
-    [ "$(sha256_file "$PACKAGE_LOCK")" = "$expected_lock_sha" ] ||
-    die "artifact dependency lock SHA-256 mismatch"
-  git -C "$ROOT" merge-base --is-ancestor "$source_commit" HEAD >/dev/null 2>&1 ||
-    die "artifact source commit is not available in repository history"
+  [ "$(sha256_file "$session_unit")" = "$expected_session_unit_sha" ] ||
+    die "artifact session unit SHA-256 mismatch"
+  [ "$(sha256_file "$lifecycle")" = "$expected_lifecycle_sha" ] ||
+    die "artifact lifecycle SHA-256 mismatch"
+  if [ "$INSTALLED_BUNDLE_MODE" != 1 ]; then
+    cmp -s "$unit" "$UNIT_SOURCE" ||
+      die "artifact unit does not match the canonical source"
+    cmp -s "$session_unit" "$SESSION_UNIT_SOURCE" ||
+      die "artifact session unit does not match the canonical source"
+    cmp -s "$lifecycle" "$LIFECYCLE_SOURCE" ||
+      die "artifact lifecycle does not match the canonical source"
+    [ -f "$PACKAGE_LOCK" ] &&
+      [ "$(sha256_file "$PACKAGE_LOCK")" = "$expected_lock_sha" ] ||
+      die "artifact dependency lock SHA-256 mismatch"
+    git -C "$ROOT" merge-base --is-ancestor "$source_commit" HEAD >/dev/null 2>&1 ||
+      die "artifact source commit is not available in repository history"
+  fi
   local detected_targets
   detected_targets="$(binary_target "$binary")" ||
     die "artifact is not a supported host-native executable"
@@ -1166,6 +1241,10 @@ PY
   chmod 700 "$pending/$EFFECT_BINARY_NAME"
   cp "$UNIT_SOURCE" "$pending/$UNIT_NAME"
   chmod 600 "$pending/$UNIT_NAME"
+  cp "$SESSION_UNIT_SOURCE" "$pending/$SESSION_UNIT_NAME"
+  chmod 600 "$pending/$SESSION_UNIT_NAME"
+  cp "$LIFECYCLE_SOURCE" "$pending/$LIFECYCLE_NAME"
+  chmod 700 "$pending/$LIFECYCLE_NAME"
   write_manifest \
     "$pending" \
     "$(git -C "$ROOT" rev-parse HEAD)" \
@@ -1266,11 +1345,18 @@ require_exact_installed_bundle() {
     die "host lifecycle refused a drifted effect binary"
   cmp -s "$UNIT_INSTALL_PATH" "$directory/$UNIT_NAME" ||
     die "host lifecycle refused a drifted runner unit"
+  cmp -s "$SESSION_UNIT_INSTALL_PATH" "$directory/$SESSION_UNIT_NAME" ||
+    die "host lifecycle refused a drifted session unit"
+  cmp -s "$LIFECYCLE_INSTALL_PATH" "$directory/$LIFECYCLE_NAME" ||
+    die "host lifecycle refused a drifted lifecycle owner"
   cmp -s "$BUNDLE_INSTALL_PATH/$MANIFEST_NAME" "$directory/$MANIFEST_NAME" ||
     die "host lifecycle refused a drifted runner manifest"
   [ -L "$UNIT_LINK_PATH" ] &&
     [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
     die "host lifecycle refused a foreign unit link"
+  [ -L "$SESSION_UNIT_LINK_PATH" ] &&
+    [ "$(readlink "$SESSION_UNIT_LINK_PATH")" = "$SESSION_UNIT_INSTALL_PATH" ] ||
+    die "host lifecycle refused a foreign session unit link"
   [ -f "$CREDENTIAL_INSTALL_PATH" ] && [ ! -L "$CREDENTIAL_INSTALL_PATH" ] ||
     die "host lifecycle refused a foreign credential"
   if [ -e "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
@@ -1287,6 +1373,8 @@ require_exact_installed_bundle() {
   fi
   systemctl cat "$UNIT_NAME" >/dev/null 2>&1 ||
     die "host lifecycle requires the exact loaded unit"
+  systemctl cat "$SESSION_UNIT_NAME" >/dev/null 2>&1 ||
+    die "host lifecycle requires the exact loaded session unit"
 }
 
 read_installed_runner_key_id() {
@@ -2598,6 +2686,86 @@ run_prepared_session_scheduler() {
   done
 }
 
+run_installed_prepared_session() {
+  [ "$INSTALLED_BUNDLE_MODE" = 1 ] ||
+    die "installed session mode requires the installed lifecycle owner"
+  [ "$0" = "$LIFECYCLE_INSTALL_PATH" ] ||
+    die "installed session mode refused a non-canonical lifecycle path"
+  ARTIFACT_DIR="$BUNDLE_INSTALL_PATH"
+  EXPECTED_RUNNER_KEY_ID="$(read_installed_runner_key_id)"
+  run_prepared_session_scheduler "$ARTIFACT_DIR"
+}
+
+enable_prepared_session_service() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "session service refused the installed runner key id"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "session service requires an inactive public-shadow runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "session service requires a disabled public-shadow runner" ;;
+  esac
+  case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "session service refused unexpected existing enablement" ;;
+  esac
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "session service requires one retained signed session"
+  local work
+  work="$(mktemp -d /run/hivra-trading-session-service.XXXXXX)"
+  trap "rm -rf '$work'; systemctl disable --now '$SESSION_UNIT_NAME' >/dev/null 2>&1 || true" EXIT INT TERM
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+  [ "$(cat "$work/verified/operation-kind")" = "bounded_deterministic_session" ] ||
+    die "session service requires bounded session authority"
+  require_remote_mandate_execution_eligible "$work/verified"
+  require_retained_exchange_credential_binding \
+    "$(cat "$work/verified/account-binding")"
+  local session_id
+  session_id="$(cat "$work/verified/operation-id")"
+  [ ! -e "$STATE_DIRECTORY/revocations/$session_id.json" ] &&
+    [ ! -L "$STATE_DIRECTORY/revocations/$session_id.json" ] ||
+    die "session service refused a revoked session"
+  systemctl start "$SESSION_UNIT_NAME"
+  [ "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")" = "active" ] ||
+    die "session service did not remain active after validation"
+  systemctl enable "$SESSION_UNIT_NAME" >/dev/null
+  [ "$(systemctl is-enabled "$SESSION_UNIT_NAME")" = "enabled" ] ||
+    die "session service did not become boot-enabled"
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  echo "PASS trading-runner-artifact: persistent session service enabled session_operation_id=$session_id restart=false"
+}
+
+pause_prepared_session_service() {
+  local directory="$1"
+  require_exact_installed_bundle "$directory"
+  systemctl disable --now "$SESSION_UNIT_NAME" >/dev/null
+  [ "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")" = "inactive" ] ||
+    die "session service did not stop"
+  case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "session service remained boot-enabled" ;;
+  esac
+  echo "PASS trading-runner-artifact: persistent session service paused signed_session_unchanged=true"
+}
+
+prepared_session_service_status() {
+  local directory="$1"
+  require_exact_installed_bundle "$directory"
+  local active enabled runner_key
+  active="$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")"
+  enabled="$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)"
+  runner_key="$(read_installed_runner_key_id)"
+  printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=no\n' \
+    "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
+}
+
 validate_account_read_evidence() {
   local source="$1"
   local expected_operation="$2"
@@ -3833,10 +4001,12 @@ install_disabled() {
   trap "rm -f '$lock_path'" EXIT
 
   local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  local session_wants_path="/etc/systemd/system/multi-user.target.wants/$SESSION_UNIT_NAME"
   local state_private="/var/lib/private/hivra-trading-public-shadow"
   for target in \
     "$BUNDLE_INSTALL_PATH" \
     "$UNIT_LINK_PATH" \
+    "$SESSION_UNIT_LINK_PATH" \
     "$CREDENTIAL_INSTALL_PATH" \
     "$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
     "$STATE_DIRECTORY" \
@@ -3845,8 +4015,13 @@ install_disabled() {
     [ ! -e "$target" ] && [ ! -L "$target" ] ||
       die "disabled install target already exists: $target"
   done
+  [ ! -e "$session_wants_path" ] && [ ! -L "$session_wants_path" ] ||
+    die "disabled install target already exists: $session_wants_path"
   if systemctl cat "$UNIT_NAME" >/dev/null 2>&1; then
     die "disabled install unit is already loaded"
+  fi
+  if systemctl cat "$SESSION_UNIT_NAME" >/dev/null 2>&1; then
+    die "disabled install session unit is already loaded"
   fi
 
   local opt_parent_created=0
@@ -3854,6 +4029,7 @@ install_disabled() {
   local bundle_installed=0
   local credential_installed=0
   local unit_linked=0
+  local session_unit_linked=0
   local unit_loaded=0
   pending_bundle=""
   pending_credential=""
@@ -3861,11 +4037,16 @@ install_disabled() {
     set +e
     if [ "$unit_loaded" = 1 ]; then
       systemctl stop "$UNIT_NAME" >/dev/null 2>&1
+      systemctl stop "$SESSION_UNIT_NAME" >/dev/null 2>&1
       systemctl clean --what=state "$UNIT_NAME" >/dev/null 2>&1
     fi
     if [ "$unit_linked" = 1 ] && [ -L "$UNIT_LINK_PATH" ] &&
       [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ]; then
       rm -f "$UNIT_LINK_PATH"
+    fi
+    if [ "$session_unit_linked" = 1 ] && [ -L "$SESSION_UNIT_LINK_PATH" ] &&
+      [ "$(readlink "$SESSION_UNIT_LINK_PATH")" = "$SESSION_UNIT_INSTALL_PATH" ]; then
+      rm -f "$SESSION_UNIT_LINK_PATH"
     fi
     systemctl daemon-reload >/dev/null 2>&1
     [ "$credential_installed" = 1 ] && rm -f "$CREDENTIAL_INSTALL_PATH"
@@ -3891,6 +4072,8 @@ install_disabled() {
   install -m 0755 "$directory/$BINARY_NAME" "$pending_bundle/$BINARY_NAME"
   install -m 0755 "$directory/$EFFECT_BINARY_NAME" "$pending_bundle/$EFFECT_BINARY_NAME"
   install -m 0644 "$directory/$UNIT_NAME" "$pending_bundle/$UNIT_NAME"
+  install -m 0644 "$directory/$SESSION_UNIT_NAME" "$pending_bundle/$SESSION_UNIT_NAME"
+  install -m 0755 "$directory/$LIFECYCLE_NAME" "$pending_bundle/$LIFECYCLE_NAME"
   install -m 0600 "$directory/$MANIFEST_NAME" "$pending_bundle/$MANIFEST_NAME"
   chmod 0755 "$pending_bundle"
   [ "$(sha256_file "$pending_bundle/$BINARY_NAME")" = \
@@ -3902,6 +4085,12 @@ install_disabled() {
   [ "$(sha256_file "$pending_bundle/$UNIT_NAME")" = \
     "$(sed -n 's/^unit_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
     die "staged unit hash mismatch"
+  [ "$(sha256_file "$pending_bundle/$SESSION_UNIT_NAME")" = \
+    "$(sed -n 's/^session_unit_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
+    die "staged session unit hash mismatch"
+  [ "$(sha256_file "$pending_bundle/$LIFECYCLE_NAME")" = \
+    "$(sed -n 's/^lifecycle_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
+    die "staged lifecycle hash mismatch"
   mv "$pending_bundle" "$BUNDLE_INSTALL_PATH"
   pending_bundle=""
   bundle_installed=1
@@ -3922,19 +4111,32 @@ install_disabled() {
 
   systemctl link "$UNIT_INSTALL_PATH" >/dev/null
   unit_linked=1
+  systemctl link "$SESSION_UNIT_INSTALL_PATH" >/dev/null
+  session_unit_linked=1
   [ -L "$UNIT_LINK_PATH" ] &&
     [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
     die "systemd unit link mismatch"
+  [ -L "$SESSION_UNIT_LINK_PATH" ] &&
+    [ "$(readlink "$SESSION_UNIT_LINK_PATH")" = "$SESSION_UNIT_INSTALL_PATH" ] ||
+    die "systemd session unit link mismatch"
   systemctl daemon-reload
   unit_loaded=1
   case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
     linked|disabled) ;;
     *) die "disabled install became enabled" ;;
   esac
+  case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "disabled install session unit became enabled" ;;
+  esac
   [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
     die "disabled install became active"
+  [ "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")" = "inactive" ] ||
+    die "disabled install session unit became active"
   [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
     die "disabled install created boot enablement"
+  [ ! -e "$session_wants_path" ] && [ ! -L "$session_wants_path" ] ||
+    die "disabled install created session boot enablement"
 
   trap - EXIT INT TERM
   rm -f "$lock_path"
@@ -3951,6 +4153,7 @@ uninstall_disabled() {
   trap "rm -f '$lock_path'" EXIT INT TERM
 
   local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  local session_wants_path="/etc/systemd/system/multi-user.target.wants/$SESSION_UNIT_NAME"
   local state_private="/var/lib/private/hivra-trading-public-shadow"
   [ -d "$BUNDLE_INSTALL_PATH" ] && [ ! -L "$BUNDLE_INSTALL_PATH" ] ||
     die "uninstall requires the canonical real bundle directory"
@@ -3961,12 +4164,21 @@ uninstall_disabled() {
     die "uninstall refused a drifted effect binary"
   cmp -s "$UNIT_INSTALL_PATH" "$directory/$UNIT_NAME" ||
     die "uninstall refused a drifted runner unit"
+  cmp -s "$SESSION_UNIT_INSTALL_PATH" "$directory/$SESSION_UNIT_NAME" ||
+    die "uninstall refused a drifted session unit"
+  cmp -s "$LIFECYCLE_INSTALL_PATH" "$directory/$LIFECYCLE_NAME" ||
+    die "uninstall refused a drifted lifecycle owner"
   cmp -s "$BUNDLE_INSTALL_PATH/$MANIFEST_NAME" "$directory/$MANIFEST_NAME" ||
     die "uninstall refused a drifted runner manifest"
   if [ -e "$UNIT_LINK_PATH" ] || [ -L "$UNIT_LINK_PATH" ]; then
     [ -L "$UNIT_LINK_PATH" ] &&
       [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
       die "uninstall refused a foreign unit link"
+  fi
+  if [ -e "$SESSION_UNIT_LINK_PATH" ] || [ -L "$SESSION_UNIT_LINK_PATH" ]; then
+    [ -L "$SESSION_UNIT_LINK_PATH" ] &&
+      [ "$(readlink "$SESSION_UNIT_LINK_PATH")" = "$SESSION_UNIT_INSTALL_PATH" ] ||
+      die "uninstall refused a foreign session unit link"
   fi
   if [ -e "$CREDENTIAL_INSTALL_PATH" ] || [ -L "$CREDENTIAL_INSTALL_PATH" ]; then
     [ -f "$CREDENTIAL_INSTALL_PATH" ] && [ ! -L "$CREDENTIAL_INSTALL_PATH" ] ||
@@ -3982,8 +4194,14 @@ uninstall_disabled() {
     linked|disabled|not-found) ;;
     *) die "uninstall refused an enabled unit" ;;
   esac
+  case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled|not-found) ;;
+    *) die "uninstall refused an enabled session unit" ;;
+  esac
   [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
     die "uninstall refused boot enablement"
+  [ ! -e "$session_wants_path" ] && [ ! -L "$session_wants_path" ] ||
+    die "uninstall refused session boot enablement"
   if [ -L "$STATE_DIRECTORY" ]; then
     [ "$(readlink -f "$STATE_DIRECTORY")" = "$state_private" ] ||
       die "uninstall refused a foreign state link"
@@ -3995,7 +4213,10 @@ uninstall_disabled() {
     systemctl stop "$UNIT_NAME"
     systemctl clean --what=state "$UNIT_NAME"
   fi
-  rm -f "$UNIT_LINK_PATH"
+  if systemctl cat "$SESSION_UNIT_NAME" >/dev/null 2>&1; then
+    systemctl stop "$SESSION_UNIT_NAME"
+  fi
+  rm -f "$UNIT_LINK_PATH" "$SESSION_UNIT_LINK_PATH"
   systemctl daemon-reload
   rm -f "$CREDENTIAL_INSTALL_PATH"
   rm -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH"
@@ -4005,6 +4226,7 @@ uninstall_disabled() {
   for target in \
     "$BUNDLE_INSTALL_PATH" \
     "$UNIT_LINK_PATH" \
+    "$SESSION_UNIT_LINK_PATH" \
     "$CREDENTIAL_INSTALL_PATH" \
     "$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
     "$STATE_DIRECTORY" \
@@ -4013,8 +4235,12 @@ uninstall_disabled() {
     [ ! -e "$target" ] && [ ! -L "$target" ] ||
       die "disabled uninstall retained: $target"
   done
+  [ ! -e "$session_wants_path" ] && [ ! -L "$session_wants_path" ] ||
+    die "disabled uninstall retained: $session_wants_path"
   systemctl cat "$UNIT_NAME" >/dev/null 2>&1 &&
     die "disabled uninstall retained the loaded unit"
+  systemctl cat "$SESSION_UNIT_NAME" >/dev/null 2>&1 &&
+    die "disabled uninstall retained the loaded session unit"
 
   trap - EXIT INT TERM
   rm -f "$lock_path"
@@ -4329,6 +4555,10 @@ PY
   chmod 700 "$artifact/$EFFECT_BINARY_NAME"
   cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
   chmod 600 "$artifact/$UNIT_NAME"
+  cp "$SESSION_UNIT_SOURCE" "$artifact/$SESSION_UNIT_NAME"
+  chmod 600 "$artifact/$SESSION_UNIT_NAME"
+  cp "$LIFECYCLE_SOURCE" "$artifact/$LIFECYCLE_NAME"
+  chmod 700 "$artifact/$LIFECYCLE_NAME"
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   verify_artifact "$artifact" >/dev/null
 
@@ -5083,11 +5313,17 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--run-prepared-session|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--run-prepared-session|--enable-prepared-session-service|--pause-prepared-session-service|--prepared-session-service-status|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
       shift 2
+      ;;
+    --run-installed-prepared-session)
+      [ -z "$MODE" ] || die "multiple modes are not allowed"
+      MODE="run-installed-prepared-session"
+      INSTALLED_BUNDLE_MODE=1
+      shift
       ;;
     --self-test)
       [ -z "$MODE" ] || die "multiple modes are not allowed"
@@ -5238,6 +5474,33 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
       die "prepared-session scheduler requires only runner identity and prepared host state"
     run_prepared_session_scheduler "$ARTIFACT_DIR"
+    ;;
+  run-installed-prepared-session)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] &&
+      [ -z "$MANDATE_ARTIFACT" ] ||
+      die "installed session mode accepts no external arguments"
+    run_installed_prepared_session
+    ;;
+  enable-prepared-session-service)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "session service enable requires only runner identity and prepared host state"
+    enable_prepared_session_service "$ARTIFACT_DIR"
+    ;;
+  pause-prepared-session-service)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] &&
+      [ -z "$MANDATE_ARTIFACT" ] ||
+      die "session service pause accepts no identity or mandate input"
+    pause_prepared_session_service "$ARTIFACT_DIR"
+    ;;
+  prepared-session-service-status)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] &&
+      [ -z "$MANDATE_ARTIFACT" ] ||
+      die "session service status accepts no identity or mandate input"
+    prepared_session_service_status "$ARTIFACT_DIR"
     ;;
   probe-exchange-account)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

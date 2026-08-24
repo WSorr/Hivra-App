@@ -1,45 +1,19 @@
 # Hivra Development Control
 
-Status date: 2026-08-23
-Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: Hivra 1.x product completion. The Trading Drone has
-proved one bounded live order and restart reconciliation, but it is not yet an
-operational product. Remote public-shadow evidence now reproduces the full
-market-only live decision and exposes its exact bounded `READY`/`BLOCKED`
-market proposal rather than only a reduced verdict or opaque hash. A completed
-bounded composition combines that authenticated proposal with one active
-mandate and one fresh transient account-risk snapshot into a non-authorizing order
-candidate. Interrupted VPS delivery now has a recovery-only path through the
-existing effect owner. It reconciles only an already attempted exact cycle and
-cannot build an intent or issue another provider POST. The exact merge-SHA bundle
-now has one disabled provisioning command; the Trading Drone accepts a signed
-runner anchor, retained per Capsule and re-authenticated after restart. Raw ids
-and standalone key files grant no authority. A local host apply command composes
-hidden-input credential preparation and exact session admission while leaving the
-Runner disabled. Explicit activation creates only canonical active session state. A bounded foreground scheduler now serially calls the existing one-cycle owner under the signed cadence and stops on failure or terminal state; persistent daemon packaging remains blocked. Automated remote transport, unattended VPS/24/7 service installation, new exchange-effect routes, plugin ABI, Core, Ledger, tag, Release, and 2.0 runtime work remain blocked.
-The candidate has one fail-closed adapter into the existing exact-order payload shape.
-The remote effect journal uses that exact intent hash as its stable operation identity, while each admission commitment remains approval evidence; renewing authority cannot create a second effect for the same intent.
-Compatibility admissions authorize exactly one deterministic remote cycle.
-A bounded v5 session can authorize a signed sequence of serial cycles with an
-exact start, cadence, cycle cap, and the existing mandate effect cap:
-fresh signed market evidence plus fresh complete exchange risk and contract
-rules compose one order through the existing candidate owner and consume a
-cycle identity derived from the session commitment through the existing effect
-journal. Completed cycles retain immutable operation-scoped observation and result evidence. A different
-admission may replace the active slot only after the retained cycle has a valid
-terminal result or the retained session is terminal; exact replay returns the
-retained result without another effect. Both histories fail closed at 4096
-records. No admission is issued automatically and no automatic effect scheduler
-is added. The user now selects the exact 24-hour exchange-order budget before
-authorizing a mandate. The product UI defaults to one effect, offers only the
-bounded set `1, 2, 4, 8, 16, 32`, restores an exact supported budget, and
-requires re-authorization when the selected budget differs from the signed
-mandate. A separate Capsule-signed revocation now binds one exact session,
-runner key, and Capsule root. The runner verifies both admission and revocation,
-retains bounded evidence, and atomically stops that session without creating an
-exchange effect. Local pause and VPS application remain truthfully distinct.
-Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
-withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
+Status date: 2026-08-24
+Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and
+Android manual signoff recorded)
+
+Current selected unit: validate the Hivra 1.x Trading Remote Runner persistent
+session-service candidate. It must reuse the existing bounded scheduler and
+external-effect owner, remain disabled until explicit activation, use
+`Restart=no`, and expose exact status, pause, terminal stop, and uninstall.
+Protected-PR verification and merge-SHA VPS lifecycle evidence are still
+required before it is reference-grade.
+
+No automatic provisioning, second scheduler/effect route, new exchange
+endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
+work is authorized by this checkpoint.
 
 ## 1. Read This First
 
@@ -49,7 +23,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Prove the bounded foreground scheduler from merge SHA without adding a daemon, retry policy, or parallel effect owner. | This board and the Trading Drone product contract |
+| What is the next 1.x step? | Validate the persistent session-service candidate, merge it through protected PR, then prove exact enable, reboot continuity, pause, terminal stop, and uninstall from the merge SHA on VPS. | This board and the Trading Drone product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -60,12 +34,12 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Bounded foreground scheduler implemented | One explicit host process holds a single lock, waits from verified signed cadence, checks revocation, and calls only the existing deterministic-order cycle owner. It stops on failure or terminal state and installs no daemon/timer. | Focused cadence/lock/terminal regressions, full suites and gates, protected PR, then separately authorized merge-SHA effect smoke. No persistent service, retry policy, parallel effect route, plugin ABI, Core, Ledger, tag, or Release change is included. | Prove one merge-SHA foreground cycle and stop behavior before separately designing persistent VPS packaging. |
+| **1.x maintained runtime** | Persistent session-service candidate under validation | One explicit service invokes the existing bounded scheduler from the verified installed bundle. It conflicts with public shadow, has no restart/catch-up policy, and exposes explicit enable, pause, and status lifecycle. | Focused lifecycle regressions, full suites and gates, protected PR, then merge-SHA VPS proof. No parallel scheduler/effect route, automatic provisioning, plugin ABI, Core, Ledger, tag, or Release change is included. | Prove enable, reboot continuity, pause, terminal stop, exact uninstall, and unchanged co-hosted workloads before calling it reference-grade. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
 | **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
-| **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, and further Moltbook authority remain unselected. | Each requires its own approved contract and capability-closure decision. |
+| **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, further Moltbook authority, and user-facing Storage & Recovery observability with one-time VPS bootstrap and multi-account runner isolation remain unselected. | Each requires its own approved contract and capability-closure decision. |
 
 Unchecked boxes in reusable release/smoke checklists are execution templates,
 not automatically active debt. Historical pass numbering creates no future

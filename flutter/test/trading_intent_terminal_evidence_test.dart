@@ -34,6 +34,22 @@ void main() {
       '--run-prepared-session /path/to/runner-bundle '
       '--expected-runner-key-id $runner',
     );
+    expect(
+      tradingPreparedSessionServiceEnableCommand(runnerKeyId: runner),
+      'sudo ./public_shadow_runner_artifact.sh '
+      '--enable-prepared-session-service /path/to/runner-bundle '
+      '--expected-runner-key-id $runner',
+    );
+    expect(
+      tradingPreparedSessionServicePauseCommand(),
+      'sudo ./public_shadow_runner_artifact.sh '
+      '--pause-prepared-session-service /path/to/runner-bundle',
+    );
+    expect(
+      tradingPreparedSessionServiceStatusCommand(),
+      'sudo ./public_shadow_runner_artifact.sh '
+      '--prepared-session-service-status /path/to/runner-bundle',
+    );
   });
 
   test('prepared intent outcome does not claim provider execution', () async {

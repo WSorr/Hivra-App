@@ -17,6 +17,7 @@ RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
 RUNNER_PACKAGE="$ROOT/tools/trading/public_shadow_runner_package/pubspec.yaml"
 RUNNER_PACKAGE_LOCK="$ROOT/tools/trading/public_shadow_runner_package/pubspec.lock"
 RUNNER_SUPERVISOR="$ROOT/tools/trading/hivra-trading-public-shadow-runner.service"
+RUNNER_SESSION_SUPERVISOR="$ROOT/tools/trading/hivra-trading-deterministic-session.service"
 CI_REPOSITORY_GATES="$ROOT/.github/workflows/release-gates.yml"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
@@ -28,7 +29,16 @@ ZONE_DECISION_TEST="$ROOT/flutter/test/bingx_futures_zone_decision_service_test.
 TRADING_CYCLE_TEST="$ROOT/flutter/test/bingx_futures_trading_cycle_use_case_service_test.dart"
 TRADING_MODULE="$ROOT/flutter/lib/services/trading_drone_module_service.dart"
 TRADING_MODELS="$ROOT/flutter/lib/models/bingx_futures_order_tracking_models.dart"
-TRADING_SCREEN="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
+TRADING_SCREEN_SOURCE="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
+TRADING_SCREEN="$(mktemp)"
+cat \
+  "$TRADING_SCREEN_SOURCE" \
+  "$ROOT/flutter/lib/screens/trading_drone_screen_remote_session.dart" \
+  "$ROOT/flutter/lib/screens/trading_drone_screen_market_scan.dart" \
+  "$ROOT/flutter/lib/screens/trading_drone_screen_execution.dart" \
+  "$ROOT/flutter/lib/screens/trading_drone_screen_presentation.dart" \
+  > "$TRADING_SCREEN"
+trap 'rm -f "$TRADING_SCREEN"' EXIT
 EXCHANGE_SERVICE="$ROOT/flutter/lib/services/bingx_futures_exchange_service.dart"
 REMOTE_PROBE_TEST="$ROOT/flutter/test/trading_remote_shadow_probe_test.dart"
 DETERMINISTIC_ORDER_TEST="$ROOT/flutter/test/trading_remote_deterministic_order_test.dart"
@@ -124,12 +134,14 @@ liquidity_sequence_is_canonical() {
 
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
-    rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
+    rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v2"' "$1" &&
     rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-bounded-account-read-exact-order-and-deterministic-session"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
     rg -q 'unit_sha256=' "$1" &&
+    rg -q 'session_unit_sha256=' "$1" &&
+    rg -q 'lifecycle_sha256=' "$1" &&
     rg -q 'bundle_install_path=' "$1" &&
     rg -q 'unit_link_path=' "$1" &&
     rg -q 'dependency_lock_sha256=' "$1" &&
@@ -144,6 +156,29 @@ runner_artifact_is_verifiable() {
     rg -q 'dart compile exe' "$1" &&
     rg -q '"tool/trading_remote_shadow_probe.dart"' "$1" &&
     rg -q '"tool/trading_remote_exact_order.dart"' "$1"
+}
+
+runner_persistent_session_service_is_fail_closed() {
+  local owner="$1"
+  local unit="$2"
+  [ -f "$unit" ] &&
+    rg -q '^Conflicts=hivra-trading-public-shadow-runner.service$' "$unit" &&
+    rg -q '^ExecStart=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --run-installed-prepared-session$' "$unit" &&
+    rg -q '^Restart=no$' "$unit" &&
+    rg -q '^NoNewPrivileges=yes$' "$unit" &&
+    rg -q '^ProtectSystem=strict$' "$unit" &&
+    rg -q '^ProtectHome=yes$' "$unit" &&
+    rg -q '^ReadWritePaths=/var/lib/hivra-trading-public-shadow /var/lib/private/hivra-trading-public-shadow$' "$unit" &&
+    rg -q '^SocketBindDeny=any$' "$unit" &&
+    rg -q -- '--enable-prepared-session-service <artifact-dir>' "$owner" &&
+    rg -q -- '--pause-prepared-session-service <artifact-dir>' "$owner" &&
+    rg -q -- '--prepared-session-service-status <artifact-dir>' "$owner" &&
+    rg -q 'run_installed_prepared_session' "$owner" &&
+    rg -q 'session service refused a revoked session' "$owner" &&
+    rg -q 'require_retained_exchange_credential_binding' "$owner" &&
+    rg -q 'systemctl enable "\$SESSION_UNIT_NAME"' "$owner" &&
+    rg -q 'systemctl disable --now "\$SESSION_UNIT_NAME"' "$owner" &&
+    ! rg -q '^Restart=(always|on-success|on-failure)$' "$unit"
 }
 
 runner_bundle_install_is_fail_closed() {
@@ -966,6 +1001,13 @@ else
   fail "prepared session scheduler lost serial, cadence, revocation, identity, or one-owner boundaries"
 fi
 
+if runner_persistent_session_service_is_fail_closed \
+  "$RUNNER_ARTIFACT" "$RUNNER_SESSION_SUPERVISOR"; then
+  pass "persistent session service reuses the bounded scheduler with explicit lifecycle and no restart"
+else
+  fail "persistent session service lost scheduler ownership, explicit lifecycle, or no-retry boundaries"
+fi
+
 if runner_account_read_probe_is_fail_closed \
   "$RUNNER_ARTIFACT" "$SHADOW_PROBE" "$RUNNER_SUPERVISOR"; then
   pass "mandate-bound account read is transient, redacted, and effect-free"
@@ -1079,7 +1121,7 @@ LOCAL_SESSION_WIRING_MUTATION="$(mktemp)"
 LIQUIDITY_AUTHORITY_MUTATION="$(mktemp)"
 LIQUIDATION_ANCHOR_MUTATION="$(mktemp)"
 LIQUIDITY_TARGET_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$PREPARED_SESSION_SCHEDULER_LOCK_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
+trap 'rm -f "$TRADING_SCREEN" "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$PREPARED_SESSION_SCHEDULER_LOCK_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"

@@ -1225,8 +1225,6 @@ require_present "$MOLTBOOK_PUBLICATION" 'findReplyOperations\(' \
   "Moltbook publication owner projects targets from the effect journal"
 require_present "$MOLTBOOK_PUBLICATION" 'conflicting active publication effects' \
   "Moltbook publication owner freezes legacy duplicate targets"
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Single orchestration port \(implemented\)' \
-  "Moltbook lifecycle records the implemented orchestration port"
 require_present "$PLUGIN_RUNTIME_MODULE" 'Future<ExternalEffectOperation> advanceMoltbookEngagement\(' \
   "Moltbook runtime exposes one engagement orchestration port"
 MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT="$(
@@ -1244,8 +1242,6 @@ require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookAmbassadorConfiguration\.
   "Moltbook release UI exposes bounded policy through canonical configuration"
 require_present "$PLUGIN_RUNTIME_MODULE" 'MoltbookEngagementWritePolicy\.bounded' \
   "Moltbook runtime maps bounded policy into the canonical engagement use case"
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Cycle engine \(implemented\)' \
-  "Moltbook lifecycle records the implemented serialized cycle"
 require_present "$PLUGIN_RUNTIME_MODULE" 'static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles' \
   "Moltbook runtime serializes cycles by Capsule and provider account"
 require_present "$PLUGIN_RUNTIME_MODULE" 'Future<MoltbookCycleSummary> runMoltbookCycle\(' \
@@ -1256,8 +1252,6 @@ require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeat = await _observeAndPla
   "Moltbook cycle uses generation-bound deterministic heartbeat observation and planning"
 require_present "$PLUGIN_RUNTIME_MODULE" "'sleep inspected=" \
   "Moltbook cycle publishes one bounded local summary"
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Trigger policies \(implemented\)' \
-  "Moltbook lifecycle records the implemented trigger policies"
 require_present "$MOLTBOOK_AMBASSADOR_MODELS" "triggerContinuous = 'continuous_while_running'" \
   "Moltbook configuration separates trigger policy from write policy"
 require_present "$MOLTBOOK_CYCLE_TRIGGER" 'Future<MoltbookCycleSummary> runOnDemand\(' \
@@ -1280,8 +1274,6 @@ require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'onStop: _saving \? null : _stopCy
   "Moltbook Stop remains available while cycle work is in flight"
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'planMoltbookHeartbeat\(\)' \
   "Moltbook screen has no legacy direct heartbeat planning route"
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'UI projection \(implemented\)' \
-  "Moltbook lifecycle records the implemented workspace projection"
 require_present "$MOLTBOOK_AMBASSADOR_MODELS" 'class MoltbookWorkspaceProjection' \
   "Moltbook workspace has one canonical UI projection"
 require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookWorkspaceProjection\.resolve\(' \
