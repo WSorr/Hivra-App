@@ -204,6 +204,14 @@ remove_session_boot_enablement() {
     "$SESSION_UNIT_INSTALL_PATH"
 }
 
+session_service_pause_recovery_action() {
+  case "$1" in
+    inactive) printf 'none\n' ;;
+    failed) printf 'reset-failed\n' ;;
+    *) return 1 ;;
+  esac
+}
+
 require_retained_exchange_credential_binding() {
   local expected_account_hash="$1"
   [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
@@ -2767,8 +2775,16 @@ enable_prepared_session_service() {
 pause_prepared_session_service() {
   local directory="$1"
   require_exact_installed_bundle "$directory"
-  systemctl stop "$SESSION_UNIT_NAME" >/dev/null
+  systemctl stop "$SESSION_UNIT_NAME" >/dev/null 2>&1 || true
   remove_session_boot_enablement
+  local recovery_action
+  recovery_action="$(session_service_pause_recovery_action \
+    "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")")" ||
+    die "session service did not stop"
+  if [ "$recovery_action" = "reset-failed" ]; then
+    systemctl reset-failed "$SESSION_UNIT_NAME" >/dev/null ||
+      die "session service failed state could not be cleared"
+  fi
   [ "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")" = "inactive" ] ||
     die "session service did not stop"
   case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
@@ -4363,6 +4379,13 @@ self_test() {
   fi
   rm -f "$wants_link"
   unset unit_target unit_link wants_link
+  [ "$(session_service_pause_recovery_action inactive)" = "none" ] ||
+    die "self-test changed inactive session pause semantics"
+  [ "$(session_service_pause_recovery_action failed)" = "reset-failed" ] ||
+    die "self-test did not recover a failed session pause"
+  if session_service_pause_recovery_action active >/dev/null 2>&1; then
+    die "self-test accepted an active session after stop"
+  fi
   echo "PASS trading-runner-artifact: persistent session ownership and pause boundary"
 
   local operation_store="$root/deterministic-operation-store"
