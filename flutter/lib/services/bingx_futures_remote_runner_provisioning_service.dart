@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
@@ -433,6 +434,9 @@ class DartSshBingxFuturesRemoteRunnerHostPort
   static const Duration _interactiveAuthTimeout = Duration(minutes: 2);
   static const Duration _commandTimeout = Duration(minutes: 3);
   static const int _bootstrapAuthAttempts = 3;
+  static const SSHAlgorithms _algorithms = SSHAlgorithms(
+    cipher: <SSHCipherType>[SSHCipherType.chacha20poly1305],
+  );
 
   const DartSshBingxFuturesRemoteRunnerHostPort();
 
@@ -460,6 +464,7 @@ class DartSshBingxFuturesRemoteRunnerHostPort
         final candidate = SSHClient(
           socket,
           username: rootUsername,
+          algorithms: _algorithms,
           onPasswordRequest: () => rootPassword,
           // dartssh2 verifies the host key during the handshake, so the
           // bounded interactive window covers fingerprint review and auth.
@@ -506,7 +511,15 @@ class DartSshBingxFuturesRemoteRunnerHostPort
       if (acceptedAlgorithm == null || acceptedFingerprint == null) {
         throw StateError('VPS host key was not accepted.');
       }
-      final archivePath = '/tmp/hivra-runner-$profileId.tar.gz';
+      final random = Random.secure();
+      final transferId =
+          List<String>.generate(
+            12,
+            (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+          ).join();
+      final archivePath = '/tmp/hivra-runner-$profileId-$transferId.tar.gz';
+      final bootstrapPath =
+          '/tmp/hivra-runner-bootstrap-$profileId-$transferId.sh';
       final sftp = await authenticatedClient.sftp();
       final remote = await sftp.open(
         archivePath,
@@ -520,23 +533,85 @@ class DartSshBingxFuturesRemoteRunnerHostPort
       } finally {
         await remote.close();
       }
-      final result = await _executeWithInput(
-        authenticatedClient,
-        "bash -s -- '$archivePath' '${bundle.archiveSha256}'",
-        utf8.encode(
-          _bootstrapScript(
-            profileId: profileId,
-            sshPublicKeyLine: sshPublicKeyLine,
-            controlBytes: bundle.controlBytes,
-          ),
+      final bootstrapBytes = utf8.encode(
+        _bootstrapScript(
+          profileId: profileId,
+          sshPublicKeyLine: sshPublicKeyLine,
+          controlBytes: bundle.controlBytes,
         ),
-      ).timeout(_commandTimeout);
-      if (result.exitCode != 0) {
-        throw StateError(
-          'VPS bootstrap failed: ${_boundedText(result.stderr)}',
-        );
+      );
+      final remoteBootstrap = await sftp.open(
+        bootstrapPath,
+        mode:
+            SftpFileOpenMode.create |
+            SftpFileOpenMode.truncate |
+            SftpFileOpenMode.write,
+      );
+      try {
+        await remoteBootstrap
+            .write(Stream<Uint8List>.value(Uint8List.fromList(bootstrapBytes)))
+            .done;
+      } finally {
+        await remoteBootstrap.close();
       }
-      final parsed = _parseBootstrapOutput(result.stdout);
+      await sftp.close();
+      authenticatedClient.close();
+      await authenticatedClient.done.catchError((_) {});
+      client = null;
+
+      final executionSocket = await SSHSocket.connect(
+        host,
+        port,
+        timeout: _connectTimeout,
+      );
+      final executionClient = SSHClient(
+        executionSocket,
+        username: rootUsername,
+        algorithms: _algorithms,
+        onPasswordRequest: () => rootPassword,
+        handshakeTimeout: _interactiveAuthTimeout,
+        authTimeout: _interactiveAuthTimeout,
+        onVerifyHostKey: (algorithm, fingerprintBytes) {
+          final fingerprint = utf8.decode(
+            fingerprintBytes,
+            allowMalformed: false,
+          );
+          return algorithm == acceptedAlgorithm &&
+              fingerprint == acceptedFingerprint;
+        },
+      );
+      client = executionClient;
+      await executionClient.authenticated.timeout(_interactiveAuthTimeout);
+      final result = await _executeWithInput(
+        executionClient,
+        "bash '$bootstrapPath' '$archivePath' '${bundle.archiveSha256}' '$bootstrapPath'",
+        const <int>[],
+      ).timeout(_commandTimeout);
+      (String, Uint8List) parsed;
+      try {
+        parsed = _parseBootstrapOutput(result.stdout);
+      } on FormatException catch (error) {
+        final stderr = _boundedText(result.stderr);
+        final stdout = _boundedText(result.stdout);
+        final detail =
+            stderr.isNotEmpty
+                ? stderr
+                : stdout.isNotEmpty
+                ? stdout
+                : '${error.message} (exit code ${result.exitCode})';
+        throw StateError('VPS bootstrap failed: $detail');
+      }
+      if (result.exitCode != 0 && result.exitCode != -1) {
+        final stderr = _boundedText(result.stderr);
+        final stdout = _boundedText(result.stdout);
+        final detail =
+            stderr.isNotEmpty
+                ? stderr
+                : stdout.isNotEmpty
+                ? stdout
+                : 'exit code ${result.exitCode}';
+        throw StateError('VPS bootstrap failed: $detail');
+      }
       return BingxFuturesRemoteRunnerBootstrapResult(
         hostKeyAlgorithm: acceptedAlgorithm!,
         hostKeyFingerprint: acceptedFingerprint!,
@@ -587,6 +662,7 @@ class DartSshBingxFuturesRemoteRunnerHostPort
       input: utf8.encode(
         '${base64Encode(sessionBytes)}\n$normalizedKey\n$normalizedSecret\n',
       ),
+      requiredSuccessMarker: 'HIVRA_REMOTE_RUNNER_APPLY_OK=1',
     );
   }
 
@@ -639,6 +715,7 @@ class DartSshBingxFuturesRemoteRunnerHostPort
     required String privateKeyPem,
     required String operation,
     required List<int> input,
+    String? requiredSuccessMarker,
   }) async {
     final identities = SSHKeyPair.fromPem(privateKeyPem);
     if (identities.length != 1) {
@@ -652,6 +729,7 @@ class DartSshBingxFuturesRemoteRunnerHostPort
     final client = SSHClient(
       socket,
       username: profile.sshUsername,
+      algorithms: _algorithms,
       identities: identities,
       handshakeTimeout: _connectTimeout,
       authTimeout: _connectTimeout,
@@ -671,12 +749,28 @@ class DartSshBingxFuturesRemoteRunnerHostPort
         operation,
         input,
       ).timeout(_commandTimeout);
-      if (result.exitCode != 0) {
+      final stdout = _boundedText(result.stdout);
+      final markerPresent =
+          requiredSuccessMarker == null ||
+          const LineSplitter()
+              .convert(utf8.decode(result.stdout, allowMalformed: true))
+              .contains(requiredSuccessMarker);
+      if ((result.exitCode != 0 && result.exitCode != -1) || !markerPresent) {
+        final stderr = _boundedText(result.stderr);
+        final detail =
+            stderr.isNotEmpty
+                ? stderr
+                : stdout.isNotEmpty
+                ? stdout
+                : 'exit code ${result.exitCode}';
+        throw StateError('Remote Runner operation failed: $detail');
+      }
+      if (result.exitCode == -1 && requiredSuccessMarker == null) {
         throw StateError(
-          'Remote Runner operation failed: ${_boundedText(result.stderr)}',
+          'Remote Runner operation ended without a verified result.',
         );
       }
-      return _boundedText(result.stdout);
+      return stdout;
     } finally {
       client.close();
       await client.done.catchError((_) {});
@@ -694,7 +788,11 @@ class DartSshBingxFuturesRemoteRunnerHostPort
       <int>[],
       (buffer, chunk) => buffer..addAll(chunk),
     );
-    session.write(Uint8List.fromList(input));
+    if (input.isNotEmpty) {
+      await session.stdin.addStream(
+        Stream<Uint8List>.value(Uint8List.fromList(input)),
+      );
+    }
     await session.stdin.close();
     await session.done;
     return (
@@ -750,8 +848,12 @@ class DartSshBingxFuturesRemoteRunnerHostPort
 set -euo pipefail
 archive="\$1"
 expected_sha="\$2"
+bootstrap_script="\$3"
 profile_id="$profileId"
 [ "\$(id -u)" = 0 ] || { echo "root required" >&2; exit 1; }
+work=""
+cleanup() { [ -z "\$work" ] || rm -rf "\$work"; rm -f "\$archive" "\$bootstrap_script"; }
+trap cleanup EXIT INT TERM
 for command in sha256sum tar systemctl systemd-creds python3 useradd usermod openssl getent base64 visudo; do
   command -v "\$command" >/dev/null 2>&1 || { echo "missing dependency: \$command" >&2; exit 1; }
 done
@@ -759,8 +861,6 @@ done
 [ "\$(sha256sum "\$archive" | awk '{print \$1}')" = "\$expected_sha" ] || { echo "runner archive checksum mismatch" >&2; exit 1; }
 work="\$(mktemp -d /tmp/hivra-runner-bootstrap.XXXXXX)"
 anchor="\$work/anchor"
-cleanup() { rm -rf "\$work" "\$archive"; }
-trap cleanup EXIT INT TERM
 tar -xzf "\$archive" -C "\$work"
 bundle="\$work/linux-x64"
 [ -x "\$bundle/hivra-trading-runner-lifecycle" ] || { echo "runner lifecycle missing" >&2; exit 1; }
@@ -771,12 +871,16 @@ if [ -x /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle ]; then
   [ -f /var/lib/hivra-runner-control/.ssh/key.pub ] || { echo "existing Runner has no control identity" >&2; exit 1; }
   [ "\$(cat /var/lib/hivra-runner-control/.ssh/key.pub)" = "\$expected_public_key" ] || { echo "VPS already belongs to another Remote Runner" >&2; exit 1; }
   runner_key_id="\$(python3 - <<'PY'
-import hashlib
+import json
+import re
 from pathlib import Path
-value = Path('/var/lib/hivra-trading-public-shadow/runner-public-key.ed25519.hex').read_text().strip()
-if len(value) != 64:
+value = json.loads(Path('/var/lib/hivra-trading-public-shadow/stream/stream_identity.v1.json').read_text())
+if set(value) != {'schema_version', 'runner_key_id'} or value.get('schema_version') != 1:
     raise SystemExit('installed Runner key is invalid')
-print(hashlib.sha256(bytes.fromhex(value)).hexdigest())
+runner_key_id = value.get('runner_key_id')
+if not isinstance(runner_key_id, str) or re.fullmatch(r'[0-9a-f]{64}', runner_key_id) is None:
+    raise SystemExit('installed Runner key is invalid')
+print(runner_key_id)
 PY
 )"
   /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --export-anchor /opt/hivra/trading-public-shadow --expected-runner-key-id "\$runner_key_id" --anchor-output "\$anchor"

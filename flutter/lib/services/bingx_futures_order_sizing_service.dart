@@ -11,6 +11,59 @@ class BingxFuturesOrderSizingService {
     required BingxFuturesExchangeService exchange,
   }) : _exchange = exchange;
 
+  Future<
+    ({
+      num fittedNotionalQuote,
+      num safeNotionalQuote,
+      BingxFuturesOrderSizingResult? sizing,
+    })
+  >
+  fitMaximumNotional({
+    required String symbol,
+    required num accountEquityQuote,
+    required num maximumRiskPercent,
+    required num stopLossPercent,
+  }) async {
+    if (accountEquityQuote <= 0 ||
+        maximumRiskPercent <= 0 ||
+        stopLossPercent <= 0) {
+      throw ArgumentError('Auto-fit risk inputs must be positive');
+    }
+
+    final riskQuoteLimit = accountEquityQuote * (maximumRiskPercent / 100);
+    final safeNotionalQuote = riskQuoteLimit / (stopLossPercent / 100);
+    num fittedNotionalQuote = safeNotionalQuote * 0.98;
+    BingxFuturesOrderSizingResult? sizing;
+    final normalizedSymbol = symbol.trim();
+    if (normalizedSymbol.isNotEmpty) {
+      sizing = await size(
+        symbol: normalizedSymbol,
+        maximumNotionalQuote: fittedNotionalQuote,
+      );
+      if (sizing.status == BingxFuturesOrderSizingStatus.blocked &&
+          sizing.reasonCode == 'exchange_minimum_exceeds_risk_budget') {
+        final minimumNotional = num.tryParse(
+          sizing.minimumNotionalQuoteDecimal ?? '',
+        );
+        if (minimumNotional != null &&
+            minimumNotional > fittedNotionalQuote &&
+            minimumNotional <= safeNotionalQuote) {
+          fittedNotionalQuote = minimumNotional;
+          sizing = await size(
+            symbol: normalizedSymbol,
+            maximumNotionalQuote: fittedNotionalQuote,
+          );
+        }
+      }
+    }
+
+    return (
+      fittedNotionalQuote: fittedNotionalQuote,
+      safeNotionalQuote: safeNotionalQuote,
+      sizing: sizing,
+    );
+  }
+
   Future<BingxFuturesOrderSizingResult> size({
     required String symbol,
     required num maximumNotionalQuote,

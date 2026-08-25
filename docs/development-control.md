@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-08-25
+Status date: 2026-08-26
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and
 Android manual signoff recorded)
 
@@ -40,6 +40,26 @@ then open only the contract and tests for the selected product outcome.
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
 | **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
 | **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, further Moltbook authority, user-facing Storage & Recovery observability, and profile-scoped multi-account Runner isolation remain unselected. | Each requires its own approved contract and capability-closure decision. |
+
+### Quarantined 1.x cleanup evidence
+
+The following audit findings are maintenance evidence, not V2 reference
+mechanisms and not authorization to interrupt the selected Remote Runner unit:
+
+- remove the unreferenced `flutter/lib/widgets/starter_slot.dart` component;
+- scope `android_keystore_dir` in `platform/hivra-keystore/src/lib.rs` to
+  Android and tests so host builds remain warning-free;
+- give every retained wire/storage compatibility path, including NIP-04 input
+  and legacy Keychain/Keystore migration, an explicit measured removal
+  condition before deleting it;
+- review the unreferenced `tools/cleanup_legacy_keychain.sh` utility against the
+  canonical migration owner and either register its bounded use or remove it;
+- treat generated build caches and `dist/` residue as local artifacts owned by
+  `tools/cleanup/clean_local_artifacts.sh`, never as source or architecture.
+
+None of these paths may be copied, renamed, or elevated into V2. A later bounded
+1.x cleanup unit must remove or consolidate them in their current owners first;
+only the resulting tested behavior may be reconsidered as V2 evidence.
 
 Unchecked boxes in reusable release/smoke checklists are execution templates,
 not automatically active debt. Historical pass numbering creates no future

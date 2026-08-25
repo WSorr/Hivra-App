@@ -335,11 +335,23 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                                           provisioning = true;
                                           errorText = null;
                                         });
+                                        await _module.uiLog.log(
+                                          'bingx.remote_runner.provision.start',
+                                          'mode=${profiles.isEmpty ? "add" : "update"} effect=false',
+                                        );
                                         try {
                                           final profile =
                                               await _configureRemoteRunner(
                                                 accountBindingHashHex:
-                                                    accountBindingHashHex,
+                                                    profiles.isEmpty
+                                                        ? accountBindingHashHex
+                                                        : profiles
+                                                            .single
+                                                            .accountBindingHashHex,
+                                                currentProfile:
+                                                    profiles.isEmpty
+                                                        ? null
+                                                        : profiles.single,
                                               );
                                           if (profile != null) {
                                             profiles =
@@ -347,11 +359,23 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                                                     .remoteRunnerProvisioning
                                                     .loadProfiles();
                                             selectedProfile = profile;
+                                            await _module.uiLog.log(
+                                              'bingx.remote_runner.provision.success',
+                                              'profile_id=${profile.profileId} effect=false',
+                                            );
                                           }
                                         } on FormatException catch (error) {
                                           errorText = error.message;
+                                          await _module.uiLog.log(
+                                            'bingx.remote_runner.provision.error',
+                                            'error=$error effect=false',
+                                          );
                                         } catch (error) {
                                           errorText = '$error';
+                                          await _module.uiLog.log(
+                                            'bingx.remote_runner.provision.error',
+                                            'error=$error effect=false',
+                                          );
                                         } finally {
                                           if (context.mounted) {
                                             setDialogState(() {
@@ -370,7 +394,9 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                                         ),
                                       )
                                       : const Icon(Icons.dns_rounded),
-                              label: const Text('Add VPS'),
+                              label: Text(
+                                profiles.isEmpty ? 'Add VPS' : 'Update VPS',
+                              ),
                             ),
                           ],
                         ),
@@ -453,9 +479,15 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
 
   Future<BingxFuturesRemoteRunnerProfile?> _configureRemoteRunner({
     required String accountBindingHashHex,
+    BingxFuturesRemoteRunnerProfile? currentProfile,
   }) async {
-    final host = TextEditingController();
-    final port = TextEditingController(text: '22');
+    if (_provisioningRemoteRunner) {
+      await _showSnack('Remote Runner setup is already in progress.');
+      return null;
+    }
+    _updateState(() => _provisioningRemoteRunner = true);
+    final host = TextEditingController(text: currentProfile?.host ?? '');
+    final port = TextEditingController(text: '${currentProfile?.port ?? 22}');
     final username = TextEditingController(text: 'root');
     final password = TextEditingController();
     String? validationErrorText;
@@ -466,7 +498,11 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             (dialogContext) => StatefulBuilder(
               builder:
                   (context, setDialogState) => AlertDialog(
-                    title: const Text('Add Remote Runner VPS'),
+                    title: Text(
+                      currentProfile == null
+                          ? 'Add Remote Runner VPS'
+                          : 'Update Remote Runner VPS',
+                    ),
                     content: SizedBox(
                       width: 480,
                       child: Column(
@@ -474,6 +510,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                         children: [
                           TextField(
                             controller: host,
+                            readOnly: currentProfile != null,
                             decoration: const InputDecoration(
                               labelText: 'Host or IP',
                               hintText: '45.142.176.16',
@@ -481,6 +518,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                           ),
                           TextField(
                             controller: port,
+                            readOnly: currentProfile != null,
                             keyboardType: TextInputType.number,
                             decoration: const InputDecoration(
                               labelText: 'SSH port',
@@ -600,6 +638,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         },
       );
     } finally {
+      if (mounted) _updateState(() => _provisioningRemoteRunner = false);
       password.clear();
       host.dispose();
       port.dispose();

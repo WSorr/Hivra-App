@@ -111,5 +111,81 @@ void main() {
       expect(first.quantityDecimal, second.quantityDecimal);
       expect(first.orderNotionalQuoteDecimal, second.orderNotionalQuoteDecimal);
     });
+
+    test(
+      'auto-fit preserves the risk limit when symbol minimum blocks',
+      () async {
+        final service = BingxFuturesOrderSizingService(
+          exchange: _exchangeWithRules(
+            price: '78628.6',
+            minimumQuantity: '0.0001',
+            minimumNotional: '2',
+            quantityPrecision: 4,
+          ),
+        );
+
+        final result = await service.fitMaximumNotional(
+          symbol: 'BTC-USDT',
+          accountEquityQuote: 13.1422,
+          maximumRiskPercent: 2,
+          stopLossPercent: 5,
+        );
+
+        expect(result.fittedNotionalQuote, closeTo(5.1517424, 0.0000001));
+        expect(result.safeNotionalQuote, closeTo(5.25688, 0.0000001));
+        expect(result.sizing?.status, BingxFuturesOrderSizingStatus.blocked);
+        expect(
+          result.sizing?.reasonCode,
+          'exchange_minimum_exceeds_risk_budget',
+        );
+      },
+    );
+
+    test(
+      'auto-fit may use the exchange minimum inside the safe limit',
+      () async {
+        final service = BingxFuturesOrderSizingService(
+          exchange: _exchangeWithRules(
+            price: '5.2',
+            minimumQuantity: '1',
+            minimumNotional: '2',
+            quantityPrecision: 1,
+          ),
+        );
+
+        final result = await service.fitMaximumNotional(
+          symbol: 'BTC-USDT',
+          accountEquityQuote: 13.1422,
+          maximumRiskPercent: 2,
+          stopLossPercent: 5,
+        );
+
+        expect(result.fittedNotionalQuote, 5.2);
+        expect(result.fittedNotionalQuote, lessThan(result.safeNotionalQuote));
+        expect(result.sizing?.status, BingxFuturesOrderSizingStatus.sized);
+        expect(result.sizing?.quantityDecimal, '1');
+      },
+    );
   });
 }
+
+BingxFuturesExchangeService _exchangeWithRules({
+  required String price,
+  required String minimumQuantity,
+  required String minimumNotional,
+  required int quantityPrecision,
+}) => BingxFuturesExchangeService(
+  requestSender: (request) async {
+    final body = switch (request.uri.path) {
+      '/openApi/swap/v2/quote/price' =>
+        '{"code":0,"msg":"ok","data":{"symbol":"BTC-USDT","price":"$price"}}',
+      '/openApi/swap/v2/quote/contracts' =>
+        '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT",'
+            '"tradeMinQuantity":"$minimumQuantity",'
+            '"tradeMinUSDT":"$minimumNotional",'
+            '"quantityPrecision":$quantityPrecision,"pricePrecision":4}]}',
+      _ => throw StateError('unexpected endpoint ${request.uri.path}'),
+    };
+    return BingxHttpResponse(statusCode: 200, body: body);
+  },
+);
