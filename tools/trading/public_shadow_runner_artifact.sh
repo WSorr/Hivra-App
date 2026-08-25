@@ -45,6 +45,7 @@ INSTALLED_BUNDLE_MODE=0
 
 enable_exact_self_contained_bundle_mode() {
   [ -n "$ARTIFACT_DIR" ] || return 0
+  [ -d "$ARTIFACT_DIR" ] || return 0
   local exact_artifact_dir
   exact_artifact_dir="$(readlink -f -- "$ARTIFACT_DIR")"
   [ "$(readlink -f -- "${BASH_SOURCE[0]}")" = \
