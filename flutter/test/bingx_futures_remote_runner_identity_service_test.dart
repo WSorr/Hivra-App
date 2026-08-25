@@ -107,6 +107,39 @@ void main() {
     );
   });
 
+  test('deletes the exact binding idempotently', () async {
+    final temp = await Directory.systemTemp.createTemp('hivra-runner-delete-');
+    addTearDown(() => temp.delete(recursive: true));
+    final anchor = Directory('${temp.path}/anchor')..createSync();
+    File(
+      '${anchor.path}/runner-public-key.ed25519.hex',
+    ).writeAsStringSync('$publicKeyHex\n');
+    File(
+      '${anchor.path}/shadow-evidence.v1.json',
+    ).writeAsStringSync(_goldenEvidenceWire());
+    final capsuleHex = List<String>.filled(64, 'a').join();
+    final boundService = BingxFuturesRemoteRunnerIdentityService(
+      readActiveCapsuleRootHex: () => capsuleHex,
+      files: CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: temp.path),
+      ),
+    );
+    final binding = await boundService.verifyAnchorDirectory(anchor.path);
+    await boundService.saveVerifiedBinding(
+      binding,
+      expectedCapsuleRootHex: capsuleHex,
+    );
+
+    await boundService.deleteVerifiedBinding(
+      expectedRunnerKeyId: binding.runnerKeyId,
+    );
+    await boundService.deleteVerifiedBinding(
+      expectedRunnerKeyId: binding.runnerKeyId,
+    );
+
+    expect(_bindingFile(temp.path, capsuleHex).existsSync(), isFalse);
+  });
+
   test('refuses to persist a verified anchor after Capsule switch', () async {
     final temp = await Directory.systemTemp.createTemp('hivra-runner-owner-');
     addTearDown(() => temp.delete(recursive: true));

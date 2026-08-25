@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIFECYCLE=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle
+BUNDLE=/opt/hivra/trading-public-shadow
+operation="${1:-}"
+
+[ "$(id -u)" = 0 ] || { echo "runner control requires root" >&2; exit 1; }
+case "$operation" in
+  status)
+    [ -x "$LIFECYCLE" ] || { echo "Remote Runner is removed"; exit 0; }
+    exec "$LIFECYCLE" --prepared-session-service-status "$BUNDLE"
+    ;;
+  pause)
+    [ -x "$LIFECYCLE" ] || { echo "Remote Runner is removed"; exit 0; }
+    exec "$LIFECYCLE" --pause-prepared-session-service "$BUNDLE"
+    ;;
+  remove:*)
+    runner_key_id="${operation#remove:}"
+    [[ "$runner_key_id" =~ ^[0-9a-f]{64}$ ]] || { echo "invalid runner key id" >&2; exit 1; }
+    if [ ! -x "$LIFECYCLE" ]; then
+      echo "Remote Runner is removed"
+      exit 0
+    fi
+    installed_key_id="$(python3 - <<'PY'
+import hashlib
+from pathlib import Path
+value = Path('/var/lib/hivra-trading-public-shadow/runner-public-key.ed25519.hex').read_text().strip()
+if len(value) != 64:
+    raise SystemExit('installed Runner key is invalid')
+print(hashlib.sha256(bytes.fromhex(value)).hexdigest())
+PY
+)"
+    [ "$runner_key_id" = "$installed_key_id" ] || { echo "runner identity mismatch" >&2; exit 1; }
+    "$LIFECYCLE" --pause-prepared-session-service "$BUNDLE"
+    "$LIFECYCLE" --uninstall-disabled "$BUNDLE"
+    echo "Remote Runner removed"
+    ;;
+  revoke:*)
+    [ -x "$LIFECYCLE" ] || { echo "runner lifecycle unavailable" >&2; exit 1; }
+    runner_key_id="${operation#revoke:}"
+    [[ "$runner_key_id" =~ ^[0-9a-f]{64}$ ]] || { echo "invalid runner key id" >&2; exit 1; }
+    IFS= read -r revocation_base64
+    [ ${#revocation_base64} -ge 16 ] && [ ${#revocation_base64} -le 349528 ] || { echo "invalid revocation payload" >&2; exit 1; }
+    work="$(mktemp -d /run/hivra-runner-control.XXXXXX)"
+    trap 'rm -rf "$work"; unset revocation_base64' EXIT INT TERM
+    printf '%s' "$revocation_base64" | base64 -d > "$work/revocation.json"
+    chmod 0600 "$work/revocation.json"
+    "$LIFECYCLE" --revoke-session "$BUNDLE" \
+      --expected-runner-key-id "$runner_key_id" \
+      --revocation-artifact "$work/revocation.json"
+    "$LIFECYCLE" --pause-prepared-session-service "$BUNDLE"
+    echo "Remote Runner session revoked"
+    ;;
+  apply-enable:*)
+    apply_stage="input"
+    report_apply_error() {
+      local code="$?"
+      printf 'HIVRA_REMOTE_RUNNER_APPLY_ERROR_STAGE=%s\n' "$apply_stage" >&2
+      exit "$code"
+    }
+    trap report_apply_error ERR
+    [ -x "$LIFECYCLE" ] || { echo "runner lifecycle unavailable" >&2; exit 1; }
+    runner_key_id="${operation#apply-enable:}"
+    [[ "$runner_key_id" =~ ^[0-9a-f]{64}$ ]] || { echo "invalid runner key id" >&2; exit 1; }
+    IFS= read -r session_base64
+    IFS= read -r api_key
+    IFS= read -r api_secret
+    [ ${#session_base64} -ge 16 ] && [ ${#session_base64} -le 1048576 ] || { echo "invalid session payload" >&2; exit 1; }
+    [ ${#api_key} -ge 1 ] && [ ${#api_key} -le 512 ] || { echo "invalid API key" >&2; exit 1; }
+    [ ${#api_secret} -ge 1 ] && [ ${#api_secret} -le 512 ] || { echo "invalid API secret" >&2; exit 1; }
+    LC_ALL=C
+    [[ "$api_key" =~ ^[[:graph:]]+$ ]] || { echo "invalid API key" >&2; exit 1; }
+    [[ "$api_secret" =~ ^[[:graph:]]+$ ]] || { echo "invalid API secret" >&2; exit 1; }
+    work="$(mktemp -d /run/hivra-runner-control.XXXXXX)"
+    trap 'rm -rf "$work"; unset api_key api_secret session_base64' EXIT INT TERM
+    printf '%s' "$session_base64" | base64 -d > "$work/session.json"
+    chmod 0600 "$work/session.json"
+    apply_stage="prepare"
+    printf '%s\n%s\n' "$api_key" "$api_secret" |
+      "$LIFECYCLE" --apply-prepared-session "$BUNDLE" \
+        --expected-runner-key-id "$runner_key_id" \
+        --mandate-artifact "$work/session.json"
+    unset api_key api_secret session_base64
+    apply_stage="activate"
+    "$LIFECYCLE" --activate-prepared-session "$BUNDLE" \
+      --expected-runner-key-id "$runner_key_id"
+    apply_stage="enable"
+    "$LIFECYCLE" --enable-prepared-session-service "$BUNDLE" \
+      --expected-runner-key-id "$runner_key_id"
+    apply_stage="verify"
+    status="$($LIFECYCLE --prepared-session-service-status "$BUNDLE")"
+    [[ "$status" == *"active=active"* ]] &&
+      [[ "$status" == *"enabled=enabled"* ]] || {
+        echo "Remote Runner did not become active and enabled" >&2
+        false
+      }
+    trap - ERR
+    printf '%s\n' "$status"
+    echo "HIVRA_REMOTE_RUNNER_APPLY_OK=1"
+    ;;
+  *)
+    echo "unsupported runner control operation" >&2
+    exit 64
+    ;;
+esac

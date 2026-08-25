@@ -753,7 +753,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                                 _exportingRemoteMandate ||
                                 _exportingRemoteRevocation
                             ? null
-                            : _exportSignedRemoteSessionRevocation,
+                            : _manageRemoteRunners,
                     icon:
                         _exportingRemoteRevocation
                             ? const SizedBox(
@@ -761,11 +761,11 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                            : const Icon(Icons.stop_circle_outlined),
+                            : const Icon(Icons.dns_outlined),
                     label: Text(
                       _exportingRemoteRevocation
-                          ? 'Signing stop file'
-                          : 'Revoke VPS Session',
+                          ? 'Loading Runner'
+                          : 'Remote Runner',
                     ),
                   ),
                   FilledButton.tonalIcon(

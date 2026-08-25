@@ -15,6 +15,7 @@ import 'bingx_futures_order_sizing_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_futures_public_session_stream_service.dart';
 import 'bingx_futures_remote_runner_identity_service.dart';
+import 'bingx_futures_remote_runner_provisioning_service.dart';
 import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 import 'bingx_futures_signal_rank_use_case_service.dart';
@@ -47,6 +48,7 @@ class TradingDroneModule {
   final BingxFuturesOrderReplacementService orderReplacement;
   final BingxFuturesPublicSessionStreamService publicSessionStream;
   final BingxFuturesRemoteRunnerIdentityService remoteRunnerIdentity;
+  final BingxFuturesRemoteRunnerProvisioningService remoteRunnerProvisioning;
   final BingxFuturesLiveStrategyUseCaseService liveStrategyUseCase;
   final BingxFuturesStrategyNamingService strategyNaming;
   final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
@@ -83,6 +85,7 @@ class TradingDroneModule {
     required this.orderReplacement,
     required this.publicSessionStream,
     required this.remoteRunnerIdentity,
+    required this.remoteRunnerProvisioning,
     required this.liveStrategyUseCase,
     required this.strategyNaming,
     required this.volumeGrowthFilter,
@@ -136,6 +139,9 @@ class TradingDroneModuleService {
       observability: observability,
     );
     final publicSessionStream = BingxFuturesPublicSessionStreamService();
+    final remoteRunnerIdentity = BingxFuturesRemoteRunnerIdentityService(
+      readActiveCapsuleRootHex: runtime.activeCapsuleRootHex,
+    );
     final snapshotBuilder = const BingxFuturesLiveSnapshotBuilderService();
     final liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
       exchange: exchangeService,
@@ -166,8 +172,10 @@ class TradingDroneModuleService {
       orderRevalidation: const BingxFuturesOrderRevalidationService(),
       orderReplacement: const BingxFuturesOrderReplacementService(),
       publicSessionStream: publicSessionStream,
-      remoteRunnerIdentity: BingxFuturesRemoteRunnerIdentityService(
-        readActiveCapsuleRootHex: runtime.activeCapsuleRootHex,
+      remoteRunnerIdentity: remoteRunnerIdentity,
+      remoteRunnerProvisioning: BingxFuturesRemoteRunnerProvisioningService(
+        activeCapsuleRootHex: runtime.activeCapsuleRootHex,
+        identity: remoteRunnerIdentity,
       ),
       liveStrategyUseCase: liveStrategyUseCase,
       strategyNaming: const BingxFuturesStrategyNamingService(),

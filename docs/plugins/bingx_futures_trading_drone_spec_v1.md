@@ -1020,18 +1020,33 @@ enablement while preserving the canonical unit link. Uninstall refuses an
 enabled service. No secret is stored in the unit, command line, environment,
 or log.
 
-User-facing VPS bootstrap is a required later 1.x product unit, not part of the
-current service implementation. It must replace manual terminal assembly with
-one reviewed setup flow that accepts a host, SSH port, and account name;
-verifies and pins the host fingerprint; creates a dedicated SSH key; uses a
-password, when unavoidable, only for the initial connection; and never stores
-that password. Before applying changes it must show the exact installation
-plan. Each `(Capsule, exchange account)` binding must own a distinct runner
-identity, encrypted credential, state directory, lock, and systemd instance.
-Status, pause, update, recovery, and exact uninstall must be available without
-exposing keys or requiring the user to reconstruct filesystem paths. Shared
-credentials, implicit root access, one global runner state, and silent host-key
-replacement are forbidden.
+User-facing VPS bootstrap is one canonical 1.x product use case. It replaces
+manual terminal assembly with one reviewed setup flow that accepts a host, SSH
+port, and account-bound BingX credential; verifies and pins the host
+fingerprint; creates a dedicated Capsule-scoped SSH key; uses the administrator
+password only for the initial connection; and never persists that password.
+The exact release embeds and authenticates the Linux runner bundle and its
+restricted controller before upload. A connection interruption retains only
+the generated private SSH identity in the Capsule secret vault; retrying the
+same `(Capsule, account, host, port)` tuple reuses that identity and exact-replays
+an already installed matching bundle. A changed host key, account, SSH key, or
+runner build fails closed.
+
+The 1.x runtime supports exactly one `(Capsule, exchange account, VPS Runner)`
+binding per Capsule and exactly one Runner installation per VPS. The profile,
+verified Runner anchor, private control key, encrypted exchange credential,
+state, lock, and systemd service therefore have one owner. A second account or
+Capsule requires another VPS until a separately reviewed profile-scoped Linux
+lifecycle replaces the singleton owner; the UI must not imply multi-account
+isolation on one host. Status, pause, session deployment, and exact Runner
+removal use only the pinned host key and restricted SSH command allowlist.
+Removal pauses and uninstalls the verified Runner before deleting the local
+profile, verified binding, and private control key. It leaves no trading
+authority or exchange credential on the host. The inert restricted SSH control
+endpoint may remain for exact-replay recovery or a later root-authorized
+reprovision, but it owns no trading effect and has no private key. Shared
+credentials, implicit post-bootstrap root access, silent host-key replacement,
+and a second decision or exchange-effect route are forbidden.
 
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -18,13 +17,11 @@ import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
-import '../services/atomic_file_write_service.dart';
 import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../services/bingx_futures_trading_cycle_use_case_service.dart';
-import '../services/bingx_futures_remote_runner_identity_service.dart';
-import '../services/hivra_file_picker_service.dart';
+import '../services/bingx_futures_remote_runner_provisioning_service.dart';
 import '../utils/bingx_futures_zone_evidence_formatter.dart';
 import '../utils/peer_identity_format.dart';
 
@@ -470,6 +467,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _savingTradingControl = false;
   bool _exportingRemoteMandate = false;
   bool _exportingRemoteRevocation = false;
+  bool _provisioningRemoteRunner = false;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
   int _maxEffects = 1;
@@ -1369,38 +1367,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         await _showSnack('Cannot auto-fit risk: invalid equity');
         return;
       }
-      final riskQuoteLimit =
-          equity * (_executionRiskPolicy.maxRiskPerTradePercent / 100.0);
-      final safeNotional = riskQuoteLimit / slFactor;
-      final conservativeNotional = safeNotional * 0.98;
-      if (conservativeNotional <= 0) {
-        await _showSnack('Cannot auto-fit risk: limit too small');
-        return;
-      }
       final symbol = _symbolController.text.trim();
-      num fittedNotional = conservativeNotional;
-      BingxFuturesOrderSizingResult? sizing;
-      if (symbol.isNotEmpty) {
-        sizing = await _module.orderSizing.size(
-          symbol: symbol,
-          maximumNotionalQuote: fittedNotional,
-        );
-        if (sizing.status == BingxFuturesOrderSizingStatus.blocked &&
-            sizing.reasonCode == 'exchange_minimum_exceeds_risk_budget') {
-          final minimumNotional = _toNum(
-            sizing.minimumNotionalQuoteDecimal ?? '',
-          );
-          if (minimumNotional != null &&
-              minimumNotional > fittedNotional &&
-              minimumNotional <= safeNotional) {
-            fittedNotional = minimumNotional;
-            sizing = await _module.orderSizing.size(
-              symbol: symbol,
-              maximumNotionalQuote: fittedNotional,
-            );
-          }
-        }
-      }
+      final fit = await _module.orderSizing.fitMaximumNotional(
+        symbol: symbol,
+        accountEquityQuote: equity,
+        maximumRiskPercent: _executionRiskPolicy.maxRiskPerTradePercent,
+        stopLossPercent: _stopLossPercent,
+      );
+      final safeNotional = fit.safeNotionalQuote;
+      final fittedNotional = fit.fittedNotionalQuote;
+      final sizing = fit.sizing;
+      String? sizingBlockMessage;
       final fitted = _formatDecimal(fittedNotional, scale: 4);
       if (symbol.isNotEmpty && sizing != null) {
         await _module.uiLog.log(
@@ -1416,23 +1393,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         if (sizing.status != BingxFuturesOrderSizingStatus.sized ||
             sizing.quantityDecimal == null) {
           _quantityController.clear();
+          sizingBlockMessage = sizing.reasonMessage;
           await _module.uiLog.log(
             'bingx.risk.autofit.blocked',
             'symbol=${symbol.toUpperCase()} max_notional=$fitted '
                 'safe_notional=${_formatDecimal(safeNotional, scale: 4)} '
                 'code=${sizing.reasonCode}',
           );
-          await _showSnack(sizing.reasonMessage, seconds: 4);
-          return;
+        } else {
+          _quantityController.text = sizing.quantityDecimal!;
+          await _module.uiLog.log(
+            'bingx.risk.quantity',
+            'symbol=${symbol.toUpperCase()} '
+                'max_notional_usdt=$fitted '
+                'order_notional_usdt=${sizing.orderNotionalQuoteDecimal} '
+                'quantity=${sizing.quantityDecimal}',
+          );
         }
-        _quantityController.text = sizing.quantityDecimal!;
-        await _module.uiLog.log(
-          'bingx.risk.quantity',
-          'symbol=${symbol.toUpperCase()} '
-              'max_notional_usdt=$fitted '
-              'order_notional_usdt=${sizing.orderNotionalQuoteDecimal} '
-              'quantity=${sizing.quantityDecimal}',
-        );
       }
       _maxNotionalUsdtController.text = fitted;
       final mandate = _tradingMandate;
@@ -1468,10 +1445,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'safe_notional=${_formatDecimal(safeNotional, scale: 4)}',
       );
       await _showSnack(
-        mandateNeedsReauthorization
+        sizingBlockMessage != null
+            ? 'Max notional auto-fit: $fitted USDT. '
+                '${symbol.toUpperCase()} remains blocked: $sizingBlockMessage'
+            : mandateNeedsReauthorization
             ? 'Max notional auto-fit: $fitted USDT. Trading paused; Resume to authorize this limit.'
             : 'Max notional auto-fit: $fitted USDT',
-        seconds: mandateNeedsReauthorization ? 5 : 2,
+        seconds:
+            sizingBlockMessage != null || mandateNeedsReauthorization ? 5 : 2,
       );
     } catch (error) {
       await _module.uiLog.log('bingx.risk.autofit.error', '$error');
