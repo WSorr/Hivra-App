@@ -23,6 +23,16 @@ require_file() {
   fi
 }
 
+require_tracked_file() {
+  local path="$1"
+  local message="$2"
+  if [ -f "$path" ] && git -C "$ROOT" ls-files --error-unmatch "${path#$ROOT/}" >/dev/null 2>&1; then
+    pass "$message"
+  else
+    fail "$message"
+  fi
+}
+
 require_present() {
   local file="$1"
   local pattern="$2"
@@ -61,6 +71,11 @@ FLUTTER_VERSION_DERIVER="$ROOT/tools/release/derive_flutter_version.sh"
 TOOLCHAIN_VERIFY="$ROOT/tools/toolchain/verify_environment.sh"
 TOOLCHAIN_BASELINE="$ROOT/toolchains/hivra-baseline.conf"
 RUST_TOOLCHAIN="$ROOT/rust-toolchain.toml"
+RUST_DEPENDENCY_LOCK="$ROOT/Cargo.lock"
+FLUTTER_DEPENDENCY_LOCK="$ROOT/flutter/pubspec.lock"
+GRADLE_WRAPPER_JAR="$ROOT/flutter/android/gradle/wrapper/gradle-wrapper.jar"
+GRADLE_WRAPPER_UNIX="$ROOT/flutter/android/gradlew"
+GRADLE_WRAPPER_WINDOWS="$ROOT/flutter/android/gradlew.bat"
 
 require_file "$PRECHECK" "preflight script exists"
 require_file "$MAC_RELEASE_SCRIPT" "macOS release script exists"
@@ -87,6 +102,11 @@ require_file "$CI_REPOSITORY_GATES" "root GitHub repository-gates workflow exist
 require_file "$TOOLCHAIN_VERIFY" "toolchain environment verifier exists"
 require_file "$TOOLCHAIN_BASELINE" "toolchain baseline manifest exists"
 require_file "$RUST_TOOLCHAIN" "Rust toolchain pin exists"
+require_tracked_file "$RUST_DEPENDENCY_LOCK" "Rust dependency lock is repository-owned"
+require_tracked_file "$FLUTTER_DEPENDENCY_LOCK" "Flutter dependency lock is repository-owned"
+require_tracked_file "$GRADLE_WRAPPER_JAR" "Gradle wrapper jar is repository-owned"
+require_tracked_file "$GRADLE_WRAPPER_UNIX" "Gradle Unix launcher is repository-owned"
+require_tracked_file "$GRADLE_WRAPPER_WINDOWS" "Gradle Windows launcher is repository-owned"
 
 require_present "$CI_REPOSITORY_GATES" '^name: Hivra Repository Gates$' \
   "repository workflow is distinct from the release process"
@@ -395,8 +415,10 @@ require_present "$PRECHECK" 'tools/review/review_all\.sh' \
   "preflight executes review_all"
 require_present "$PRECHECK" 'tools/toolchain/verify_environment\.sh' \
   "preflight verifies the pinned toolchain environment"
-require_present "$PRECHECK" 'cargo test -p hivra-ffi' \
-  "preflight executes Rust FFI tests"
+require_present "$PRECHECK" 'flutter pub get --enforce-lockfile' \
+  "preflight enforces the committed Flutter dependency lock"
+require_present "$PRECHECK" 'cargo test --locked -p hivra-ffi' \
+  "preflight executes Rust FFI tests against the committed dependency lock"
 require_present "$PRECHECK" 'flutter analyze' \
   "preflight executes flutter analyze"
 require_present "$PRECHECK" 'flutter test' \
@@ -437,6 +459,12 @@ require_present "$MAC_RELEASE_SCRIPT" 'require_clean_tracked_worktree' \
   "macOS release packaging requires clean tracked worktree"
 require_present "$ANDROID_RELEASE_SCRIPT" 'require_clean_tracked_worktree' \
   "Android release packaging requires clean tracked worktree"
+if [ "$(rg -c 'require_clean_tracked_worktree' "$MAC_RELEASE_SCRIPT")" -ge 3 ] &&
+   [ "$(rg -c 'require_clean_tracked_worktree' "$ANDROID_RELEASE_SCRIPT")" -ge 3 ]; then
+  pass "release packaging rechecks tracked source after preflight and build"
+else
+  fail "release packaging must recheck tracked source after preflight and build"
+fi
 require_present "$MAC_RELEASE_SCRIPT" 'source_commit=\$SOURCE_COMMIT' \
   "macOS release metadata records source commit"
 require_present "$ANDROID_RELEASE_SCRIPT" 'source_commit=\$SOURCE_COMMIT' \

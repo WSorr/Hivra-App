@@ -23,8 +23,8 @@ echo "PROJECT_ROOT: ${PROJECT_ROOT}"
 echo "CONFIGURATION: ${CONFIGURATION:-Debug}"
 
 cd "${PROJECT_ROOT}"
-cargo build -p hivra-ffi --target "${ARM_TARGET}" ${CARGO_PROFILE_FLAG}
-cargo build -p hivra-ffi --target "${INTEL_TARGET}" ${CARGO_PROFILE_FLAG}
+cargo build --locked -p hivra-ffi --target "${ARM_TARGET}" ${CARGO_PROFILE_FLAG}
+cargo build --locked -p hivra-ffi --target "${INTEL_TARGET}" ${CARGO_PROFILE_FLAG}
 
 mkdir -p "${APP_PATH}"
 lipo -create -output "${UNIVERSAL_LIB}" "${ARM_LIB}" "${INTEL_LIB}"

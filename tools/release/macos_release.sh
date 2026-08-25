@@ -159,6 +159,7 @@ fi
 info "Release preflight"
 "$ROOT/tools/release/preflight.sh" \
   --trading-evidence-build-tag "$VERSION"
+require_clean_tracked_worktree
 
 info "Build macOS release bundle"
 (
@@ -167,6 +168,7 @@ info "Build macOS release bundle"
     --build-name "$FLUTTER_BUILD_NAME" \
     --build-number "$FLUTTER_BUILD_NUMBER"
 )
+require_clean_tracked_worktree
 
 [ -d "$APP_PATH" ] || die "Release app bundle not found: $APP_PATH"
 

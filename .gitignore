@@ -2,7 +2,6 @@
 # Rust
 /target/
 **/*.rs.bk
-Cargo.lock
 .idea/
 
 # Flutter
@@ -15,7 +14,6 @@ Cargo.lock
 /flutter/android/app/build/
 /flutter/.dart_tool/
 /flutter/.packages
-/flutter/pubspec.lock
 
 # FFI
 /platform/**/*.a

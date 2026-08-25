@@ -172,6 +172,9 @@ main() {
   echo "Hivra release preflight"
   echo "Workspace: $ROOT"
 
+  run_step "Pinned Flutter Dependencies" \
+    bash -lc "cd \"$FLUTTER_DIR\" && flutter pub get --enforce-lockfile"
+
   run_step "Pinned Toolchain Environment" \
     "$ROOT/tools/toolchain/verify_environment.sh" --full
 
@@ -182,7 +185,7 @@ main() {
     "$ROOT/tools/review/user_lifetime_safety_gate.sh"
 
   run_step "Rust FFI Tests" \
-    cargo test -p hivra-ffi
+    cargo test --locked -p hivra-ffi
 
   run_step "Flutter Analyze" \
     bash -lc "cd \"$FLUTTER_DIR\" && flutter analyze"
