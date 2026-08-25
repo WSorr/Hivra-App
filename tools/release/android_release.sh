@@ -96,6 +96,7 @@ require_cmd shasum
 info "Release preflight"
 "$ROOT/tools/release/preflight.sh" \
   --trading-evidence-build-tag "$VERSION"
+require_clean_tracked_worktree
 
 info "Build Android release APK"
 (
@@ -104,6 +105,7 @@ info "Build Android release APK"
     --build-name "$FLUTTER_BUILD_NAME" \
     --build-number "$FLUTTER_BUILD_NUMBER"
 )
+require_clean_tracked_worktree
 
 [ -f "$APK_SOURCE_PATH" ] || die "Release APK not found at $APK_SOURCE_PATH"
 

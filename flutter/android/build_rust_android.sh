@@ -15,4 +15,4 @@ cargo ndk \
   -t armeabi-v7a \
   -t x86_64 \
   -o "$JNI_LIBS_DIR" \
-  build --release -p hivra-ffi
+  build --locked --release -p hivra-ffi
