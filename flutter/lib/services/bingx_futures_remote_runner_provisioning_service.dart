@@ -752,7 +752,7 @@ archive="\$1"
 expected_sha="\$2"
 profile_id="$profileId"
 [ "\$(id -u)" = 0 ] || { echo "root required" >&2; exit 1; }
-for command in sha256sum tar systemctl systemd-creds python3 useradd base64 visudo; do
+for command in sha256sum tar systemctl systemd-creds python3 useradd usermod openssl getent base64 visudo; do
   command -v "\$command" >/dev/null 2>&1 || { echo "missing dependency: \$command" >&2; exit 1; }
 done
 [ -f "\$archive" ] && [ ! -L "\$archive" ] || { echo "runner archive missing" >&2; exit 1; }
@@ -787,13 +787,17 @@ install -d -m 0755 /usr/local/libexec
 printf '%s' '$controlBase64' | base64 -d > /usr/local/libexec/hivra-trading-runner-control
 chown root:root /usr/local/libexec/hivra-trading-runner-control
 chmod 0755 /usr/local/libexec/hivra-trading-runner-control
+runner_login_hash="\$(openssl rand -hex 32 | openssl passwd -6 -stdin)"
 if ! id hivra-runner >/dev/null 2>&1; then
-  useradd --system --create-home --home-dir /var/lib/hivra-runner-control --shell /bin/sh hivra-runner
+  useradd --system --create-home --home-dir /var/lib/hivra-runner-control --shell /bin/sh --password "\$runner_login_hash" hivra-runner
+elif getent shadow hivra-runner | cut -d: -f2 | grep -q '^!'; then
+  usermod --password "\$runner_login_hash" hivra-runner
 fi
+unset runner_login_hash
 install -d -o hivra-runner -g hivra-runner -m 0700 /var/lib/hivra-runner-control/.ssh
 printf '%s' '$publicKeyBase64' | base64 -d > /var/lib/hivra-runner-control/.ssh/key.pub
 public_key="\$(cat /var/lib/hivra-runner-control/.ssh/key.pub)"
-printf 'restrict,command="/usr/bin/sudo -n /usr/local/libexec/hivra-trading-runner-control $originalCommand" %s\n' "\$public_key" > /var/lib/hivra-runner-control/.ssh/authorized_keys
+printf '%s %s\n' 'restrict,command="/usr/bin/sudo -n /usr/local/libexec/hivra-trading-runner-control $originalCommand"' "\$public_key" > /var/lib/hivra-runner-control/.ssh/authorized_keys
 chown hivra-runner:hivra-runner /var/lib/hivra-runner-control/.ssh/key.pub /var/lib/hivra-runner-control/.ssh/authorized_keys
 chmod 0600 /var/lib/hivra-runner-control/.ssh/key.pub /var/lib/hivra-runner-control/.ssh/authorized_keys
 printf 'hivra-runner ALL=(root) NOPASSWD: /usr/local/libexec/hivra-trading-runner-control *\n' > /etc/sudoers.d/hivra-runner-control
@@ -869,12 +873,15 @@ class BingxFuturesRemoteRunnerProvisioningService {
             )
             .toString();
     final existingProfiles = await _profiles.load();
+    BingxFuturesRemoteRunnerProfile? existingProfile;
     if (existingProfiles.isNotEmpty) {
       final existing = existingProfiles.single;
-      if (existing.profileId == profileId) return existing;
-      throw StateError(
-        'This Capsule already owns a Remote Runner. Remove it before configuring another VPS or BingX account.',
-      );
+      if (existing.profileId != profileId) {
+        throw StateError(
+          'This Capsule already owns a Remote Runner. Remove it before configuring another VPS or BingX account.',
+        );
+      }
+      existingProfile = existing;
     }
     final generated = await _loadOrCreateSshIdentity(
       capsuleHex: capsuleHex,
@@ -906,8 +913,9 @@ class BingxFuturesRemoteRunnerProvisioningService {
       hostKeyFingerprint: result.hostKeyFingerprint,
       runnerKeyId: binding.runnerKeyId,
       runnerBuildId: binding.runnerBuildId,
-      createdAtUtc: DateTime.now().toUtc(),
+      createdAtUtc: existingProfile?.createdAtUtc ?? DateTime.now().toUtc(),
     )..validate();
+    await _host.status(profile: profile, privateKeyPem: generated.$1);
     await _identity.saveVerifiedBinding(
       binding,
       expectedCapsuleRootHex: capsuleHex,

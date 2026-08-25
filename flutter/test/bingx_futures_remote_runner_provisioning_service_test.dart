@@ -80,6 +80,7 @@ void main() {
       expect(secureWire, contains('OPENSSH'));
       expect(secureWire, isNot(contains('one-time-password')));
       expect(await identity.loadVerifiedBinding(), isNotNull);
+      expect(host.statusCalls, 1);
 
       final exactReplay = await service.bootstrap(
         host: 'runner.example',
@@ -90,7 +91,8 @@ void main() {
         confirmHostKey: (_, _) async => true,
       );
       expect(exactReplay.profileId, profile.profileId);
-      expect(host.bootstrapCalls, 1);
+      expect(host.bootstrapCalls, 2);
+      expect(host.statusCalls, 2);
 
       await expectLater(
         service.bootstrap(
@@ -103,7 +105,7 @@ void main() {
         ),
         throwsStateError,
       );
-      expect(host.bootstrapCalls, 1);
+      expect(host.bootstrapCalls, 2);
 
       await expectLater(
         service.deploySession(
@@ -189,6 +191,48 @@ void main() {
       isNot(contains('one-time-password')),
     );
   });
+
+  test('bootstrap is not persisted until restricted control succeeds', () async {
+    final temp = await Directory.systemTemp.createTemp('hivra-runner-status-');
+    addTearDown(() => temp.delete(recursive: true));
+    final files = CapsuleFileStore(
+      dirs: UserVisibleDataDirectoryService(homeOverride: temp.path),
+    );
+    final secureStorage = _FakeSecureStorage();
+    final identity = BingxFuturesRemoteRunnerIdentityService(
+      readActiveCapsuleRootHex: () => capsuleHex,
+      files: files,
+    );
+    final service = BingxFuturesRemoteRunnerProvisioningService(
+      activeCapsuleRootHex: () => capsuleHex,
+      identity: identity,
+      profiles: BingxFuturesRemoteRunnerProfileStore(
+        activeCapsuleRootHex: () => capsuleHex,
+        files: files,
+      ),
+      secrets: CapsuleScopedSecretVault(secureStorage: secureStorage),
+      bundleLoader: BingxFuturesEmbeddedRunnerBundleLoader(
+        assets: _MemoryAssetBundle(),
+      ),
+      host: _FakeHostPort(rejectStatus: true),
+    );
+
+    await expectLater(
+      service.bootstrap(
+        host: 'runner.example',
+        port: 22,
+        rootUsername: 'root',
+        rootPassword: 'one-time-password',
+        accountBindingHashHex: accountHash,
+        confirmHostKey: (_, _) async => true,
+      ),
+      throwsStateError,
+    );
+
+    expect(await service.loadProfiles(), isEmpty);
+    expect(await identity.loadVerifiedBinding(), isNull);
+    expect(secureStorage.values.values.single, contains('OPENSSH'));
+  });
 }
 
 class _MemoryAssetBundle extends CachingAssetBundle {
@@ -241,13 +285,18 @@ class _MemoryAssetBundle extends CachingAssetBundle {
 
 class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
   final bool rejectWhenConfirmationFails;
+  final bool rejectStatus;
   String? receivedPassword;
   int deployCalls = 0;
   int bootstrapCalls = 0;
   int removeCalls = 0;
   int revokeCalls = 0;
+  int statusCalls = 0;
 
-  _FakeHostPort({this.rejectWhenConfirmationFails = false});
+  _FakeHostPort({
+    this.rejectWhenConfirmationFails = false,
+    this.rejectStatus = false,
+  });
 
   @override
   Future<BingxFuturesRemoteRunnerBootstrapResult> bootstrap({
@@ -328,7 +377,13 @@ class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
   Future<String> status({
     required BingxFuturesRemoteRunnerProfile profile,
     required String privateKeyPem,
-  }) async => 'running';
+  }) async {
+    statusCalls += 1;
+    if (rejectStatus) {
+      throw StateError('restricted control unavailable');
+    }
+    return 'running';
+  }
 }
 
 class _FakeSecureStorage extends FlutterSecureStorage {
