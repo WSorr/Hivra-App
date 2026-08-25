@@ -2,6 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
+  test('remote session reserves one bounded provisioning window', () {
+    expect(
+      tradingRemoteSessionFirstCycleStart(DateTime.utc(2026, 8, 25, 12, 1, 1)),
+      DateTime.utc(2026, 8, 25, 12, 20),
+    );
+    expect(
+      tradingRemoteSessionFirstCycleStart(DateTime.utc(2026, 8, 25, 12, 5)),
+      DateTime.utc(2026, 8, 25, 12, 20),
+    );
+    expect(
+      tradingRemoteSessionProvisioningLeadTime,
+      const Duration(minutes: 15),
+    );
+    expect(tradingRemoteSessionIntervalSeconds, 300);
+  });
+
   test('prepared VPS session command is exact and bounded', () {
     const runner =
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';

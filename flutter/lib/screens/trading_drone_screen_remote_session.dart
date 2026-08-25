@@ -32,8 +32,13 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     final runnerKeyId = await _selectRemoteRunnerKeyId(mandate);
     if (runnerKeyId == null) return;
     if (!mounted) return;
-    const intervalSeconds = 300;
-    final startsAtUtc = DateTime.now().toUtc();
+    const intervalSeconds = tradingRemoteSessionIntervalSeconds;
+    final startsAtUtc = tradingRemoteSessionFirstCycleStart(
+      DateTime.now().toUtc(),
+    );
+    final firstCycleDeadlineUtc = startsAtUtc.add(
+      const Duration(seconds: intervalSeconds),
+    );
     final expiresAtUtc = DateTime.tryParse(mandate.expiresAtUtc)?.toUtc();
     if (expiresAtUtc == null) {
       await _showSnack('The active mandate has an invalid expiry.');
@@ -53,6 +58,8 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
               'Symbol: ${mandate.symbol}\n'
               'Mode: ${mandate.testOrder ? "test" : "live"}\n'
               'Check interval: 5 minutes\n'
+              'First check: ${startsAtUtc.toIso8601String()}\n'
+              'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
               'Maximum checks: $maxCycles\n'
               'Maximum exchange effects: ${mandate.maxEffects}\n'
               'Expires: ${mandate.expiresAtUtc}\n\n'
@@ -72,6 +79,13 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
           ),
     );
     if (approved != true) return;
+    if (!DateTime.now().toUtc().isBefore(startsAtUtc)) {
+      await _showSnack(
+        'The VPS provisioning window elapsed. Review a fresh session.',
+        seconds: 5,
+      );
+      return;
+    }
     final admission =
         BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
           mandate: mandate,
@@ -125,12 +139,16 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         'bingx.remote_session.exported',
         'operation_id=${admission.operationId} '
             'runner_key_id=${admission.runnerKeyId} '
+            'starts_at_utc=${startsAtUtc.toIso8601String()} '
+            'first_cycle_deadline_utc=${firstCycleDeadlineUtc.toIso8601String()} '
             'max_cycles=$maxCycles interval_seconds=$intervalSeconds effect=false',
       );
       if (mounted) {
         await _showPreparedSessionApplyInstructions(
           runnerKeyId: admission.runnerKeyId,
           mandateFileName: target.path.split(Platform.pathSeparator).last,
+          startsAtUtc: startsAtUtc,
+          firstCycleDeadlineUtc: firstCycleDeadlineUtc,
         );
       }
     } catch (error) {
@@ -147,6 +165,8 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   Future<void> _showPreparedSessionApplyInstructions({
     required String runnerKeyId,
     required String mandateFileName,
+    required DateTime startsAtUtc,
+    required DateTime firstCycleDeadlineUtc,
   }) async {
     final command = tradingPreparedSessionApplyCommand(
       runnerKeyId: runnerKeyId,
@@ -199,6 +219,13 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                       'BingX credentials are entered in the hidden VPS prompt. '
                       'The command prepares the credential and exact signed '
                       'session but leaves the Runner disabled and inactive.',
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Provision and activate before '
+                      '${firstCycleDeadlineUtc.toIso8601String()}. The first '
+                      'check starts at ${startsAtUtc.toIso8601String()}. If '
+                      'that signed window is missed, export a fresh session.',
                     ),
                     const SizedBox(height: 16),
                     const Text(
