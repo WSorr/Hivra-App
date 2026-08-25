@@ -758,8 +758,8 @@ done
 [ -f "\$archive" ] && [ ! -L "\$archive" ] || { echo "runner archive missing" >&2; exit 1; }
 [ "\$(sha256sum "\$archive" | awk '{print \$1}')" = "\$expected_sha" ] || { echo "runner archive checksum mismatch" >&2; exit 1; }
 work="\$(mktemp -d /tmp/hivra-runner-bootstrap.XXXXXX)"
-anchor="\$(mktemp -d /tmp/hivra-runner-anchor.XXXXXX)"
-cleanup() { rm -rf "\$work" "\$anchor" "\$archive"; }
+anchor="\$work/anchor"
+cleanup() { rm -rf "\$work" "\$archive"; }
 trap cleanup EXIT INT TERM
 tar -xzf "\$archive" -C "\$work"
 bundle="\$work/linux-x64"
