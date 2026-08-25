@@ -43,6 +43,15 @@ REVOCATION_ARTIFACT=""
 SCHEDULER_SESSION_OPERATION_ID=""
 INSTALLED_BUNDLE_MODE=0
 
+enable_exact_installed_bundle_mode() {
+  [ -n "$ARTIFACT_DIR" ] || return 0
+  [ "$(readlink -f -- "${BASH_SOURCE[0]}")" = "$LIFECYCLE_INSTALL_PATH" ] ||
+    return 0
+  [ "$(readlink -f -- "$ARTIFACT_DIR")" = "$BUNDLE_INSTALL_PATH" ] ||
+    return 0
+  INSTALLED_BUNDLE_MODE=1
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -5451,6 +5460,10 @@ fi
 if [ "$MODE" != "revoke-session" ] && [ -n "$REVOCATION_ARTIFACT" ]; then
   die "revocation-artifact is accepted only by session revocation"
 fi
+
+# The installed lifecycle has no repository checkout to compare against. Exact
+# self-location enables manifest-based verification for every controller action.
+enable_exact_installed_bundle_mode
 
 case "$MODE" in
   build)

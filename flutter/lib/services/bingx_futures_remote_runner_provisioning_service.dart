@@ -430,7 +430,9 @@ abstract interface class BingxFuturesRemoteRunnerHostPort {
 class DartSshBingxFuturesRemoteRunnerHostPort
     implements BingxFuturesRemoteRunnerHostPort {
   static const Duration _connectTimeout = Duration(seconds: 15);
+  static const Duration _interactiveAuthTimeout = Duration(minutes: 2);
   static const Duration _commandTimeout = Duration(minutes: 3);
+  static const int _bootstrapAuthAttempts = 3;
 
   const DartSshBingxFuturesRemoteRunnerHostPort();
 
@@ -447,37 +449,65 @@ class DartSshBingxFuturesRemoteRunnerHostPort
   }) async {
     String? acceptedAlgorithm;
     String? acceptedFingerprint;
-    final socket = await SSHSocket.connect(
-      host,
-      port,
-      timeout: _connectTimeout,
-    );
-    final client = SSHClient(
-      socket,
-      username: rootUsername,
-      onPasswordRequest: () => rootPassword,
-      handshakeTimeout: _connectTimeout,
-      authTimeout: _connectTimeout,
-      onVerifyHostKey: (algorithm, fingerprintBytes) async {
-        final fingerprint = utf8.decode(
-          fingerprintBytes,
-          allowMalformed: false,
-        );
-        final accepted = await confirmHostKey(algorithm, fingerprint);
-        if (accepted) {
-          acceptedAlgorithm = algorithm;
-          acceptedFingerprint = fingerprint;
-        }
-        return accepted;
-      },
-    );
+    SSHClient? client;
     try {
-      await client.authenticated.timeout(_connectTimeout);
+      for (var attempt = 1; attempt <= _bootstrapAuthAttempts; attempt += 1) {
+        final socket = await SSHSocket.connect(
+          host,
+          port,
+          timeout: _connectTimeout,
+        );
+        final candidate = SSHClient(
+          socket,
+          username: rootUsername,
+          onPasswordRequest: () => rootPassword,
+          // dartssh2 verifies the host key during the handshake, so the
+          // bounded interactive window covers fingerprint review and auth.
+          handshakeTimeout: _interactiveAuthTimeout,
+          authTimeout: _interactiveAuthTimeout,
+          onVerifyHostKey: (algorithm, fingerprintBytes) async {
+            final fingerprint = utf8.decode(
+              fingerprintBytes,
+              allowMalformed: false,
+            );
+            final knownAlgorithm = acceptedAlgorithm;
+            final knownFingerprint = acceptedFingerprint;
+            if (knownAlgorithm != null || knownFingerprint != null) {
+              return algorithm == knownAlgorithm &&
+                  fingerprint == knownFingerprint;
+            }
+            final accepted = await confirmHostKey(algorithm, fingerprint);
+            if (accepted) {
+              acceptedAlgorithm = algorithm;
+              acceptedFingerprint = fingerprint;
+            }
+            return accepted;
+          },
+        );
+        try {
+          await candidate.authenticated.timeout(_interactiveAuthTimeout);
+          client = candidate;
+          break;
+        } on SSHAuthAbortError {
+          await candidate.close();
+          await candidate.done.catchError((_) {});
+          if (attempt == _bootstrapAuthAttempts) rethrow;
+          await Future<void>.delayed(Duration(milliseconds: 300 * attempt));
+        } catch (_) {
+          await candidate.close();
+          await candidate.done.catchError((_) {});
+          rethrow;
+        }
+      }
+      final authenticatedClient = client;
+      if (authenticatedClient == null) {
+        throw StateError('VPS authentication did not complete.');
+      }
       if (acceptedAlgorithm == null || acceptedFingerprint == null) {
         throw StateError('VPS host key was not accepted.');
       }
       final archivePath = '/tmp/hivra-runner-$profileId.tar.gz';
-      final sftp = await client.sftp();
+      final sftp = await authenticatedClient.sftp();
       final remote = await sftp.open(
         archivePath,
         mode:
@@ -491,7 +521,7 @@ class DartSshBingxFuturesRemoteRunnerHostPort
         await remote.close();
       }
       final result = await _executeWithInput(
-        client,
+        authenticatedClient,
         "bash -s -- '$archivePath' '${bundle.archiveSha256}'",
         utf8.encode(
           _bootstrapScript(
@@ -514,8 +544,8 @@ class DartSshBingxFuturesRemoteRunnerHostPort
         runnerEvidenceBytes: parsed.$2,
       );
     } finally {
-      client.close();
-      await client.done.catchError((_) {});
+      await client?.close();
+      await client?.done.catchError((_) {});
     }
   }
 

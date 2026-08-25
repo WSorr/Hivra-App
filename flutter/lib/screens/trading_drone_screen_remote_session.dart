@@ -5,8 +5,20 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     if (_exportingRemoteRevocation) return;
     _updateState(() => _exportingRemoteRevocation = true);
     try {
-      final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+      var profiles = await _module.remoteRunnerProvisioning.loadProfiles();
       if (!mounted) return;
+      if (profiles.isEmpty) {
+        final credentials = await _loadCredentials();
+        if (credentials == null) {
+          await _showSnack('Save BingX Futures credentials first.');
+          return;
+        }
+        final profile = await _configureRemoteRunner(
+          accountBindingHashHex: _module.accountBindingHashHex(credentials),
+        );
+        if (profile == null || !mounted) return;
+        profiles = [profile];
+      }
       await showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
@@ -14,48 +26,46 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             (sheetContext) => SafeArea(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 520),
-                child:
-                    profiles.isEmpty
-                        ? const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'No Remote Runner is configured. Use Authorize VPS Session and choose Add VPS.',
-                          ),
-                        )
-                        : ListView(
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                          children: [
-                            const ListTile(
-                              title: Text(
-                                'Remote Runner',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                              subtitle: Text(
-                                'Capsule-scoped status and emergency controls',
-                              ),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  children: [
+                    const ListTile(
+                      title: Text(
+                        'Remote Runner',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: Text(
+                        'Capsule-scoped status and emergency controls',
+                      ),
+                    ),
+                    ...profiles.map(
+                      (profile) => _RemoteRunnerProfileTile(
+                        profile: profile,
+                        loadStatus:
+                            () => _module.remoteRunnerProvisioning.status(
+                              profile,
                             ),
-                            ...profiles.map(
-                              (profile) => _RemoteRunnerProfileTile(
-                                profile: profile,
-                                loadStatus:
-                                    () => _module.remoteRunnerProvisioning
-                                        .status(profile),
-                                pause:
-                                    () => _module.remoteRunnerProvisioning
-                                        .pause(profile),
-                                revoke: () => _revokeRemoteSession(profile),
-                                remove:
-                                    () => _module.remoteRunnerProvisioning
-                                        .remove(profile),
-                              ),
+                        pause:
+                            () =>
+                                _module.remoteRunnerProvisioning.pause(profile),
+                        revoke: () => _revokeRemoteSession(profile),
+                        remove:
+                            () => _module.remoteRunnerProvisioning.remove(
+                              profile,
                             ),
-                          ],
-                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
       );
     } catch (error) {
+      await _module.uiLog.log(
+        'bingx.remote_runner.manage.error',
+        'error=$error effect=false',
+      );
       await _showSnack('Remote Runner could not be loaded: $error', seconds: 5);
     } finally {
       if (mounted) _updateState(() => _exportingRemoteRevocation = false);
@@ -448,58 +458,106 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     final port = TextEditingController(text: '22');
     final username = TextEditingController(text: 'root');
     final password = TextEditingController();
+    String? validationErrorText;
     try {
       final submitted = await showDialog<bool>(
         context: context,
         builder:
-            (dialogContext) => AlertDialog(
-              title: const Text('Add Remote Runner VPS'),
-              content: SizedBox(
-                width: 480,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: host,
-                      decoration: const InputDecoration(
-                        labelText: 'Host or IP',
+            (dialogContext) => StatefulBuilder(
+              builder:
+                  (context, setDialogState) => AlertDialog(
+                    title: const Text('Add Remote Runner VPS'),
+                    content: SizedBox(
+                      width: 480,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            controller: host,
+                            decoration: const InputDecoration(
+                              labelText: 'Host or IP',
+                              hintText: '45.142.176.16',
+                            ),
+                          ),
+                          TextField(
+                            controller: port,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'SSH port',
+                            ),
+                          ),
+                          TextField(
+                            controller: username,
+                            decoration: const InputDecoration(
+                              labelText: 'Admin user',
+                            ),
+                          ),
+                          TextField(
+                            controller: password,
+                            obscureText: true,
+                            enableSuggestions: false,
+                            autocorrect: false,
+                            decoration: const InputDecoration(
+                              labelText: 'One-time admin password',
+                              helperText:
+                                  'Used once. Hivra never stores this password.',
+                            ),
+                          ),
+                          if (validationErrorText != null) ...[
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                validationErrorText!,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                    TextField(
-                      controller: port,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'SSH port'),
-                    ),
-                    TextField(
-                      controller: username,
-                      decoration: const InputDecoration(
-                        labelText: 'Admin user',
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        child: const Text('Cancel'),
                       ),
-                    ),
-                    TextField(
-                      controller: password,
-                      obscureText: true,
-                      enableSuggestions: false,
-                      autocorrect: false,
-                      decoration: const InputDecoration(
-                        labelText: 'One-time admin password',
-                        helperText:
-                            'Used once. Hivra never stores this password.',
+                      FilledButton(
+                        onPressed: () {
+                          final normalizedHost = host.text.trim();
+                          final parsedPort = int.tryParse(port.text.trim());
+                          String? validationError;
+                          if (normalizedHost.isEmpty) {
+                            validationError = 'Enter the VPS host or IP.';
+                          } else if (normalizedHost.contains(
+                            RegExp(r'[\s/\\@]'),
+                          )) {
+                            validationError =
+                                'Host must contain only a hostname or IP, without ssh:// or user@.';
+                          } else if (parsedPort == null ||
+                              parsedPort < 1 ||
+                              parsedPort > 65535) {
+                            validationError = 'Enter a valid SSH port.';
+                          } else if (username.text.trim() != 'root') {
+                            validationError =
+                                'The current bootstrap requires the root admin user.';
+                          } else if (password.text.isEmpty) {
+                            validationError =
+                                'Enter the one-time admin password.';
+                          }
+                          if (validationError != null) {
+                            setDialogState(() {
+                              validationErrorText = validationError;
+                            });
+                            return;
+                          }
+                          Navigator.of(dialogContext).pop(true);
+                        },
+                        child: const Text('Connect securely'),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Connect securely'),
-                ),
-              ],
+                    ],
+                  ),
             ),
       );
       if (submitted != true) return null;

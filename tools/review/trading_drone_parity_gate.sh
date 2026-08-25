@@ -219,6 +219,9 @@ runner_bundle_install_is_fail_closed() {
     rg -q 'disabled install created boot enablement' "$1" &&
     rg -q 'cmp -s "\$BINARY_INSTALL_PATH" "\$directory/\$BINARY_NAME"' "$1" &&
     rg -q 'uninstall refused a drifted runner manifest' "$1" &&
+    rg -q '^enable_exact_installed_bundle_mode\(\)' "$1" &&
+    rg -Fq 'readlink -f -- "${BASH_SOURCE[0]}")" = "$LIFECYCLE_INSTALL_PATH"' "$1" &&
+    rg -Fq 'readlink -f -- "$ARTIFACT_DIR")" = "$BUNDLE_INSTALL_PATH"' "$1" &&
     rg -q 'uninstall refused a foreign unit link' "$1" &&
     rg -q 'uninstall refused a foreign state link' "$1" &&
     rg -q 'uninstall refused an enabled unit' "$1" &&
