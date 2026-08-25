@@ -1000,6 +1000,10 @@ exact retained revocation at least every five seconds, executes cycles serially,
 and exits on any cycle error, missed cadence window, or terminal session state.
 It atomically marks a missed-window session `stopped` so replacement authority
 can be admitted, but never catches up missed cycles by executing them in a burst.
+Session export reserves a bounded provisioning lead time and shows the exact
+first-cycle start and deadline before the Capsule signs. Missing that reviewed
+deadline remains terminal and requires a fresh session; the Runner never shifts
+the signed cadence to accommodate a slow transfer or activation.
 
 The exact Runner bundle also contains one persistent systemd session service.
 It invokes that same scheduler owner from the hash-verified installed bundle;

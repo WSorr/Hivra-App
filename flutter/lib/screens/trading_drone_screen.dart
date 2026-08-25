@@ -103,6 +103,23 @@ String tradingPreparedSessionServiceStatusCommand() =>
     'sudo ./public_shadow_runner_artifact.sh '
     '--prepared-session-service-status /path/to/runner-bundle';
 
+const int tradingRemoteSessionIntervalSeconds = 300;
+const Duration tradingRemoteSessionProvisioningLeadTime = Duration(minutes: 15);
+
+@visibleForTesting
+DateTime tradingRemoteSessionFirstCycleStart(DateTime nowUtc) {
+  final earliest = nowUtc.toUtc().add(tradingRemoteSessionProvisioningLeadTime);
+  final seconds = earliest.millisecondsSinceEpoch ~/ 1000;
+  final alignedSeconds =
+      ((seconds + tradingRemoteSessionIntervalSeconds - 1) ~/
+          tradingRemoteSessionIntervalSeconds) *
+      tradingRemoteSessionIntervalSeconds;
+  return DateTime.fromMillisecondsSinceEpoch(
+    alignedSeconds * 1000,
+    isUtc: true,
+  );
+}
+
 @visibleForTesting
 Future<String> runTradingIntentWithTerminalEvidence({
   required Future<String> Function() pipeline,
