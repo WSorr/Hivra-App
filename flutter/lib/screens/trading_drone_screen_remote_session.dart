@@ -1,6 +1,67 @@
 part of 'trading_drone_screen.dart';
 
 extension _TradingDroneRemoteSession on _TradingDroneScreenState {
+  Future<void> _manageRemoteRunners() async {
+    if (_exportingRemoteRevocation) return;
+    _updateState(() => _exportingRemoteRevocation = true);
+    try {
+      final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder:
+            (sheetContext) => SafeArea(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 520),
+                child:
+                    profiles.isEmpty
+                        ? const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'No Remote Runner is configured. Use Authorize VPS Session and choose Add VPS.',
+                          ),
+                        )
+                        : ListView(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          children: [
+                            const ListTile(
+                              title: Text(
+                                'Remote Runner',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: Text(
+                                'Capsule-scoped status and emergency controls',
+                              ),
+                            ),
+                            ...profiles.map(
+                              (profile) => _RemoteRunnerProfileTile(
+                                profile: profile,
+                                loadStatus:
+                                    () => _module.remoteRunnerProvisioning
+                                        .status(profile),
+                                pause:
+                                    () => _module.remoteRunnerProvisioning
+                                        .pause(profile),
+                                revoke: () => _revokeRemoteSession(profile),
+                                remove:
+                                    () => _module.remoteRunnerProvisioning
+                                        .remove(profile),
+                              ),
+                            ),
+                          ],
+                        ),
+              ),
+            ),
+      );
+    } catch (error) {
+      await _showSnack('Remote Runner could not be loaded: $error', seconds: 5);
+    } finally {
+      if (mounted) _updateState(() => _exportingRemoteRevocation = false);
+    }
+  }
+
   Future<void> _exportSignedRemoteDeterministicSession() async {
     if (_exportingRemoteMandate) return;
     final mandate = _tradingMandate;
@@ -23,14 +84,17 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       await _showSnack(selectionNotice, seconds: 5);
       return;
     }
-    if (!Platform.isMacOS) {
-      await _showSnack(
-        'Remote session export is currently available on macOS.',
-      );
+    final credentials = await _loadCredentials();
+    if (credentials == null) {
+      await _showSnack('Save BingX Futures credentials first.');
       return;
     }
-    final runnerKeyId = await _selectRemoteRunnerKeyId(mandate);
-    if (runnerKeyId == null) return;
+    final accountBindingHashHex = _module.accountBindingHashHex(credentials);
+    final runner = await _selectRemoteRunner(
+      mandate,
+      accountBindingHashHex: accountBindingHashHex,
+    );
+    if (runner == null) return;
     if (!mounted) return;
     const intervalSeconds = tradingRemoteSessionIntervalSeconds;
     final startsAtUtc = tradingRemoteSessionFirstCycleStart(
@@ -89,7 +153,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     final admission =
         BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
           mandate: mandate,
-          runnerKeyId: runnerKeyId,
+          runnerKeyId: runner.runnerKeyId,
           strategyPolicy:
               BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
                 stopLossPercent: _stopLossPercent,
@@ -118,197 +182,48 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       await _showSnack('Capsule could not sign the remote session.');
       return;
     }
-    final targetPath = await HivraFilePickerService.saveJsonDocument(
-      suggestedName:
-          'trading-remote-session-${admission.operationId.substring(0, 16)}.json',
-      confirmButtonText: 'Export session',
-    );
-    if (targetPath == null || targetPath.trim().isEmpty) return;
-    final target = File(targetPath.trim());
-    if (await target.exists()) {
-      await _showSnack('The remote session artifact already exists.');
-      return;
-    }
     _updateState(() => _exportingRemoteMandate = true);
     try {
-      await const AtomicFileWriteService().writeString(
-        target,
-        admission.canonicalJson,
+      final status = await _module.remoteRunnerProvisioning.deploySession(
+        profile: runner,
+        accountBindingHashHex: accountBindingHashHex,
+        canonicalSessionJson: admission.canonicalJson,
+        apiKey: credentials.apiKey,
+        apiSecret: credentials.apiSecret,
       );
       await _module.uiLog.log(
-        'bingx.remote_session.exported',
+        'bingx.remote_session.deployed',
         'operation_id=${admission.operationId} '
             'runner_key_id=${admission.runnerKeyId} '
             'starts_at_utc=${startsAtUtc.toIso8601String()} '
             'first_cycle_deadline_utc=${firstCycleDeadlineUtc.toIso8601String()} '
             'max_cycles=$maxCycles interval_seconds=$intervalSeconds effect=false',
       );
-      if (mounted) {
-        await _showPreparedSessionApplyInstructions(
-          runnerKeyId: admission.runnerKeyId,
-          mandateFileName: target.path.split(Platform.pathSeparator).last,
-          startsAtUtc: startsAtUtc,
-          firstCycleDeadlineUtc: firstCycleDeadlineUtc,
-        );
-      }
+      await _showSnack(
+        status.isEmpty ? 'Remote Runner is enabled.' : 'Remote Runner: $status',
+        seconds: 5,
+      );
     } catch (error) {
       await _module.uiLog.log(
-        'bingx.remote_session.export.error',
+        'bingx.remote_session.deploy.error',
         'operation_id=${admission.operationId} error=$error effect=false',
       );
-      await _showSnack('Remote session export failed.');
+      await _showSnack('Remote Runner activation failed: $error', seconds: 5);
     } finally {
       if (mounted) _updateState(() => _exportingRemoteMandate = false);
     }
   }
 
-  Future<void> _showPreparedSessionApplyInstructions({
-    required String runnerKeyId,
-    required String mandateFileName,
-    required DateTime startsAtUtc,
-    required DateTime firstCycleDeadlineUtc,
-  }) async {
-    final command = tradingPreparedSessionApplyCommand(
-      runnerKeyId: runnerKeyId,
-      mandateFileName: mandateFileName,
-    );
-    final activationCommand = tradingPreparedSessionActivationCommand(
-      runnerKeyId: runnerKeyId,
-    );
-    final runCommand = tradingPreparedSessionRunCommand(
-      runnerKeyId: runnerKeyId,
-    );
-    final serviceEnableCommand = tradingPreparedSessionServiceEnableCommand(
-      runnerKeyId: runnerKeyId,
-    );
-    final servicePauseCommand = tradingPreparedSessionServicePauseCommand();
-    final serviceStatusCommand = tradingPreparedSessionServiceStatusCommand();
-    await showDialog<void>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Session ready for VPS'),
-            content: SizedBox(
-              width: 640,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '1. Transfer the signed session file to the already verified '
-                      'Runner, then apply it from tools/trading:',
-                    ),
-                    const SizedBox(height: 12),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color:
-                            Theme.of(context).colorScheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: SelectableText(
-                          command,
-                          style: const TextStyle(fontFamily: 'monospace'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'BingX credentials are entered in the hidden VPS prompt. '
-                      'The command prepares the credential and exact signed '
-                      'session but leaves the Runner disabled and inactive.',
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Provision and activate before '
-                      '${firstCycleDeadlineUtc.toIso8601String()}. The first '
-                      'check starts at ${startsAtUtc.toIso8601String()}. If '
-                      'that signed window is missed, export a fresh session.',
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '2. After Apply succeeds, explicitly activate only that '
-                      'prepared session:',
-                    ),
-                    const SizedBox(height: 12),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color:
-                            Theme.of(context).colorScheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: SelectableText(
-                          activationCommand,
-                          style: const TextStyle(fontFamily: 'monospace'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Activation creates bounded local session state only. It '
-                      'does not start scheduling or submit an exchange order.',
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('3. Enable continuous VPS operation:'),
-                    const SizedBox(height: 12),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color:
-                            Theme.of(context).colorScheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: SelectableText(
-                          serviceEnableCommand,
-                          style: const TextStyle(fontFamily: 'monospace'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'The service resumes after a VPS reboot only while the '
-                      'same signed session remains valid. It never retries a '
-                      'failed cycle or catches up missed cycles.',
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('Service status and explicit pause:'),
-                    const SizedBox(height: 12),
-                    SelectableText(
-                      '$serviceStatusCommand\n$servicePauseCommand',
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('Diagnostic foreground run (optional):'),
-                    const SizedBox(height: 12),
-                    SelectableText(
-                      runCommand,
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  Future<void> _exportSignedRemoteSessionRevocation() async {
-    if (_exportingRemoteRevocation) return;
-    final selected = await HivraFilePickerService.openJsonDocument();
-    if (selected == null) return;
+  Future<String> _revokeRemoteSession(
+    BingxFuturesRemoteRunnerProfile profile,
+  ) async {
+    final canonicalSession = await _module.remoteRunnerProvisioning
+        .loadActiveSession(profile);
+    if (canonicalSession == null) {
+      throw StateError('This Runner has no locally retained active session.');
+    }
     final session = BingxFuturesRemoteMandateAdmission.parseAndVerify(
-      untrustedWireBytes: await selected.readAsBytes(),
+      untrustedWireBytes: utf8.encode(canonicalSession),
       verifySignature:
           ({
             required messageHashHex,
@@ -320,135 +235,56 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             signatureHex: signatureHex,
           ),
     );
-    if (session == null || !session.isDeterministicSession) {
-      await _showSnack('Select one valid signed VPS session artifact.');
-      return;
+    if (session == null ||
+        !session.isDeterministicSession ||
+        session.runnerKeyId != profile.runnerKeyId) {
+      throw StateError('The retained VPS session is not authentic.');
     }
-    final activeRoot = _module.orderTrackingStore.activeCapsuleRootHex;
-    if (activeRoot == null || session.mandate.capsuleRootHex != activeRoot) {
-      await _showSnack('The selected session belongs to another Capsule.');
-      return;
-    }
-    if (!mounted) return;
-    final approved = await showDialog<bool>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Revoke this VPS session?'),
-            content: Text(
-              'Session: ${session.operationId.substring(0, 16)}…\n'
-              'Runner: ${session.runnerKeyId.substring(0, 16)}…\n'
-              'Symbol: ${session.mandate.symbol}\n\n'
-              'This immediately pauses local trading and creates a signed '
-              'stop file. The VPS stops only after that file is applied to '
-              'the exact runner.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Create stop file'),
-              ),
-            ],
-          ),
-    );
-    if (approved != true) return;
     final revocation = BingxFuturesRemoteSessionRevocation.issue(
       session: session,
       revokedAtUtc: DateTime.now().toUtc(),
       signCommitment: _module.signRootCommitment,
     );
-    if (revocation == null ||
-        BingxFuturesRemoteSessionRevocation.parseAndVerify(
-              untrustedWireBytes: utf8.encode(revocation.canonicalJson),
-              verifySignature:
-                  ({
-                    required messageHashHex,
-                    required participantIdHex,
-                    required signatureHex,
-                  }) => _module.verifyRootCommitmentSignature(
-                    commitmentHashHex: messageHashHex,
-                    capsuleRootHex: participantIdHex,
-                    signatureHex: signatureHex,
-                  ),
-            ) ==
-            null) {
-      await _showSnack('Capsule could not sign the session stop file.');
-      return;
+    if (revocation == null) {
+      throw StateError('Capsule could not sign the VPS session revocation.');
     }
-    final targetPath = await HivraFilePickerService.saveJsonDocument(
-      suggestedName:
-          'trading-session-stop-${session.operationId.substring(0, 16)}.json',
-      confirmButtonText: 'Export stop file',
+    final result = await _module.remoteRunnerProvisioning.revokeSession(
+      profile: profile,
+      canonicalRevocationJson: revocation.canonicalJson,
     );
-    if (targetPath == null || targetPath.trim().isEmpty) return;
-    final target = File(targetPath.trim());
-    if (await target.exists()) {
-      await _showSnack('The session stop file already exists.');
-      return;
+    if (_droneEnabled) {
+      await _changeDroneEnabled(false, requirePersistence: true);
     }
-    _updateState(() => _exportingRemoteRevocation = true);
-    try {
-      await const AtomicFileWriteService().writeString(
-        target,
-        revocation.canonicalJson,
-      );
-      var localPausePersisted = true;
-      if (_droneEnabled) {
-        try {
-          localPausePersisted = await _changeDroneEnabled(
-            false,
-            requirePersistence: true,
-          );
-        } catch (error) {
-          localPausePersisted = false;
-          await _module.uiLog.log(
-            'bingx.remote_session.revocation.local_pause.error',
-            'session_operation_id=${session.operationId} error=$error effect=false',
-          );
-        }
-      }
-      await _module.uiLog.log(
-        'bingx.remote_session.revocation.exported',
-        'session_operation_id=${session.operationId} '
-            'revocation_id=${revocation.revocationId} '
-            'runner_key_id=${session.runnerKeyId} effect=false',
-      );
-      await _showSnack(
-        localPausePersisted
-            ? 'Signed stop file exported. Apply it to the exact VPS runner.'
-            : 'Stop file exported, but local pause was not persisted. Pause '
-                'the Drone and apply the file to the exact VPS runner.',
-        seconds: 5,
-      );
-    } catch (error) {
-      await _module.uiLog.log(
-        'bingx.remote_session.revocation.export.error',
-        'session_operation_id=${session.operationId} error=$error effect=false',
-      );
-      await _showSnack('VPS session stop export failed.');
-    } finally {
-      if (mounted) _updateState(() => _exportingRemoteRevocation = false);
-    }
+    await _module.uiLog.log(
+      'bingx.remote_session.revoked',
+      'session_operation_id=${session.operationId} '
+          'revocation_id=${revocation.revocationId} '
+          'runner_key_id=${session.runnerKeyId} effect=false',
+    );
+    return result;
   }
 
-  Future<String?> _selectRemoteRunnerKeyId(
-    BingxFuturesTradingMandate mandate,
-  ) async {
+  Future<BingxFuturesRemoteRunnerProfile?> _selectRemoteRunner(
+    BingxFuturesTradingMandate mandate, {
+    required String accountBindingHashHex,
+  }) async {
     final expectedCapsuleRootHex = _module.activeCapsuleRootHex();
     if (expectedCapsuleRootHex == null) {
       await _showSnack('Active Capsule is unavailable.');
       return null;
     }
     String? errorText;
-    var importing = false;
-    BingxFuturesRemoteRunnerBinding? selectedBinding =
-        await _module.remoteRunnerIdentity.loadVerifiedBinding();
+    var provisioning = false;
+    var profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+    BingxFuturesRemoteRunnerProfile? selectedProfile;
+    for (final profile in profiles) {
+      if (profile.accountBindingHashHex == accountBindingHashHex) {
+        selectedProfile = profile;
+        break;
+      }
+    }
     if (!mounted) return null;
-    final result = await showDialog<String>(
+    final result = await showDialog<BingxFuturesRemoteRunnerProfile>(
       context: context,
       builder:
           (dialogContext) => StatefulBuilder(
@@ -482,45 +318,40 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                           children: [
                             FilledButton.tonalIcon(
                               onPressed:
-                                  importing
+                                  provisioning
                                       ? null
                                       : () async {
                                         setDialogState(() {
-                                          importing = true;
+                                          provisioning = true;
                                           errorText = null;
                                         });
                                         try {
-                                          final path =
-                                              await HivraFilePickerService.selectDirectory(
-                                                confirmButtonText:
-                                                    'Verify runner anchor',
+                                          final profile =
+                                              await _configureRemoteRunner(
+                                                accountBindingHashHex:
+                                                    accountBindingHashHex,
                                               );
-                                          if (path == null) return;
-                                          final binding = await _module
-                                              .remoteRunnerIdentity
-                                              .verifyAnchorDirectory(path);
-                                          await _module.remoteRunnerIdentity
-                                              .saveVerifiedBinding(
-                                                binding,
-                                                expectedCapsuleRootHex:
-                                                    expectedCapsuleRootHex,
-                                              );
-                                          selectedBinding = binding;
+                                          if (profile != null) {
+                                            profiles =
+                                                await _module
+                                                    .remoteRunnerProvisioning
+                                                    .loadProfiles();
+                                            selectedProfile = profile;
+                                          }
                                         } on FormatException catch (error) {
                                           errorText = error.message;
-                                        } catch (_) {
-                                          errorText =
-                                              'Runner key file could not be read.';
+                                        } catch (error) {
+                                          errorText = '$error';
                                         } finally {
                                           if (context.mounted) {
                                             setDialogState(() {
-                                              importing = false;
+                                              provisioning = false;
                                             });
                                           }
                                         }
                                       },
                               icon:
-                                  importing
+                                  provisioning
                                       ? const SizedBox(
                                         width: 16,
                                         height: 16,
@@ -528,20 +359,43 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                      : const Icon(Icons.key_rounded),
-                              label: const Text('Verify runner anchor'),
+                                      : const Icon(Icons.dns_rounded),
+                              label: const Text('Add VPS'),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Text(
-                          selectedBinding == null
-                              ? 'No verified runner is bound to this Capsule.'
-                              : 'Verified runner: '
-                                  '${selectedBinding!.runnerKeyId.substring(0, 16)}…\n'
-                                  'Build: ${selectedBinding!.runnerBuildId}\n'
-                                  'Plugin: ${selectedBinding!.pluginVersion}',
-                        ),
+                        if (profiles.isEmpty)
+                          const Text('No Remote Runner is configured.')
+                        else
+                          ...profiles.map((profile) {
+                            final compatible =
+                                profile.accountBindingHashHex ==
+                                accountBindingHashHex;
+                            return ListTile(
+                              enabled: compatible,
+                              selected:
+                                  selectedProfile?.profileId ==
+                                  profile.profileId,
+                              leading: Icon(
+                                compatible
+                                    ? Icons.cloud_done_rounded
+                                    : Icons.lock_outline_rounded,
+                              ),
+                              title: Text('${profile.host}:${profile.port}'),
+                              subtitle: Text(
+                                compatible
+                                    ? 'Ready · ${profile.runnerBuildId}'
+                                    : 'Bound to another BingX account',
+                              ),
+                              onTap:
+                                  compatible
+                                      ? () => setDialogState(
+                                        () => selectedProfile = profile,
+                                      )
+                                      : null,
+                            );
+                          }),
                         if (errorText != null) ...[
                           const SizedBox(height: 8),
                           Text(
@@ -557,26 +411,25 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                   actions: [
                     TextButton(
                       onPressed:
-                          importing
+                          provisioning
                               ? null
                               : () => Navigator.of(dialogContext).pop(),
                       child: const Text('Cancel'),
                     ),
                     FilledButton.icon(
                       onPressed:
-                          importing
+                          provisioning
                               ? null
                               : () {
-                                final runnerKeyId =
-                                    selectedBinding?.runnerKeyId;
-                                if (runnerKeyId == null) {
+                                final profile = selectedProfile;
+                                if (profile == null) {
                                   setDialogState(() {
                                     errorText =
-                                        'Verify one runner anchor first.';
+                                        'Add or select a Runner for this account.';
                                   });
                                   return;
                                 }
-                                Navigator.of(dialogContext).pop(runnerKeyId);
+                                Navigator.of(dialogContext).pop(profile);
                               },
                       icon: const Icon(Icons.draw_rounded),
                       label: const Text('Review and sign'),
@@ -586,5 +439,320 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
           ),
     );
     return result;
+  }
+
+  Future<BingxFuturesRemoteRunnerProfile?> _configureRemoteRunner({
+    required String accountBindingHashHex,
+  }) async {
+    final host = TextEditingController();
+    final port = TextEditingController(text: '22');
+    final username = TextEditingController(text: 'root');
+    final password = TextEditingController();
+    try {
+      final submitted = await showDialog<bool>(
+        context: context,
+        builder:
+            (dialogContext) => AlertDialog(
+              title: const Text('Add Remote Runner VPS'),
+              content: SizedBox(
+                width: 480,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: host,
+                      decoration: const InputDecoration(
+                        labelText: 'Host or IP',
+                      ),
+                    ),
+                    TextField(
+                      controller: port,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'SSH port'),
+                    ),
+                    TextField(
+                      controller: username,
+                      decoration: const InputDecoration(
+                        labelText: 'Admin user',
+                      ),
+                    ),
+                    TextField(
+                      controller: password,
+                      obscureText: true,
+                      enableSuggestions: false,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'One-time admin password',
+                        helperText:
+                            'Used once. Hivra never stores this password.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Connect securely'),
+                ),
+              ],
+            ),
+      );
+      if (submitted != true) return null;
+      final parsedPort = int.tryParse(port.text.trim());
+      if (parsedPort == null) {
+        throw const FormatException('SSH port is invalid.');
+      }
+      return await _module.remoteRunnerProvisioning.bootstrap(
+        host: host.text,
+        port: parsedPort,
+        rootUsername: username.text,
+        rootPassword: password.text,
+        accountBindingHashHex: accountBindingHashHex,
+        confirmHostKey: (algorithm, fingerprint) async {
+          if (!mounted) return false;
+          return await showDialog<bool>(
+                context: context,
+                builder:
+                    (context) => AlertDialog(
+                      title: const Text('Trust this VPS?'),
+                      content: SelectableText(
+                        'Host: ${host.text.trim()}:$parsedPort\n'
+                        'Key type: $algorithm\n'
+                        'Fingerprint: $fingerprint\n\n'
+                        'Confirm this fingerprint before Hivra sends the one-time password.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Trust and continue'),
+                        ),
+                      ],
+                    ),
+              ) ??
+              false;
+        },
+      );
+    } finally {
+      password.clear();
+      host.dispose();
+      port.dispose();
+      username.dispose();
+      password.dispose();
+    }
+  }
+}
+
+class _RemoteRunnerProfileTile extends StatefulWidget {
+  final BingxFuturesRemoteRunnerProfile profile;
+  final Future<String> Function() loadStatus;
+  final Future<String> Function() pause;
+  final Future<String> Function() revoke;
+  final Future<String> Function() remove;
+
+  const _RemoteRunnerProfileTile({
+    required this.profile,
+    required this.loadStatus,
+    required this.pause,
+    required this.revoke,
+    required this.remove,
+  });
+
+  @override
+  State<_RemoteRunnerProfileTile> createState() =>
+      _RemoteRunnerProfileTileState();
+}
+
+class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
+  late Future<String> _status = widget.loadStatus();
+  var _pausing = false;
+  var _removed = false;
+  String? _actionError;
+
+  Future<void> _runAction(
+    Future<String> Function() action, {
+    bool marksRemoved = false,
+  }) async {
+    setState(() {
+      _pausing = true;
+      _actionError = null;
+    });
+    try {
+      await action();
+      if (!mounted) return;
+      setState(() {
+        _removed = marksRemoved;
+        _status =
+            marksRemoved
+                ? Future<String>.value('Remote Runner removed')
+                : widget.loadStatus();
+      });
+    } catch (error) {
+      if (mounted) setState(() => _actionError = error.toString());
+    } finally {
+      if (mounted) setState(() => _pausing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${widget.profile.host}:${widget.profile.port}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            FutureBuilder<String>(
+              future: _status,
+              builder: (context, snapshot) {
+                final label =
+                    snapshot.connectionState == ConnectionState.waiting
+                        ? 'Checking status…'
+                        : snapshot.hasError
+                        ? 'Error: ${snapshot.error}'
+                        : snapshot.data?.trim().isNotEmpty == true
+                        ? snapshot.data!.trim()
+                        : 'Ready';
+                return Text(
+                  label,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                );
+              },
+            ),
+            if (_actionError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _actionError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed:
+                      _pausing
+                          ? null
+                          : () => setState(() => _status = widget.loadStatus()),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Refresh'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _pausing ? null : () => _runAction(widget.pause),
+                  icon: const Icon(Icons.pause_circle_outline_rounded),
+                  label: Text(_pausing ? 'Pausing' : 'Pause'),
+                ),
+                OutlinedButton.icon(
+                  onPressed:
+                      _pausing || _removed
+                          ? null
+                          : () async {
+                            final confirmed =
+                                await showDialog<bool>(
+                                  context: context,
+                                  builder:
+                                      (context) => AlertDialog(
+                                        title: const Text(
+                                          'Revoke VPS Session?',
+                                        ),
+                                        content: const Text(
+                                          'The Capsule signs an exact revocation. '
+                                          'The VPS stops that session and cannot '
+                                          'resume it. A new session must be authorized.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed:
+                                                () => Navigator.of(
+                                                  context,
+                                                ).pop(false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed:
+                                                () => Navigator.of(
+                                                  context,
+                                                ).pop(true),
+                                            child: const Text(
+                                              'Revoke VPS Session',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                ) ??
+                                false;
+                            if (!confirmed || !mounted) return;
+                            await _runAction(widget.revoke);
+                          },
+                  icon: const Icon(Icons.block_rounded),
+                  label: const Text('Revoke VPS Session'),
+                ),
+                OutlinedButton.icon(
+                  onPressed:
+                      _pausing || _removed
+                          ? null
+                          : () async {
+                            final confirmed =
+                                await showDialog<bool>(
+                                  context: context,
+                                  builder:
+                                      (context) => AlertDialog(
+                                        title: const Text(
+                                          'Remove Remote Runner?',
+                                        ),
+                                        content: Text(
+                                          'This pauses and removes the exact Runner from '
+                                          '${widget.profile.host}:${widget.profile.port}, '
+                                          'then deletes its Capsule-local SSH identity. '
+                                          'It does not delete the VPS.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed:
+                                                () => Navigator.of(
+                                                  context,
+                                                ).pop(false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed:
+                                                () => Navigator.of(
+                                                  context,
+                                                ).pop(true),
+                                            child: const Text(
+                                              'Remove exact Runner',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                ) ??
+                                false;
+                            if (!confirmed || !mounted) return;
+                            await _runAction(widget.remove, marksRemoved: true);
+                          },
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: Text(_removed ? 'Removed' : 'Remove'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

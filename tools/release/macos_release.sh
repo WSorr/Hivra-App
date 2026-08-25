@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLUTTER_DIR="$ROOT/flutter"
 APP_PATH="$FLUTTER_DIR/build/macos/Build/Products/Release/hivra_app.app"
+EMBEDDED_RUNNER_TOOL="$ROOT/tools/release/prepare_embedded_runner_bundle.sh"
 
 VERSION=""
 CHANNEL=""
@@ -162,12 +163,16 @@ info "Release preflight"
 require_clean_tracked_worktree
 
 info "Build macOS release bundle"
+"$EMBEDDED_RUNNER_TOOL"
+trap '"$EMBEDDED_RUNNER_TOOL" --clean' EXIT
 (
   cd "$FLUTTER_DIR"
   flutter build macos --release \
     --build-name "$FLUTTER_BUILD_NAME" \
     --build-number "$FLUTTER_BUILD_NUMBER"
 )
+"$EMBEDDED_RUNNER_TOOL" --clean
+trap - EXIT
 require_clean_tracked_worktree
 
 [ -d "$APP_PATH" ] || die "Release app bundle not found: $APP_PATH"

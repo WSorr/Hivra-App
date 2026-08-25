@@ -129,15 +129,35 @@ class BingxFuturesRemoteRunnerIdentityService {
     final publicKeyHex = await _readCanonicalPublicKey(
       File('${directory.path}/$_publicKeyFileName'),
     );
+    final evidenceBytes = await _readBounded(
+      File('${directory.path}/$_evidenceFileName'),
+      _maxEvidenceBytes,
+    );
+    return verifyAnchorPayload(
+      publicKeyText: '$publicKeyHex\n',
+      evidenceBytes: evidenceBytes,
+    );
+  }
+
+  Future<BingxFuturesRemoteRunnerBinding> verifyAnchorPayload({
+    required String publicKeyText,
+    required List<int> evidenceBytes,
+  }) async {
+    final encodedPublicKey = utf8.encode(publicKeyText);
+    if (encodedPublicKey.length != 65 || !publicKeyText.endsWith('\n')) {
+      throw const FormatException('Runner public key is not canonical.');
+    }
+    final publicKeyHex = publicKeyText.substring(0, 64);
+    if (!_hex64.hasMatch(publicKeyHex) ||
+        evidenceBytes.isEmpty ||
+        evidenceBytes.length > _maxEvidenceBytes) {
+      throw const FormatException('Runner anchor payload is invalid.');
+    }
     final publicKey = SimplePublicKey(
       _decodeHex(publicKeyHex),
       type: KeyPairType.ed25519,
     );
     final runnerKeyId = _evidence.runnerKeyId(publicKey);
-    final evidenceBytes = await _readBounded(
-      File('${directory.path}/$_evidenceFileName'),
-      _maxEvidenceBytes,
-    );
     final evidence = _evidence.parseShadowEvidence(evidenceBytes);
     final verdict = await _evidence.verifyShadowEvidenceContinuity(
       untrustedWireBytes: evidenceBytes,
@@ -199,6 +219,25 @@ class BingxFuturesRemoteRunnerIdentityService {
       return null;
     }
     return binding;
+  }
+
+  Future<void> deleteVerifiedBinding({
+    required String expectedRunnerKeyId,
+  }) async {
+    final capsuleHex = _activeCapsuleHex();
+    final binding = await loadVerifiedBinding();
+    if (binding == null) return;
+    if (binding.runnerKeyId != expectedRunnerKeyId) {
+      throw StateError(
+        'Remote Runner binding does not match the removed Runner.',
+      );
+    }
+    final capsuleDir = await _files.capsuleDirForHex(capsuleHex);
+    await _files.deletePluginState(
+      capsuleDir,
+      bingxFuturesTradingPluginId,
+      _bindingFileName,
+    );
   }
 
   Future<bool> _bindingAuthenticates(

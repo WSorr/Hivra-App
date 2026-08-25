@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLUTTER_DIR="$ROOT/flutter"
+EMBEDDED_RUNNER_TOOL="$ROOT/tools/release/prepare_embedded_runner_bundle.sh"
 APK_SOURCE_PATH="$FLUTTER_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
 VERSION=""
@@ -99,12 +100,16 @@ info "Release preflight"
 require_clean_tracked_worktree
 
 info "Build Android release APK"
+"$EMBEDDED_RUNNER_TOOL"
+trap '"$EMBEDDED_RUNNER_TOOL" --clean' EXIT
 (
   cd "$FLUTTER_DIR"
   flutter build apk --release \
     --build-name "$FLUTTER_BUILD_NAME" \
     --build-number "$FLUTTER_BUILD_NUMBER"
 )
+"$EMBEDDED_RUNNER_TOOL" --clean
+trap - EXIT
 require_clean_tracked_worktree
 
 [ -f "$APK_SOURCE_PATH" ] || die "Release APK not found at $APK_SOURCE_PATH"

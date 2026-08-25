@@ -74,3 +74,7 @@ Documents/Hivra/
 flutter/flutter_*.log
 *.sqlite
 *.sqlite3
+# Release-generated runner payload embedded into macOS and Android packages.
+flutter/assets/runner/runner-bundle-linux-x64.tar.gz
+flutter/assets/runner/runner-bundle-release.json
+flutter/assets/runner/runner-control

@@ -28,6 +28,7 @@ TVH_RULE_TEST="$ROOT/flutter/test/bingx_futures_tvh_rule_engine_service_test.dar
 ZONE_DECISION_TEST="$ROOT/flutter/test/bingx_futures_zone_decision_service_test.dart"
 TRADING_CYCLE_TEST="$ROOT/flutter/test/bingx_futures_trading_cycle_use_case_service_test.dart"
 TRADING_MODULE="$ROOT/flutter/lib/services/trading_drone_module_service.dart"
+REMOTE_PROVISIONING="$ROOT/flutter/lib/services/bingx_futures_remote_runner_provisioning_service.dart"
 TRADING_MODELS="$ROOT/flutter/lib/models/bingx_futures_order_tracking_models.dart"
 TRADING_SCREEN_SOURCE="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
 TRADING_SCREEN="$(mktemp)"
@@ -655,7 +656,10 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'Authorize VPS Session' "$5" &&
     rg -q '_exportSignedRemoteDeterministicSession' "$5" &&
     rg -q 'Revoke VPS Session' "$5" &&
-    rg -q '_exportSignedRemoteSessionRevocation' "$5" &&
+    rg -q '_revokeRemoteSession' "$5" &&
+    rg -q 'BingxFuturesRemoteSessionRevocation.issue' "$5" &&
+    rg -q 'Future<String> revokeSession' "$7" &&
+    rg -q "operation: 'revoke:" "$7" &&
     rg -q -- '--runner-build-id systemd-public-shadow-v1' "$6" &&
     rg -q -- '--plugin-version 0.2.3' "$6" &&
     rg -q -- '--package-digest-hex 2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889' "$6" &&
@@ -1039,7 +1043,8 @@ fi
 
 if runner_deterministic_order_is_bounded_session \
   "$RUNNER_ARTIFACT" "$DETERMINISTIC_ORDER_PROBE" "$TRADING_MODELS" \
-  "$DETERMINISTIC_ORDER_TEST" "$TRADING_SCREEN" "$RUNNER_SUPERVISOR"; then
+  "$DETERMINISTIC_ORDER_TEST" "$TRADING_SCREEN" "$RUNNER_SUPERVISOR" \
+  "$REMOTE_PROVISIONING"; then
   pass "bounded deterministic session derives serial cycle identities into the existing effect operation"
 else
   fail "bounded deterministic session lost policy binding, cadence, replay, or effect bounds"
