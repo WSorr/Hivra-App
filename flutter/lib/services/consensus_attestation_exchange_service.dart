@@ -156,13 +156,13 @@ class ConsensusAttestationExchangeService {
     );
   }
 
-  Future<void> answerStoredEvidence(
-    List<ConsensusAttestationEvidence> storedEvidence,
+  Future<void> answerAcceptedEvidence(
+    List<ConsensusAttestationEvidence> acceptedEvidence,
   ) async {
-    if (storedEvidence.isEmpty) return;
+    if (acceptedEvidence.isEmpty) return;
     final localRootHex = _sync.localRootHex();
     if (localRootHex == null) return;
-    for (final evidence in storedEvidence) {
+    for (final evidence in acceptedEvidence) {
       if (evidence.pairRootsSorted.length != 2 ||
           !evidence.pairRootsSorted.contains(localRootHex) ||
           evidence.signerRootHex == localRootHex) {
@@ -175,7 +175,7 @@ class ConsensusAttestationExchangeService {
   void _answerReadyEvidence(
     List<ConsensusAttestationEvidence> verifiedEvidence,
   ) {
-    unawaited(answerStoredEvidence(verifiedEvidence).catchError((_) {}));
+    unawaited(answerAcceptedEvidence(verifiedEvidence).catchError((_) {}));
   }
 
   Future<void> _respondToPeerEvidence(
@@ -229,9 +229,9 @@ class ConsensusAttestationExchangeService {
       receivedCount: first.receivedCount + second.receivedCount,
       storedCount: first.storedCount + second.storedCount,
       rejectedCount: first.rejectedCount + second.rejectedCount,
-      storedEvidence: <ConsensusAttestationEvidence>[
-        ...first.storedEvidence,
-        ...second.storedEvidence,
+      acceptedEvidence: <ConsensusAttestationEvidence>[
+        ...first.acceptedEvidence,
+        ...second.acceptedEvidence,
       ],
     );
   }

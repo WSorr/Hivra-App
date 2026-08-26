@@ -107,8 +107,8 @@ class AppRuntimeService {
       attestations: _consensusAttestations,
       chat: _chatDelivery,
       postProjection:
-          (result) => _attestationExchange.answerStoredEvidence(
-            result.attestations.storedEvidence,
+          (result) => _attestationExchange.answerAcceptedEvidence(
+            result.attestations.acceptedEvidence,
           ),
     );
   }

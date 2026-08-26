@@ -64,10 +64,10 @@ void main() {
               ],
         );
 
-        await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+        await service.answerAcceptedEvidence(<ConsensusAttestationEvidence>[
           peerEvidence,
         ]);
-        await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+        await service.answerAcceptedEvidence(<ConsensusAttestationEvidence>[
           peerEvidence,
         ]);
 
@@ -115,7 +115,7 @@ void main() {
             ],
       );
 
-      await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+      await service.answerAcceptedEvidence(<ConsensusAttestationEvidence>[
         stalePeerEvidence,
         localEvidence,
       ]);
@@ -166,7 +166,7 @@ void main() {
             ],
       );
 
-      await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+      await service.answerAcceptedEvidence(<ConsensusAttestationEvidence>[
         peerEvidence,
       ]);
 
