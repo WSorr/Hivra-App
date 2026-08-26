@@ -4,12 +4,10 @@ Status date: 2026-08-26
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and
 Android manual signoff recorded)
 
-Current selected unit: replace manual Hivra 1.x Trading Remote Runner terminal
-assembly with one Capsule-owned setup and control journey. The existing signed
-session, scheduler, lifecycle, and exchange-effect owners remain unchanged.
-The product path must authenticate the exact embedded merge-SHA bundle, pin the
-VPS host key, retain only a Capsule-scoped control key, deploy the already
-canonical signed session, and expose status, pause, retry, and exact removal.
+Current selected unit: none. The Capsule-owned Trading Remote Runner setup and
+control journey is complete, and the transport baseline now accepts only
+NIP-44 v2 kind `9444`. Selecting another product unit or a release candidate
+requires a separate decision.
 
 No multi-account Runner on one VPS, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
@@ -23,7 +21,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete and verify the one-screen Remote Runner setup/control journey without adding another scheduler, lifecycle, or effect path. | This board and the Trading Drone product contract |
+| What is the next 1.x step? | No unit is selected. Decide explicitly between a test release candidate and the next bounded product outcome. | This board and the relevant product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -34,7 +32,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Product Remote Runner setup/control implementation in progress | One provisioning owner authenticates and uploads the embedded exact bundle, pins the host key, and routes signed sessions to the existing lifecycle. The 1.x boundary is one account-bound Runner per Capsule and one Runner per VPS. | Focused regression, full gates, clean packaged assets, then macOS and Android setup/status/session/pause/remove smoke. | After evidence, decide whether this product unit forms the next test release candidate; multi-account VPS isolation remains a separate replacement of the singleton Linux lifecycle. |
+| **1.x maintained runtime** | Remote Runner setup/control and NIP-44-only transport baseline complete | One provisioning owner authenticates and uploads the embedded exact bundle, pins the host key, and routes signed sessions to the existing lifecycle. Transport accepts only NIP-44 v2 kind `9444`. The 1.x boundary remains one account-bound Runner per Capsule and one Runner per VPS. | Automated gates and focused macOS/Android transport smoke are complete. | Decide explicitly whether this state forms the next test release candidate; multi-account VPS isolation remains a separate replacement of the singleton Linux lifecycle. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
@@ -44,14 +42,15 @@ then open only the contract and tests for the selected product outcome.
 ### Quarantined 1.x cleanup evidence
 
 The following audit findings are maintenance evidence, not V2 reference
-mechanisms and not authorization to interrupt the selected Remote Runner unit:
+mechanisms and not automatic authorization to select another implementation
+unit:
 
 - remove the unreferenced `flutter/lib/widgets/starter_slot.dart` component;
 - scope `android_keystore_dir` in `platform/hivra-keystore/src/lib.rs` to
   Android and tests so host builds remain warning-free;
-- give every retained wire/storage compatibility path, including NIP-04 input
-  and legacy Keychain/Keystore migration, an explicit measured removal
-  condition before deleting it;
+- give every retained wire/storage compatibility path, including legacy
+  Keychain/Keystore migration, an explicit measured removal condition before
+  deleting it;
 - review the unreferenced `tools/cleanup_legacy_keychain.sh` utility against the
   canonical migration owner and either register its bounded use or remove it;
 - treat generated build caches and `dist/` residue as local artifacts owned by

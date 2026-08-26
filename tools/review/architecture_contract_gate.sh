@@ -365,8 +365,8 @@ require_present "$NOSTR_TRANSPORT" 'const APP_EVENT_KIND: Kind = Kind::Custom\(9
   "Nostr transport emits the canonical Hivra authenticated-envelope kind"
 require_present "$NOSTR_TRANSPORT" 'nip44::Version::V2' \
   "Nostr transport encrypts new envelopes with NIP-44 v2"
-require_present "$NOSTR_TRANSPORT" 'const LEGACY_NIP04_EVENT_KIND: Kind = Kind::Custom\(4\)' \
-  "deprecated NIP-04 input remains explicitly isolated from the write kind"
+require_absent "$NOSTR_TRANSPORT" 'nip04|LEGACY_NIP04_EVENT_KIND' \
+  "Nostr transport has no NIP-04 compatibility decoder"
 
 # 2) Dependency law must be present in checks and docs.
 require_present "$DEP_CHECK" 'hivra-transport must not depend on hivra-core' \
