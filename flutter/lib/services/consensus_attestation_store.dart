@@ -127,12 +127,12 @@ class ConsensusAttestationStore {
       );
       if (existing.isNotEmpty) {
         final checkpoint = existing.single;
-        if (checkpoint.delivered) {
+        if (checkpoint.delivered && now.isBefore(checkpoint.retryAfterUtc)) {
           return const ConsensusAttestationResponseReservation(
             status: ConsensusAttestationResponseReservationStatus.delivered,
           );
         }
-        if (now.isBefore(checkpoint.retryAfterUtc)) {
+        if (!checkpoint.delivered && now.isBefore(checkpoint.retryAfterUtc)) {
           return ConsensusAttestationResponseReservation(
             status: ConsensusAttestationResponseReservationStatus.coolingDown,
             retryAfterUtc: checkpoint.retryAfterUtc,

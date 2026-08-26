@@ -59,7 +59,7 @@ class ConsensusAttestationReceiveResult {
   final int receivedCount;
   final int storedCount;
   final int rejectedCount;
-  final List<ConsensusAttestationEvidence> storedEvidence;
+  final List<ConsensusAttestationEvidence> acceptedEvidence;
 
   const ConsensusAttestationReceiveResult({
     required this.code,
@@ -67,7 +67,7 @@ class ConsensusAttestationReceiveResult {
     required this.receivedCount,
     required this.storedCount,
     required this.rejectedCount,
-    this.storedEvidence = const <ConsensusAttestationEvidence>[],
+    this.acceptedEvidence = const <ConsensusAttestationEvidence>[],
   });
 }
 
@@ -344,7 +344,9 @@ class ConsensusAttestationSyncService {
       receivedCount: decoded.length,
       storedCount: stored.length,
       rejectedCount: rejected,
-      storedEvidence: List<ConsensusAttestationEvidence>.unmodifiable(stored),
+      acceptedEvidence: List<ConsensusAttestationEvidence>.unmodifiable(
+        verified,
+      ),
     );
   }
 

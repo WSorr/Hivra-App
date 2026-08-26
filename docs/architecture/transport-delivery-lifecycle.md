@@ -558,15 +558,18 @@ evidence, never hidden payload copies.
   - an automatic response reserves its checkpoint atomically before send. If
     storage is corrupt, unavailable, or at the `4096`-checkpoint bound, the
     response fails closed without a network effect;
-  - adapter-accepted send marks the checkpoint delivered. A failed or timed-out
-    send may become eligible only after a persisted `15 minute` retry boundary;
-    no process restart, relay overlap, screen refresh, or periodic receive may
-    bypass that boundary;
-  - a delivered checkpoint is terminal for that exact peer evidence and local
-    evidence pair. A different valid snapshot creates a different identity and
-    may converge independently;
-  - repeated verified envelopes remain valid evidence input but are not
-    described as newly stored and do not trigger another automatic response;
+  - adapter-accepted send marks the checkpoint delivered. Failed, timed-out,
+    and delivered responses may become eligible only after a persisted `15
+    minute` retry boundary; no process restart, relay overlap, screen refresh,
+    or periodic receive may bypass that boundary;
+  - a delivered checkpoint is terminal inside that bounded window for the
+    exact peer evidence and local evidence pair. This suppresses relay replay
+    while allowing a peer that lost operational evidence to request recovery.
+    A different valid snapshot creates a different identity and may converge
+    independently;
+  - repeated verified envelopes remain valid accepted evidence input but are
+    not described as newly stored. They reuse the same checkpoint identity and
+    cannot trigger more than one automatic response per retry window;
   - explicit pair synchronization when current two-root evidence is missing
     retains its existing user/capability path. The ready path loses blind
     fire-and-forget re-announcement and reuses the same bounded response owner;
@@ -580,10 +583,11 @@ evidence, never hidden payload copies.
   retry-boundary, success-terminal, new-snapshot, corruption/capacity,
   concurrency, and cross-Capsule regressions plus macOS/Android runtime logs
   showing that a stable snapshot reaches zero repeated automatic responses.
-- Implemented on 2026-08-03: schema-v2 checkpoint persistence, atomic
-  reserve-before-send, 15-minute failed-send cooldown, terminal adapter
-  success, exact peer/local evidence validation, duplicate-store distinction,
-  and ready-path reuse of the bounded exchange owner. Focused migration,
+- Implemented on 2026-08-03 and recovery-hardened on 2026-08-26: schema-v2
+  checkpoint persistence, atomic reserve-before-send, 15-minute bounded
+  response cooldown, exact peer/local evidence validation, duplicate-store
+  distinction, restored-peer recovery, and ready-path reuse of the bounded
+  exchange owner. Focused migration,
   identity, failure, capacity, concurrency, restart, Capsule-isolation, sync,
   exchange, and passive-coordinator tests pass (`31` tests).
 - Completed on 2026-08-03 with all repository gates and fresh build

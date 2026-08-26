@@ -1452,7 +1452,10 @@ The two-party protocol is host-owned and on demand:
    are not Core domain events and do not enter the Capsule ledger.
 4. A capsule-scoped attestation store retains only verified evidence. Evidence
    is keyed by pair roots and snapshot hash, so any pair-state change makes old
-   evidence inapplicable without mutable invalidation rules.
+   evidence inapplicable without mutable invalidation rules. A valid repeated
+   peer evidence may request the same signed response after a persisted bounded
+   cooldown so a restored peer can recover operational evidence without
+   changing pair truth or creating another stored fact.
 5. Pair execution is authorized only when exactly the two expected root
    identities have valid Ed25519 signatures over the same commitment.
 6. Missing transport, missing peer attestation, malformed participants,

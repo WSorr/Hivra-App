@@ -328,7 +328,9 @@ void main() {
       expect(result.rejectedCount, 1);
       expect(duplicate.receivedCount, 2);
       expect(duplicate.storedCount, 0);
-      expect(duplicate.storedEvidence, isEmpty);
+      expect(duplicate.acceptedEvidence.map((item) => item.recordKey), <String>[
+        peerEvidence.recordKey,
+      ]);
       expect(duplicate.rejectedCount, 1);
       expect(
         stored.map((item) => item.signerRootHex),

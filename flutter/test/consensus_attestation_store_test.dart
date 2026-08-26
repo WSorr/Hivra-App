@@ -52,7 +52,7 @@ void main() {
   });
 
   test(
-    'v1 migrates and delivered response remains terminal after restart',
+    'v1 migrates and delivered response is bounded across restart',
     () async {
       final pair = _pair(
         localRootHex: capsuleA,
@@ -114,17 +114,30 @@ void main() {
         ),
         isTrue,
       );
-      final terminal = await ConsensusAttestationStore(
+      final deliveredCooldown = await ConsensusAttestationStore(
         fileStore: fileStore,
       ).reserveResponse(
         capsuleRootHex: capsuleA,
         peerEvidenceRecordKey: pair[1].recordKey,
         localEvidenceRecordKey: pair[0].recordKey,
-        nowUtc: now.add(const Duration(days: 1)),
+        nowUtc: now.add(const Duration(minutes: 14)),
       );
       expect(
-        terminal.status,
+        deliveredCooldown.status,
         ConsensusAttestationResponseReservationStatus.delivered,
+      );
+
+      final recoveryRetry = await ConsensusAttestationStore(
+        fileStore: fileStore,
+      ).reserveResponse(
+        capsuleRootHex: capsuleA,
+        peerEvidenceRecordKey: pair[1].recordKey,
+        localEvidenceRecordKey: pair[0].recordKey,
+        nowUtc: now.add(consensusAttestationResponseRetryDelay),
+      );
+      expect(
+        recoveryRetry.status,
+        ConsensusAttestationResponseReservationStatus.reserved,
       );
     },
   );

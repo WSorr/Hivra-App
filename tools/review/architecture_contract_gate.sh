@@ -783,7 +783,9 @@ require_present "$CONSENSUS_ATTESTATION_EXCHANGE" 'markAutomaticResponseDelivere
 require_absent "$CONSENSUS_ATTESTATION_EXCHANGE" '_announceReadyEvidence|announceForPeer' \
   "pair-consensus ready state has no blind reannouncement route"
 require_present "$CONSENSUS_ATTESTATION_SYNC" 'storedCount: stored\.length' \
-  "pair-consensus receive reports only newly persisted evidence"
+  "pair-consensus receive counts only newly persisted evidence"
+require_present "$CONSENSUS_ATTESTATION_SYNC" 'acceptedEvidence: List<ConsensusAttestationEvidence>\.unmodifiable\(' \
+  "pair-consensus receive preserves verified duplicate evidence for bounded recovery"
 require_present "$RUNTIME" 'buildConsensusAttestationSyncService' \
   "runtime exposes pair-consensus attestation sync module"
 require_present "$FFI_INVITATION_API" 'queue_incoming_attestation_if_match' \
