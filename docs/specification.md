@@ -969,16 +969,9 @@ recipient in the outer `p` tag, the NIP-44 ECDH recipient, and
 
 Wire-format downgrade is forbidden. Kind `9444` is decoded only as NIP-44 v2;
 an authentication or version failure MUST fail closed and MUST NOT fall back to
-NIP-04. New sends, retries, and outbox recovery MUST emit only kind `9444`.
-
-For rolling compatibility with retained pre-migration relay history, the
-maintained 1.x receiver MAY decode a signed kind `4` event through one isolated
-read-only NIP-04 path. That path MUST apply the same exact-recipient,
-outer-signature, sender-binding, envelope-schema, payload-size, replay, and
-domain idempotence checks. It MUST NOT send NIP-04, translate an old event into
-a new outbound event, or become a second transport route. Removal of this
-read-only decoder requires an explicit compatibility decision after supported
-peers no longer depend on pre-migration kind `4` history.
+NIP-04. Sends, retries, outbox recovery, relay queries, and receive decoding
+MUST use only kind `9444`. Kind `4` is unsupported input and MUST fail closed;
+pre-NIP-44 relay history is outside the minimum supported 1.x baseline.
 
 NIP-44 authenticates the confidential payload but does not provide forward
 secrecy or post-compromise security. Hivra therefore treats it as the current

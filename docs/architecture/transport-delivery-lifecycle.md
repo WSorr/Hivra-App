@@ -233,8 +233,8 @@ Threat closure required before implementation:
 - replay is keyed by stable adapter event id and then by the owning domain's
   immutable identity;
 - wrong-recipient and cross-network input fail closed before routing;
-- downgrade input remains confined to the existing read-only compatibility
-  decoder and receives no alternate acknowledgement path;
+- kind `4` and malformed NIP-44 downgrade input fail before acknowledgement
+  and receive no alternate decoder or lifecycle path;
 - sender throttling happens only after sender binding and can choose only
   canonical consumption, durable quarantine, or visible backpressure;
 - a malicious sender cannot force unbounded memory, disk, or cursor growth.
@@ -404,9 +404,8 @@ evidence, never hidden payload copies.
   NIP-44 v2 authenticated `DeliveryEnvelope v1` ciphertext. It verifies the
   outer event before decrypt, requires exactly one matching recipient tag,
   binds the decoded sender to the event signer, and never falls back from a
-  failed NIP-44 decode to NIP-04. Deprecated kind `4`/NIP-04 is isolated to a
-  read-only rolling-compatibility decoder with the same ingress and replay
-  guards; it cannot publish or create another lifecycle path.
+  failed NIP-44 decode to NIP-04. Kind `4` is not queried or decoded and cannot
+  enter an acknowledgement or delivery lifecycle.
 - Completed in `12.3 / pass 11`: default and quick operations share one
   Capsule transport-key-owned Nostr session, relay pool, seen set, and
   per-relay cursor map. Profiles select only bounded operation timeouts; they

@@ -7,7 +7,7 @@ use crate::{
 };
 use futures::future::join_all;
 use futures::stream::{FuturesUnordered, StreamExt};
-use nostr_sdk::nips::{nip04, nip44};
+use nostr_sdk::nips::nip44;
 use nostr_sdk::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
@@ -17,10 +17,8 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::time;
 
 // Hivra uses one regular application event kind for authenticated NIP-44 v2
-// delivery envelopes. Deprecated kind-4/NIP-04 events are receive-only
-// compatibility input and are never emitted by this adapter.
+// delivery envelopes.
 const APP_EVENT_KIND: Kind = Kind::Custom(9444);
-const LEGACY_NIP04_EVENT_KIND: Kind = Kind::Custom(4);
 const CONNECT_POLL_MS: u64 = 250;
 const RECEIVE_LIMIT: usize = 2048;
 const RECEIVE_LOOKBACK_SECS: u64 = 7 * 24 * 60 * 60;
@@ -56,15 +54,6 @@ fn prioritize_read_relay_urls(mut relay_urls: Vec<String>) -> Vec<String> {
             .unwrap_or(PREFERRED_READ_RELAYS.len())
     });
     relay_urls
-}
-
-fn looks_like_nip04_content(content: &str) -> bool {
-    let mut parts = content.splitn(2, "?iv=");
-    let cipher = parts.next().unwrap_or_default();
-    let iv = parts.next().unwrap_or_default();
-
-    // NIP-04 requires a 16-byte IV. In base64 that is typically 22-24 chars.
-    !cipher.is_empty() && iv.len() >= 22
 }
 
 fn has_exact_recipient_tag(event: &Event, recipient: PublicKey) -> bool {
@@ -853,7 +842,7 @@ impl NostrTransport {
     }
 
     fn decode_event(&self, event: Event) -> Result<DeliveryEnvelope, TransportError> {
-        if event.kind != APP_EVENT_KIND && event.kind != LEGACY_NIP04_EVENT_KIND {
+        if event.kind != APP_EVENT_KIND {
             return Err(TransportError::InvalidMessage);
         }
         if event.content.len() > MAX_NOSTR_EVENT_CONTENT_BYTES {
@@ -865,20 +854,12 @@ impl NostrTransport {
             return Err(TransportError::InvalidMessage);
         }
 
-        let content = if event.kind == APP_EVENT_KIND {
-            nip44::decrypt(
-                self.keys.secret_key(),
-                &event.pubkey,
-                event.content.as_bytes(),
-            )
-            .map_err(|_| TransportError::DecodingFailed)?
-        } else {
-            if !looks_like_nip04_content(&event.content) {
-                return Err(TransportError::DecodingFailed);
-            }
-            nip04::decrypt(self.keys.secret_key(), &event.pubkey, &event.content)
-                .map_err(|_| TransportError::DecodingFailed)?
-        };
+        let content = nip44::decrypt(
+            self.keys.secret_key(),
+            &event.pubkey,
+            event.content.as_bytes(),
+        )
+        .map_err(|_| TransportError::DecodingFailed)?;
 
         let envelope: DeliveryEnvelope =
             serde_json::from_str(&content).map_err(|_| TransportError::InvalidMessage)?;
@@ -929,7 +910,7 @@ impl NostrTransport {
             .map(|relay_url| {
                 let receive_since = self.receive_since_for_relay(&relay_url);
                 let filter = Filter::new()
-                    .kinds([APP_EVENT_KIND, LEGACY_NIP04_EVENT_KIND])
+                    .kinds([APP_EVENT_KIND])
                     .pubkey(self.public_key)
                     .since(Timestamp::from(receive_since))
                     .until(Timestamp::from(
@@ -1616,7 +1597,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_nip04_is_receive_only_and_cannot_downgrade_new_kind() {
+    fn rejects_kind_four_and_nip44_downgrade_content() {
         let receiver_secret = [67u8; 32];
         let sender_secret = [68u8; 32];
         let receiver = NostrTransport::new(
@@ -1630,34 +1611,18 @@ mod tests {
         )
         .expect("receiver transport");
         let sender_keys = Keys::new(SecretKey::from_slice(&sender_secret).expect("sender key"));
-        let envelope = DeliveryEnvelope {
-            schema_version: 1,
-            from: sender_keys.public_key().to_bytes(),
-            to: receiver.public_key_bytes(),
-            kind: 1,
-            payload: vec![1, 2, 3],
-            timestamp: 1,
-            correlation_id: None,
-            domain_event: None,
-        };
-        let plaintext = serde_json::to_string(&envelope).expect("message json");
-        let legacy_content = nip04::encrypt(
-            sender_keys.secret_key(),
-            &receiver.public_key,
-            plaintext.as_str(),
-        )
-        .expect("legacy encrypt");
+        let legacy_content = "legacy-ciphertext?iv=AAAAAAAAAAAAAAAAAAAAAA==";
         let legacy_event = receiver
             .runtime
             .block_on(
                 EventBuilder::new(
-                    LEGACY_NIP04_EVENT_KIND,
-                    legacy_content.clone(),
+                    Kind::Custom(4),
+                    legacy_content,
                     [Tag::public_key(receiver.public_key)],
                 )
                 .sign(&sender_keys),
             )
-            .expect("signed legacy event");
+            .expect("signed kind-four event");
         let downgrade_event = receiver
             .runtime
             .block_on(
@@ -1670,7 +1635,10 @@ mod tests {
             )
             .expect("signed downgrade event");
 
-        assert_eq!(receiver.decode_event(legacy_event), Ok(envelope));
+        assert_eq!(
+            receiver.decode_event(legacy_event),
+            Err(TransportError::InvalidMessage),
+        );
         assert_eq!(
             receiver.decode_event(downgrade_event),
             Err(TransportError::DecodingFailed),
