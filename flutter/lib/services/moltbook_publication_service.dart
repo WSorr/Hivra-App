@@ -397,9 +397,12 @@ class MoltbookPublicationService {
   }
 
   static bool requiresReconciliation(ExternalEffectOperation operation) {
-    return (operation.state == ExternalEffectState.unresolved &&
-            operation.requiredAction == null) ||
-        canManuallyReconcileTerminalFailure(operation);
+    if (operation.state == ExternalEffectState.unresolved &&
+        operation.requiredAction == null) {
+      return true;
+    }
+    return canManuallyReconcileTerminalFailure(operation) &&
+        operation.providerReferenceId != null;
   }
 
   static Set<String> supersededPostFailureIds(

@@ -75,6 +75,30 @@ void main() {
       expect(projection.proposedCount, 1);
     });
 
+    test('history-only failure does not replace the local draft action', () {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.waiting,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: false,
+        hasQueuedEffect: false,
+        hasReplyDraft: false,
+        hasLocalDraft: true,
+        proposedCount: 1,
+        publishedCount: 10,
+        challengedCount: 0,
+        blockedCount: 1,
+      );
+
+      expect(projection.nextAction, MoltbookWorkspaceNextAction.reviewDraft);
+      expect(projection.blockedCount, 1);
+    });
+
     test('projects cycle evidence without inventing effect counts', () {
       final summary = MoltbookCycleSummary(
         ownerCapsuleHex: 'a' * 64,
