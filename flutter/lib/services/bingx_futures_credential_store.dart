@@ -46,33 +46,15 @@ class BingxFuturesCredentialStore {
   Future<BingxFuturesApiCredentials?> load() async {
     await _migrateLegacyFallbackFile();
     final primaryScope = _scopeKey();
-    final scopes = <String>[
-      primaryScope,
-      if (primaryScope != _globalScope) _globalScope,
-    ];
-
-    for (final scope in scopes) {
-      final cached = _sessionCache[scope];
-      if (cached != null) {
-        if (scope != primaryScope) {
-          await _writeScope(primaryScope, cached);
-          _sessionCache[primaryScope] = cached;
-        }
-        return cached;
-      }
+    final cached = _sessionCache[primaryScope];
+    if (cached != null) {
+      return cached;
     }
 
-    for (final scope in scopes) {
-      final loaded = await _readScopeAndPromote(scope);
-      if (loaded == null) continue;
-      _sessionCache[scope] = loaded;
-      if (scope != primaryScope) {
-        await _writeScope(primaryScope, loaded);
-        _sessionCache[primaryScope] = loaded;
-      }
-      return loaded;
-    }
-    return null;
+    final loaded = await _readScopeAndPromote(primaryScope);
+    if (loaded == null) return null;
+    _sessionCache[primaryScope] = loaded;
+    return loaded;
   }
 
   Future<void> clear() async {
