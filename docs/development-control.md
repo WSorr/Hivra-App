@@ -1,7 +1,7 @@
 # Hivra Development Control
 
 Status date: 2026-08-26
-Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and
+Current released baseline: commit `94cb1d7` (`v1.0.3-test17`, macOS and
 Android manual signoff recorded)
 
 Current selected unit: none. The Capsule-owned Trading Remote Runner setup and
@@ -33,7 +33,7 @@ then open only the contract and tests for the selected product outcome.
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
 | **1.x maintained runtime** | Remote Runner setup/control and NIP-44-only transport baseline complete | One provisioning owner authenticates and uploads the embedded exact bundle, pins the host key, and routes signed sessions to the existing lifecycle. Transport accepts only NIP-44 v2 kind `9444`. The 1.x boundary remains one account-bound Runner per Capsule and one Runner per VPS. | Automated gates and focused macOS/Android transport smoke are complete. | Decide explicitly whether this state forms the next test release candidate; multi-account VPS isolation remains a separate replacement of the singleton Linux lifecycle. |
-| **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
+| **1.x release** | `v1.0.3-test17` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
 | **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
