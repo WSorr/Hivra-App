@@ -1,16 +1,15 @@
 # Hivra Development Control
 
-Status date: 2026-08-27
-Current published test prerelease: commit `94cb1d7` (`v1.0.3-test17`). Its
-macOS and Android assets do not have valid exact-byte manual signoff and cannot
-be promoted or used as release evidence until those published bytes are
-exercised again.
+Status date: 2026-08-28
+Current published test prerelease: commit `9cd70cc` (`v1.0.3-test18`). Its
+macOS and Android assets have exact-byte manual signoff. The invalid `test17`
+evidence remains historical and cannot be reused or replaced under the old
+tag.
 
-Current selected unit: `1.x Release Candidate v1.0.3-test18`. Build the macOS
-and Android test artifacts from one clean post-merge source commit, bind their
-exact SHA-256 digests to manual signoff, and keep tag/publication blocked until
-both packaged journeys pass. The invalid `test17` evidence and assets cannot be
-reused or replaced under the old tag.
+Current selected unit: none. The bounded repository-hygiene checkpoint removed
+two orphan maintenance paths and limited an Android helper to Android/test
+compilation. The next candidate lane is Trading 24/7, but it requires a
+separately selected product outcome before implementation.
 
 No multi-account Runner on one VPS, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
@@ -24,7 +23,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete the selected `v1.0.3-test18` exact-byte packaged release candidate. | This board and the release checklists |
+| What is the next 1.x step? | Select one bounded Trading 24/7 product outcome; this status does not authorize implementation. | This board and the trading specification |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -35,8 +34,8 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Remote Runner setup/control and NIP-44-only transport baseline complete | One provisioning owner authenticates and uploads the embedded exact bundle, pins the host key, and routes signed sessions to the existing lifecycle. Transport accepts only NIP-44 v2 kind `9444`. The 1.x boundary remains one account-bound Runner per Capsule and one Runner per VPS. | Automated gates and focused macOS/Android transport smoke are complete. | This baseline is included in the selected `test18` candidate; multi-account VPS isolation remains a separate replacement of the singleton Linux lifecycle. |
-| **1.x release** | `v1.0.3-test18` candidate selected; `test17` exact-byte evidence remains invalid | Build both packaged test artifacts from one clean post-merge commit and attest their exact SHA-256 digests. | Complete macOS and Android packaged smoke, then request separate approval for guarded tag and prerelease publication. |
+| **1.x maintained runtime** | Remote Runner setup/control and NIP-44-only transport baseline complete | One provisioning owner authenticates and uploads the embedded exact bundle, pins the host key, and routes signed sessions to the existing lifecycle. Transport accepts only NIP-44 v2 kind `9444`. The 1.x boundary remains one account-bound Runner per Capsule and one Runner per VPS. | Automated gates and focused macOS/Android transport smoke are complete. | This baseline is included in published `test18`; multi-account VPS isolation remains a separate replacement of the singleton Linux lifecycle. |
+| **1.x release** | `v1.0.3-test18` published; `test17` exact-byte evidence remains invalid | The published macOS and Android assets are bound to exact SHA-256 manual signoff. | Packaged smoke, guarded tag, and prerelease publication are complete. | No later release candidate is selected. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
 | **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
@@ -48,20 +47,15 @@ The following audit findings are maintenance evidence, not V2 reference
 mechanisms and not automatic authorization to select another implementation
 unit:
 
-- remove the unreferenced `flutter/lib/widgets/starter_slot.dart` component;
-- scope `android_keystore_dir` in `platform/hivra-keystore/src/lib.rs` to
-  Android and tests so host builds remain warning-free;
 - give every retained wire/storage compatibility path, including legacy
   Keychain/Keystore migration, an explicit measured removal condition before
   deleting it;
-- review the unreferenced `tools/cleanup_legacy_keychain.sh` utility against the
-  canonical migration owner and either register its bounded use or remove it;
 - treat generated build caches and `dist/` residue as local artifacts owned by
   `tools/cleanup/clean_local_artifacts.sh`, never as source or architecture.
 
-None of these paths may be copied, renamed, or elevated into V2. A later bounded
-1.x cleanup unit must remove or consolidate them in their current owners first;
-only the resulting tested behavior may be reconsidered as V2 evidence.
+None of these paths may be copied, renamed, or elevated into V2. Further
+architecture or process cleanup is blocked unless it closes a concrete defect
+or produces a measurable product outcome.
 
 Unchecked boxes in reusable release/smoke checklists are execution templates,
 not automatically active debt. Historical pass numbering creates no future

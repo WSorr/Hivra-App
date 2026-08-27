@@ -4,7 +4,6 @@
 #![warn(missing_docs)]
 
 use std::fmt;
-use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
 const QUARANTINE_RECORD_KEY_LABEL: &[u8] = b"HIVRA_INBOUND_QUARANTINE_RECORD_KEY_v1";
@@ -244,7 +243,8 @@ fn derive_key_with_label(seed: &Seed, info: &[u8]) -> Result<[u8; 32]> {
     Ok(okm)
 }
 
-fn android_keystore_dir(files_dir: &Path) -> Result<PathBuf> {
+#[cfg(any(target_os = "android", test))]
+fn android_keystore_dir(files_dir: &std::path::Path) -> Result<std::path::PathBuf> {
     if !files_dir.is_absolute() {
         return Err(Error::PlatformError(
             "Android app-private files directory must be absolute".to_string(),
@@ -324,9 +324,12 @@ mod tests {
     #[test]
     fn android_keystore_directory_follows_the_runtime_user_files_directory() {
         assert_eq!(
-            android_keystore_dir(Path::new("/data/user/11/com.hivra.hivra_app/files",)).unwrap(),
-            PathBuf::from("/data/user/11/com.hivra.hivra_app/files/hivra-keystore"),
+            android_keystore_dir(std::path::Path::new(
+                "/data/user/11/com.hivra.hivra_app/files",
+            ))
+            .unwrap(),
+            std::path::PathBuf::from("/data/user/11/com.hivra.hivra_app/files/hivra-keystore"),
         );
-        assert!(android_keystore_dir(Path::new("relative/files")).is_err());
+        assert!(android_keystore_dir(std::path::Path::new("relative/files")).is_err());
     }
 }
