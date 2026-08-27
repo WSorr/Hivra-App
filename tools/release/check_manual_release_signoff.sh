@@ -130,6 +130,7 @@ self_test() {
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | PASS | PASS | PASS | PASS | codex | self-test |
 | v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | PASS | PASS | PASS | N/A | codex | self-test |
+| v-invalid | 2026-01-01T00:00:02Z | macOS | hivra_app-v-invalid-macos-universal.zip | 1111111111111111111111111111111111111111111111111111111111111111 | INVALID | INVALID | INVALID | INVALID | INVALID | codex | invalidated historical evidence |
 EOF
 
   HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
@@ -141,6 +142,13 @@ EOF
     --platform all >/dev/null 2>&1; then
     rm -f "$tmp"
     die "self-test expected missing build tag to fail"
+  fi
+
+  if HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
+    --build-tag v-invalid \
+    --platform macOS >/dev/null 2>&1; then
+    rm -f "$tmp"
+    die "self-test expected invalidated evidence to fail"
   fi
 
   rm -f "$tmp"
