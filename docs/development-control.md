@@ -6,10 +6,13 @@ macOS and Android assets have exact-byte manual signoff. The invalid `test17`
 evidence remains historical and cannot be reused or replaced under the old
 tag.
 
-Current selected unit: none. The bounded repository-hygiene checkpoint removed
-two orphan maintenance paths and limited an Android helper to Android/test
-compilation. The next candidate lane is Trading 24/7, but it requires a
-separately selected product outcome before implementation.
+Current selected unit: `1.x Trading 24/7 Terminal Session Enablement
+Remediation`. VPS acceptance reproduced one fresh signed LIVE session retained
+as `active` while the canonical systemd service remained inactive because a
+previous terminal session had left the same unit enabled. The existing host
+lifecycle must reuse only that exact inactive enabled unit; no second daemon,
+scheduler, or effect path is authorized. Exit requires protected merge, a fresh
+packaged Runner deployment, and bounded unattended acceptance with the app off.
 
 No multi-account Runner on one VPS, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
@@ -23,7 +26,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Select one bounded Trading 24/7 product outcome; this status does not authorize implementation. | This board and the trading specification |
+| What is the next 1.x step? | Close the selected terminal-session enablement remediation, then resume the same bounded unattended VPS acceptance. | This board and the trading specification |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -34,7 +37,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Remote Runner setup/control and NIP-44-only transport baseline complete | One provisioning owner authenticates and uploads the embedded exact bundle, pins the host key, and routes signed sessions to the existing lifecycle. Transport accepts only NIP-44 v2 kind `9444`. The 1.x boundary remains one account-bound Runner per Capsule and one Runner per VPS. | Automated gates and focused macOS/Android transport smoke are complete. | This baseline is included in published `test18`; multi-account VPS isolation remains a separate replacement of the singleton Linux lifecycle. |
+| **1.x maintained runtime** | Trading terminal-session enablement remediation selected; NIP-44-only transport baseline complete | The existing Runner lifecycle must start a fresh active session through the same inactive systemd unit even when a previous terminal session left its canonical boot link enabled. The 1.x boundary remains one account-bound Runner per Capsule and one Runner per VPS. | Regression vectors must accept only inactive canonical enablement reuse and reject active, failed, masked, or foreign state. | Merge through protected CI, deploy the exact post-merge Runner, and resume bounded unattended acceptance without adding another scheduler or effect route. |
 | **1.x release** | `v1.0.3-test18` published; `test17` exact-byte evidence remains invalid | The published macOS and Android assets are bound to exact SHA-256 manual signoff. | Packaged smoke, guarded tag, and prerelease publication are complete. | No later release candidate is selected. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

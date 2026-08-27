@@ -1012,6 +1012,12 @@ Enablement is explicit and allowed only after the retained signed session,
 Runner identity, account-bound encrypted credential, current time, and absence
 of revocation are revalidated. The service conflicts with the public-shadow
 unit, has `Restart=no`, and exits on every scheduler terminal or error outcome.
+An earlier terminal session may leave this exact service boot-enabled and
+inactive. After the old session is proven terminal and a fresh authority has
+been admitted and activated, enablement reuses and starts that same inactive
+unit; it must not reject the new session merely because the canonical boot link
+already exists. Active, failed, masked, foreign, or otherwise unexpected unit
+state remains fail-closed.
 After host reboot it starts only because the operator explicitly enabled it and
 still fails closed against the retained signed state. Pause disables and stops
 the service without mutating the signed session. Pause is idempotent after a

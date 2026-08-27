@@ -223,6 +223,17 @@ session_service_pause_recovery_action() {
   esac
 }
 
+session_service_start_disposition() {
+  local active_state="$1"
+  local enablement_state="$2"
+  [ "$active_state" = "inactive" ] || return 1
+  case "$enablement_state" in
+    linked|disabled) echo "fresh-enablement" ;;
+    enabled) echo "reuse-enablement" ;;
+    *) return 1 ;;
+  esac
+}
+
 require_retained_exchange_credential_binding() {
   local expected_account_hash="$1"
   [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
@@ -2745,10 +2756,12 @@ enable_prepared_session_service() {
     linked|disabled) ;;
     *) die "session service requires a disabled public-shadow runner" ;;
   esac
-  case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
-    linked|disabled) ;;
-    *) die "session service refused unexpected existing enablement" ;;
-  esac
+  local session_service_active session_service_enabled enablement_disposition
+  session_service_active="$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")"
+  session_service_enabled="$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)"
+  enablement_disposition="$(session_service_start_disposition \
+    "$session_service_active" "$session_service_enabled")" ||
+    die "session service refused unexpected existing state"
   local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
   [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
     die "session service requires one retained signed session"
@@ -2780,7 +2793,7 @@ enable_prepared_session_service() {
     die "session service did not become boot-enabled"
   trap - EXIT INT TERM
   rm -rf "$work"
-  echo "PASS trading-runner-artifact: persistent session service enabled session_operation_id=$session_id restart=false"
+  echo "PASS trading-runner-artifact: persistent session service enabled session_operation_id=$session_id enablement=$enablement_disposition restart=false"
 }
 
 pause_prepared_session_service() {
@@ -4397,7 +4410,16 @@ self_test() {
   if session_service_pause_recovery_action active >/dev/null 2>&1; then
     die "self-test accepted an active session after stop"
   fi
-  echo "PASS trading-runner-artifact: persistent session ownership and pause boundary"
+  [ "$(session_service_start_disposition inactive linked)" = "fresh-enablement" ] &&
+    [ "$(session_service_start_disposition inactive disabled)" = "fresh-enablement" ] &&
+    [ "$(session_service_start_disposition inactive enabled)" = "reuse-enablement" ] ||
+    die "self-test lost valid persistent session start states"
+  if session_service_start_disposition active enabled >/dev/null 2>&1 ||
+    session_service_start_disposition failed enabled >/dev/null 2>&1 ||
+    session_service_start_disposition inactive masked >/dev/null 2>&1; then
+    die "self-test accepted an invalid persistent session start state"
+  fi
+  echo "PASS trading-runner-artifact: persistent session ownership, terminal reuse, and pause boundary"
 
   local operation_store="$root/deterministic-operation-store"
   local operation_a operation_b operation_c
