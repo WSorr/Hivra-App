@@ -68,7 +68,7 @@ void main() {
     );
   });
 
-  test('reconciliation priority includes recoverable terminal effects', () {
+  test('terminal reconciliation priority requires a retained reference', () {
     final unresolved = _operation(
       state: ExternalEffectState.unresolved,
       withReceipt: false,
@@ -98,21 +98,38 @@ void main() {
       MoltbookPublicationService.requiresReconciliation(unresolved),
       isTrue,
     );
+    for (final failure in <ExternalEffectOperation>[
+      expiredAction,
+      expiredVerification,
+      rejectedDelivery,
+      unrelatedFailure,
+    ]) {
+      expect(
+        MoltbookPublicationService.requiresReconciliation(failure),
+        isFalse,
+      );
+    }
+    for (final errorCode in <String>[
+      'required_action_expired',
+      'verification_expired',
+      'http_400',
+    ]) {
+      final boundFailure = _operation(
+        state: ExternalEffectState.terminalFailure,
+        lastErrorCode: errorCode,
+        providerReferenceId: postId,
+        withReceipt: false,
+      );
+      expect(
+        MoltbookPublicationService.requiresReconciliation(boundFailure),
+        isTrue,
+      );
+    }
     expect(
-      MoltbookPublicationService.requiresReconciliation(expiredAction),
+      MoltbookPublicationService.canManuallyReconcileTerminalFailure(
+        expiredVerification,
+      ),
       isTrue,
-    );
-    expect(
-      MoltbookPublicationService.requiresReconciliation(expiredVerification),
-      isTrue,
-    );
-    expect(
-      MoltbookPublicationService.requiresReconciliation(rejectedDelivery),
-      isTrue,
-    );
-    expect(
-      MoltbookPublicationService.requiresReconciliation(unrelatedFailure),
-      isFalse,
     );
   });
 
@@ -875,6 +892,7 @@ ExternalEffectOperation _replyOperation({required String sourceDraftHashHex}) {
 ExternalEffectOperation _operation({
   required ExternalEffectState state,
   String providerReceiptId = '20e1d392-5f55-4cae-b48a-af3192dc477b',
+  String? providerReferenceId,
   String effectKind = MoltbookExternalEffectAdapter.postEffectKind,
   String? lastErrorCode,
   bool withReceipt = true,
@@ -901,6 +919,7 @@ ExternalEffectOperation _operation({
     updatedAtUtc: '2026-07-27T00:00:01.000Z',
     lastErrorCode: lastErrorCode,
     lastErrorMessage: null,
+    providerReferenceId: providerReferenceId,
     requiredAction: null,
     receipt:
         withReceipt
