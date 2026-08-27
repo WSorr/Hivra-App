@@ -32,6 +32,8 @@ void main() {
     expect(MoltbookPublicationService.succeededPostDraftHash(succeeded), _hash);
     expect(MoltbookPublicationService.succeededPostDraftHash(queued), isNull);
     expect(MoltbookPublicationService.succeededPostDraftHash(reply), isNull);
+    expect(MoltbookPublicationService.isPostPublication(queued), isTrue);
+    expect(MoltbookPublicationService.isPostPublication(reply), isFalse);
   });
 
   const postId = '20e1d392-5f55-4cae-b48a-af3192dc477b';

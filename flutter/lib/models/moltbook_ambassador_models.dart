@@ -879,6 +879,9 @@ class MoltbookWorkspaceProjection {
     required this.blockedCount,
   });
 
+  bool get canCancelQueuedEffect =>
+      nextAction == MoltbookWorkspaceNextAction.publish;
+
   factory MoltbookWorkspaceProjection.resolve({
     required bool connected,
     required bool enabled,

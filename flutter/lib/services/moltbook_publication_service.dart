@@ -460,6 +460,10 @@ class MoltbookPublicationService {
     return Map<String, dynamic>.from(decoded);
   }
 
+  static bool isPostPublication(ExternalEffectOperation operation) {
+    return operation.effectKind == MoltbookExternalEffectAdapter.postEffectKind;
+  }
+
   static bool isPersonFirstRuntimeCommunityOperation(
     ExternalEffectOperation operation,
   ) {

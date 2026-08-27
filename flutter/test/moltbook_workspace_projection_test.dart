@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:hivra_app/models/moltbook_ambassador_models.dart';
 import 'package:hivra_app/models/moltbook_provider_models.dart';
+import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
 
 void main() {
   group('MoltbookWorkspaceProjection', () {
@@ -25,6 +27,58 @@ void main() {
       );
 
       expect(projection.nextAction, MoltbookWorkspaceNextAction.reconcile);
+      expect(projection.canCancelQueuedEffect, isFalse);
+    });
+
+    testWidgets('queued publication exposes independent cancel action', (
+      tester,
+    ) async {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.idle,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: false,
+        hasQueuedEffect: true,
+        hasReplyDraft: false,
+        hasLocalDraft: true,
+        proposedCount: 1,
+        publishedCount: 1,
+        challengedCount: 0,
+        blockedCount: 0,
+      );
+      var publishCount = 0;
+      var cancelCount = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MoltbookWorkflowCard(
+              projection: projection,
+              writePolicy: MoltbookAmbassadorConfiguration.approvalAssisted,
+              triggerPolicy: MoltbookAmbassadorConfiguration.triggerOnDemand,
+              busy: false,
+              onNextAction: () => publishCount += 1,
+              onCancelQueuedEffect: () => cancelCount += 1,
+              onStop: null,
+            ),
+          ),
+        ),
+      );
+
+      expect(projection.canCancelQueuedEffect, isTrue);
+      expect(find.text('Publish approved effect'), findsOneWidget);
+      expect(find.text('Cancel approved effect'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel approved effect'));
+      await tester.pump();
+
+      expect(cancelCount, 1);
+      expect(publishCount, 0);
     });
 
     test('verification is the only next action for challenged effect', () {
