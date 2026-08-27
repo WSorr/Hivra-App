@@ -49,3 +49,6 @@ jobs:
 
       - name: Manual signoff checker self-test
         run: bash tools/release/check_manual_release_signoff.sh --self-test
+
+      - name: Release artifact binding self-test
+        run: bash tools/release/publish_github_release.sh --self-test

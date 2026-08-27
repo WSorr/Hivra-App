@@ -348,7 +348,7 @@ require_present "$CHECKLIST_DRONE_EVIDENCE" 'tools/release/check_trading_drone_e
   "drone evidence log includes coverage verification command"
 require_present "$CHECKLIST_DRONE_EVIDENCE" 'release approval is recorded separately' \
   "drone evidence log cannot replace manual release signoff"
-require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Platform \| Artifact \| Manual Smoke \| Trading Smoke \| Moltbook Smoke \| User Lifetime \| AI Engineer \| Signer \| Notes \|' \
+require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Platform \| Artifact \| Artifact SHA-256 \| Manual Smoke \| Trading Smoke \| Moltbook Smoke \| User Lifetime \| AI Engineer \| Signer \| Notes \|' \
   "manual signoff log includes required table columns"
 require_present "$MANUAL_SIGNOFF_CHECK" 'Moltbook Smoke must be PASS' \
   "manual signoff checker requires Moltbook smoke"
@@ -369,6 +369,13 @@ if "$MANUAL_SIGNOFF_CHECK" --self-test >/dev/null; then
   pass "manual signoff checker self-test passes"
 else
   fail "manual signoff checker self-test passes"
+fi
+require_present "$GITHUB_RELEASE_PUBLISH" '--self-test' \
+  "GitHub publish script has artifact-binding mutation self-test"
+if "$GITHUB_RELEASE_PUBLISH" --self-test >/dev/null; then
+  pass "GitHub publish artifact-binding self-test passes"
+else
+  fail "GitHub publish artifact-binding self-test passes"
 fi
 require_present "$DRONE_GOAL_CONTRACT" '## 2\. Three Hivra Laws \(Mandatory\)' \
   "drone goal contract includes Hivra laws section"

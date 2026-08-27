@@ -101,33 +101,66 @@ class _ThrowingSecureStorage extends FlutterSecureStorage {
 
 void main() {
   group('BingxFuturesCredentialStore', () {
-    test('loads global credentials and promotes to capsule scope', () async {
-      String? activeScope;
-      final secureStorage = _FakeSecureStorage();
-      final store = BingxFuturesCredentialStore(
-        readActiveCapsuleRootHex: () => activeScope,
-        secureStorage: secureStorage,
-      );
-      await store.save(
-        const BingxFuturesApiCredentials(
-          apiKey: 'global-key',
-          apiSecret: 'global-secret',
-        ),
-      );
+    test(
+      'does not fallback to global credentials for non-global scope',
+      () async {
+        String? activeScope;
+        final secureStorage = _FakeSecureStorage();
+        final store = BingxFuturesCredentialStore(
+          readActiveCapsuleRootHex: () => activeScope,
+          secureStorage: secureStorage,
+        );
+        await store.save(
+          const BingxFuturesApiCredentials(
+            apiKey: 'global-key',
+            apiSecret: 'global-secret',
+          ),
+        );
 
-      activeScope =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      final loaded = await store.load();
+        activeScope =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final loaded = await store.load();
 
-      expect(loaded, isNotNull);
-      expect(loaded!.apiKey, 'global-key');
-      expect(loaded.apiSecret, 'global-secret');
-      expect(
-        secureStorage.values
-            .containsKey('hivra.bingx.futures.$activeScope.credentials'),
-        isTrue,
-      );
-    });
+        expect(loaded, isNull);
+        expect(
+          secureStorage.values.containsKey(
+            'hivra.bingx.futures.$activeScope.credentials',
+          ),
+          isFalse,
+        );
+        expect(
+          secureStorage.values.containsKey(
+            'hivra.bingx.futures.global.credentials',
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'loads global credentials when no active capsule is selected',
+      () async {
+        String? activeScope;
+        final secureStorage = _FakeSecureStorage();
+        final store = BingxFuturesCredentialStore(
+          readActiveCapsuleRootHex: () => activeScope,
+          secureStorage: secureStorage,
+        );
+        await store.save(
+          const BingxFuturesApiCredentials(
+            apiKey: 'global-only-key',
+            apiSecret: 'global-only-secret',
+          ),
+        );
+
+        activeScope = null;
+        final loaded = await store.load();
+
+        expect(loaded, isNotNull);
+        expect(loaded!.apiKey, 'global-only-key');
+        expect(loaded.apiSecret, 'global-only-secret');
+      },
+    );
 
     test('does not mirror capsule save to global fallback scope', () async {
       String? activeScope =
@@ -148,15 +181,17 @@ void main() {
       final loaded = await store.load();
       expect(loaded, isNull);
       expect(
-        secureStorage.values
-            .containsKey('hivra.bingx.futures.global.credentials'),
+        secureStorage.values.containsKey(
+          'hivra.bingx.futures.global.credentials',
+        ),
         isFalse,
       );
     });
 
     test('fails closed when secure storage is unavailable', () async {
-      final tempHome =
-          await Directory.systemTemp.createTemp('hivra-cred-store-test-');
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-cred-store-test-',
+      );
       addTearDown(() async {
         if (await tempHome.exists()) {
           await tempHome.delete(recursive: true);
@@ -181,15 +216,17 @@ void main() {
         throwsA(isA<StateError>()),
       );
       expect(
-        File('${tempHome.path}/Documents/Hivra/bingx_futures_credentials.json')
-            .existsSync(),
+        File(
+          '${tempHome.path}/Documents/Hivra/bingx_futures_credentials.json',
+        ).existsSync(),
         isFalse,
       );
     });
 
     test('migrates legacy plaintext credentials into secure storage', () async {
-      final tempHome =
-          await Directory.systemTemp.createTemp('hivra-cred-store-test-');
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-cred-store-test-',
+      );
       addTearDown(() async {
         if (await tempHome.exists()) {
           await tempHome.delete(recursive: true);
@@ -216,17 +253,13 @@ void main() {
       expect(loaded, isNotNull);
       expect(loaded!.apiKey, 'durable-key');
       expect(loaded.apiSecret, 'durable-secret');
-      final secureCredentials = jsonDecode(
-        secureStorage.values['hivra.bingx.futures.$scope.credentials']!,
-      ) as Map<String, dynamic>;
-      expect(
-        secureCredentials['api_key'],
-        'durable-key',
-      );
-      expect(
-        secureCredentials['api_secret'],
-        'durable-secret',
-      );
+      final secureCredentials =
+          jsonDecode(
+                secureStorage.values['hivra.bingx.futures.$scope.credentials']!,
+              )
+              as Map<String, dynamic>;
+      expect(secureCredentials['api_key'], 'durable-key');
+      expect(secureCredentials['api_secret'], 'durable-secret');
       expect(await fallbackFile.exists(), isFalse);
     });
   });
