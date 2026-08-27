@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO="${HIVRA_RELEASE_REPO:-WSorr/Hivra-App}"
+MANUAL_SIGNOFF_LOG="${HIVRA_MANUAL_SIGNOFF_LOG:-$ROOT/docs/checklists/release-manual-signoff-log.md}"
 
 VERSION=""
 CHANNEL=""
@@ -13,6 +14,7 @@ usage() {
   cat <<'USAGE'
 Usage:
   tools/release/publish_github_release.sh --version <version> --channel <test|public> [options]
+  tools/release/publish_github_release.sh --self-test
 
 Options:
   --version <version>      Required. Existing Git tag and artifact version.
@@ -45,6 +47,91 @@ metadata_value() {
   local file="$1"
   local key="$2"
   awk -F'=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$file"
+}
+
+field_value() {
+  local row="$1"
+  local index="$2"
+  awk -F'|' -v idx="$index" '{
+    gsub(/^[ \t]+|[ \t]+$/, "", $idx)
+    print $idx
+  }' <<< "$row"
+}
+
+find_signoff_row() {
+  local platform="$1"
+  awk -F'|' -v tag="$VERSION" -v platform="$platform" '
+    $0 ~ /^\|/ {
+      original = $0
+      for (i = 1; i <= NF; i++) {
+        gsub(/^[ \t]+|[ \t]+$/, "", $i)
+      }
+      if ($2 == tag && $4 == platform) {
+        print original
+        exit
+      }
+    }
+  ' "$MANUAL_SIGNOFF_LOG"
+}
+
+require_signoff_artifact_sha() {
+  local platform="$1"
+  local artifact_path="$2"
+  local row
+  local expected_name expected_sha actual_sha
+
+  row="$(find_signoff_row "$platform")"
+  [ -n "$row" ] || die "missing $platform signoff row for $VERSION"
+
+  expected_name="$(field_value "$row" 5)"
+  expected_sha="$(field_value "$row" 6)"
+  if [ -z "$expected_name" ] || [ -z "$expected_sha" ]; then
+    die "$platform signoff row missing artifact name or artifact SHA-256"
+  fi
+
+  if [ "${artifact_path##*/}" != "$expected_name" ]; then
+    die "$platform signoff artifact mismatch (expected $expected_name, got ${artifact_path##*/})"
+  fi
+  [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || die "$platform signoff artifact sha-256 must be a lowercase 64-hex digest"
+
+  actual_sha="$(shasum -a 256 "$artifact_path" | awk '{print $1}')"
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    die "$platform artifact sha mismatch (expected $expected_sha, got $actual_sha)"
+  fi
+}
+
+self_test() {
+  local test_dir artifact artifact_copy artifact_sha
+  test_dir="$(mktemp -d)"
+  artifact="$test_dir/hivra_app-v-selftest-macos-universal.zip"
+  artifact_copy="$test_dir/hivra_app-v-selftest-macos-other.zip"
+
+  printf 'verified release bytes' > "$artifact"
+  artifact_sha="$(shasum -a 256 "$artifact" | awk '{print $1}')"
+  MANUAL_SIGNOFF_LOG="$test_dir/signoff.md"
+  VERSION="v-selftest"
+  printf '| v-selftest | 2026-01-01T00:00:00Z | macOS | %s | %s | PASS | PASS | PASS | PASS | PASS | codex | self-test |\n' \
+    "${artifact##*/}" "$artifact_sha" > "$MANUAL_SIGNOFF_LOG"
+
+  require_signoff_artifact_sha macOS "$artifact"
+
+  printf 'mutated release bytes' > "$artifact"
+  if (require_signoff_artifact_sha macOS "$artifact" >/dev/null 2>&1); then
+    rm -f "$artifact" "$MANUAL_SIGNOFF_LOG"
+    rmdir "$test_dir"
+    die "artifact digest mutation was accepted"
+  fi
+
+  printf 'verified release bytes' > "$artifact_copy"
+  if (require_signoff_artifact_sha macOS "$artifact_copy" >/dev/null 2>&1); then
+    rm -f "$artifact" "$artifact_copy" "$MANUAL_SIGNOFF_LOG"
+    rmdir "$test_dir"
+    die "artifact name mutation was accepted"
+  fi
+
+  rm -f "$artifact" "$artifact_copy" "$MANUAL_SIGNOFF_LOG"
+  rmdir "$test_dir"
+  echo "PASS release-publication: self-test"
 }
 
 require_clean_tracked_worktree() {
@@ -118,6 +205,11 @@ while [ $# -gt 0 ]; do
       NOTES_FILE="${2:-}"
       shift 2
       ;;
+    --self-test)
+      require_cmd shasum
+      self_test
+      exit 0
+      ;;
     --help|-h)
       usage
       exit 0
@@ -173,6 +265,9 @@ ANDROID_META="$ANDROID_DIR/RELEASE-METADATA.txt"
 [ -f "$ANDROID_META" ] || die "Missing Android metadata: $ANDROID_META"
 verify_release_metadata "$MAC_META" "macOS"
 verify_release_metadata "$ANDROID_META" "Android"
+
+require_signoff_artifact_sha macOS "$MAC_ASSET"
+require_signoff_artifact_sha Android "$ANDROID_ASSET"
 
 PUBLISH_DIR="$ROOT/dist/${VERSION}-${CHANNEL}-publish"
 mkdir -p "$PUBLISH_DIR"

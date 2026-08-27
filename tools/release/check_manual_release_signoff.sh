@@ -69,17 +69,20 @@ check_platform() {
   [ -n "$row" ] || die "missing $platform signoff row for $BUILD_TAG in $LOG_FILE"
 
   local date artifact manual trading moltbook lifetime ai signer
+  local artifact_sha256
   date="$(field_value "$row" 3)"
   artifact="$(field_value "$row" 5)"
-  manual="$(field_value "$row" 6)"
-  trading="$(field_value "$row" 7)"
-  moltbook="$(field_value "$row" 8)"
-  lifetime="$(field_value "$row" 9)"
-  ai="$(field_value "$row" 10)"
-  signer="$(field_value "$row" 11)"
+  artifact_sha256="$(field_value "$row" 6)"
+  manual="$(field_value "$row" 7)"
+  trading="$(field_value "$row" 8)"
+  moltbook="$(field_value "$row" 9)"
+  lifetime="$(field_value "$row" 10)"
+  ai="$(field_value "$row" 11)"
+  signer="$(field_value "$row" 12)"
 
   [ -n "$date" ] || die "$platform signoff row has empty date"
   [ -n "$artifact" ] || die "$platform signoff row has empty artifact"
+  [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]] || die "$platform signoff row artifact sha256 must be a lowercase 64-hex digest"
   [ -n "$signer" ] || die "$platform signoff row has empty signer"
   [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
     die "$platform signoff date must be UTC ISO-8601 seconds: $date"
@@ -123,10 +126,10 @@ self_test() {
   cat > "$tmp" <<'EOF'
 # Release Manual Signoff Log
 
-| Build Tag | Date (UTC) | Platform | Artifact | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Engineer | Signer | Notes |
-|---|---|---|---|---|---|---|---|---|---|---|
-| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | PASS | PASS | PASS | PASS | PASS | codex | self-test |
-| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | PASS | PASS | PASS | PASS | N/A | codex | self-test |
+| Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Engineer | Signer | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | PASS | PASS | PASS | PASS | codex | self-test |
+| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | PASS | PASS | PASS | N/A | codex | self-test |
 EOF
 
   HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
