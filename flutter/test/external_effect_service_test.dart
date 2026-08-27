@@ -760,6 +760,29 @@ void main() {
     expect(adapter.reconcileCount, 0);
   });
 
+  test('cancelled operation remains sealed after service restart', () async {
+    final firstAdapter = _FakeExternalEffectAdapter();
+    final first = build(firstAdapter);
+    await prepareApprovedQueued(first);
+    await first.cancel(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: 'post-1',
+    );
+
+    final restartedAdapter = _FakeExternalEffectAdapter();
+    final restarted = build(restartedAdapter);
+    final retained = await restarted.list(pluginId: moltbookAmbassadorPluginId);
+    expect(retained.single.state, ExternalEffectState.cancelled);
+
+    final replay = await restarted.process(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: 'post-1',
+    );
+    expect(replay.state, ExternalEffectState.cancelled);
+    expect(restartedAdapter.deliverCount, 0);
+    expect(restartedAdapter.reconcileCount, 0);
+  });
+
   test('operation id collision with another payload fails closed', () async {
     final service = build(_FakeExternalEffectAdapter());
     await service.prepare(

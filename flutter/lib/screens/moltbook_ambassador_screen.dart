@@ -1203,6 +1203,80 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _cancelQueuedPublication(
+    ExternalEffectOperation operation,
+  ) async {
+    final payload = MoltbookPublicationService.decodePayload(operation);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Cancel approved publication?'),
+            content: SizedBox(
+              width: 620,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Account: ${payload['account_name']}\n'
+                      'Destination: m/${payload['submolt_name']}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 14),
+                    SelectableText(
+                      payload['title'].toString(),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No provider request will be made. The cancelled effect remains in local history, and the local draft remains available for review or deletion.',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep queued'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Cancel publication'),
+              ),
+            ],
+          ),
+    );
+    if (!mounted || confirmed != true) return;
+    setState(() => _publicationBusy = true);
+    try {
+      final result = await widget.module.cancelMoltbookPublication(
+        operation.operationId,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      if (!mounted) return;
+      setState(() => _publications = publications);
+      _showNotice(
+        result.state == ExternalEffectState.cancelled
+            ? 'Approved publication cancelled without delivery'
+            : 'Cancellation state: ${result.state.wireName}',
+        isError: result.state != ExternalEffectState.cancelled,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not cancel publication: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
   Future<void> _reconcilePublication(ExternalEffectOperation operation) async {
     var providerReferenceId = operation.providerReferenceId;
     final payload = MoltbookPublicationService.decodePayload(operation);
@@ -1431,6 +1505,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     final queuedOperation = _latestOperationWhere(
       (operation) => operation.state == ExternalEffectState.queued,
     );
+    final queuedPostOperation =
+        queuedOperation != null &&
+                MoltbookPublicationService.isPostPublication(queuedOperation)
+            ? queuedOperation
+            : null;
     final preparedReplyOperation = _latestOperationWhere((operation) {
       if (operation.state != ExternalEffectState.prepared) return false;
       try {
@@ -1540,7 +1619,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      _MoltbookWorkflowCard(
+                      MoltbookWorkflowCard(
                         projection: projection,
                         writePolicy: _approvalMode,
                         triggerPolicy: _triggerPolicy,
@@ -1552,6 +1631,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                             _publicationBusy ||
                             _saving,
                         onNextAction: nextAction,
+                        onCancelQueuedEffect:
+                            projection.canCancelQueuedEffect &&
+                                    queuedPostOperation != null
+                                ? () => _cancelQueuedPublication(
+                                  queuedPostOperation,
+                                )
+                                : null,
                         onStop: _saving ? null : _stopCycles,
                       ),
                       const SizedBox(height: 14),
@@ -1960,20 +2046,23 @@ class _MoltbookWorkspaceSection extends StatelessWidget {
   }
 }
 
-class _MoltbookWorkflowCard extends StatelessWidget {
+class MoltbookWorkflowCard extends StatelessWidget {
   final MoltbookWorkspaceProjection projection;
   final String writePolicy;
   final String triggerPolicy;
   final bool busy;
   final VoidCallback? onNextAction;
+  final VoidCallback? onCancelQueuedEffect;
   final VoidCallback? onStop;
 
-  const _MoltbookWorkflowCard({
+  const MoltbookWorkflowCard({
+    super.key,
     required this.projection,
     required this.writePolicy,
     required this.triggerPolicy,
     required this.busy,
     required this.onNextAction,
+    required this.onCancelQueuedEffect,
     required this.onStop,
   });
 
@@ -2174,6 +2263,18 @@ class _MoltbookWorkflowCard extends StatelessWidget {
                   ],
                 ],
               ),
+              if (projection.canCancelQueuedEffect &&
+                  onCancelQueuedEffect != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: busy ? null : onCancelQueuedEffect,
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text('Cancel approved effect'),
+                  ),
+                ),
+              ],
             ],
           ],
         ),
