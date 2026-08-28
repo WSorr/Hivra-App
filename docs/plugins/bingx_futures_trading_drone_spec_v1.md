@@ -977,6 +977,16 @@ export failure removes only that exact installed bundle. Provisioning cannot
 load exchange credentials, admit a mandate, enable the unit, schedule a cycle,
 or contact the exchange.
 
+When that exact disabled Runner already exists, the same provisioning use case
+may replace only its verified bundle bytes. Both Runner units must be inactive
+and disabled, the retained Runner identity must match the requesting Capsule,
+and the new bundle must be verified before one atomic directory exchange.
+Runner identity, control identity, encrypted credentials, signed session state,
+effect journal, and receipts remain on their existing paths and must be
+byte-identical after the exchange. Interrupted replay either completes the
+same verified exchange or retains the previous verified bundle; it never
+uninstalls or reconstructs operational state.
+
 The 1.x Trading Drone screen may export a bounded session only after an active
 bounded mandate exists and the active Capsule has imported the exact two-file
 runner anchor. The Capsule verifies the public-key fingerprint, canonical
