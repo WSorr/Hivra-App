@@ -243,6 +243,58 @@ runner_bundle_install_is_fail_closed() {
     rg -q 'exact disabled install retained identity and uninstalled without enablement' "$1"
 }
 
+runner_bundle_upgrade_is_state_preserving() {
+  python3 - "$1" "$2" <<'PY'
+import pathlib
+import sys
+
+owner = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+provisioning = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+try:
+    upgrade = owner.split("upgrade_disabled() {", 1)[1].split("\nuninstall_disabled() {", 1)[0]
+except IndexError:
+    raise SystemExit(1)
+required = [
+    '--upgrade-disabled <artifact-dir>',
+    'atomic_exchange_directories "$BUNDLE_INSTALL_PATH" "$staged_path"',
+    'require_exact_installed_bundle "$directory"',
+    'disabled upgrade requires both units to be inactive',
+    'disabled upgrade refused boot enablement',
+    'read_installed_runner_key_id',
+    'tree_digest "$STATE_DIRECTORY"',
+    'sha256_file "$CREDENTIAL_INSTALL_PATH"',
+    'sha256_file "$EXCHANGE_CREDENTIAL_INSTALL_PATH"',
+    'assert_upgrade_state_preserved',
+    'systemctl daemon-reload',
+]
+if any(value not in owner if value.startswith('--') else value not in upgrade for value in required):
+    raise SystemExit(1)
+for forbidden in (
+    'systemctl start',
+    'systemctl enable',
+    'rm -rf "$STATE_DIRECTORY"',
+    'rm -f "$CREDENTIAL_INSTALL_PATH"',
+    'rm -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH"',
+    'openApi/',
+):
+    if forbidden in upgrade:
+        raise SystemExit(1)
+bootstrap_required = [
+    'existing Runner has no control identity',
+    'VPS already belongs to another Remote Runner',
+    '"\\$bundle/hivra-trading-runner-lifecycle" --upgrade-disabled "\\$bundle" --expected-runner-key-id "\\$runner_key_id"',
+    '/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --verify /opt/hivra/trading-public-shadow >/dev/null',
+]
+if any(value not in provisioning for value in bootstrap_required):
+    raise SystemExit(1)
+upgrade_call = provisioning.index(bootstrap_required[2])
+if provisioning.index(bootstrap_required[0]) > upgrade_call or provisioning.index(bootstrap_required[1]) > upgrade_call:
+    raise SystemExit(1)
+if provisioning.rfind(bootstrap_required[3]) < upgrade_call:
+    raise SystemExit(1)
+PY
+}
+
 runner_activation_is_identity_bound() {
   python3 - "$1" <<'PY'
 import pathlib
@@ -1032,6 +1084,13 @@ else
   fail "runner bundle exact-unit smoke lost collision, credential, enablement, or cleanup safety"
 fi
 
+if runner_bundle_upgrade_is_state_preserving \
+  "$RUNNER_ARTIFACT" "$REMOTE_PROVISIONING"; then
+  pass "Runner bundle upgrade is atomic, identity-bound, and preserves operational state"
+else
+  fail "Runner bundle upgrade lost atomic exchange, identity binding, or state preservation"
+fi
+
 if runner_activation_is_identity_bound "$RUNNER_ARTIFACT"; then
   pass "runner activation is explicit, identity-bound, rollback-safe, and exactly reversible"
 else
@@ -1179,6 +1238,9 @@ PROBE_IDENTITY_MUTATION="$(mktemp)"
 BUNDLE_IDENTITY_MUTATION="$(mktemp)"
 BUNDLE_FOREIGN_STATE_MUTATION="$(mktemp)"
 BUNDLE_EARLY_ANCHOR_MUTATION="$(mktemp)"
+BUNDLE_UPGRADE_EXCHANGE_MUTATION="$(mktemp)"
+BUNDLE_UPGRADE_STATE_MUTATION="$(mktemp)"
+BOOTSTRAP_UPGRADE_MUTATION="$(mktemp)"
 ACTIVATION_IDENTITY_MUTATION="$(mktemp)"
 ACTIVATION_ROLLBACK_MUTATION="$(mktemp)"
 INITIALIZATION_ENABLE_MUTATION="$(mktemp)"
@@ -1207,7 +1269,7 @@ LOCAL_SESSION_WIRING_MUTATION="$(mktemp)"
 LIQUIDITY_AUTHORITY_MUTATION="$(mktemp)"
 LIQUIDATION_ANCHOR_MUTATION="$(mktemp)"
 LIQUIDITY_TARGET_MUTATION="$(mktemp)"
-trap 'rm -f "$TRADING_SCREEN" "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$PREPARED_SESSION_SCHEDULER_LOCK_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
+trap 'rm -f "$TRADING_SCREEN" "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$BUNDLE_UPGRADE_EXCHANGE_MUTATION" "$BUNDLE_UPGRADE_STATE_MUTATION" "$BOOTSTRAP_UPGRADE_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$PREPARED_SESSION_SCHEDULER_LOCK_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -1262,6 +1324,12 @@ awk '{
   }
   print
 }' "$RUNNER_ARTIFACT" > "$BUNDLE_EARLY_ANCHOR_MUTATION"
+sed '/atomic_exchange_directories "\$BUNDLE_INSTALL_PATH" "\$staged_path"/d' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_UPGRADE_EXCHANGE_MUTATION"
+sed '/assert_upgrade_state_preserved/,+1d' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_UPGRADE_STATE_MUTATION"
+sed '/--upgrade-disabled "\\\$bundle" --expected-runner-key-id/d' \
+  "$REMOTE_PROVISIONING" > "$BOOTSTRAP_UPGRADE_MUTATION"
 sed 's/\[ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" \]/true/' \
   "$RUNNER_ARTIFACT" > "$ACTIVATION_IDENTITY_MUTATION"
 sed '/unlink "\$wants_path"/d' \
@@ -1348,6 +1416,9 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_IDENTITY_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_FOREIGN_STATE_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_EARLY_ANCHOR_MUTATION" && \
+  ! runner_bundle_upgrade_is_state_preserving "$BUNDLE_UPGRADE_EXCHANGE_MUTATION" "$REMOTE_PROVISIONING" && \
+  ! runner_bundle_upgrade_is_state_preserving "$BUNDLE_UPGRADE_STATE_MUTATION" "$REMOTE_PROVISIONING" && \
+  ! runner_bundle_upgrade_is_state_preserving "$RUNNER_ARTIFACT" "$BOOTSTRAP_UPGRADE_MUTATION" && \
   ! runner_activation_is_identity_bound "$ACTIVATION_IDENTITY_MUTATION" && \
   ! runner_activation_is_identity_bound "$ACTIVATION_ROLLBACK_MUTATION" && \
   ! runner_activation_is_identity_bound "$INITIALIZATION_ENABLE_MUTATION" && \

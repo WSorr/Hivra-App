@@ -66,6 +66,8 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --initialize-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --provision-disabled <artifact-dir>
     --anchor-output <absolute-new-directory>
+  tools/trading/public_shadow_runner_artifact.sh --upgrade-disabled <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --activate <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --deactivate <artifact-dir>
@@ -151,6 +153,10 @@ outcome. It cannot capture market data, create an intent, or deliver an order.
 Provisioning composes exact verification, disabled installation, one identity
 initialization, and signed anchor export. The unit remains disabled and inactive;
 any failed initialization or anchor export removes only the exact installed bundle.
+Disabled upgrade atomically exchanges only the verified bundle directory while
+both units are inactive and disabled. Runner identity, encrypted credentials,
+signed session state, effect journal, receipts, and control identity remain on
+their existing paths and must be byte-identical after the exchange.
 EOF
 }
 
@@ -754,6 +760,71 @@ sha256_stdin() {
   fi
 }
 
+atomic_exchange_directories() {
+  python3 - "$1" "$2" <<'PY'
+import ctypes
+import os
+import pathlib
+import sys
+
+left, right = map(pathlib.Path, sys.argv[1:])
+for path in (left, right):
+    if not path.is_absolute() or path.is_symlink() or not path.is_dir():
+        raise SystemExit("atomic exchange requires two real absolute directories")
+
+libc = ctypes.CDLL(None, use_errno=True)
+renameat2 = getattr(libc, "renameat2", None)
+if renameat2 is None:
+    raise SystemExit("renameat2 is unavailable")
+renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+renameat2.restype = ctypes.c_int
+at_fdcwd = -100
+rename_exchange = 2
+if renameat2(
+    at_fdcwd,
+    os.fsencode(left),
+    at_fdcwd,
+    os.fsencode(right),
+    rename_exchange,
+) != 0:
+    error = ctypes.get_errno()
+    raise OSError(error, os.strerror(error))
+PY
+}
+
+tree_digest() {
+  local root
+  root="$(readlink -f -- "$1")"
+  [ -d "$root" ] && [ ! -L "$root" ] ||
+    die "state digest requires one real directory"
+  (
+    cd "$root"
+    find . -xdev -type f -print0 | sort -z | xargs -0 sha256sum
+  ) | sha256_stdin
+}
+
+assert_upgrade_state_preserved() {
+  local expected_state="$1"
+  local expected_runner_credential="$2"
+  local expected_exchange_credential="$3"
+  [ "$(tree_digest "$STATE_DIRECTORY")" = "$expected_state" ] ||
+    die "disabled upgrade changed Runner state"
+  [ "$(sha256_file "$CREDENTIAL_INSTALL_PATH")" = \
+    "$expected_runner_credential" ] ||
+    die "disabled upgrade changed the Runner credential"
+  if [ -n "$expected_exchange_credential" ]; then
+    [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+      [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+      [ "$(sha256_file "$EXCHANGE_CREDENTIAL_INSTALL_PATH")" = \
+        "$expected_exchange_credential" ] ||
+      die "disabled upgrade changed the exchange credential"
+  else
+    [ ! -e "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+      [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+      die "disabled upgrade created an exchange credential"
+  fi
+}
+
 runtime_smoke_artifact() {
   local directory="$1"
   local binary="$directory/$BINARY_NAME"
@@ -795,8 +866,18 @@ runtime_smoke_artifact() {
     rm -rf "$smoke_root"
     die "runtime smoke did not reach the fail-closed effect boundary"
   }
+  mkdir "$smoke_root/exchange-left" "$smoke_root/exchange-right"
+  printf 'left\n' > "$smoke_root/exchange-left/value"
+  printf 'right\n' > "$smoke_root/exchange-right/value"
+  atomic_exchange_directories \
+    "$smoke_root/exchange-left" "$smoke_root/exchange-right"
+  [ "$(cat "$smoke_root/exchange-left/value")" = "right" ] &&
+    [ "$(cat "$smoke_root/exchange-right/value")" = "left" ] || {
+    rm -rf "$smoke_root"
+    die "runtime smoke could not atomically exchange Runner bundles"
+  }
   rm -rf "$smoke_root"
-  echo "PASS trading-runner-artifact: Linux x64 runtime starts and rejects missing authority"
+  echo "PASS trading-runner-artifact: Linux x64 runtime starts, rejects missing authority, and atomically exchanges bundles"
 }
 
 die() {
@@ -4248,6 +4329,149 @@ install_disabled() {
   echo "PASS trading-runner-artifact: installed exact unit disabled and inactive"
 }
 
+stage_upgrade_bundle() {
+  local source="$1"
+  local target="$2"
+  [ ! -e "$target" ] && [ ! -L "$target" ] ||
+    die "disabled upgrade staging target already exists"
+  pending_upgrade_path="$(mktemp -d /opt/hivra/.trading-public-shadow.upgrade.pending.XXXXXX)"
+  install -m 0755 "$source/$BINARY_NAME" "$pending_upgrade_path/$BINARY_NAME"
+  install -m 0755 "$source/$EFFECT_BINARY_NAME" "$pending_upgrade_path/$EFFECT_BINARY_NAME"
+  install -m 0644 "$source/$UNIT_NAME" "$pending_upgrade_path/$UNIT_NAME"
+  install -m 0644 "$source/$SESSION_UNIT_NAME" "$pending_upgrade_path/$SESSION_UNIT_NAME"
+  install -m 0755 "$source/$LIFECYCLE_NAME" "$pending_upgrade_path/$LIFECYCLE_NAME"
+  install -m 0600 "$source/$MANIFEST_NAME" "$pending_upgrade_path/$MANIFEST_NAME"
+  verify_artifact "$pending_upgrade_path" >/dev/null
+  cmp -s "$pending_upgrade_path/$MANIFEST_NAME" "$source/$MANIFEST_NAME" ||
+    die "disabled upgrade staged the wrong manifest"
+  mv "$pending_upgrade_path" "$target"
+  pending_upgrade_path=""
+}
+
+upgrade_disabled() {
+  local directory="$1"
+  require_install_host "$directory"
+  require_expected_runner_key_id
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  local staged_path="/opt/hivra/.trading-public-shadow.upgrade"
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  local session_wants_path="/etc/systemd/system/multi-user.target.wants/$SESSION_UNIT_NAME"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+
+  [ -d "$BUNDLE_INSTALL_PATH" ] && [ ! -L "$BUNDLE_INSTALL_PATH" ] ||
+    die "disabled upgrade requires the canonical real bundle directory"
+  verify_artifact "$BUNDLE_INSTALL_PATH" >/dev/null
+  [ -L "$UNIT_LINK_PATH" ] &&
+    [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
+    die "disabled upgrade refused a foreign unit link"
+  [ -L "$SESSION_UNIT_LINK_PATH" ] &&
+    [ "$(readlink "$SESSION_UNIT_LINK_PATH")" = "$SESSION_UNIT_INSTALL_PATH" ] ||
+    die "disabled upgrade refused a foreign session unit link"
+  [ -f "$CREDENTIAL_INSTALL_PATH" ] && [ ! -L "$CREDENTIAL_INSTALL_PATH" ] ||
+    die "disabled upgrade refused a foreign Runner credential"
+  if [ -e "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    [ -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ]; then
+    [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+      [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+      die "disabled upgrade refused a foreign exchange credential"
+  fi
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "disabled upgrade refused another Runner identity"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] &&
+    [ "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")" = "inactive" ] ||
+    die "disabled upgrade requires both units to be inactive"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "disabled upgrade refused an enabled Runner unit" ;;
+  esac
+  case "$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "disabled upgrade refused an enabled session unit" ;;
+  esac
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] &&
+    [ ! -e "$session_wants_path" ] && [ ! -L "$session_wants_path" ] ||
+    die "disabled upgrade refused boot enablement"
+
+  local state_before
+  local runner_credential_before
+  local exchange_credential_before=""
+  state_before="$(tree_digest "$STATE_DIRECTORY")"
+  runner_credential_before="$(sha256_file "$CREDENTIAL_INSTALL_PATH")"
+  if [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ]; then
+    exchange_credential_before="$(sha256_file "$EXCHANGE_CREDENTIAL_INSTALL_PATH")"
+  fi
+
+  local exchanged=0
+  local pending_upgrade_path=""
+  rollback_disabled_upgrade() {
+    set +e
+    if [ "$exchanged" = 1 ] &&
+      [ -d "$staged_path" ] && [ ! -L "$staged_path" ] &&
+      [ -d "$BUNDLE_INSTALL_PATH" ] && [ ! -L "$BUNDLE_INSTALL_PATH" ]; then
+      if atomic_exchange_directories \
+        "$BUNDLE_INSTALL_PATH" "$staged_path" >/dev/null 2>&1; then
+        exchanged=0
+        systemctl daemon-reload >/dev/null 2>&1
+      fi
+    fi
+    if [ "$exchanged" = 0 ] &&
+      [ -d "$staged_path" ] && [ ! -L "$staged_path" ] &&
+      cmp -s "$staged_path/$MANIFEST_NAME" "$directory/$MANIFEST_NAME"; then
+      rm -rf "$staged_path"
+    fi
+    if [[ "$pending_upgrade_path" == \
+      /opt/hivra/.trading-public-shadow.upgrade.pending.* ]] &&
+      [ -d "$pending_upgrade_path" ] && [ ! -L "$pending_upgrade_path" ]; then
+      rm -rf "$pending_upgrade_path"
+    fi
+    rm -f "$lock_path"
+  }
+  trap rollback_disabled_upgrade EXIT INT TERM
+
+  if cmp -s "$BUNDLE_INSTALL_PATH/$MANIFEST_NAME" \
+    "$directory/$MANIFEST_NAME"; then
+    require_exact_installed_bundle "$directory"
+    if [ -e "$staged_path" ] || [ -L "$staged_path" ]; then
+      [ -d "$staged_path" ] && [ ! -L "$staged_path" ] ||
+        die "disabled upgrade found a foreign recovery path"
+      verify_artifact "$staged_path" >/dev/null
+      rm -rf "$staged_path"
+    fi
+    systemctl daemon-reload
+    assert_upgrade_state_preserved \
+      "$state_before" "$runner_credential_before" "$exchange_credential_before"
+    trap - EXIT INT TERM
+    rm -f "$lock_path"
+    exec 9>&-
+    echo "PASS trading-runner-artifact: exact disabled bundle upgrade replay preserved state"
+    return 0
+  fi
+
+  if [ -e "$staged_path" ] || [ -L "$staged_path" ]; then
+    [ -d "$staged_path" ] && [ ! -L "$staged_path" ] ||
+      die "disabled upgrade found a foreign staging path"
+    verify_artifact "$staged_path" >/dev/null
+    cmp -s "$staged_path/$MANIFEST_NAME" "$directory/$MANIFEST_NAME" ||
+      die "disabled upgrade found conflicting staged bytes"
+  else
+    stage_upgrade_bundle "$directory" "$staged_path"
+  fi
+
+  atomic_exchange_directories "$BUNDLE_INSTALL_PATH" "$staged_path"
+  exchanged=1
+  require_exact_installed_bundle "$directory"
+  systemctl daemon-reload
+  assert_upgrade_state_preserved \
+    "$state_before" "$runner_credential_before" "$exchange_credential_before"
+  rm -rf "$staged_path"
+  exchanged=0
+  trap - EXIT INT TERM
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: upgraded exact disabled bundle and preserved state"
+}
+
 uninstall_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -5455,7 +5679,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--run-prepared-session|--enable-prepared-session-service|--pause-prepared-session-service|--prepared-session-service-status|--export-completed-session-effects|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--upgrade-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--run-prepared-session|--enable-prepared-session-service|--pause-prepared-session-service|--prepared-session-service-status|--export-completed-session-effects|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -5575,6 +5799,13 @@ case "$MODE" in
       [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -n "$ANCHOR_OUTPUT" ] ||
       die "disabled provisioning accepts only one anchor output"
     provision_disabled "$ARTIFACT_DIR"
+    ;;
+  upgrade-disabled)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] &&
+      [ -z "$REVOCATION_ARTIFACT" ] && [ -n "$EXPECTED_RUNNER_KEY_ID" ] ||
+      die "disabled upgrade requires only the exact Runner identity"
+    upgrade_disabled "$ARTIFACT_DIR"
     ;;
   activate)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

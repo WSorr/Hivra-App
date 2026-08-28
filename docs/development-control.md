@@ -13,9 +13,14 @@ existing local managed-order projection displayed that order as exchange-only.
 The existing Runner lifecycle must expose only the completed operation from the
 exact locally retained signed session, and the existing managed-order owner must
 reconcile that evidence without adopting unrelated exchange orders. No second
-journal, scheduler, or effect path is authorized. Exit requires protected merge,
-a fresh packaged Runner deployment, and restart evidence that the exact remote
-order is classified as Drone without another provider POST.
+journal, scheduler, or effect path is authorized. The first post-merge smoke
+found that fresh provisioning rejected a different installed bundle while
+exact uninstall would delete the retained receipt state. The existing host
+lifecycle must therefore atomically upgrade only the disabled bundle while
+preserving identity, credentials, signed session, effect journal, and receipt.
+Exit requires protected merge, a fresh packaged Runner deployment, and restart
+evidence that the exact remote order is classified as Drone without another
+provider POST.
 
 No multi-account Runner on one VPS, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime

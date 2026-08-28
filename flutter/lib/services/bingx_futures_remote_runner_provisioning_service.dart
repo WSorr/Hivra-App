@@ -901,7 +901,6 @@ bundle="\$work/linux-x64"
 expected_public_key="\$(printf '%s' '$publicKeyBase64' | base64 -d)"
 if [ -x /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle ]; then
   /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --verify /opt/hivra/trading-public-shadow >/dev/null
-  cmp -s "\$bundle/ARTIFACT-MANIFEST.v2" /opt/hivra/trading-public-shadow/ARTIFACT-MANIFEST.v2 || { echo "installed Runner build differs from this Hivra release" >&2; exit 1; }
   [ -f /var/lib/hivra-runner-control/.ssh/key.pub ] || { echo "existing Runner has no control identity" >&2; exit 1; }
   [ "\$(cat /var/lib/hivra-runner-control/.ssh/key.pub)" = "\$expected_public_key" ] || { echo "VPS already belongs to another Remote Runner" >&2; exit 1; }
   runner_key_id="\$(python3 - <<'PY'
@@ -917,6 +916,10 @@ if not isinstance(runner_key_id, str) or re.fullmatch(r'[0-9a-f]{64}', runner_ke
 print(runner_key_id)
 PY
 )"
+  if ! cmp -s "\$bundle/ARTIFACT-MANIFEST.v2" /opt/hivra/trading-public-shadow/ARTIFACT-MANIFEST.v2; then
+    "\$bundle/hivra-trading-runner-lifecycle" --upgrade-disabled "\$bundle" --expected-runner-key-id "\$runner_key_id"
+  fi
+  /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --verify /opt/hivra/trading-public-shadow >/dev/null
   /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --export-anchor /opt/hivra/trading-public-shadow --expected-runner-key-id "\$runner_key_id" --anchor-output "\$anchor"
 else
   "\$bundle/hivra-trading-runner-lifecycle" --provision-disabled "\$bundle" --anchor-output "\$anchor"
