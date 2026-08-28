@@ -6,21 +6,14 @@ macOS and Android assets have exact-byte manual signoff. The invalid `test17`
 evidence remains historical and cannot be reused or replaced under the old
 tag.
 
-Current selected unit: `1.x Trading Remote Runner Result Ownership
-Reconciliation`. Bounded VPS acceptance produced one exact LIVE BingX order and
-retained its canonical effect operation and receipt on the Runner, but the
-existing local managed-order projection displayed that order as exchange-only.
-The existing Runner lifecycle must expose only the completed operation from the
-exact locally retained signed session, and the existing managed-order owner must
-reconcile that evidence without adopting unrelated exchange orders. No second
-journal, scheduler, or effect path is authorized. The first post-merge smoke
-found that fresh provisioning rejected a different installed bundle while
-exact uninstall would delete the retained receipt state. The existing host
-lifecycle must therefore atomically upgrade only the disabled bundle while
-preserving identity, credentials, signed session, effect journal, and receipt.
-Exit requires protected merge, a fresh packaged Runner deployment, and restart
-evidence that the exact remote order is classified as Drone without another
-provider POST.
+Current selected unit: none. `1.x Trading Remote Runner Result Ownership
+Reconciliation` completed at `da8cde1`. Exact merge-SHA packaged and VPS
+evidence proved an atomic disabled-bundle upgrade that preserved Runner state,
+identity, credentials, signed session, effect journal, and receipt. After local
+application restart, the exact retained remote order was restored as Drone-owned
+without another provider POST or duplicate effect. Unrelated exchange orders
+remained exchange-only. The Runner remains deliberately paused; no following
+implementation unit is selected.
 
 No multi-account Runner on one VPS, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
@@ -34,7 +27,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Close the selected remote-result ownership remediation, then resume the same bounded unattended VPS acceptance. | This board and the trading specification |
+| What is the next 1.x step? | No implementation unit is selected. Choose one bounded product outcome explicitly before changing runtime or VPS state. | This board and the relevant product specification |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -45,7 +38,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading remote-result ownership remediation selected; NIP-44-only transport baseline complete | One completed remote effect from the exact retained Capsule-signed session must enter the existing managed-order provenance before normal provider reconciliation. Manual or unrelated exchange orders remain exchange-only. | Regression vectors must bind Capsule, account, Runner session, cycle operation, canonical payload, and receipt; replay and restart remain idempotent. | Merge through protected CI, deploy the exact post-merge Runner, and prove the existing live remote order becomes Drone-owned without another provider POST. |
+| **1.x maintained runtime** | No implementation unit selected; NIP-44-only transport baseline and Trading remote-result ownership reconciliation complete | One completed remote effect from the exact retained Capsule-signed session enters the existing managed-order provenance before normal provider reconciliation. Manual or unrelated exchange orders remain exchange-only. | Exact merge-SHA packaged/VPS restart evidence restored the retained remote order as Drone-owned without another provider POST or duplicate effect. | Select one bounded product outcome explicitly; the Runner remains paused until then. |
 | **1.x release** | `v1.0.3-test18` published; `test17` exact-byte evidence remains invalid | The published macOS and Android assets are bound to exact SHA-256 manual signoff. | Packaged smoke, guarded tag, and prerelease publication are complete. | No later release candidate is selected. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
