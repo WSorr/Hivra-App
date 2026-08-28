@@ -40,6 +40,7 @@ EXPECTED_RUNNER_KEY_ID=""
 ANCHOR_OUTPUT=""
 MANDATE_ARTIFACT=""
 REVOCATION_ARTIFACT=""
+SESSION_OPERATION_ID=""
 SCHEDULER_SESSION_OPERATION_ID=""
 INSTALLED_BUNDLE_MODE=0
 
@@ -92,6 +93,9 @@ Usage:
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --pause-prepared-session-service <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --prepared-session-service-status <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --export-completed-session-effects <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+    --session-operation-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --execute-exact-order <artifact-dir>
@@ -2829,6 +2833,43 @@ prepared_session_service_status() {
     "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
 }
 
+export_completed_session_effects() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ "$SESSION_OPERATION_ID" != "" ] &&
+    [[ "$SESSION_OPERATION_ID" =~ ^[0-9a-f]{64}$ ]] ||
+    die "completed effect export requires one session operation id"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "completed effect export refused the installed runner key id"
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "completed effect export requires one retained signed session"
+  local work
+  work="$(mktemp -d /run/hivra-trading-effect-export.XXXXXX)"
+  trap "rm -rf '$work'" EXIT INT TERM
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+  [ "$(cat "$work/verified/operation-kind")" = \
+    "bounded_deterministic_session" ] ||
+    die "completed effect export requires bounded session authority"
+  [ "$(cat "$work/verified/operation-id")" = "$SESSION_OPERATION_ID" ] ||
+    die "completed effect export refused another session"
+  local output
+  output="$(
+    "$EFFECT_BINARY_INSTALL_PATH" \
+      --mode completed-session-effects \
+      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
+      --deterministic-admission-file "$mandate" \
+      --deterministic-state-home "$STATE_DIRECTORY/deterministic-order-runtime"
+  )" || die "completed effect export failed"
+  [ "${#output}" -le 65536 ] || die "completed effect export is oversized"
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  printf '%s\n' "$output"
+}
+
 validate_account_read_evidence() {
   local source="$1"
   local expected_operation="$2"
@@ -5414,7 +5455,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--run-prepared-session|--enable-prepared-session-service|--pause-prepared-session-service|--prepared-session-service-status|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--provision-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--revoke-session|--provision-exchange-credential|--apply-prepared-session|--activate-prepared-session|--run-prepared-session|--enable-prepared-session-service|--pause-prepared-session-service|--prepared-session-service-status|--export-completed-session-effects|--probe-exchange-account|--execute-exact-order|--execute-deterministic-order|--recover-deterministic-session|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -5465,6 +5506,12 @@ while [ $# -gt 0 ]; do
       REVOCATION_ARTIFACT="$2"
       shift 2
       ;;
+    --session-operation-id)
+      [ $# -ge 2 ] && [ -z "$SESSION_OPERATION_ID" ] ||
+        die "invalid session-operation-id arguments"
+      SESSION_OPERATION_ID="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -5483,6 +5530,10 @@ if [ "$MODE" != "admit-mandate" ] &&
 fi
 if [ "$MODE" != "revoke-session" ] && [ -n "$REVOCATION_ARTIFACT" ]; then
   die "revocation-artifact is accepted only by session revocation"
+fi
+if [ "$MODE" != "export-completed-session-effects" ] &&
+  [ -n "$SESSION_OPERATION_ID" ]; then
+  die "session-operation-id is accepted only by completed effect export"
 fi
 
 # A delivered lifecycle has no repository checkout to compare against. Exact
@@ -5606,6 +5657,13 @@ case "$MODE" in
       [ -z "$MANDATE_ARTIFACT" ] ||
       die "session service status accepts no identity or mandate input"
     prepared_session_service_status "$ARTIFACT_DIR"
+    ;;
+  export-completed-session-effects)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] &&
+      [ -z "$REVOCATION_ARTIFACT" ] && [ -n "$SESSION_OPERATION_ID" ] ||
+      die "completed effect export requires runner and session identity"
+    export_completed_session_effects "$ARTIFACT_DIR"
     ;;
   probe-exchange-account)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

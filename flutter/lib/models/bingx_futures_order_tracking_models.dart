@@ -1321,6 +1321,7 @@ class BingxManagedOrderProvenance {
   final String canonicalIntentJson;
   final String? clientOrderId;
   final String? accountBindingHashHex;
+  final String? externalEffectOperationId;
   final BingxManagedOrderLifecycleStatus lifecycleStatus;
   final String? lifecycleEvidenceAtUtc;
   final String? lifecycleDiagnostic;
@@ -1339,6 +1340,7 @@ class BingxManagedOrderProvenance {
     required this.canonicalIntentJson,
     this.clientOrderId,
     this.accountBindingHashHex,
+    this.externalEffectOperationId,
     this.lifecycleStatus = BingxManagedOrderLifecycleStatus.unresolved,
     this.lifecycleEvidenceAtUtc,
     this.lifecycleDiagnostic,
@@ -1359,6 +1361,7 @@ class BingxManagedOrderProvenance {
       'canonical_intent_json': canonicalIntentJson,
       'client_order_id': clientOrderId,
       'account_binding_hash_hex': accountBindingHashHex,
+      'external_effect_operation_id': externalEffectOperationId,
       'lifecycle_status': lifecycleStatus.name,
       'lifecycle_evidence_at_utc': lifecycleEvidenceAtUtc,
       'lifecycle_diagnostic': lifecycleDiagnostic,
@@ -1381,11 +1384,15 @@ class BingxManagedOrderProvenance {
     final recordedAtUtc = read('recorded_at_utc');
     final accountBindingHashHex =
         read('account_binding_hash_hex').toLowerCase();
+    final externalEffectOperationId =
+        read('external_effect_operation_id').toLowerCase();
     if (orderId.isEmpty ||
         symbol.isEmpty ||
         (side != 'buy' && side != 'sell') ||
         intentHashHex.isEmpty ||
         canonicalIntentJson.trim().isEmpty ||
+        (externalEffectOperationId.isNotEmpty &&
+            !RegExp(r'^[0-9a-f]{64}$').hasMatch(externalEffectOperationId)) ||
         recordedAtUtc.isEmpty) {
       return null;
     }
@@ -1400,6 +1407,10 @@ class BingxManagedOrderProvenance {
       accountBindingHashHex:
           RegExp(r'^[0-9a-f]{64}$').hasMatch(accountBindingHashHex)
               ? accountBindingHashHex
+              : null,
+      externalEffectOperationId:
+          RegExp(r'^[0-9a-f]{64}$').hasMatch(externalEffectOperationId)
+              ? externalEffectOperationId
               : null,
       lifecycleStatus: _readLifecycleStatus(read('lifecycle_status')),
       lifecycleEvidenceAtUtc: _readOptionalString(
@@ -1428,6 +1439,7 @@ class BingxManagedOrderProvenance {
       canonicalIntentJson: canonicalIntentJson,
       clientOrderId: clientOrderId,
       accountBindingHashHex: accountBindingHashHex,
+      externalEffectOperationId: externalEffectOperationId,
       lifecycleStatus: status,
       lifecycleEvidenceAtUtc: evidenceAtUtc,
       lifecycleDiagnostic: diagnostic,

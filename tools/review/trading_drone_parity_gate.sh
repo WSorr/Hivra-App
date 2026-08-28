@@ -702,7 +702,7 @@ runner_linux_smoke_is_fail_closed() {
     ! rg -q 'upload-artifact' "$2"
 }
 
-runner_control_uninstall_uses_canonical_identity() {
+runner_control_uses_canonical_identity() {
   local control="$1"
   local work
   work="$(mktemp -d)"
@@ -712,12 +712,15 @@ runner_control_uninstall_uses_canonical_identity() {
   cat > "$lifecycle" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$1" >> "$TEST_CALLS"
+printf '%s\n' "$*" >> "$TEST_CALLS"
 case "$1" in
   --prepared-session-service-status)
     printf '%s\n' "$TEST_STATUS"
     ;;
   --pause-prepared-session-service|--uninstall-disabled)
+    ;;
+  --export-completed-session-effects)
+    printf '[]\n'
     ;;
   *)
     exit 64
@@ -735,9 +738,19 @@ SH
     export TEST_STATUS="session_unit=hivra-trading-deterministic-session.service active=inactive enabled=enabled runner_key_id=$expected restart=no"
     main "remove:$expected" >/dev/null
     diff -u <(printf '%s\n' \
-      --prepared-session-service-status \
-      --pause-prepared-session-service \
-      --uninstall-disabled) "$calls"
+      "--prepared-session-service-status $work/bundle" \
+      "--pause-prepared-session-service $work/bundle" \
+      "--uninstall-disabled $work/bundle") "$calls"
+
+    : > "$calls"
+    session="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    [ "$(main "completed-effects:$expected:$session")" = '[]' ]
+    [ "$(cat "$calls")" = "--export-completed-session-effects $work/bundle --expected-runner-key-id $expected --session-operation-id $session" ]
+    : > "$calls"
+    if (main "completed-effects:$expected:invalid") >/dev/null 2>&1; then
+      exit 1
+    fi
+    [ ! -s "$calls" ] || exit 1
 
     for invalid_status in \
       'session_unit=x active=inactive enabled=enabled restart=no' \
@@ -748,7 +761,7 @@ SH
       if (main "remove:$expected" >/dev/null 2>&1); then
         exit 1
       fi
-      [ "$(cat "$calls")" = "--prepared-session-service-status" ] || exit 1
+      [ "$(cat "$calls")" = "--prepared-session-service-status $work/bundle" ] || exit 1
     done
   )
   local result="$?"
@@ -1114,10 +1127,10 @@ else
   fail "required CI lost the fail-closed Linux runtime startup evidence"
 fi
 
-if runner_control_uninstall_uses_canonical_identity "$RUNNER_CONTROL"; then
-  pass "Runner uninstall binds the requested identity to canonical lifecycle status"
+if runner_control_uses_canonical_identity "$RUNNER_CONTROL"; then
+  pass "Runner control binds uninstall and completed evidence to canonical identity"
 else
-  fail "Runner uninstall does not bind the requested identity to canonical lifecycle status"
+  fail "Runner control lost canonical uninstall or completed-evidence identity binding"
 fi
 
 if runner_supervisor_is_fail_closed "$RUNNER_SUPERVISOR" "$SHADOW_PROBE"; then

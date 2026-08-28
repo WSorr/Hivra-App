@@ -45,6 +45,8 @@ void main() {
               testOrder: false,
               intentHashHex: 'intent-1',
               canonicalIntentJson: '{"symbol":"BNB-USDT","side":"sell"}',
+              externalEffectOperationId:
+                  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
               marketSnapshotHashHex: 'market-1',
               featureHashHex: 'feature-1',
               tvhDecisionHashHex: 'tvh-1',
@@ -73,6 +75,10 @@ void main() {
         'live-1',
       );
       expect(restored.managedOrderProvenance['ord-1']!.testOrder, isFalse);
+      expect(
+        restored.managedOrderProvenance['ord-1']!.externalEffectOperationId,
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      );
       expect(restored.stopLossPercent, 10.0);
       expect(restored.takeProfitRiskReward, 2.0);
     });
@@ -140,6 +146,22 @@ void main() {
       expect(restored, isNotNull);
       expect(restored!.managedOrderIds, <String>['ord-1']);
       expect(restored.managedOrderProvenance, isEmpty);
+    });
+
+    test('rejects malformed remote effect lineage', () {
+      expect(
+        BingxManagedOrderProvenance.fromJsonMap(<String, dynamic>{
+          'order_id': 'ord-1',
+          'symbol': 'SOL-USDT',
+          'side': 'buy',
+          'test_order': false,
+          'intent_hash_hex': 'intent-1',
+          'canonical_intent_json': '{"symbol":"SOL-USDT"}',
+          'external_effect_operation_id': 'invalid',
+          'recorded_at_utc': '2026-08-28T00:00:00.000Z',
+        }),
+        isNull,
+      );
     });
 
     test('isolates state by capsule scope', () async {

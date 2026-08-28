@@ -952,6 +952,23 @@ If an unresolved provider outcome already stopped the session, recovery targets
 that exact last attempted cycle and may replace only its retained result with a
 later verified receipt; it never resumes the stopped session.
 
+Completed remote effect ownership crosses back to the Capsule only through the
+existing Runner control and the existing managed-order owner. The read-only
+export accepts the exact installed Runner identity and the locally retained
+signed session operation id, revalidates the canonical effect journal, and
+returns only succeeded child operations bound to that session. It receives no
+exchange credential, issues no provider request, and cannot prepare, approve,
+queue, retry, or reconcile an effect.
+
+The Capsule independently verifies the retained signed session, Runner,
+Capsule, account, derived cycle operation, canonical exact-order payload, and
+provider receipt before adding the remote operation id to the existing
+managed-order provenance. Normal BingX REST reconciliation then decides whether
+the exact order is active or terminal. Exact replay is idempotent; a conflicting
+operation or receipt fails closed. Open-order presence, an order id, or a
+client-order naming pattern alone never establishes Drone ownership, so manual
+and unrelated exchange orders remain exchange-only.
+
 Runner provisioning is one canonical host use case. It verifies the exact
 merge-SHA artifact, installs it into empty canonical paths, initializes one
 persistent runner identity, exports the exact public key plus signed evidence,
