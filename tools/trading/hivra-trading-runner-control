@@ -3,10 +3,30 @@ set -euo pipefail
 
 LIFECYCLE=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle
 BUNDLE=/opt/hivra/trading-public-shadow
-operation="${1:-}"
 
-[ "$(id -u)" = 0 ] || { echo "runner control requires root" >&2; exit 1; }
-case "$operation" in
+runner_key_id_from_status() {
+  python3 -c '
+import re
+import sys
+
+raw = sys.stdin.buffer.read(4097)
+if len(raw) > 4096:
+    raise SystemExit("Runner status exceeds the bounded size")
+try:
+    text = raw.decode("ascii")
+except UnicodeDecodeError:
+    raise SystemExit("Runner status must be ASCII")
+matches = re.findall(r"(?:^| )runner_key_id=([0-9a-f]{64})(?= |$)", text)
+if len(matches) != 1:
+    raise SystemExit("Runner status has no unique identity")
+print(matches[0])
+'
+}
+
+main() {
+  local operation="${1:-}"
+  [ "$(id -u)" = 0 ] || { echo "runner control requires root" >&2; exit 1; }
+  case "$operation" in
   status)
     [ -x "$LIFECYCLE" ] || { echo "Remote Runner is removed"; exit 0; }
     exec "$LIFECYCLE" --prepared-session-service-status "$BUNDLE"
@@ -22,15 +42,10 @@ case "$operation" in
       echo "Remote Runner is removed"
       exit 0
     fi
-    installed_key_id="$(python3 - <<'PY'
-import hashlib
-from pathlib import Path
-value = Path('/var/lib/hivra-trading-public-shadow/runner-public-key.ed25519.hex').read_text().strip()
-if len(value) != 64:
-    raise SystemExit('installed Runner key is invalid')
-print(hashlib.sha256(bytes.fromhex(value)).hexdigest())
-PY
-)"
+    installed_key_id="$(
+      "$LIFECYCLE" --prepared-session-service-status "$BUNDLE" |
+        runner_key_id_from_status
+    )"
     [ "$runner_key_id" = "$installed_key_id" ] || { echo "runner identity mismatch" >&2; exit 1; }
     "$LIFECYCLE" --pause-prepared-session-service "$BUNDLE"
     "$LIFECYCLE" --uninstall-disabled "$BUNDLE"
@@ -99,8 +114,13 @@ PY
     printf '%s\n' "$status"
     echo "HIVRA_REMOTE_RUNNER_APPLY_OK=1"
     ;;
-  *)
-    echo "unsupported runner control operation" >&2
-    exit 64
-    ;;
-esac
+    *)
+      echo "unsupported runner control operation" >&2
+      exit 64
+      ;;
+  esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

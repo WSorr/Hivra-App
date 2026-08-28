@@ -14,6 +14,7 @@ SHADOW_ANCHOR_VERIFIER="$ROOT/flutter/tool/verify_trading_shadow_anchor.dart"
 SHADOW_EVIDENCE="$ROOT/flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart"
 SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
 RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
+RUNNER_CONTROL="$ROOT/tools/trading/hivra-trading-runner-control"
 RUNNER_PACKAGE="$ROOT/tools/trading/public_shadow_runner_package/pubspec.yaml"
 RUNNER_PACKAGE_LOCK="$ROOT/tools/trading/public_shadow_runner_package/pubspec.lock"
 RUNNER_SUPERVISOR="$ROOT/tools/trading/hivra-trading-public-shadow-runner.service"
@@ -701,6 +702,60 @@ runner_linux_smoke_is_fail_closed() {
     ! rg -q 'upload-artifact' "$2"
 }
 
+runner_control_uninstall_uses_canonical_identity() {
+  local control="$1"
+  local work
+  work="$(mktemp -d)"
+  local lifecycle="$work/lifecycle"
+  local calls="$work/calls"
+  local expected="0013fcab166aeedf5a00a78fbc3b845ca05afcfff8a61bbd8e4ec59e0971941c"
+  cat > "$lifecycle" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$1" >> "$TEST_CALLS"
+case "$1" in
+  --prepared-session-service-status)
+    printf '%s\n' "$TEST_STATUS"
+    ;;
+  --pause-prepared-session-service|--uninstall-disabled)
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+SH
+  chmod 0700 "$lifecycle"
+
+  (
+    source "$control"
+    LIFECYCLE="$lifecycle"
+    BUNDLE="$work/bundle"
+    id() { printf '0\n'; }
+    export TEST_CALLS="$calls"
+    export TEST_STATUS="session_unit=hivra-trading-deterministic-session.service active=inactive enabled=enabled runner_key_id=$expected restart=no"
+    main "remove:$expected" >/dev/null
+    diff -u <(printf '%s\n' \
+      --prepared-session-service-status \
+      --pause-prepared-session-service \
+      --uninstall-disabled) "$calls"
+
+    for invalid_status in \
+      'session_unit=x active=inactive enabled=enabled restart=no' \
+      "session_unit=x runner_key_id=$expected runner_key_id=$expected" \
+      'session_unit=x runner_key_id=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'; do
+      : > "$calls"
+      export TEST_STATUS="$invalid_status"
+      if (main "remove:$expected" >/dev/null 2>&1); then
+        exit 1
+      fi
+      [ "$(cat "$calls")" = "--prepared-session-service-status" ] || exit 1
+    done
+  )
+  local result="$?"
+  rm -rf "$work"
+  return "$result"
+}
+
 runner_supervisor_is_fail_closed() {
   python3 - "$1" "$2" <<'PY'
 import configparser
@@ -1057,6 +1112,12 @@ if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; 
   pass "required CI builds and starts the verified Linux runner without authority or artifact publication"
 else
   fail "required CI lost the fail-closed Linux runtime startup evidence"
+fi
+
+if runner_control_uninstall_uses_canonical_identity "$RUNNER_CONTROL"; then
+  pass "Runner uninstall binds the requested identity to canonical lifecycle status"
+else
+  fail "Runner uninstall does not bind the requested identity to canonical lifecycle status"
 fi
 
 if runner_supervisor_is_fail_closed "$RUNNER_SUPERVISOR" "$SHADOW_PROBE"; then
