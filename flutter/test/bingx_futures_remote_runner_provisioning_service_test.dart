@@ -192,47 +192,52 @@ void main() {
     );
   });
 
-  test('bootstrap is not persisted until restricted control succeeds', () async {
-    final temp = await Directory.systemTemp.createTemp('hivra-runner-status-');
-    addTearDown(() => temp.delete(recursive: true));
-    final files = CapsuleFileStore(
-      dirs: UserVisibleDataDirectoryService(homeOverride: temp.path),
-    );
-    final secureStorage = _FakeSecureStorage();
-    final identity = BingxFuturesRemoteRunnerIdentityService(
-      readActiveCapsuleRootHex: () => capsuleHex,
-      files: files,
-    );
-    final service = BingxFuturesRemoteRunnerProvisioningService(
-      activeCapsuleRootHex: () => capsuleHex,
-      identity: identity,
-      profiles: BingxFuturesRemoteRunnerProfileStore(
-        activeCapsuleRootHex: () => capsuleHex,
+  test(
+    'bootstrap is not persisted until restricted control succeeds',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'hivra-runner-status-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final files = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: temp.path),
+      );
+      final secureStorage = _FakeSecureStorage();
+      final identity = BingxFuturesRemoteRunnerIdentityService(
+        readActiveCapsuleRootHex: () => capsuleHex,
         files: files,
-      ),
-      secrets: CapsuleScopedSecretVault(secureStorage: secureStorage),
-      bundleLoader: BingxFuturesEmbeddedRunnerBundleLoader(
-        assets: _MemoryAssetBundle(),
-      ),
-      host: _FakeHostPort(rejectStatus: true),
-    );
+      );
+      final service = BingxFuturesRemoteRunnerProvisioningService(
+        activeCapsuleRootHex: () => capsuleHex,
+        identity: identity,
+        profiles: BingxFuturesRemoteRunnerProfileStore(
+          activeCapsuleRootHex: () => capsuleHex,
+          files: files,
+        ),
+        secrets: CapsuleScopedSecretVault(secureStorage: secureStorage),
+        bundleLoader: BingxFuturesEmbeddedRunnerBundleLoader(
+          assets: _MemoryAssetBundle(),
+        ),
+        host: _FakeHostPort(rejectStatus: true),
+      );
 
-    await expectLater(
-      service.bootstrap(
-        host: 'runner.example',
-        port: 22,
-        rootUsername: 'root',
-        rootPassword: 'one-time-password',
-        accountBindingHashHex: accountHash,
-        confirmHostKey: (_, _) async => true,
-      ),
-      throwsStateError,
-    );
+      await expectLater(
+        service.bootstrap(
+          host: 'runner.example',
+          port: 22,
+          rootUsername: 'root',
+          rootPassword: 'one-time-password',
+          accountBindingHashHex: accountHash,
+          confirmHostKey: (_, _) async => true,
+        ),
+        throwsStateError,
+      );
 
-    expect(await service.loadProfiles(), isEmpty);
-    expect(await identity.loadVerifiedBinding(), isNull);
-    expect(secureStorage.values.values.single, contains('OPENSSH'));
-  });
+      expect(await service.loadProfiles(), isEmpty);
+      expect(await identity.loadVerifiedBinding(), isNull);
+      expect(secureStorage.values.values.single, contains('OPENSSH'));
+    },
+  );
 }
 
 class _MemoryAssetBundle extends CachingAssetBundle {
@@ -292,6 +297,13 @@ class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
   int removeCalls = 0;
   int revokeCalls = 0;
   int statusCalls = 0;
+
+  @override
+  Future<String> completedSessionEffects({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required String privateKeyPem,
+    required String sessionOperationId,
+  }) async => '[]';
 
   _FakeHostPort({
     this.rejectWhenConfirmationFails = false,

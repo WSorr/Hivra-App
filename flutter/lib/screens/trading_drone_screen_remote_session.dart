@@ -1,6 +1,62 @@
 part of 'trading_drone_screen.dart';
 
 extension _TradingDroneRemoteSession on _TradingDroneScreenState {
+  Future<bool> _restoreRemoteCompletedEffects() async {
+    try {
+      final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+      if (profiles.length != 1) return false;
+      final profile = profiles.single;
+      final canonicalSession = await _module.remoteRunnerProvisioning
+          .loadActiveSession(profile);
+      if (canonicalSession == null) return false;
+      final session = BingxFuturesRemoteMandateAdmission.parseAndVerify(
+        untrustedWireBytes: utf8.encode(canonicalSession),
+        verifySignature:
+            ({
+              required messageHashHex,
+              required participantIdHex,
+              required signatureHex,
+            }) => _module.verifyRootCommitmentSignature(
+              commitmentHashHex: messageHashHex,
+              capsuleRootHex: participantIdHex,
+              signatureHex: signatureHex,
+            ),
+      );
+      if (session == null ||
+          !session.isDeterministicSession ||
+          session.runnerKeyId != profile.runnerKeyId ||
+          session.mandate.capsuleRootHex != profile.capsuleHex ||
+          session.mandate.accountBindingHashHex !=
+              profile.accountBindingHashHex) {
+        throw StateError('The retained VPS session is not authentic.');
+      }
+      final operations = await _module.remoteRunnerProvisioning
+          .completedSessionEffects(
+            profile: profile,
+            sessionOperationId: session.operationId,
+          );
+      if (operations.isEmpty) return false;
+      await _module.executionUseCase.retainRemoteCompletedEffects(
+        session: session,
+        operations: operations,
+        expectedAccountBindingHashHex: profile.accountBindingHashHex,
+      );
+      await _restoreOpenOrdersTrackingState();
+      await _module.uiLog.log(
+        'bingx.remote_session.effects_restored',
+        'session_operation_id=${session.operationId} '
+            'count=${operations.length} effect=false',
+      );
+      return true;
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.remote_session.effects_restore.error',
+        'error=$error effect=false',
+      );
+      return false;
+    }
+  }
+
   Future<void> _manageRemoteRunners() async {
     if (_exportingRemoteRevocation) return;
     _updateState(() => _exportingRemoteRevocation = true);

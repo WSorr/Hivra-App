@@ -7,6 +7,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
 
+import '../models/external_effect_models.dart';
 import '../models/plugin_contract_ids.dart';
 import 'bingx_futures_remote_runner_identity_service.dart';
 import 'capsule_file_store.dart';
@@ -411,6 +412,12 @@ abstract interface class BingxFuturesRemoteRunnerHostPort {
     required String apiSecret,
   });
 
+  Future<String> completedSessionEffects({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required String privateKeyPem,
+    required String sessionOperationId,
+  });
+
   Future<String> pause({
     required BingxFuturesRemoteRunnerProfile profile,
     required String privateKeyPem,
@@ -667,6 +674,25 @@ class DartSshBingxFuturesRemoteRunnerHostPort
   }
 
   @override
+  Future<String> completedSessionEffects({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required String privateKeyPem,
+    required String sessionOperationId,
+  }) {
+    final normalizedSession = sessionOperationId.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedSession)) {
+      throw const FormatException('Remote session operation id is invalid.');
+    }
+    return _runRestricted(
+      profile: profile,
+      privateKeyPem: privateKeyPem,
+      operation: 'completed-effects:${profile.runnerKeyId}:$normalizedSession',
+      input: const <int>[],
+      maximumOutputBytes: 64 * 1024,
+    );
+  }
+
+  @override
   Future<String> pause({
     required BingxFuturesRemoteRunnerProfile profile,
     required String privateKeyPem,
@@ -716,6 +742,7 @@ class DartSshBingxFuturesRemoteRunnerHostPort
     required String operation,
     required List<int> input,
     String? requiredSuccessMarker,
+    int? maximumOutputBytes,
   }) async {
     final identities = SSHKeyPair.fromPem(privateKeyPem);
     if (identities.length != 1) {
@@ -749,7 +776,14 @@ class DartSshBingxFuturesRemoteRunnerHostPort
         operation,
         input,
       ).timeout(_commandTimeout);
-      final stdout = _boundedText(result.stdout);
+      final stdout =
+          maximumOutputBytes == null
+              ? _boundedText(result.stdout)
+              : result.stdout.length > maximumOutputBytes
+              ? throw StateError(
+                'Remote Runner output exceeded its bounded size.',
+              )
+              : utf8.decode(result.stdout, allowMalformed: false).trim();
       final markerPresent =
           requiredSuccessMarker == null ||
           const LineSplitter()
@@ -1063,6 +1097,56 @@ class BingxFuturesRemoteRunnerProvisioningService {
       canonicalSessionJson: canonicalSessionJson,
     );
     return result;
+  }
+
+  Future<List<ExternalEffectOperation>> completedSessionEffects({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required String sessionOperationId,
+  }) async {
+    final capsuleHex = _capsuleHex();
+    final normalizedSession = sessionOperationId.trim().toLowerCase();
+    if (profile.capsuleHex != capsuleHex ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedSession)) {
+      throw StateError('Remote Runner session belongs to another authority.');
+    }
+    final retainedSession = await _profiles.loadActiveSession(
+      profile.profileId,
+    );
+    if (retainedSession == null) {
+      throw StateError('This Runner has no locally retained active session.');
+    }
+    final retainedWire = jsonDecode(retainedSession);
+    if (retainedWire is! Map<String, dynamic> ||
+        retainedWire['operation_id'] != normalizedSession ||
+        retainedWire['runner_key_id'] != profile.runnerKeyId) {
+      throw StateError('The retained Remote Runner session does not match.');
+    }
+    final raw = await _host.completedSessionEffects(
+      profile: profile,
+      privateKeyPem: await _privateKey(profile),
+      sessionOperationId: normalizedSession,
+    );
+    final decoded = jsonDecode(raw);
+    if (decoded is! List || decoded.length > 256) {
+      throw const FormatException('Remote Runner effect evidence is invalid.');
+    }
+    final operations = <ExternalEffectOperation>[];
+    for (final value in decoded) {
+      if (value is! Map) {
+        throw const FormatException(
+          'Remote Runner effect evidence is invalid.',
+        );
+      }
+      operations.add(
+        ExternalEffectOperation.fromJson(Map<String, dynamic>.from(value)),
+      );
+    }
+    if (jsonEncode(operations.map((value) => value.toJson()).toList()) != raw) {
+      throw const FormatException(
+        'Remote Runner effect evidence is not canonical.',
+      );
+    }
+    return List<ExternalEffectOperation>.unmodifiable(operations);
   }
 
   Future<String> pause(BingxFuturesRemoteRunnerProfile profile) async {

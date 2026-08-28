@@ -17,10 +17,19 @@ import 'trading_remote_shadow_probe.dart'
     show readExchangeCredentialFile, readRunnerSeedBytes;
 
 const String exactOrderMode = 'exact-order';
+const String completedSessionEffectsMode = 'completed-session-effects';
 
 Future<void> main(List<String> args) async {
   try {
     final requestedMode = _requestedMode(args);
+    if (requestedMode == completedSessionEffectsMode) {
+      stdout.writeln(
+        await exportCompletedDeterministicSessionEffects(
+          options: _parseCompletedSessionEffectsArgs(args),
+        ),
+      );
+      return;
+    }
     if (requestedMode == deterministicOrderRecoveryMode) {
       final options = parseDeterministicRecoveryArgs(args);
       final seedBytes = await readRunnerSeedBytes(options);
@@ -56,6 +65,131 @@ Future<void> main(List<String> args) async {
   } on Object {
     stderr.writeln('trading exact order failed');
     exitCode = 1;
+  }
+}
+
+Future<String> exportCompletedDeterministicSessionEffects({
+  required Map<String, String> options,
+}) async {
+  final expectedRunnerKeyId = _requiredHex64(options, 'expected-runner-key-id');
+  final admissionFile = File(
+    _required(options, 'deterministic-admission-file'),
+  );
+  if (!admissionFile.isAbsolute ||
+      FileSystemEntity.typeSync(admissionFile.path, followLinks: false) !=
+          FileSystemEntityType.file ||
+      await admissionFile.length() >
+          BingxFuturesRemoteMandateAdmission.maxWireBytes) {
+    throw const FormatException('completed session admission file is invalid');
+  }
+  final admission =
+      await BingxFuturesRemoteMandateAdmission.parseAndVerifyAsync(
+        untrustedWireBytes: await admissionFile.readAsBytes(),
+        verifySignature:
+            ({
+              required messageHashHex,
+              required participantIdHex,
+              required signatureHex,
+            }) async => Ed25519().verify(
+              _decodeHex(messageHashHex),
+              signature: Signature(
+                _decodeHex(signatureHex),
+                publicKey: SimplePublicKey(
+                  _decodeHex(participantIdHex),
+                  type: KeyPairType.ed25519,
+                ),
+              ),
+            ),
+      );
+  if (admission == null ||
+      !admission.isDeterministicSession ||
+      admission.runnerKeyId != expectedRunnerKeyId) {
+    throw const FormatException('completed session authority is invalid');
+  }
+  if (admission.mandate.testOrder) return '[]';
+  final stateHome = _required(options, 'deterministic-state-home');
+  if (!Directory(stateHome).isAbsolute) {
+    throw const FormatException(
+      'completed session state home must be absolute',
+    );
+  }
+  final effects = ExternalEffectService(
+    readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
+    resolveAdapter: (_) => null,
+    fileStore: CapsuleFileStore(
+      dirs: UserVisibleDataDirectoryService(homeOverride: stateHome),
+    ),
+  );
+  final cycleOperationIds = <String>{
+    for (var index = 0; index < admission.authorizedUses; index += 1)
+      admission.deterministicCycleOperationId(index)!,
+  };
+  final completed = <ExternalEffectOperation>[];
+  for (final operation in await effects.list(
+    pluginId: bingxFuturesTradingPluginId,
+  )) {
+    final related =
+        cycleOperationIds.contains(operation.operationId) ||
+        operation.approvalEvidenceHashHex == admission.operationId;
+    if (!related) continue;
+    _validateCompletedSessionOperation(
+      operation: operation,
+      admission: admission,
+      cycleOperationIds: cycleOperationIds,
+    );
+    if (operation.state == ExternalEffectState.succeeded) {
+      completed.add(operation);
+    }
+  }
+  if (completed.length > admission.mandate.maxEffects) {
+    throw const FormatException(
+      'completed session effect count exceeds authority',
+    );
+  }
+  completed.sort(
+    (left, right) => left.operationId.compareTo(right.operationId),
+  );
+  return jsonEncode(
+    completed.map((operation) => operation.toJson()).toList(growable: false),
+  );
+}
+
+void _validateCompletedSessionOperation({
+  required ExternalEffectOperation operation,
+  required BingxFuturesRemoteMandateAdmission admission,
+  required Set<String> cycleOperationIds,
+}) {
+  if (!cycleOperationIds.contains(operation.operationId) ||
+      operation.ownerCapsuleHex != admission.mandate.capsuleRootHex ||
+      operation.pluginId != bingxFuturesTradingPluginId ||
+      operation.providerId != BingxFuturesExternalEffectAdapter.providerId ||
+      operation.accountBindingId != admission.mandate.accountBindingHashHex ||
+      operation.effectKind !=
+          BingxFuturesExternalEffectAdapter.exactOrderEffectKind ||
+      operation.approvalEvidenceHashHex != admission.operationId) {
+    throw const FormatException('completed session effect binding is invalid');
+  }
+  final decoded = jsonDecode(operation.canonicalPayloadJson);
+  if (decoded is! Map<String, dynamic> ||
+      decoded['test_order'] is! bool ||
+      decoded['test_order'] != admission.mandate.testOrder) {
+    throw const FormatException('completed session effect payload is invalid');
+  }
+  final payload = BingxFuturesIntentPayload.fromPluginResult(decoded);
+  if (payload.symbol != admission.mandate.symbol ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(payload.intentHashHex ?? '') ||
+      jsonEncode(
+            payload.toExactOrderJson(testOrder: admission.mandate.testOrder),
+          ) !=
+          operation.canonicalPayloadJson) {
+    throw const FormatException('completed session effect payload is invalid');
+  }
+  if (operation.state == ExternalEffectState.succeeded &&
+      (operation.receipt == null ||
+          (operation.providerReferenceId != null &&
+              operation.providerReferenceId !=
+                  operation.receipt!.providerReceiptId))) {
+    throw const FormatException('completed session receipt binding is invalid');
   }
 }
 
@@ -366,6 +500,36 @@ Map<String, String> _parseExactOrderArgs(List<String> args) {
   if (parsed['mode'] != exactOrderMode ||
       allowed.any((key) => (parsed[key]?.trim() ?? '').isEmpty)) {
     throw const FormatException('exact order options are incomplete');
+  }
+  return parsed;
+}
+
+Map<String, String> _parseCompletedSessionEffectsArgs(List<String> args) {
+  const allowed = <String>{
+    'mode',
+    'expected-runner-key-id',
+    'deterministic-admission-file',
+    'deterministic-state-home',
+  };
+  final parsed = <String, String>{};
+  for (var index = 0; index < args.length; index++) {
+    final argument = args[index];
+    if (!argument.startsWith('--') ||
+        index + 1 >= args.length ||
+        args[index + 1].startsWith('--')) {
+      throw FormatException('invalid argument: $argument');
+    }
+    final key = argument.substring(2);
+    if (!allowed.contains(key) || parsed.containsKey(key)) {
+      throw FormatException('unsupported or duplicate argument: $argument');
+    }
+    parsed[key] = args[++index];
+  }
+  if (parsed['mode'] != completedSessionEffectsMode ||
+      allowed.any((key) => (parsed[key]?.trim() ?? '').isEmpty)) {
+    throw const FormatException(
+      'completed session effect options are incomplete',
+    );
   }
   return parsed;
 }

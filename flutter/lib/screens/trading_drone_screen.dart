@@ -527,7 +527,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           runtime: widget.runtime ?? AppRuntimeService(),
         ).build();
     unawaited(_primePublicSessionEvidence(_symbolController.text));
-    unawaited(_restoreOpenOrdersTrackingState());
+    unawaited(
+      _restoreOpenOrdersTrackingState().then<void>((_) async {
+        await _restoreRemoteCompletedEffects();
+      }),
+    );
     _loadPerpetualSymbols(silent: true);
     _signalInbox = _module.chatDelivery.loadCachedTradeSignals();
     _refreshSignalInbox(silentWhenEmpty: true);

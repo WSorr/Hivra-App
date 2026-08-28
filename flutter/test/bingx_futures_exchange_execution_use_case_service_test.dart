@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
@@ -8,6 +9,8 @@ import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_risk_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
+import 'package:hivra_app/models/external_effect_models.dart';
+import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_execution_use_case_service.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
@@ -1563,6 +1566,138 @@ void main() {
       expect(result.state!.managedOrderIds, isEmpty);
     });
 
+    test(
+      'remote receipt restores one managed order without adopting manual orders',
+      () async {
+        final store = _trackingStore(tempHome);
+        final fixture = _remoteCompletedEffectFixture();
+        final exchange = BingxFuturesExchangeService(
+          requestSender: (_) async => throw StateError('unexpected query'),
+        );
+        final firstUseCase = _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        );
+
+        final retained = await firstUseCase.retainRemoteCompletedEffects(
+          session: fixture.session,
+          operations: <ExternalEffectOperation>[fixture.operation],
+          expectedAccountBindingHashHex: fixture.accountBindingHashHex,
+        );
+        expect(retained.managedOrderIds, isEmpty);
+        expect(
+          retained
+              .managedOrderProvenance[fixture.orderId]!
+              .externalEffectOperationId,
+          fixture.operation.operationId,
+        );
+
+        final restartedUseCase = _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        );
+        await restartedUseCase.retainRemoteCompletedEffects(
+          session: fixture.session,
+          operations: <ExternalEffectOperation>[fixture.operation],
+          expectedAccountBindingHashHex: fixture.accountBindingHashHex,
+        );
+        final reconciled = await restartedUseCase.reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(<BingxFuturesOpenOrder>[
+            BingxFuturesOpenOrder(
+              orderId: fixture.orderId,
+              clientOrderId: fixture.clientOrderId,
+              symbol: 'BTC-USDT',
+              side: 'BUY',
+              positionSide: 'LONG',
+              orderType: 'TRIGGER_LIMIT',
+              status: 'NEW',
+              priceDecimal: '100',
+              triggerPriceDecimal: '99',
+              quantityDecimal: '0.01',
+              executedQuantityDecimal: '0',
+              createdAtMs: 1,
+            ),
+            const BingxFuturesOpenOrder(
+              orderId: 'manual-order',
+              symbol: 'BTC-USDT',
+              side: 'BUY',
+              positionSide: 'LONG',
+              orderType: 'LIMIT',
+              status: 'NEW',
+              priceDecimal: '98',
+              triggerPriceDecimal: null,
+              quantityDecimal: '0.01',
+              executedQuantityDecimal: '0',
+              createdAtMs: 2,
+            ),
+          ]),
+        );
+
+        expect(reconciled.state!.managedOrderIds, <String>[fixture.orderId]);
+        expect(reconciled.state!.managedOrderProvenance, hasLength(1));
+        expect(
+          reconciled.state!.managedOrderProvenance,
+          isNot(contains('manual-order')),
+        );
+      },
+    );
+
+    test(
+      'remote receipt mutations fail before managed ownership changes',
+      () async {
+        final store = _trackingStore(tempHome);
+        final fixture = _remoteCompletedEffectFixture();
+        final useCase = _reconciliationUseCase(
+          exchange: BingxFuturesExchangeService(),
+          store: store,
+          riskHistory: riskHistory,
+        );
+        final base = fixture.operation.toJson();
+        final mutatedPayload =
+            jsonDecode(fixture.operation.canonicalPayloadJson)
+                as Map<String, dynamic>;
+        mutatedPayload['symbol'] = 'ETH-USDT';
+        final mutatedPayloadJson = jsonEncode(mutatedPayload);
+        final mutations = <Map<String, dynamic>>[
+          <String, dynamic>{...base, 'owner_capsule_hex': 'b' * 64},
+          <String, dynamic>{...base, 'account_binding_id': 'c' * 64},
+          <String, dynamic>{...base, 'approval_evidence_hash_hex': 'd' * 64},
+          <String, dynamic>{
+            ...base,
+            'operation_id': 'e' * 64,
+            'receipt': <String, dynamic>{
+              ...(base['receipt']! as Map<String, dynamic>),
+              'operation_id': 'e' * 64,
+            },
+          },
+          <String, dynamic>{
+            ...base,
+            'canonical_payload_json': mutatedPayloadJson,
+            'payload_hash_hex':
+                sha256.convert(utf8.encode(mutatedPayloadJson)).toString(),
+          },
+          <String, dynamic>{...base, 'provider_reference_id': 'other-order'},
+        ];
+
+        for (final mutation in mutations) {
+          await expectLater(
+            useCase.retainRemoteCompletedEffects(
+              session: fixture.session,
+              operations: <ExternalEffectOperation>[
+                ExternalEffectOperation.fromJson(mutation),
+              ],
+              expectedAccountBindingHashHex: fixture.accountBindingHashHex,
+            ),
+            throwsA(anyOf(isA<FormatException>(), isA<StateError>())),
+          );
+        }
+        expect((await store.load())!.managedOrderProvenance, isEmpty);
+      },
+    );
+
     test('late reconciliation stays bound to the starting capsule', () async {
       var activeCapsule = List<String>.filled(64, 'a').join();
       final fileStore = CapsuleFileStore(
@@ -1616,6 +1751,107 @@ void main() {
       expect(capsuleB, isNull);
     });
   });
+}
+
+({
+  BingxFuturesRemoteMandateAdmission session,
+  ExternalEffectOperation operation,
+  String accountBindingHashHex,
+  String orderId,
+  String clientOrderId,
+})
+_remoteCompletedEffectFixture() {
+  final capsuleRootHex = 'a' * 64;
+  final accountBindingHashHex =
+      BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+        _credentials,
+      );
+  final now = DateTime.utc(2026, 8, 28, 3, 55);
+  final mandate = BingxFuturesTradingMandate.issue(
+    capsuleRootHex: capsuleRootHex,
+    accountBindingHashHex: accountBindingHashHex,
+    symbol: 'BTC-USDT',
+    testOrder: false,
+    issuedAtUtc: now.subtract(const Duration(minutes: 1)),
+    expiresAtUtc: now.add(const Duration(hours: 23)),
+    maxOrderNotionalQuoteDecimal: '17',
+    maxRiskPerTradePercent: 2,
+    maxDailyLossPercent: 5,
+    maxConcurrentPositions: 1,
+    cooldownAfterLossStreak: 2,
+    cooldownMinutes: 60,
+    maxEffects: 1,
+  );
+  final session =
+      BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+        mandate: mandate,
+        runnerKeyId: 'b' * 64,
+        strategyPolicy:
+            BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+              stopLossPercent: 5,
+              minimumRiskReward: 2,
+            ),
+        startsAtUtc: now,
+        intervalSeconds: 300,
+        maxCycles: 12,
+        signCommitment: (_) => 'c' * 128,
+      )!;
+  const orderId = 'remote-order-1';
+  const clientOrderId = 'hivra-remote-order-1';
+  final payload = BingxFuturesIntentPayload(
+    clientOrderId: clientOrderId,
+    symbol: 'BTC-USDT',
+    side: 'buy',
+    orderType: 'limit',
+    quantityDecimal: '0.01',
+    limitPriceDecimal: '100',
+    timeInForce: 'GTC',
+    entryMode: 'zone_pending',
+    triggerPriceDecimal: '99',
+    stopLossDecimal: '95',
+    takeProfitDecimal: '110',
+    intentHashHex: 'd' * 64,
+  );
+  final canonicalPayloadJson = jsonEncode(
+    payload.toExactOrderJson(testOrder: false),
+  );
+  final operationId = session.deterministicCycleOperationId(0)!;
+  final receivedAtUtc = now.add(const Duration(seconds: 2)).toIso8601String();
+  final operation = ExternalEffectOperation(
+    ownerCapsuleHex: capsuleRootHex,
+    operationId: operationId,
+    pluginId: bingxFuturesTradingPluginId,
+    providerId: BingxFuturesExternalEffectAdapter.providerId,
+    accountBindingId: accountBindingHashHex,
+    effectKind: BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
+    canonicalPayloadJson: canonicalPayloadJson,
+    payloadHashHex:
+        sha256.convert(utf8.encode(canonicalPayloadJson)).toString(),
+    state: ExternalEffectState.succeeded,
+    approvalEvidenceHashHex: session.operationId,
+    attemptCount: 1,
+    revision: 4,
+    createdAtUtc: now.toIso8601String(),
+    updatedAtUtc: receivedAtUtc,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    providerReferenceId: orderId,
+    requiredAction: null,
+    receipt: ExternalEffectReceipt(
+      operationId: operationId,
+      providerId: BingxFuturesExternalEffectAdapter.providerId,
+      providerReceiptId: orderId,
+      evidenceHashHex: 'e' * 64,
+      receivedAtUtc: receivedAtUtc,
+    ),
+  )..validate();
+  return (
+    session: session,
+    operation: operation,
+    accountBindingHashHex: accountBindingHashHex,
+    orderId: orderId,
+    clientOrderId: clientOrderId,
+  );
 }
 
 BingxFuturesOrderTrackingStore _trackingStore(Directory tempHome) {

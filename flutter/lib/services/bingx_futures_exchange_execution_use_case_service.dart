@@ -10,6 +10,8 @@ import '../models/bingx_futures_execution_queue_models.dart';
 import '../models/bingx_futures_observability_models.dart';
 import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_order_tracking_models.dart';
+import '../models/external_effect_models.dart';
+import '../models/plugin_contract_ids.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_execution_queue_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
@@ -380,6 +382,167 @@ class BingxFuturesExchangeExecutionUseCaseService {
         .convert(utf8.encode(credentials.normalized().apiKey))
         .toString();
   }
+
+  Future<BingxFuturesOrderTrackingState> retainRemoteCompletedEffects({
+    required BingxFuturesRemoteMandateAdmission session,
+    required List<ExternalEffectOperation> operations,
+    required String expectedAccountBindingHashHex,
+  }) async {
+    final store = _orderTrackingStore;
+    final capsuleRootHex = store?.activeCapsuleRootHex;
+    final accountBinding = expectedAccountBindingHashHex.trim().toLowerCase();
+    if (store == null ||
+        capsuleRootHex == null ||
+        !session.isDeterministicSession ||
+        session.mandate.capsuleRootHex != capsuleRootHex ||
+        session.mandate.accountBindingHashHex != accountBinding ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(accountBinding) ||
+        (session.mandate.testOrder && operations.isNotEmpty) ||
+        operations.length > session.mandate.maxEffects) {
+      throw StateError('Remote completed effect authority is invalid.');
+    }
+    final cycleOperationIds = <String>{
+      for (var index = 0; index < session.authorizedUses; index += 1)
+        session.deterministicCycleOperationId(index)!,
+    };
+    final current =
+        await store.loadForCapsule(capsuleRootHex) ??
+        const BingxFuturesOrderTrackingState(
+          trackedSymbol: null,
+          trackedOrderId: null,
+          managedOrderIds: <String>[],
+          managedOrderSymbols: <String, String>{},
+          stopLossPercent: null,
+          takeProfitRiskReward: null,
+        );
+    final provenance = <String, BingxManagedOrderProvenance>{
+      ...current.managedOrderProvenance,
+    };
+    final importedOperations = <String>{};
+    final importedOrders = <String>{};
+    for (final operation in operations) {
+      operation.validate();
+      if (!importedOperations.add(operation.operationId) ||
+          operation.ownerCapsuleHex != capsuleRootHex ||
+          operation.pluginId != bingxFuturesTradingPluginId ||
+          operation.providerId !=
+              BingxFuturesExternalEffectAdapter.providerId ||
+          operation.accountBindingId != accountBinding ||
+          operation.effectKind !=
+              BingxFuturesExternalEffectAdapter.exactOrderEffectKind ||
+          operation.approvalEvidenceHashHex != session.operationId ||
+          !cycleOperationIds.contains(operation.operationId) ||
+          operation.state != ExternalEffectState.succeeded ||
+          operation.receipt == null ||
+          (operation.providerReferenceId != null &&
+              operation.providerReferenceId !=
+                  operation.receipt!.providerReceiptId) ||
+          sha256
+                  .convert(utf8.encode(operation.canonicalPayloadJson))
+                  .toString() !=
+              operation.payloadHashHex) {
+        throw const FormatException(
+          'Remote completed effect binding is invalid.',
+        );
+      }
+      final decoded = jsonDecode(operation.canonicalPayloadJson);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['test_order'] is! bool ||
+          decoded['test_order'] != session.mandate.testOrder) {
+        throw const FormatException(
+          'Remote completed effect payload is invalid.',
+        );
+      }
+      final payload = BingxFuturesIntentPayload.fromPluginResult(decoded);
+      final intentHash = payload.intentHashHex?.trim().toLowerCase() ?? '';
+      if (payload.symbol != session.mandate.symbol ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(intentHash) ||
+          jsonEncode(
+                payload.toExactOrderJson(testOrder: session.mandate.testOrder),
+              ) !=
+              operation.canonicalPayloadJson) {
+        throw const FormatException(
+          'Remote completed effect payload is invalid.',
+        );
+      }
+      final orderId = operation.receipt!.providerReceiptId.trim();
+      if (!importedOrders.add(orderId)) {
+        throw const FormatException(
+          'Remote completed effect receipt is duplicated.',
+        );
+      }
+      final proposed = BingxManagedOrderProvenance(
+        orderId: orderId,
+        symbol: payload.symbol,
+        side: payload.side,
+        testOrder: session.mandate.testOrder,
+        intentHashHex: intentHash,
+        canonicalIntentJson: operation.canonicalPayloadJson,
+        clientOrderId: payload.clientOrderId,
+        accountBindingHashHex: accountBinding,
+        externalEffectOperationId: operation.operationId,
+        lifecycleStatus: BingxManagedOrderLifecycleStatus.unresolved,
+        lifecycleEvidenceAtUtc: operation.receipt!.receivedAtUtc,
+        lifecycleDiagnostic: 'remote_effect_receipt_imported',
+        marketSnapshotHashHex: null,
+        featureHashHex: null,
+        tvhDecisionHashHex: null,
+        liveDecisionHashHex: null,
+        recordedAtUtc: operation.receipt!.receivedAtUtc,
+      );
+      BingxManagedOrderProvenance? sameOperation;
+      for (final existing in provenance.values) {
+        if (existing.externalEffectOperationId == operation.operationId) {
+          sameOperation = existing;
+          break;
+        }
+      }
+      if (sameOperation != null) {
+        if (!_sameRemoteEffectLineage(sameOperation, proposed)) {
+          throw StateError(
+            'Remote effect operation is already bound to another order.',
+          );
+        }
+        continue;
+      }
+      final sameOrder = provenance[orderId];
+      if (sameOrder != null && !_sameRemoteEffectLineage(sameOrder, proposed)) {
+        throw StateError(
+          'Remote effect receipt is already bound to another operation.',
+        );
+      }
+      provenance[orderId] = proposed;
+    }
+    final next = BingxFuturesOrderTrackingState(
+      trackedSymbol: current.trackedSymbol,
+      trackedOrderId: current.trackedOrderId,
+      managedOrderIds: current.managedOrderIds,
+      managedOrderSymbols: current.managedOrderSymbols,
+      managedOrderProvenance:
+          Map<String, BingxManagedOrderProvenance>.unmodifiable(provenance),
+      liquidityEventEffectClaims: current.liquidityEventEffectClaims,
+      droneEnabled: current.droneEnabled,
+      tradingMandate: current.tradingMandate,
+      stopLossPercent: current.stopLossPercent,
+      takeProfitRiskReward: current.takeProfitRiskReward,
+    );
+    await store.saveReconciledForCapsule(capsuleRootHex, next);
+    return next;
+  }
+
+  bool _sameRemoteEffectLineage(
+    BingxManagedOrderProvenance left,
+    BingxManagedOrderProvenance right,
+  ) =>
+      left.orderId == right.orderId &&
+      left.symbol == right.symbol &&
+      left.side == right.side &&
+      left.testOrder == right.testOrder &&
+      left.intentHashHex == right.intentHashHex &&
+      left.canonicalIntentJson == right.canonicalIntentJson &&
+      left.clientOrderId == right.clientOrderId &&
+      left.accountBindingHashHex == right.accountBindingHashHex &&
+      left.externalEffectOperationId == right.externalEffectOperationId;
 
   Future<BingxFuturesManagedOrderReconciliationResult> reconcileManagedOrders({
     required BingxFuturesApiCredentials credentials,

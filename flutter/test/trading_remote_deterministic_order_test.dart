@@ -12,7 +12,11 @@ import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_se
 
 import '../tool/trading_remote_deterministic_order.dart';
 import '../tool/trading_remote_exact_order.dart'
-    show reconcileAuthorizedExactOrder, runAuthorizedExactOrder;
+    show
+        completedSessionEffectsMode,
+        exportCompletedDeterministicSessionEffects,
+        reconcileAuthorizedExactOrder,
+        runAuthorizedExactOrder;
 
 void main() {
   test('one signed deterministic cycle composes and executes once', () async {
@@ -98,6 +102,75 @@ void main() {
     expect(result['operation_id'], fixture.admissionOperationId);
     expect(requests.where((request) => request.method == 'POST'), hasLength(1));
   });
+
+  test(
+    'completed session export returns exact retained effect and rejects mutation',
+    () async {
+      final fixture = await _fixture(sessionCycleIndex: 0, testOrder: false);
+      addTearDown(fixture.dispose);
+      final requests = <BingxHttpRequest>[];
+      await runOneDeterministicOrder(
+        options: fixture.options,
+        runnerSeedBytes: fixture.runnerSeed,
+        executeExactOrder: runAuthorizedExactOrder,
+        requestSender: (request) async {
+          requests.add(request);
+          return _providerResponse(request);
+        },
+        nowUtc: () => fixture.now,
+      );
+      final requestCountBeforeExport = requests.length;
+      final admission =
+          BingxFuturesRemoteMandateAdmission.parseAndVerify(
+            untrustedWireBytes:
+                await File(
+                  fixture.options['deterministic-admission-file']!,
+                ).readAsBytes(),
+            verifySignature:
+                ({
+                  required messageHashHex,
+                  required participantIdHex,
+                  required signatureHex,
+                }) => true,
+          )!;
+      final exportOptions = <String, String>{
+        'mode': completedSessionEffectsMode,
+        'expected-runner-key-id': admission.runnerKeyId,
+        'deterministic-admission-file':
+            fixture.options['deterministic-admission-file']!,
+        'deterministic-state-home':
+            fixture.options['deterministic-state-home']!,
+      };
+
+      final exported =
+          jsonDecode(
+                await exportCompletedDeterministicSessionEffects(
+                  options: exportOptions,
+                ),
+              )
+              as List<dynamic>;
+      expect(exported, hasLength(1));
+      expect(exported.single['operation_id'], fixture.admissionOperationId);
+      expect(exported.single['state'], 'succeeded');
+      expect(requests, hasLength(requestCountBeforeExport));
+
+      final journal = await Directory(
+            fixture.options['deterministic-state-home']!,
+          )
+          .list(recursive: true)
+          .map((entry) => entry.path)
+          .firstWhere((path) => path.endsWith('/external_effects.v1.json'));
+      final journalFile = File(journal);
+      final decoded = jsonDecode(await journalFile.readAsString()) as Map;
+      final operations = decoded['operations'] as List;
+      (operations.single as Map)['approval_evidence_hash_hex'] = 'f' * 64;
+      await journalFile.writeAsString(jsonEncode(decoded), flush: true);
+      await expectLater(
+        exportCompletedDeterministicSessionEffects(options: exportOptions),
+        throwsFormatException,
+      );
+    },
+  );
 
   test(
     'session recovery reconciles one existing effect without POST',
@@ -201,6 +274,8 @@ BingxHttpResponse _providerResponse(BingxHttpRequest request) {
       '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":1,"quantityPrecision":3,"pricePrecision":2}]}',
     '/openApi/swap/v2/trade/order/test' =>
       '{"code":0,"msg":"success","data":{"order":{"orderID":"test-order-1"}}}',
+    '/openApi/swap/v2/trade/order' =>
+      '{"code":0,"msg":"success","data":{"order":{"orderID":"live-order-1"}}}',
     _ => throw StateError('unexpected endpoint ${request.uri.path}'),
   };
   return BingxHttpResponse(statusCode: 200, body: body);

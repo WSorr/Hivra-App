@@ -35,6 +35,18 @@ main() {
     [ -x "$LIFECYCLE" ] || { echo "Remote Runner is removed"; exit 0; }
     exec "$LIFECYCLE" --pause-prepared-session-service "$BUNDLE"
     ;;
+  completed-effects:*)
+    [ -x "$LIFECYCLE" ] || { echo "runner lifecycle unavailable" >&2; exit 1; }
+    identity="${operation#completed-effects:}"
+    runner_key_id="${identity%%:*}"
+    session_operation_id="${identity#*:}"
+    [ "$identity" != "$runner_key_id" ] || { echo "invalid completed effect identity" >&2; exit 1; }
+    [[ "$runner_key_id" =~ ^[0-9a-f]{64}$ ]] || { echo "invalid runner key id" >&2; exit 1; }
+    [[ "$session_operation_id" =~ ^[0-9a-f]{64}$ ]] || { echo "invalid session operation id" >&2; exit 1; }
+    exec "$LIFECYCLE" --export-completed-session-effects "$BUNDLE" \
+      --expected-runner-key-id "$runner_key_id" \
+      --session-operation-id "$session_operation_id"
+    ;;
   remove:*)
     runner_key_id="${operation#remove:}"
     [[ "$runner_key_id" =~ ^[0-9a-f]{64}$ ]] || { echo "invalid runner key id" >&2; exit 1; }
