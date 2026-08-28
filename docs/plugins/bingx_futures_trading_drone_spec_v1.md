@@ -1038,7 +1038,11 @@ it does not implement another cycle, decision, reconciliation, or effect path.
 Enablement is explicit and allowed only after the retained signed session,
 Runner identity, account-bound encrypted credential, current time, and absence
 of revocation are revalidated. The service conflicts with the public-shadow
-unit, has `Restart=no`, and exits on every scheduler terminal or error outcome.
+unit. A terminal scheduler outcome exits successfully and is not restarted. A
+failed process exit may re-enter the same scheduler under a 30-second backoff
+and a maximum of three starts per ten minutes. The stable session/cycle/effect
+identities and retained journals remain authoritative across that retry; the
+supervisor cannot create a second cycle or effect route.
 An earlier terminal session may leave this exact service boot-enabled and
 inactive. After the old session is proven terminal and a fresh authority has
 been admitted and activated, enablement reuses and starts that same inactive

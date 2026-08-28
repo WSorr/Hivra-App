@@ -78,28 +78,6 @@ String tradingPreparedSessionRunCommand({required String runnerKeyId}) {
       '--expected-runner-key-id $runnerKeyId';
 }
 
-@visibleForTesting
-String tradingPreparedSessionServiceEnableCommand({
-  required String runnerKeyId,
-}) {
-  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(runnerKeyId)) {
-    throw const FormatException('Invalid prepared-session command input.');
-  }
-  return 'sudo ./public_shadow_runner_artifact.sh '
-      '--enable-prepared-session-service /path/to/runner-bundle '
-      '--expected-runner-key-id $runnerKeyId';
-}
-
-@visibleForTesting
-String tradingPreparedSessionServicePauseCommand() =>
-    'sudo ./public_shadow_runner_artifact.sh '
-    '--pause-prepared-session-service /path/to/runner-bundle';
-
-@visibleForTesting
-String tradingPreparedSessionServiceStatusCommand() =>
-    'sudo ./public_shadow_runner_artifact.sh '
-    '--prepared-session-service-status /path/to/runner-bundle';
-
 const int tradingRemoteSessionIntervalSeconds = 300;
 const Duration tradingRemoteSessionProvisioningLeadTime = Duration(minutes: 15);
 

@@ -166,7 +166,10 @@ runner_persistent_session_service_is_fail_closed() {
   [ -f "$unit" ] &&
     rg -q '^Conflicts=hivra-trading-public-shadow-runner.service$' "$unit" &&
     rg -q '^ExecStart=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --run-installed-prepared-session$' "$unit" &&
-    rg -q '^Restart=no$' "$unit" &&
+    rg -q '^StartLimitIntervalSec=10min$' "$unit" &&
+    rg -q '^StartLimitBurst=3$' "$unit" &&
+    rg -q '^Restart=on-failure$' "$unit" &&
+    rg -q '^RestartSec=30s$' "$unit" &&
     ! rg -q '^DynamicUser=' "$unit" &&
     rg -q '^NoNewPrivileges=yes$' "$unit" &&
     rg -q '^ProtectSystem=strict$' "$unit" &&
@@ -180,11 +183,12 @@ runner_persistent_session_service_is_fail_closed() {
     rg -q -- '--prepared-session-service-status <artifact-dir>' "$owner" &&
     rg -q 'run_installed_prepared_session' "$owner" &&
     rg -q 'session service refused a revoked session' "$owner" &&
+    rg -q 'restart=on-failure restart_sec=30s start_limit=3/10min' "$owner" &&
     rg -q 'require_retained_exchange_credential_binding' "$owner" &&
     rg -q 'systemctl enable "\$SESSION_UNIT_NAME"' "$owner" &&
     rg -q 'remove_session_boot_enablement' "$owner" &&
     ! rg -q 'systemctl disable[^\n]*\$SESSION_UNIT_NAME' "$owner" &&
-    ! rg -q '^Restart=(always|on-success|on-failure)$' "$unit"
+    ! rg -q '^Restart=(always|on-success|no)$' "$unit"
 }
 
 runner_bundle_install_is_fail_closed() {
@@ -787,7 +791,7 @@ SH
     BUNDLE="$work/bundle"
     id() { printf '0\n'; }
     export TEST_CALLS="$calls"
-    export TEST_STATUS="session_unit=hivra-trading-deterministic-session.service active=inactive enabled=enabled runner_key_id=$expected restart=no"
+    export TEST_STATUS="session_unit=hivra-trading-deterministic-session.service active=inactive enabled=enabled runner_key_id=$expected restart=on-failure restart_sec=30s start_limit=3/10min"
     main "remove:$expected" >/dev/null
     diff -u <(printf '%s\n' \
       "--prepared-session-service-status $work/bundle" \
@@ -1141,9 +1145,9 @@ fi
 
 if runner_persistent_session_service_is_fail_closed \
   "$RUNNER_ARTIFACT" "$RUNNER_SESSION_SUPERVISOR"; then
-  pass "persistent session service reuses the bounded scheduler with explicit lifecycle and no restart"
+  pass "persistent session service reuses the bounded scheduler with bounded failure recovery"
 else
-  fail "persistent session service lost scheduler ownership, explicit lifecycle, or no-retry boundaries"
+  fail "persistent session service lost scheduler ownership, explicit lifecycle, or bounded recovery"
 fi
 
 if runner_account_read_probe_is_fail_closed \
@@ -1228,6 +1232,9 @@ SUPERVISOR_RESTART_MUTATION="$(mktemp)"
 SUPERVISOR_MEMORY_MUTATION="$(mktemp)"
 SUPERVISOR_CREDENTIAL_MUTATION="$(mktemp)"
 SUPERVISOR_LISTENER_MUTATION="$(mktemp)"
+SESSION_RESTART_MODE_MUTATION="$(mktemp)"
+SESSION_RESTART_LIMIT_MUTATION="$(mktemp)"
+SESSION_RESTART_BACKOFF_MUTATION="$(mktemp)"
 BUNDLE_UNIT_MUTATION="$(mktemp)"
 BUNDLE_ENABLE_MUTATION="$(mktemp)"
 BUNDLE_COLLISION_MUTATION="$(mktemp)"
@@ -1269,7 +1276,7 @@ LOCAL_SESSION_WIRING_MUTATION="$(mktemp)"
 LIQUIDITY_AUTHORITY_MUTATION="$(mktemp)"
 LIQUIDATION_ANCHOR_MUTATION="$(mktemp)"
 LIQUIDITY_TARGET_MUTATION="$(mktemp)"
-trap 'rm -f "$TRADING_SCREEN" "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$BUNDLE_UPGRADE_EXCHANGE_MUTATION" "$BUNDLE_UPGRADE_STATE_MUTATION" "$BOOTSTRAP_UPGRADE_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$PREPARED_SESSION_SCHEDULER_LOCK_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
+trap 'rm -f "$TRADING_SCREEN" "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$SESSION_RESTART_MODE_MUTATION" "$SESSION_RESTART_LIMIT_MUTATION" "$SESSION_RESTART_BACKOFF_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$BUNDLE_UPGRADE_EXCHANGE_MUTATION" "$BUNDLE_UPGRADE_STATE_MUTATION" "$BOOTSTRAP_UPGRADE_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$PREPARED_SESSION_TIME_MUTATION" "$PREPARED_SESSION_ACTIVATION_REVOCATION_MUTATION" "$PREPARED_SESSION_SCHEDULER_LOCK_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION" "$LIQUIDITY_TARGET_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -1300,6 +1307,12 @@ sed 's#^LoadCredentialEncrypted=.*#Environment=HIVRA_SHADOW_RUNNER_SEED_HEX=unsa
   "$RUNNER_SUPERVISOR" > "$SUPERVISOR_CREDENTIAL_MUTATION"
 sed '/^SocketBindDeny=any$/d' \
   "$RUNNER_SUPERVISOR" > "$SUPERVISOR_LISTENER_MUTATION"
+sed 's/^Restart=on-failure$/Restart=always/' \
+  "$RUNNER_SESSION_SUPERVISOR" > "$SESSION_RESTART_MODE_MUTATION"
+sed 's/^StartLimitBurst=3$/StartLimitBurst=0/' \
+  "$RUNNER_SESSION_SUPERVISOR" > "$SESSION_RESTART_LIMIT_MUTATION"
+sed 's/^RestartSec=30s$/RestartSec=0/' \
+  "$RUNNER_SESSION_SUPERVISOR" > "$SESSION_RESTART_BACKOFF_MUTATION"
 sed '/artifact unit does not match the canonical source/d' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_UNIT_MUTATION"
 sed 's/systemctl link "\$UNIT_INSTALL_PATH"/systemctl enable "\$UNIT_NAME"/' \
@@ -1407,6 +1420,9 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_supervisor_is_fail_closed "$SUPERVISOR_MEMORY_MUTATION" "$SHADOW_PROBE" && \
   ! runner_supervisor_is_fail_closed "$SUPERVISOR_CREDENTIAL_MUTATION" "$SHADOW_PROBE" && \
   ! runner_supervisor_is_fail_closed "$SUPERVISOR_LISTENER_MUTATION" "$SHADOW_PROBE" && \
+  ! runner_persistent_session_service_is_fail_closed "$RUNNER_ARTIFACT" "$SESSION_RESTART_MODE_MUTATION" && \
+  ! runner_persistent_session_service_is_fail_closed "$RUNNER_ARTIFACT" "$SESSION_RESTART_LIMIT_MUTATION" && \
+  ! runner_persistent_session_service_is_fail_closed "$RUNNER_ARTIFACT" "$SESSION_RESTART_BACKOFF_MUTATION" && \
   ! runner_artifact_is_verifiable "$BUNDLE_UNIT_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_ENABLE_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_COLLISION_MUTATION" && \
