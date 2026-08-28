@@ -4,14 +4,16 @@ Documentation=https://github.com/WSorr/Hivra-App
 Wants=network-online.target
 After=network-online.target
 Conflicts=hivra-trading-public-shadow-runner.service
-StartLimitIntervalSec=0
+StartLimitIntervalSec=10min
+StartLimitBurst=3
 
 [Service]
 Type=exec
 WorkingDirectory=/var/lib/hivra-trading-public-shadow
 ExecStartPre=/usr/bin/test -x /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle
 ExecStart=/opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --run-installed-prepared-session
-Restart=no
+Restart=on-failure
+RestartSec=30s
 TimeoutStartSec=30s
 TimeoutStopSec=30s
 KillMode=mixed

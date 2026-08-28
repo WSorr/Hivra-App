@@ -139,8 +139,9 @@ cadence, checks revocation at least every five seconds, and serially invokes
 the existing deterministic-order cycle owner. It runs in the foreground,
 stops on any failure or terminal session state, and installs no timer. The
 persistent session service invokes that same owner from the verified installed
-bundle, has no restart policy, and requires explicit enable, pause, and status
-operations.
+bundle, retries only failed process exits under a bounded supervisor budget,
+and requires explicit enable, pause, and status operations. Terminal session
+outcomes exit successfully and are never restarted.
 Account probing uses one collected transient systemd unit, supplies both
 encrypted credentials only to that process, permits exactly balance, positions,
 and open-orders GETs, and emits only a bounded redacted verdict.
@@ -2878,7 +2879,7 @@ enable_prepared_session_service() {
     die "session service did not become boot-enabled"
   trap - EXIT INT TERM
   rm -rf "$work"
-  echo "PASS trading-runner-artifact: persistent session service enabled session_operation_id=$session_id enablement=$enablement_disposition restart=false"
+  echo "PASS trading-runner-artifact: persistent session service enabled session_operation_id=$session_id enablement=$enablement_disposition restart=bounded-on-failure"
 }
 
 pause_prepared_session_service() {
@@ -2910,7 +2911,7 @@ prepared_session_service_status() {
   active="$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")"
   enabled="$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)"
   runner_key="$(read_installed_runner_key_id)"
-  printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=no\n' \
+  printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
     "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
 }
 
