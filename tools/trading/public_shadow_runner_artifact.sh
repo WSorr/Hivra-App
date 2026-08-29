@@ -898,6 +898,29 @@ file_size() {
   wc -c < "$1" | tr -d '[:space:]'
 }
 
+runtime_bundle_is_dynamic_user_executable() {
+  local directory="$1"
+  python3 - "$directory" "$directory/$BINARY_NAME" \
+    "$directory/$EFFECT_BINARY_NAME" <<'PY'
+import pathlib
+import stat
+import sys
+
+directory, binary, effect_binary = map(pathlib.Path, sys.argv[1:])
+values = (
+    (directory, stat.S_IFDIR),
+    (binary, stat.S_IFREG),
+    (effect_binary, stat.S_IFREG),
+)
+for path, expected_type in values:
+    metadata = path.lstat()
+    if stat.S_IFMT(metadata.st_mode) != expected_type or path.is_symlink():
+        raise SystemExit(1)
+    if stat.S_IMODE(metadata.st_mode) != 0o755:
+        raise SystemExit(1)
+PY
+}
+
 binary_target() {
   python3 - "$1" <<'PY'
 import pathlib
@@ -1472,6 +1495,8 @@ require_exact_installed_bundle() {
   local state_private="/var/lib/private/hivra-trading-public-shadow"
   [ -d "$BUNDLE_INSTALL_PATH" ] && [ ! -L "$BUNDLE_INSTALL_PATH" ] ||
     die "host lifecycle requires the canonical real bundle directory"
+  runtime_bundle_is_dynamic_user_executable "$BUNDLE_INSTALL_PATH" ||
+    die "host lifecycle requires a traversable bundle directory"
   verify_artifact "$BUNDLE_INSTALL_PATH" >/dev/null
   cmp -s "$BINARY_INSTALL_PATH" "$directory/$BINARY_NAME" ||
     die "host lifecycle refused a drifted runner binary"
@@ -4342,6 +4367,7 @@ stage_upgrade_bundle() {
   install -m 0644 "$source/$SESSION_UNIT_NAME" "$pending_upgrade_path/$SESSION_UNIT_NAME"
   install -m 0755 "$source/$LIFECYCLE_NAME" "$pending_upgrade_path/$LIFECYCLE_NAME"
   install -m 0600 "$source/$MANIFEST_NAME" "$pending_upgrade_path/$MANIFEST_NAME"
+  chmod 0755 "$pending_upgrade_path"
   verify_artifact "$pending_upgrade_path" >/dev/null
   cmp -s "$pending_upgrade_path/$MANIFEST_NAME" "$source/$MANIFEST_NAME" ||
     die "disabled upgrade staged the wrong manifest"
@@ -4918,8 +4944,8 @@ PY
     'bounded_deterministic_session' \
     'hivra-trading-deterministic-cycle-evidence-v1' \
     'hivra-trading-exact-order-recovery-v1' >> "$artifact/$EFFECT_BINARY_NAME"
-  chmod 700 "$artifact/$BINARY_NAME"
-  chmod 700 "$artifact/$EFFECT_BINARY_NAME"
+  chmod 755 "$artifact/$BINARY_NAME"
+  chmod 755 "$artifact/$EFFECT_BINARY_NAME"
   cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
   chmod 600 "$artifact/$UNIT_NAME"
   cp "$SESSION_UNIT_SOURCE" "$artifact/$SESSION_UNIT_NAME"
@@ -4928,6 +4954,14 @@ PY
   chmod 700 "$artifact/$LIFECYCLE_NAME"
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   verify_artifact "$artifact" >/dev/null
+  chmod 755 "$artifact"
+  runtime_bundle_is_dynamic_user_executable "$artifact" ||
+    die "self-test rejected a DynamicUser-executable bundle"
+  chmod 700 "$artifact"
+  if runtime_bundle_is_dynamic_user_executable "$artifact"; then
+    die "self-test accepted a non-traversable runtime bundle"
+  fi
+  chmod 755 "$artifact"
 
   if (runtime_smoke_artifact "$artifact") >/dev/null 2>&1; then
     die "self-test accepted a non-runner executable for runtime smoke"

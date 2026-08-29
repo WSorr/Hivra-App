@@ -119,15 +119,12 @@ void main() {
       );
       expect(host.deployCalls, 0);
 
-      expect(
-        await service.deploySession(
-          profile: profile,
-          accountBindingHashHex: accountHash,
-          canonicalSessionJson: '{"signed":"session"}',
-          apiKey: 'key',
-          apiSecret: 'secret',
-        ),
-        'running',
+      await service.deploySession(
+        profile: profile,
+        accountBindingHashHex: accountHash,
+        canonicalSessionJson: '{"signed":"session"}',
+        apiKey: 'key',
+        apiSecret: 'secret',
       );
       expect(await service.loadActiveSession(profile), '{"signed":"session"}');
       expect(
@@ -357,7 +354,7 @@ class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
     required String apiSecret,
   }) async {
     deployCalls += 1;
-    return 'running';
+    return 'PASS prepare\nPASS activate\nHIVRA_REMOTE_RUNNER_APPLY_OK=1';
   }
 
   @override

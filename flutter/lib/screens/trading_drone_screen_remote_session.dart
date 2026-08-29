@@ -250,7 +250,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     }
     _updateState(() => _exportingRemoteMandate = true);
     try {
-      final status = await _module.remoteRunnerProvisioning.deploySession(
+      await _module.remoteRunnerProvisioning.deploySession(
         profile: runner,
         accountBindingHashHex: accountBindingHashHex,
         canonicalSessionJson: admission.canonicalJson,
@@ -265,10 +265,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             'first_cycle_deadline_utc=${firstCycleDeadlineUtc.toIso8601String()} '
             'max_cycles=$maxCycles interval_seconds=$intervalSeconds effect=false',
       );
-      await _showSnack(
-        status.isEmpty ? 'Remote Runner is enabled.' : 'Remote Runner: $status',
-        seconds: 5,
-      );
+      await _showSnack('Remote Runner is enabled.', seconds: 5);
     } catch (error) {
       await _module.uiLog.log(
         'bingx.remote_session.deploy.error',

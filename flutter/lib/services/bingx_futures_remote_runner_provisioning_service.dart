@@ -1075,7 +1075,7 @@ class BingxFuturesRemoteRunnerProvisioningService {
     );
   }
 
-  Future<String> deploySession({
+  Future<void> deploySession({
     required BingxFuturesRemoteRunnerProfile profile,
     required String accountBindingHashHex,
     required String canonicalSessionJson,
@@ -1088,7 +1088,7 @@ class BingxFuturesRemoteRunnerProvisioningService {
         profile.accountBindingHashHex != accountHash) {
       throw StateError('Remote Runner profile belongs to another authority.');
     }
-    final result = await _host.deploySession(
+    await _host.deploySession(
       profile: profile,
       privateKeyPem: await _privateKey(profile),
       canonicalSessionJson: canonicalSessionJson,
@@ -1099,7 +1099,6 @@ class BingxFuturesRemoteRunnerProvisioningService {
       profileId: profile.profileId,
       canonicalSessionJson: canonicalSessionJson,
     );
-    return result;
   }
 
   Future<List<ExternalEffectOperation>> completedSessionEffects({
