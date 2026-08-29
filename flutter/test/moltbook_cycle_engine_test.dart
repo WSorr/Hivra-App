@@ -90,16 +90,124 @@ void main() {
   });
 
   test('successful verification archives its exact source draft', () async {
+    ai.unlocked = true;
+    ai.verificationAnswer = '50';
+    final challenged = _operation(challenged: true);
+    publications.operations = <ExternalEffectOperation>[challenged];
     publications.verificationResult = _succeededPostOperation();
 
-    final result = await module.resolveMoltbookPublicationVerification(
-      operationId: publications.verificationResult!.operationId,
-      answer: '50',
+    final result = await module.resolveMoltbookPublicationVerificationWithAi(
+      operationId: challenged.operationId,
     );
 
     expect(result.state, ExternalEffectState.succeeded);
+    expect(ai.verificationSolutionCount, 1);
+    expect(publications.verificationAnswers, <String>['50']);
     expect(drafts.deletedHashes, <String>{'f' * 64});
   });
+
+  test('provider-marked spam archives its closed source draft', () async {
+    final draft = _draftPreview('f' * 64);
+    await drafts.save(draft);
+    publications.operations = <ExternalEffectOperation>[
+      _spamRejectedPostOperation(),
+    ];
+
+    final loaded = await module.loadMoltbookDrafts();
+
+    expect(loaded, isEmpty);
+    expect(drafts.deletedHashes, <String>{draft.draftHashHex});
+  });
+
+  test('locked AI cannot submit a Moltbook verification answer', () async {
+    final challenged = _operation(challenged: true);
+    publications.operations = <ExternalEffectOperation>[challenged];
+
+    await expectLater(
+      module.resolveMoltbookPublicationVerificationWithAi(
+        operationId: challenged.operationId,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(ai.verificationSolutionCount, 0);
+    expect(publications.verificationResolveCount, 0);
+  });
+
+  test('deleting a draft cancels its prepared publication', () async {
+    final draft = _draftPreview('a' * 64);
+    await drafts.save(draft);
+    final operation = await publications.prepare(
+      draft: draft,
+      submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    );
+
+    await module.deleteMoltbookDraft(draft.draftHashHex);
+
+    expect(drafts.deletedHashes, contains(draft.draftHashHex));
+    expect(publications.cancelledIds, <String>[operation.operationId]);
+    expect(publications.operations.single.state, ExternalEffectState.cancelled);
+  });
+
+  test('deleting a draft cannot bypass an approved publication', () async {
+    final draft = _draftPreview('b' * 64);
+    await drafts.save(draft);
+    final prepared = await publications.prepare(
+      draft: draft,
+      submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    );
+    publications.operations[0] = _operationWithState(
+      prepared,
+      ExternalEffectState.approved,
+    );
+
+    await expectLater(
+      module.deleteMoltbookDraft(draft.draftHashHex),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(drafts.deletedHashes, isNot(contains(draft.draftHashHex)));
+    expect(publications.cancelledIds, isEmpty);
+    expect(publications.operations.single.state, ExternalEffectState.approved);
+  });
+
+  test('loading drafts cancels an orphaned prepared publication', () async {
+    final draft = _draftPreview('c' * 64);
+    final operation = await publications.prepare(
+      draft: draft,
+      submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    );
+
+    final loaded = await module.loadMoltbookDrafts();
+
+    expect(loaded, isEmpty);
+    expect(publications.cancelledIds, <String>[operation.operationId]);
+    expect(publications.operations.single.state, ExternalEffectState.cancelled);
+  });
+
+  test(
+    'loading drafts preserves an approved orphan for explicit handling',
+    () async {
+      final draft = _draftPreview('d' * 64);
+      final prepared = await publications.prepare(
+        draft: draft,
+        submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      );
+      publications.operations[0] = _operationWithState(
+        prepared,
+        ExternalEffectState.approved,
+      );
+
+      final loaded = await module.loadMoltbookDrafts();
+
+      expect(loaded, isEmpty);
+      expect(publications.cancelledIds, isEmpty);
+      expect(
+        publications.operations.single.state,
+        ExternalEffectState.approved,
+      );
+    },
+  );
 
   test('queued public change mismatch is rejected before WASM', () async {
     final change = await publicChanges.record(
@@ -132,7 +240,153 @@ void main() {
         ),
       );
     }
+    await expectLater(
+      module.prepareMoltbookDraft(
+        bulletinId: change.sourceId,
+        releaseTag: 'development',
+        category: change.category,
+        facts: const <String>['AI-rewritten fact.'],
+        titleHint: 'Confirmed update',
+        reviewedBody: 'A reviewed public update.',
+        audience: 'agent-developers',
+        publicChangeCommitmentHashHex: change.commitmentHashHex,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Draft identity does not match the queued public change',
+        ),
+      ),
+    );
     expect(heartbeatHost.executeCount, 0);
+  });
+
+  test(
+    'cycle prepares one exact public-change draft without publication',
+    () async {
+      final change = await publicChanges.record(
+        sourceId: 'capsule-change-1',
+        category: 'hivra',
+        facts: const <String>['Capsule Chat now resumes after restart.'],
+      );
+
+      final first = await module.runMoltbookCycle();
+      final waiting = await publicChanges.record(
+        sourceId: 'capsule-change-2',
+        category: 'hivra',
+        facts: const <String>['Capsule Chat now retains exact inbox evidence.'],
+      );
+      final restarted = buildModule(MoltbookCycleTriggerService());
+      final second = await restarted.runMoltbookCycle();
+
+      expect(first.blockedCount, 0);
+      expect(second.blockedCount, 0);
+      expect(ai.bulletinProposalCount, 1);
+      expect(drafts.stored, hasLength(1));
+      expect(drafts.stored.single.preview.bulletinId, change.sourceId);
+      expect(heartbeatHost.preparedBulletinFacts, <List<String>>[change.facts]);
+      final persistedChanges = await publicChanges.load();
+      final persistedChange = persistedChanges.firstWhere(
+        (candidate) => candidate.sourceId == change.sourceId,
+      );
+      final waitingChange = persistedChanges.firstWhere(
+        (candidate) => candidate.sourceId == waiting.sourceId,
+      );
+      expect(persistedChange.isPending, isFalse);
+      expect(
+        persistedChange.draftHashHex,
+        drafts.stored.single.preview.draftHashHex,
+      );
+      expect(waitingChange.isPending, isTrue);
+      expect(publications.processedIds, isEmpty);
+    },
+  );
+
+  test(
+    'bounded cycle publishes one exact change only to verified PFR community',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      publications.operations.add(_succeededPfrCommunityOperation());
+      final change = await publicChanges.record(
+        sourceId: 'capsule-change-publish',
+        category: 'hivra',
+        facts: const <String>[
+          'Moltbook now publishes one confirmed Capsule change.',
+        ],
+      );
+
+      final first = await module.runMoltbookCycle();
+      final restarted = buildModule(MoltbookCycleTriggerService());
+      final second = await restarted.runMoltbookCycle();
+
+      expect(first.blockedCount, 0);
+      expect(second.blockedCount, 0);
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.preparedPostDestinations, <String>[
+        MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      ]);
+      expect(publications.postApprovalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(drafts.stored, isEmpty);
+      final persisted = (await publicChanges.load()).single;
+      expect(persisted.sourceId, change.sourceId);
+      expect(persisted.isPending, isFalse);
+    },
+  );
+
+  test(
+    'bounded cycle keeps change pending without verified PFR ownership',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      await publicChanges.record(
+        sourceId: 'capsule-change-unverified-community',
+        category: 'hivra',
+        facts: const <String>['A confirmed Capsule change.'],
+      );
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(summary.blockedCount, 1);
+      expect(ai.bulletinProposalCount, 0);
+      expect(drafts.stored, isEmpty);
+      expect(publications.preparedPostDestinations, isEmpty);
+      expect((await publicChanges.load()).single.isPending, isTrue);
+    },
+  );
+
+  test('AI fact drift keeps public change pending before WASM', () async {
+    await publicChanges.record(
+      sourceId: 'capsule-change-ai-drift',
+      category: 'hivra',
+      facts: const <String>['A confirmed Capsule change.'],
+    );
+    ai.driftBulletinFacts = true;
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(summary.blockedCount, 1);
+    expect(drafts.stored, isEmpty);
+    expect(heartbeatHost.preparedBulletinFacts, isEmpty);
+    expect((await publicChanges.load()).single.isPending, isTrue);
+  });
+
+  test('Capsule switch during public-change AI leaves no draft', () async {
+    await publicChanges.record(
+      sourceId: 'capsule-change-switch',
+      category: 'hivra',
+      facts: const <String>['A confirmed Capsule change.'],
+    );
+    ai.afterProposal = () => activeRoot = _rootB;
+
+    await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
+
+    expect(drafts.stored, isEmpty);
+    expect(checkpoint.commitCount, 0);
+    activeRoot = _rootA;
+    expect((await publicChanges.load()).single.isPending, isTrue);
   });
 
   test('duplicate wake shares one in-flight Capsule account cycle', () async {
@@ -258,6 +512,74 @@ void main() {
     expect(summary.challengedCount, 1);
     expect(summary.blockedCount, 0);
     expect(checkpoint.commitCount, 1);
+  });
+
+  test(
+    'unlocked Gemini solves one retained challenge in the same cycle',
+    () async {
+      ai.unlocked = true;
+      ai.verificationAnswer = '4';
+      publications.operations = <ExternalEffectOperation>[
+        _operation(challenged: true),
+      ];
+      publications.verificationResult = _succeededPostOperation();
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(ai.verificationSolutionCount, 1);
+      expect(publications.verificationResolveCount, 1);
+      expect(publications.verificationAnswers, <String>['4']);
+      expect(summary.challengedCount, 0);
+    },
+  );
+
+  test('Gemini never submits an answer after the Capsule changes', () async {
+    ai.unlocked = true;
+    ai.verificationAnswer = '4';
+    ai.afterVerificationSolution = () => activeRoot = _rootB;
+    publications.operations = <ExternalEffectOperation>[
+      _operation(challenged: true),
+    ];
+    publications.verificationResult = _succeededPostOperation();
+
+    await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
+
+    expect(ai.verificationSolutionCount, 1);
+    expect(publications.verificationResolveCount, 0);
+  });
+
+  test(
+    'rejected verification answer is not submitted again automatically',
+    () async {
+      ai.unlocked = true;
+      publications.operations = <ExternalEffectOperation>[
+        _operation(
+          challenged: true,
+          challengeErrorCode: 'verification_rejected',
+        ),
+      ];
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(ai.verificationSolutionCount, 0);
+      expect(publications.verificationResolveCount, 0);
+      expect(summary.challengedCount, 1);
+    },
+  );
+
+  test('malformed Gemini answer makes no provider request', () async {
+    ai.unlocked = true;
+    ai.error = const FormatException('AI verification answer is not numeric');
+    publications.operations = <ExternalEffectOperation>[
+      _operation(challenged: true),
+    ];
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(ai.verificationSolutionCount, 1);
+    expect(publications.verificationResolveCount, 0);
+    expect(summary.blockedCount, 1);
+    expect(summary.challengedCount, 1);
   });
 
   test('assisted cycle prepares one local reply without publishing', () async {
@@ -501,13 +823,32 @@ void main() {
     expect(connection.observeCount, 1);
   });
 
+  test('configured session can resume immediately after AI unlock', () async {
+    configuration.triggerPolicy =
+        MoltbookAmbassadorConfiguration.triggerSession;
+    heartbeatHost.engagementAction = 'reply_draft';
+    ai.error = StateError('AI session locked');
+
+    final blocked = await module.startConfiguredMoltbookCycles();
+    expect(blocked?.blockedCount, 1);
+    expect(publications.preparedReplies, isEmpty);
+
+    ai.error = null;
+    final resumed = await module.restartConfiguredMoltbookCycles();
+    final duplicate = await module.startConfiguredMoltbookCycles();
+
+    expect(resumed, isNotNull);
+    expect(duplicate, isNull);
+    expect(ai.proposalCount, 2);
+    expect(publications.preparedReplies, hasLength(1));
+  });
+
   test('stopped session policy resumes exactly once when enabled', () async {
     configuration.triggerPolicy =
         MoltbookAmbassadorConfiguration.triggerSession;
 
     await module.startConfiguredMoltbookCycles();
-    module.stopMoltbookCycles();
-    final resumed = await module.startConfiguredMoltbookCycles();
+    final resumed = await module.restartConfiguredMoltbookCycles();
     final duplicate = await module.startConfiguredMoltbookCycles();
 
     expect(resumed, isNotNull);
@@ -666,6 +1007,7 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
 class _HeartbeatHost implements PluginHostApiService {
   int executeCount = 0;
   int authorizationCount = 0;
+  final List<List<String>> preparedBulletinFacts = <List<String>>[];
   final List<String> authorizedTargetCommentIds = <String>[];
   final Map<String, String> engagementActionsByPostId = <String, String>{};
   String engagementAction = 'no_action';
@@ -681,6 +1023,9 @@ class _HeartbeatHost implements PluginHostApiService {
     }
     if (request.method == prepareMoltbookReplyMethod) {
       return _replyDraftResponse(request);
+    }
+    if (request.method == prepareMoltbookDraftMethod) {
+      return _bulletinDraftResponse(request);
     }
     if (request.method == authorizeMoltbookDelegatedReplyMethod) {
       authorizationCount++;
@@ -826,6 +1171,30 @@ class _HeartbeatHost implements PluginHostApiService {
     }, canonical);
   }
 
+  PluginHostApiResponse _bulletinDraftResponse(PluginHostApiRequest request) {
+    preparedBulletinFacts.add(
+      List<String>.from(request.args['facts'] as List<dynamic>),
+    );
+    final canonical = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'plugin_id': moltbookAmbassadorPluginId,
+      'contract_kind': 'moltbook_ambassador_draft',
+      'bulletin_id': request.args['bulletin_id'],
+      'release_tag': request.args['release_tag'],
+      'category': request.args['category'],
+      'title': request.args['title_hint'],
+      'body': request.args['reviewed_body'],
+      'audience': request.args['audience'],
+      'approval_required': true,
+      'safety_flags': <String>['human_review_required'],
+    });
+    return _response(request, <String, dynamic>{
+      ...jsonDecode(canonical) as Map<String, dynamic>,
+      'canonical_draft_json': canonical,
+      'draft_hash_hex': sha256.convert(utf8.encode(canonical)).toString(),
+    }, canonical);
+  }
+
   PluginHostApiResponse _delegatedAuthorizationResponse(
     PluginHostApiRequest request,
   ) {
@@ -927,16 +1296,121 @@ class _CyclePublications implements MoltbookPublicationService {
   ExternalEffectOperation? verificationResult;
   int delegatedApprovalCount = 0;
   int verificationResolveCount = 0;
+  final List<String> verificationAnswers = <String>[];
   final Set<String> unavailableCommentIds = <String>{};
   final List<String> unavailableChecks = <String>[];
+  final List<String> preparedPostDestinations = <String>[];
+  final List<String> processedPostIds = <String>[];
+  final List<String> cancelledIds = <String>[];
+  int postApprovalCount = 0;
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
 
   @override
+  Future<ExternalEffectOperation> cancel(String operationId) async {
+    cancelledIds.add(operationId);
+    final index = operations.indexWhere(
+      (operation) => operation.operationId == operationId,
+    );
+    final cancelled = _operationWithState(
+      operations[index],
+      ExternalEffectState.cancelled,
+    );
+    operations[index] = cancelled;
+    return cancelled;
+  }
+
+  @override
   Future<ExternalEffectOperation> process(String operationId) async {
     processedIds.add(operationId);
+    final existingIndex = operations.indexWhere(
+      (operation) => operation.operationId == operationId,
+    );
+    if (existingIndex >= 0 &&
+        operations[existingIndex].requiredAction != null) {
+      return operations[existingIndex];
+    }
+    final postIndex = operations.indexWhere(
+      (operation) =>
+          operation.operationId == operationId &&
+          operation.effectKind == MoltbookExternalEffectAdapter.postEffectKind,
+    );
+    if (postIndex >= 0) {
+      processedPostIds.add(operationId);
+      final succeeded = _operationWithState(
+        operations[postIndex],
+        ExternalEffectState.succeeded,
+      );
+      operations[postIndex] = succeeded;
+      return succeeded;
+    }
     return _operation(challenged: true);
+  }
+
+  @override
+  Future<ExternalEffectOperation> prepare({
+    required MoltbookDraftPreview draft,
+    required String submoltName,
+  }) async {
+    preparedPostDestinations.add(submoltName);
+    final operationId = 'post-${draft.draftHashHex}';
+    final existing = operations.where(
+      (operation) => operation.operationId == operationId,
+    );
+    if (existing.isNotEmpty) return existing.single;
+    final operation = ExternalEffectOperation(
+      ownerCapsuleHex: _rootA,
+      operationId: operationId,
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: 'moltbook',
+      accountBindingId: 'agent-1',
+      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+      canonicalPayloadJson: jsonEncode(<String, dynamic>{
+        'schema_version': 2,
+        'account_name': 'Hivra Agent',
+        'submolt_name': submoltName,
+        'title': draft.title,
+        'content': draft.body,
+        'operation_marker': '[hivra-effect:$operationId]',
+        'source_draft_hash_hex': draft.draftHashHex,
+      }),
+      payloadHashHex: sha256.convert(utf8.encode(operationId)).toString(),
+      state: ExternalEffectState.prepared,
+      approvalEvidenceHashHex: null,
+      attemptCount: 0,
+      revision: 0,
+      createdAtUtc: '2026-08-01T00:00:00.000Z',
+      updatedAtUtc: '2026-08-01T00:00:00.000Z',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      requiredAction: null,
+      receipt: null,
+    );
+    operations.add(operation);
+    return operation;
+  }
+
+  @override
+  Future<ExternalEffectOperation> approveAndQueue(
+    ExternalEffectOperation operation,
+  ) async {
+    postApprovalCount++;
+    final queued = _operationWithState(operation, ExternalEffectState.queued);
+    final index = operations.indexWhere(
+      (candidate) => candidate.operationId == operation.operationId,
+    );
+    operations[index] = queued;
+    return queued;
+  }
+
+  @override
+  Future<ExternalEffectOperation> approveBoundedPublicChangeAndQueue({
+    required ExternalEffectOperation operation,
+    required String publicChangeCommitmentHashHex,
+  }) async {
+    expect(publicChangeCommitmentHashHex, hasLength(64));
+    return approveAndQueue(operation);
   }
 
   @override
@@ -954,6 +1428,7 @@ class _CyclePublications implements MoltbookPublicationService {
     required String answer,
   }) async {
     verificationResolveCount++;
+    verificationAnswers.add(answer);
     return verificationResult!;
   }
 
@@ -1049,37 +1524,39 @@ const String _rootA =
 const String _rootB =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-ExternalEffectOperation _operation({bool challenged = false}) =>
-    ExternalEffectOperation(
-      ownerCapsuleHex: _rootA,
-      operationId: 'effect-1',
-      pluginId: moltbookAmbassadorPluginId,
-      providerId: 'moltbook',
-      accountBindingId: 'agent-1',
-      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
-      canonicalPayloadJson: '{}',
-      payloadHashHex:
-          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-      state: ExternalEffectState.unresolved,
-      approvalEvidenceHashHex: null,
-      attemptCount: 1,
-      revision: 1,
-      createdAtUtc: '2026-08-01T00:00:00.000Z',
-      updatedAtUtc: '2026-08-01T00:00:00.000Z',
-      lastErrorCode: challenged ? 'verification_required' : 'network_timeout',
-      lastErrorMessage: challenged ? 'Complete challenge' : 'Timed out',
-      requiredAction:
-          challenged
-              ? const ExternalEffectRequiredAction(
-                kind: 'numeric_challenge',
-                providerReferenceId: 'challenge-1',
-                actionToken: 'token',
-                prompt: '2 + 2',
-                expiresAtUtc: '2026-08-01T01:00:00.000Z',
-              )
-              : null,
-      receipt: null,
-    );
+ExternalEffectOperation _operation({
+  bool challenged = false,
+  String challengeErrorCode = 'verification_required',
+}) => ExternalEffectOperation(
+  ownerCapsuleHex: _rootA,
+  operationId: 'effect-1',
+  pluginId: moltbookAmbassadorPluginId,
+  providerId: 'moltbook',
+  accountBindingId: 'agent-1',
+  effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+  canonicalPayloadJson: '{}',
+  payloadHashHex:
+      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+  state: ExternalEffectState.unresolved,
+  approvalEvidenceHashHex: null,
+  attemptCount: 1,
+  revision: 1,
+  createdAtUtc: '2026-08-01T00:00:00.000Z',
+  updatedAtUtc: '2026-08-01T00:00:00.000Z',
+  lastErrorCode: challenged ? challengeErrorCode : 'network_timeout',
+  lastErrorMessage: challenged ? 'Complete challenge' : 'Timed out',
+  requiredAction:
+      challenged
+          ? const ExternalEffectRequiredAction(
+            kind: 'numeric_challenge',
+            providerReferenceId: 'challenge-1',
+            actionToken: 'token',
+            prompt: '2 + 2',
+            expiresAtUtc: '2026-08-01T01:00:00.000Z',
+          )
+          : null,
+  receipt: null,
+);
 
 ExternalEffectOperation _committedReply(String operationId, DateTime updated) =>
     ExternalEffectOperation(
@@ -1144,15 +1621,53 @@ class _UnusedExternalEffects implements ExternalEffectService {
 
 class _RecordingDraftStore implements MoltbookDraftStore {
   final Set<String> deletedHashes = <String>{};
+  final List<MoltbookStoredDraft> stored = <MoltbookStoredDraft>[];
+
+  @override
+  Future<List<MoltbookStoredDraft>> load() async =>
+      List<MoltbookStoredDraft>.unmodifiable(stored);
+
+  @override
+  Future<MoltbookStoredDraft> save(MoltbookDraftPreview preview) async {
+    final draft = MoltbookStoredDraft(
+      preview: preview,
+      createdAtUtc: DateTime.utc(2026, 8, 29),
+    );
+    stored
+      ..removeWhere(
+        (candidate) => candidate.preview.draftHashHex == preview.draftHashHex,
+      )
+      ..insert(0, draft);
+    return draft;
+  }
 
   @override
   Future<void> deleteAll(Set<String> draftHashHexes) async {
     deletedHashes.addAll(draftHashHexes);
+    stored.removeWhere(
+      (draft) => draftHashHexes.contains(draft.preview.draftHashHex),
+    );
   }
+
+  @override
+  Future<void> delete(String draftHashHex) => deleteAll(<String>{draftHashHex});
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
+
+MoltbookDraftPreview _draftPreview(String hash) => MoltbookDraftPreview(
+  bulletinId: 'public-change',
+  releaseTag: '2026-08-30',
+  category: 'hivra-development',
+  title: 'Public change',
+  body: 'Confirmed public change.',
+  audience: 'person-first-runtime',
+  approvalRequired: true,
+  safetyFlags: const <String>[],
+  draftHashHex: hash,
+  canonicalDraftJson: '{}',
+);
 
 ExternalEffectOperation _succeededPostOperation() {
   const operationId = 'moltbook-post-verified';
@@ -1185,10 +1700,155 @@ ExternalEffectOperation _succeededPostOperation() {
   );
 }
 
+ExternalEffectOperation _spamRejectedPostOperation() {
+  const operationId = 'moltbook-post-spam-rejected';
+  return ExternalEffectOperation(
+    ownerCapsuleHex: _rootA,
+    operationId: operationId,
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'agent-1',
+    effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+    canonicalPayloadJson: '{"source_draft_hash_hex":"${'f' * 64}"}',
+    payloadHashHex: 'c' * 64,
+    state: ExternalEffectState.terminalFailure,
+    approvalEvidenceHashHex: 'd' * 64,
+    attemptCount: 1,
+    revision: 3,
+    createdAtUtc: '2026-08-01T00:00:00.000Z',
+    updatedAtUtc: '2026-08-01T00:01:00.000Z',
+    lastErrorCode: 'provider_marked_spam',
+    lastErrorMessage: 'Moltbook retained the exact post but marked it as spam',
+    providerReferenceId: 'post-1',
+    requiredAction: null,
+    receipt: null,
+  );
+}
+
+ExternalEffectOperation _succeededPfrCommunityOperation() {
+  const operationId = 'moltbook-submolt-pfr';
+  return ExternalEffectOperation(
+    ownerCapsuleHex: _rootA,
+    operationId: operationId,
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'agent-1',
+    effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
+    canonicalPayloadJson: jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'name': MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      'display_name':
+          MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
+      'description':
+          MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
+    }),
+    payloadHashHex: 'a' * 64,
+    state: ExternalEffectState.succeeded,
+    approvalEvidenceHashHex: 'b' * 64,
+    attemptCount: 1,
+    revision: 2,
+    createdAtUtc: '2026-08-01T00:00:00.000Z',
+    updatedAtUtc: '2026-08-01T00:01:00.000Z',
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    requiredAction: null,
+    receipt: const ExternalEffectReceipt(
+      operationId: operationId,
+      providerId: 'moltbook',
+      providerReceiptId: 'person-first-runtime',
+      evidenceHashHex:
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      receivedAtUtc: '2026-08-01T00:01:00.000Z',
+    ),
+  );
+}
+
+ExternalEffectOperation _operationWithState(
+  ExternalEffectOperation operation,
+  ExternalEffectState state,
+) => ExternalEffectOperation(
+  ownerCapsuleHex: operation.ownerCapsuleHex,
+  operationId: operation.operationId,
+  pluginId: operation.pluginId,
+  providerId: operation.providerId,
+  accountBindingId: operation.accountBindingId,
+  effectKind: operation.effectKind,
+  canonicalPayloadJson: operation.canonicalPayloadJson,
+  payloadHashHex: operation.payloadHashHex,
+  state: state,
+  approvalEvidenceHashHex:
+      state == ExternalEffectState.prepared ? null : 'e' * 64,
+  attemptCount: state == ExternalEffectState.succeeded ? 1 : 0,
+  revision: operation.revision + 1,
+  createdAtUtc: operation.createdAtUtc,
+  updatedAtUtc: '2026-08-01T00:01:00.000Z',
+  lastErrorCode: null,
+  lastErrorMessage: null,
+  requiredAction: null,
+  receipt:
+      state == ExternalEffectState.succeeded
+          ? ExternalEffectReceipt(
+            operationId: operation.operationId,
+            providerId: operation.providerId,
+            providerReceiptId: 'post-1',
+            evidenceHashHex: 'f' * 64,
+            receivedAtUtc: '2026-08-01T00:01:00.000Z',
+          )
+          : null,
+);
+
 class _CycleAi implements MoltbookPublicBulletinAiService {
   int proposalCount = 0;
+  int bulletinProposalCount = 0;
+  int verificationSolutionCount = 0;
   Object? error;
   void Function()? afterProposal;
+  void Function()? afterVerificationSolution;
+  bool driftBulletinFacts = false;
+  bool unlocked = false;
+  String verificationAnswer = '4';
+
+  @override
+  bool get isSessionUnlocked => unlocked;
+
+  @override
+  Future<String> solveNumericVerification({
+    required String prompt,
+    required String operationId,
+  }) async {
+    verificationSolutionCount++;
+    final failure = error;
+    if (failure != null) throw failure;
+    afterVerificationSolution?.call();
+    return verificationAnswer;
+  }
+
+  @override
+  Future<MoltbookPublicBulletinProposal> propose({
+    required String sourceNotes,
+    required String category,
+    required String personaSummary,
+  }) async {
+    bulletinProposalCount++;
+    final failure = error;
+    if (failure != null) throw failure;
+    afterProposal?.call();
+    final facts = sourceNotes
+        .split('\n')
+        .map((fact) => fact.trim())
+        .where((fact) => fact.isNotEmpty)
+        .toList(growable: false);
+    return MoltbookPublicBulletinProposal(
+      title: 'A confirmed Capsule change',
+      body: facts.join(' '),
+      facts:
+          driftBulletinFacts
+              ? const <String>['AI paraphrase is not authoritative.']
+              : facts,
+      providerLabel: 'Gemini',
+      model: 'test-model',
+    );
+  }
 
   @override
   Future<MoltbookReplyProposal> proposeReply({

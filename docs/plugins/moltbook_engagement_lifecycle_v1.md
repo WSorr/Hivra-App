@@ -26,7 +26,8 @@ adapter, and receipt rules.
   capability.
 - WASM does not receive network or secure-storage access.
 - This contract does not promise an always-running server or background daemon.
-- Anti-spam challenges are not solved or bypassed automatically.
+- Anti-spam challenges are never bypassed. Gemini may solve an exact bounded
+  numeric prompt only after the publication effect is already authorized.
 - Pair Consensus is not required for one Capsule operating its own account.
 
 ## 3. Canonical identities
@@ -113,18 +114,30 @@ and 1..8 explicit public facts to a versioned SHA-256 commitment. Exact replay
 is idempotent; reuse of the same source id for different facts fails closed.
 
 The feed is Capsule scoped, oldest-first, and bounded to 100 items. AI may turn
-only the next pending item into an advisory bulletin proposal. The item remains
-pending through inference and review and becomes drafted only after the
-existing ambassador WASM preserves the exact reviewed title/body and the
-existing draft store durably records the canonical draft hash. Publication
-still requires the existing approval, external-effect, challenge, receipt, and
-reconciliation lifecycle. The application may import a bounded, reviewed
-build-time manifest when the Moltbook workspace opens. The manifest parser is
-strict and atomic, and only items matching the Capsule's existing allowed-topic
-policy are ingested. This producer reads neither Git nor runtime Capsule data,
-and gains no draft, approval, effect, or publication authority. Any future
-provider or CI producer must use the same ingestion contract rather than create
-a second feed.
+only the next pending item into an advisory bulletin proposal. Every confirmed
+fact must remain verbatim in both the proposal body and its ordered supporting
+facts; generic summaries and paraphrases fail closed before WASM. A foreground
+cycle may prepare that local draft only when no remote target claimed the
+cycle's proposal slot and no local draft or non-terminal publication already
+awaits review. The item becomes drafted only after the existing ambassador
+WASM preserves the exact title/body and the existing draft store durably
+records the canonical draft hash.
+
+`Assisted` mode stops at the local draft. Existing `Bounded` mode may advance
+one exact public-change draft through the existing post effect only when the
+active Capsule and current Moltbook account already hold verified ownership
+evidence for `m/person-first-runtime`. The destination is fixed by policy; AI
+cannot choose it. The same operation id, receipt, unresolved state, and
+reconciliation rules apply across restart, so repeated launches cannot create
+a second semantic post. Missing community evidence, AI fact drift, secret-like
+material, Capsule switching, or account rotation keeps the change pending and
+creates no provider effect.
+The application may import a bounded, reviewed build-time manifest when the
+Moltbook workspace opens. The manifest parser is strict and atomic, and only
+items matching the Capsule's existing allowed-topic policy are ingested. This
+producer reads neither Git nor runtime Capsule data, and gains no draft,
+approval, effect, or publication authority. Any future provider or CI producer
+must use the same ingestion contract rather than create a second feed.
 If draft persistence succeeds but the feed marker cannot be written, the item
 remains pending and requires explicit operator resolution; no heuristic may
 adopt a draft by title, bulletin id, category, or text similarity.
@@ -135,6 +148,11 @@ to that draft's `source_draft_hash_hex`, the application composition owner
 must archive the matching draft. Loading the workspace performs the same
 reconciliation for pre-existing data. Failed, cancelled, unresolved, queued,
 reply, or malformed operations must not archive post drafts.
+Deleting a local draft may cancel only its single matching unapproved
+`prepared` post operation. Approved, queued, delivering, or unresolved work
+requires explicit cancellation or reconciliation. Workspace loading repairs a
+legacy missing-draft orphan only when the retained operation is still
+`prepared`; this repair makes no provider request.
 
 ### 4.2 Fixed Person-First Runtime community bootstrap
 
@@ -154,9 +172,9 @@ Exact preparation replay resumes the same operation.
 
 The UI may select this community as the post destination only after verified
 ownership evidence. AI cannot choose, create, rename, migrate, or broaden a
-destination. Existing posts are not migrated, replies remain scoped to their
-original post community, and no automatic post or community effect is
-authorized by this bootstrap.
+destination. Existing posts are not migrated and replies remain scoped to
+their original post community. The bootstrap itself authorizes no automatic
+effect; only the bounded public-change policy above may advance an exact post.
 
 ## 5. Lifecycle projection
 
@@ -189,8 +207,14 @@ Transition rules:
 7. Assisted requires explicit exact approval. Bounded requires a valid WASM
    delegation authorization and current host budget.
 8. The common effect processor delivers through the Moltbook adapter.
-9. Provider challenge remains unresolved until explicit human completion.
+9. A numeric provider challenge may disclose only its prompt to the unlocked
+   Capsule AI runtime. The existing effect owner submits one strict numeric
+   answer; Gemini receives no credential, action token, account identity, or
+   publication authority.
 10. Only a target-bound verified receipt produces `succeeded`.
+11. An exact provider-referenced post marked as spam is a terminal provider
+    rejection, not ambiguous delivery. It blocks publication retry but not the
+    next independent effect.
 
 ## 6. Operating and trigger modes
 
@@ -239,8 +263,11 @@ One cycle executes in this order:
    actionable target is selected or the set is exhausted. A `no_action` result
    closes only that candidate for the current cycle; it cannot starve later
    candidates. At most one actionable target may advance per cycle.
-9. For selected targets only, request an AI proposal if configured.
-10. Validate and bind exact prose through WASM.
+9. Claim at most one new proposal path: the selected remote target, or, when no
+   remote target claimed it, the oldest pending Capsule public change if no
+   local draft or non-terminal publication already awaits review.
+10. Request an AI proposal if configured, retain confirmed public-change facts
+    unchanged, and validate the exact advisory prose through WASM.
 11. Under Assisted policy, prepare one immutable local effect and stop for exact
     human review. Under explicitly enabled Bounded policy, apply the current
     WASM authorization and host-owned durable budget to that same effect path.
@@ -270,8 +297,17 @@ until resolved, cancelled safely, or expired according to provider evidence.
 
 ## 9. Challenges and failure behavior
 
-- A numeric/provider challenge always requires explicit user action.
 - A challenge is bound to one operation and expiry. It cannot be reused.
+- AI output is an untrusted numeric proposal, not authority, a receipt, or
+  evidence that the hidden content became visible.
+- Only an initial `verification_required` action may be solved automatically.
+  A malformed AI response makes no provider request, and a rejected answer is
+  not submitted again automatically.
+- The exact prompt is the only provider challenge field disclosed to AI.
+  Credentials, action tokens, provider references, effect payloads, and
+  Capsule identifiers remain inside their existing owners.
+- An accepted answer still requires provider re-observation and an exact
+  receipt before success.
 - Failure or expiry of one challenge does not stop observation or reconciliation
   of other targets.
 - Network timeout remains unresolved and reconciles before any retry.
@@ -346,11 +382,14 @@ Bounded mode remains non-reference-grade until all are true:
 - session and continuous modes produce identical decisions for identical
   normalized inputs and explicit times;
 - stop prevents new AI/effect work immediately;
-- challenges remain human-only and restart-safe;
+- numeric challenge solving remains Capsule-scoped, single-attempt, and
+  restart-safe;
 - daily/interval limits survive restart and Capsule switching;
 - no secret, Core data, relationship data, or provider DTO enters AI or WASM;
 - macOS and Android manual evidence passes with a disposable account.
 
-The shipped default remains Assisted. Bounded requires explicit selection,
-runs only while the application and AI lease are active, and never authorizes
-root comments, posts, votes, follows, direct messages, or challenge answers.
+The shipped default remains Assisted. Bounded requires explicit selection and
+runs only while the application and AI lease are active. Gemini cannot create
+root comments, posts, votes, follows, direct messages, or broader authority;
+it may only propose the numeric answer for a challenge attached to an already
+authorized exact effect.

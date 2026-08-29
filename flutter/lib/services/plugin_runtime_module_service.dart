@@ -61,6 +61,8 @@ class PluginChatSendResult {
 }
 
 class PluginRuntimeModule {
+  static const String _automaticMoltbookReleaseTag = 'development';
+  static const String _automaticMoltbookAudience = 'agent-developers';
   static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles =
       <String, Future<MoltbookCycleSummary>>{};
   static final Map<String, int> _moltbookCycleEpochs = <String, int>{};
@@ -228,6 +230,114 @@ class PluginRuntimeModule {
       change.sourceNotes,
       category: change.category,
     );
+  }
+
+  Future<MoltbookDraftPreview?> _advanceNextMoltbookPublicChange({
+    required String ownerHex,
+    required String accountBindingId,
+    required int cycleEpoch,
+  }) async {
+    if ((await moltbookDrafts.load()).isNotEmpty) return null;
+    final publications = await moltbookPublications.list();
+    if (publications.any((operation) => !operation.state.isTerminal)) {
+      return null;
+    }
+    final change = await moltbookPublicChanges.nextPending();
+    if (change == null) return null;
+    final configuration = await _ambassadorConfiguration.load();
+    if (configuration.approvalMode ==
+        MoltbookAmbassadorConfiguration.approvalBounded) {
+      final communityVerified = publications.any(
+        (operation) =>
+            operation.ownerCapsuleHex == ownerHex &&
+            operation.accountBindingId == accountBindingId &&
+            operation.state == ExternalEffectState.succeeded &&
+            MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
+              operation,
+            ),
+      );
+      if (!communityVerified) {
+        throw StateError(
+          'Person-First Runtime community ownership is not verified',
+        );
+      }
+    }
+    final proposal = await proposeMoltbookPublicBulletin(
+      change.sourceNotes,
+      category: change.category,
+    );
+    if (!_sameOrderedStrings(proposal.facts, change.facts) ||
+        change.facts.any((fact) => !proposal.body.contains(fact))) {
+      throw StateError(
+        'AI bulletin does not preserve the exact confirmed public change',
+      );
+    }
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    final preview = await prepareMoltbookDraft(
+      bulletinId: change.sourceId,
+      releaseTag: _automaticMoltbookReleaseTag,
+      category: change.category,
+      facts: change.facts,
+      titleHint: proposal.title,
+      reviewedBody: proposal.body,
+      audience: _automaticMoltbookAudience,
+      publicChangeCommitmentHashHex: change.commitmentHashHex,
+    );
+    await uiLog.log(
+      'moltbook.cycle.public_change',
+      'prepared source=${_safeLogValue(change.sourceId)} '
+          'draft=${preview.draftHashHex.substring(0, 12)}..',
+    );
+    if (configuration.approvalMode !=
+        MoltbookAmbassadorConfiguration.approvalBounded) {
+      return preview;
+    }
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    final prepared = await prepareMoltbookPublication(
+      draft: preview,
+      submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    );
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    final queued =
+        prepared.state == ExternalEffectState.succeeded
+            ? prepared
+            : await moltbookPublications.approveBoundedPublicChangeAndQueue(
+              operation: prepared,
+              publicChangeCommitmentHashHex: change.commitmentHashHex,
+            );
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    var result =
+        queued.state == ExternalEffectState.succeeded
+            ? queued
+            : await processMoltbookPublication(queued.operationId);
+    result = await _resolveMoltbookVerificationWithAiIfEligible(
+      result,
+      cycleOwnerHex: ownerHex,
+      cycleAccountBindingId: accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    await uiLog.log(
+      'moltbook.cycle.public_change',
+      'published destination=m/${MoltbookPublicationService.personFirstRuntimeSubmoltName} '
+          'operation=${result.operationId} state=${result.state.wireName}',
+    );
+    return preview;
   }
 
   Future<MoltbookConnectionBinding?> loadMoltbookBinding() =>
@@ -819,6 +929,11 @@ class PluginRuntimeModule {
     }
   }
 
+  Future<MoltbookCycleSummary?> restartConfiguredMoltbookCycles() {
+    stopMoltbookCycles();
+    return startConfiguredMoltbookCycles();
+  }
+
   void stopMoltbookCycles() {
     _moltbookCycleEpoch++;
     moltbookCycleTriggers.stopAll();
@@ -876,8 +991,14 @@ class PluginRuntimeModule {
         cycleEpoch: cycleEpoch,
       );
       try {
-        final resolved = await moltbookPublications.process(
+        var resolved = await moltbookPublications.process(
           operation.operationId,
+        );
+        resolved = await _resolveMoltbookVerificationWithAiIfEligible(
+          resolved,
+          cycleOwnerHex: ownerHex,
+          cycleAccountBindingId: accountBindingId,
+          cycleEpoch: cycleEpoch,
         );
         reconciledCount++;
         if (resolved.requiredAction != null ||
@@ -886,6 +1007,10 @@ class PluginRuntimeModule {
         }
       } catch (error) {
         blockedCount++;
+        if (operation.requiredAction != null ||
+            operation.lastErrorCode == 'verification_required') {
+          challengedCount++;
+        }
         await uiLog.log(
           'moltbook.cycle.reconcile',
           'blocked operation=${operation.operationId} ${_safeError(error)}',
@@ -902,6 +1027,7 @@ class PluginRuntimeModule {
     );
     final heartbeatPlan = heartbeat.plan;
     String? deferredFeedPostId;
+    var proposalPathClaimed = false;
     for (final candidatePostId in heartbeatPlan.candidatePostIds) {
       try {
         final selectionKind =
@@ -980,6 +1106,7 @@ class PluginRuntimeModule {
             cycleEpoch: cycleEpoch,
           );
           if (existing.isEmpty) {
+            proposalPathClaimed = true;
             final configuration = await _ambassadorConfiguration.load();
             if (const <String>{
               MoltbookAmbassadorConfiguration.approvalAssisted,
@@ -1006,7 +1133,7 @@ class PluginRuntimeModule {
               final bounded =
                   configuration.approvalMode ==
                   MoltbookAmbassadorConfiguration.approvalBounded;
-              final operation = await _advanceMoltbookEngagement(
+              var operation = await _advanceMoltbookEngagement(
                 engagementPlan: engagementPlan,
                 draft: draft,
                 policy:
@@ -1015,6 +1142,12 @@ class PluginRuntimeModule {
                         : MoltbookEngagementWritePolicy.assisted,
                 exactApproval: bounded,
                 processAuthorizedEffect: bounded,
+                cycleOwnerHex: ownerHex,
+                cycleAccountBindingId: accountBindingId,
+                cycleEpoch: cycleEpoch,
+              );
+              operation = await _resolveMoltbookVerificationWithAiIfEligible(
+                operation,
                 cycleOwnerHex: ownerHex,
                 cycleAccountBindingId: accountBindingId,
                 cycleEpoch: cycleEpoch,
@@ -1058,6 +1191,31 @@ class PluginRuntimeModule {
           'deferred post=$candidatePostId ${_safeError(error)}',
         );
         break;
+      }
+    }
+    if (!proposalPathClaimed) {
+      try {
+        await _ensureMoltbookCycleScope(
+          ownerHex,
+          accountBindingId,
+          cycleEpoch: cycleEpoch,
+        );
+        await _advanceNextMoltbookPublicChange(
+          ownerHex: ownerHex,
+          accountBindingId: accountBindingId,
+          cycleEpoch: cycleEpoch,
+        );
+        await _ensureMoltbookCycleScope(
+          ownerHex,
+          accountBindingId,
+          cycleEpoch: cycleEpoch,
+        );
+      } catch (error) {
+        blockedCount++;
+        await uiLog.log(
+          'moltbook.cycle.public_change',
+          'deferred ${_safeError(error)}',
+        );
       }
     }
     await _ensureMoltbookCycleScope(
@@ -1165,8 +1323,26 @@ class PluginRuntimeModule {
   }
 
   Future<List<MoltbookStoredDraft>> loadMoltbookDrafts() async {
-    await _archiveSucceededMoltbookDrafts(await moltbookPublications.list());
-    return moltbookDrafts.load();
+    final operations = await moltbookPublications.list();
+    await _archiveClosedMoltbookDrafts(operations);
+    final drafts = await moltbookDrafts.load();
+    final draftHashes =
+        drafts.map((draft) => draft.preview.draftHashHex).toSet();
+    var cancelledOrphans = 0;
+    for (final operation in operations) {
+      if (operation.state != ExternalEffectState.prepared) continue;
+      final draftHash = MoltbookPublicationService.postDraftHash(operation);
+      if (draftHash == null || draftHashes.contains(draftHash)) continue;
+      await moltbookPublications.cancel(operation.operationId);
+      cancelledOrphans++;
+    }
+    if (cancelledOrphans > 0) {
+      await uiLog.log(
+        'moltbook.publication.repair',
+        'cancelledOrphanedPrepared=$cancelledOrphans',
+      );
+    }
+    return drafts;
   }
 
   Future<List<ExternalEffectOperation>> loadMoltbookPublications() =>
@@ -1202,9 +1378,7 @@ class PluginRuntimeModule {
     if (operation.state == ExternalEffectState.succeeded) {
       await moltbookDrafts.delete(draft.draftHashHex);
     } else {
-      await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[
-        operation,
-      ]);
+      await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[operation]);
     }
     await uiLog.log(
       'moltbook.publication.prepare',
@@ -1318,7 +1492,7 @@ class PluginRuntimeModule {
     ExternalEffectOperation operation,
   ) async {
     final queued = await moltbookPublications.approveAndQueue(operation);
-    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[queued]);
+    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[queued]);
     await uiLog.log(
       'moltbook.publication.approve',
       'operation=${queued.operationId} state=${queued.state.wireName}',
@@ -1401,7 +1575,7 @@ class PluginRuntimeModule {
     String operationId,
   ) async {
     final result = await moltbookPublications.process(operationId);
-    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[result]);
+    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[result]);
     await uiLog.log(
       'moltbook.publication.process',
       'operation=$operationId state=${result.state.wireName} '
@@ -1418,7 +1592,7 @@ class PluginRuntimeModule {
       operationId,
       providerReferenceId: providerReferenceId,
     );
-    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[result]);
+    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[result]);
     await uiLog.log(
       'moltbook.publication.reconcile',
       'operation=$operationId state=${result.state.wireName} '
@@ -1427,31 +1601,86 @@ class PluginRuntimeModule {
     return result;
   }
 
-  Future<void> _archiveSucceededMoltbookDrafts(
+  Future<void> _archiveClosedMoltbookDrafts(
     Iterable<ExternalEffectOperation> operations,
   ) async {
     final hashes = <String>{};
     for (final operation in operations) {
-      final hash = MoltbookPublicationService.succeededPostDraftHash(operation);
+      final hash =
+          MoltbookPublicationService.succeededPostDraftHash(operation) ??
+          (operation.state == ExternalEffectState.terminalFailure &&
+                  operation.lastErrorCode == 'provider_marked_spam'
+              ? MoltbookPublicationService.postDraftHash(operation)
+              : null);
       if (hash != null) hashes.add(hash);
     }
     if (hashes.isEmpty) return;
     await moltbookDrafts.deleteAll(hashes);
-    await uiLog.log('moltbook.draft.archive', 'success count=${hashes.length}');
+    await uiLog.log('moltbook.draft.archive', 'closed count=${hashes.length}');
   }
 
-  Future<ExternalEffectOperation> resolveMoltbookPublicationVerification({
+  Future<ExternalEffectOperation> resolveMoltbookPublicationVerificationWithAi({
     required String operationId,
-    required String answer,
   }) async {
+    final matches = (await moltbookPublications.list())
+        .where((operation) => operation.operationId == operationId)
+        .toList(growable: false);
+    if (matches.length != 1) {
+      throw StateError('Moltbook publication challenge is not unique');
+    }
+    return _resolveMoltbookVerificationWithAiIfEligible(
+      matches.single,
+      requireUnlocked: true,
+    );
+  }
+
+  Future<ExternalEffectOperation> _resolveMoltbookVerificationWithAiIfEligible(
+    ExternalEffectOperation operation, {
+    String? cycleOwnerHex,
+    String? cycleAccountBindingId,
+    int? cycleEpoch,
+    bool requireUnlocked = false,
+  }) async {
+    final action = operation.requiredAction;
+    final eligible =
+        operation.state == ExternalEffectState.unresolved &&
+        operation.lastErrorCode == 'verification_required' &&
+        action?.kind == 'numeric_challenge';
+    if (!eligible) return operation;
+    if (!moltbookPublicBulletinAi.isSessionUnlocked) {
+      if (requireUnlocked) {
+        throw StateError('Unlock Gemini before solving Moltbook verification');
+      }
+      return operation;
+    }
+
+    Future<void> ensureCycleScope() async {
+      if (cycleOwnerHex == null ||
+          cycleAccountBindingId == null ||
+          cycleEpoch == null) {
+        return;
+      }
+      await _ensureMoltbookCycleScope(
+        cycleOwnerHex,
+        cycleAccountBindingId,
+        cycleEpoch: cycleEpoch,
+      );
+    }
+
+    await ensureCycleScope();
+    final answer = await moltbookPublicBulletinAi.solveNumericVerification(
+      prompt: action!.prompt,
+      operationId: operation.operationId,
+    );
+    await ensureCycleScope();
     final result = await moltbookPublications.resolveVerification(
-      operationId: operationId,
+      operationId: operation.operationId,
       answer: answer,
     );
-    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[result]);
+    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[result]);
     await uiLog.log(
-      'moltbook.publication.verify',
-      'operation=$operationId state=${result.state.wireName} '
+      'moltbook.publication.verify.ai',
+      'operation=${operation.operationId} state=${result.state.wireName} '
           'error=${result.lastErrorCode ?? "none"}',
     );
     return result;
@@ -1466,10 +1695,31 @@ class PluginRuntimeModule {
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedHash)) {
       throw ArgumentError('Invalid Moltbook draft hash');
     }
+    final matchingOperations = (await moltbookPublications.list())
+        .where(
+          (operation) =>
+              MoltbookPublicationService.postDraftHash(operation) ==
+              normalizedHash,
+        )
+        .where((operation) => !operation.state.isTerminal)
+        .toList(growable: false);
+    if (matchingOperations.length > 1) {
+      throw StateError('Moltbook draft has multiple active publications');
+    }
+    if (matchingOperations.isNotEmpty) {
+      final operation = matchingOperations.single;
+      if (operation.state != ExternalEffectState.prepared) {
+        throw StateError(
+          'Cancel the active Moltbook publication before deleting its draft',
+        );
+      }
+      await moltbookPublications.cancel(operation.operationId);
+    }
     await moltbookDrafts.delete(normalizedHash);
     await uiLog.log(
       'moltbook.draft.delete',
-      'success hash=${normalizedHash.substring(0, 12)}..',
+      'success hash=${normalizedHash.substring(0, 12)}.. '
+          'cancelledPrepared=${matchingOperations.isNotEmpty}',
     );
   }
 
@@ -1516,8 +1766,12 @@ class PluginRuntimeModule {
         );
         throw StateError('Pending public change is unavailable');
       }
+      final normalizedFacts = facts
+          .map((fact) => fact.trim())
+          .toList(growable: false);
       if (bulletinId.trim() != change.sourceId ||
-          normalizedCategory != change.category) {
+          normalizedCategory != change.category ||
+          !_sameOrderedStrings(normalizedFacts, change.facts)) {
         await uiLog.log(
           'moltbook.draft.prepare',
           'rejected code=public_change_binding_mismatch',
@@ -1607,6 +1861,14 @@ class PluginRuntimeModule {
           'source=${response.executionSource}',
     );
     return preview;
+  }
+
+  static bool _sameOrderedStrings(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
   }
 
   Future<void> removePlugin(WasmPluginRecord record) async {

@@ -308,7 +308,8 @@ class MoltbookPublicChangeFeedStore {
           (fact) =>
               fact.isEmpty ||
               fact.length > maxFactCharacters ||
-              fact.trim() != fact,
+              fact.trim() != fact ||
+              _containsSensitivePublicMaterial(fact),
         ) ||
         commitmentFor(
               sourceId: change.sourceId,
@@ -320,6 +321,22 @@ class MoltbookPublicChangeFeedStore {
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(change.draftHashHex!))) {
       throw const FormatException('Malformed Moltbook public change');
     }
+  }
+
+  static bool _containsSensitivePublicMaterial(String value) {
+    return RegExp(
+          r'-----BEGIN [A-Z ]*PRIVATE KEY-----',
+          caseSensitive: false,
+        ).hasMatch(value) ||
+        RegExp(
+          r'\b(?:api[_ -]?(?:key|secret)|password|seed(?: phrase)?|private[_ -]?key)\s*[:=]\s*\S+',
+          caseSensitive: false,
+        ).hasMatch(value) ||
+        RegExp(
+          r'\b(?:sk-[A-Za-z0-9_-]{16,}|AIza[A-Za-z0-9_-]{20,})\b',
+        ).hasMatch(value) ||
+        RegExp(r'\b[0-9a-fA-F]{64,}\b').hasMatch(value) ||
+        RegExp(r'\bh1[a-z0-9]{20,}\b', caseSensitive: false).hasMatch(value);
   }
 
   Future<List<MoltbookPublicChange>> _loadForOwner(String ownerHex) async {

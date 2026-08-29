@@ -135,44 +135,47 @@ void main() {
     );
   });
 
-  test('only confirmed authorization rejection permits exact reauthorization', () {
-    expect(
-      MoltbookPublicationService.canReauthorizeRejectedDelivery(
-        _operation(
-          state: ExternalEffectState.terminalFailure,
-          lastErrorCode: 'credential_rejected',
-          withReceipt: false,
-        ),
-      ),
-      isTrue,
-    );
-    expect(
-      MoltbookPublicationService.canReauthorizeRejectedDelivery(
-        _operation(
-          state: ExternalEffectState.terminalFailure,
-          lastErrorCode: 'permission_rejected',
-          withReceipt: false,
-        ),
-      ),
-      isTrue,
-    );
-    for (final errorCode in <String>[
-      'submolt_conflict',
-      'timeout',
-      'receipt_not_observed',
-    ]) {
+  test(
+    'only confirmed authorization rejection permits exact reauthorization',
+    () {
       expect(
         MoltbookPublicationService.canReauthorizeRejectedDelivery(
           _operation(
             state: ExternalEffectState.terminalFailure,
-            lastErrorCode: errorCode,
+            lastErrorCode: 'credential_rejected',
             withReceipt: false,
           ),
         ),
-        isFalse,
+        isTrue,
       );
-    }
-  });
+      expect(
+        MoltbookPublicationService.canReauthorizeRejectedDelivery(
+          _operation(
+            state: ExternalEffectState.terminalFailure,
+            lastErrorCode: 'permission_rejected',
+            withReceipt: false,
+          ),
+        ),
+        isTrue,
+      );
+      for (final errorCode in <String>[
+        'submolt_conflict',
+        'timeout',
+        'receipt_not_observed',
+      ]) {
+        expect(
+          MoltbookPublicationService.canReauthorizeRejectedDelivery(
+            _operation(
+              state: ExternalEffectState.terminalFailure,
+              lastErrorCode: errorCode,
+              withReceipt: false,
+            ),
+          ),
+          isFalse,
+        );
+      }
+    },
+  );
 
   test('succeeded exact post seals a duplicate terminal failure', () {
     final succeeded = _postOperation(
@@ -604,6 +607,62 @@ void main() {
       expect(repeated.operationId, first.operationId);
       expect(await publications.list(), hasLength(1));
     });
+
+    test(
+      'bounded public change approval binds exact PFR post and commitment',
+      () async {
+        final operation = await publications.prepare(
+          draft: _postDraft('1'),
+          submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+        );
+        final queued = await publications.approveBoundedPublicChangeAndQueue(
+          operation: operation,
+          publicChangeCommitmentHashHex: '9' * 64,
+        );
+        final expectedEvidence =
+            sha256
+                .convert(
+                  utf8.encode(
+                    jsonEncode(<String, dynamic>{
+                      'schema_version': 1,
+                      'approval_kind': 'bounded_public_change',
+                      'operation_id': operation.operationId,
+                      'provider_id': operation.providerId,
+                      'account_binding_id': operation.accountBindingId,
+                      'payload_hash_hex': operation.payloadHashHex,
+                      'public_change_commitment_hash_hex': '9' * 64,
+                      'submolt_name':
+                          MoltbookPublicationService
+                              .personFirstRuntimeSubmoltName,
+                      'max_uses': 1,
+                    }),
+                  ),
+                )
+                .toString();
+
+        expect(queued.state, ExternalEffectState.queued);
+        expect(queued.approvalEvidenceHashHex, expectedEvidence);
+
+        final general = await publications.prepare(
+          draft: _postDraft('3'),
+          submoltName: MoltbookPublicationService.defaultSubmolt,
+        );
+        await expectLater(
+          publications.approveBoundedPublicChangeAndQueue(
+            operation: general,
+            publicChangeCommitmentHashHex: '9' * 64,
+          ),
+          throwsFormatException,
+        );
+        await expectLater(
+          publications.approveBoundedPublicChangeAndQueue(
+            operation: operation,
+            publicChangeCommitmentHashHex: 'invalid',
+          ),
+          throwsFormatException,
+        );
+      },
+    );
 
     test('succeeded exact post closes a later duplicate draft', () async {
       final first = await publications.prepare(

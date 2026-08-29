@@ -354,9 +354,19 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         post.submoltName == payload.submoltName &&
         post.title == payload.title &&
         post.content == payload.content;
-    if (!matches || !post.isVerified || post.isSpam) {
+    if (!matches) {
       return _receiptNotObserved();
     }
+    if (post.isSpam) {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        providerReferenceId: post.postId,
+        errorCode: 'provider_marked_spam',
+        errorMessage:
+            'Moltbook retained the exact post but marked it as spam; publication retry is blocked',
+      );
+    }
+    if (!post.isVerified) return _receiptNotObserved();
     return _success(request, post.postId);
   }
 

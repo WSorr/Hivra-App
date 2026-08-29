@@ -618,6 +618,33 @@ void main() {
     },
   );
 
+  test(
+    'closes an exact provider-marked spam post without another publication',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            return _postResponse('spam-post', isSpam: true);
+          },
+        ),
+      );
+
+      final result = await adapter.reconcile(
+        _request(providerReferenceId: 'spam-post'),
+      );
+
+      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+      expect(result.providerReferenceId, 'spam-post');
+      expect(result.errorCode, 'provider_marked_spam');
+      expect(result.receipt, isNull);
+      expect(requests.single.method, 'GET');
+      expect(requests.single.uri.path, '/api/v1/posts/spam-post');
+    },
+  );
+
   test('keeps v1 marker reconciliation for existing queued effects', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,

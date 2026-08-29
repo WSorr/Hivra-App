@@ -332,6 +332,54 @@ class MoltbookPublicationService {
     );
   }
 
+  Future<ExternalEffectOperation> approveBoundedPublicChangeAndQueue({
+    required ExternalEffectOperation operation,
+    required String publicChangeCommitmentHashHex,
+  }) async {
+    _validateMoltbookOperation(operation);
+    if (operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(publicChangeCommitmentHashHex)) {
+      throw const FormatException(
+        'Invalid bounded Moltbook public-change authorization',
+      );
+    }
+    final payload = decodePayload(operation);
+    if (payload['submolt_name'] != personFirstRuntimeSubmoltName ||
+        payload['source_draft_hash_hex'] is! String) {
+      throw const FormatException(
+        'Bounded public change must target m/person-first-runtime',
+      );
+    }
+    final evidenceHash =
+        sha256
+            .convert(
+              utf8.encode(
+                jsonEncode(<String, dynamic>{
+                  'schema_version': 1,
+                  'approval_kind': 'bounded_public_change',
+                  'operation_id': operation.operationId,
+                  'provider_id': operation.providerId,
+                  'account_binding_id': operation.accountBindingId,
+                  'payload_hash_hex': operation.payloadHashHex,
+                  'public_change_commitment_hash_hex':
+                      publicChangeCommitmentHashHex,
+                  'submolt_name': personFirstRuntimeSubmoltName,
+                  'max_uses': 1,
+                }),
+              ),
+            )
+            .toString();
+    await _effects.approve(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: operation.operationId,
+      approvalEvidenceHashHex: evidenceHash,
+    );
+    return _effects.enqueue(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: operation.operationId,
+    );
+  }
+
   static bool canReauthorizeRejectedDelivery(
     ExternalEffectOperation operation,
   ) {
@@ -482,10 +530,17 @@ class MoltbookPublicationService {
         operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind) {
       return null;
     }
+    return postDraftHash(operation);
+  }
+
+  static String? postDraftHash(ExternalEffectOperation operation) {
+    if (operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind) {
+      return null;
+    }
     final value = decodePayload(operation)['source_draft_hash_hex'];
     if (value is! String || !RegExp(r'^[0-9a-f]{64}$').hasMatch(value)) {
       throw const FormatException(
-        'Succeeded Moltbook post has an invalid source draft hash',
+        'Moltbook post has an invalid source draft hash',
       );
     }
     return value;
