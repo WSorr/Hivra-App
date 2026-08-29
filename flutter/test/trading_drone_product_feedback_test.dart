@@ -59,6 +59,28 @@ void main() {
     );
   });
 
+  test(
+    'remote receipts become durable before local reconciliation starts',
+    () async {
+      var remoteReceiptDurable = false;
+      var localReconciliationStarted = false;
+
+      await restoreTradingDroneOrderState(
+        restoreRemoteCompletedEffects: () async {
+          await Future<void>.delayed(Duration.zero);
+          remoteReceiptDurable = true;
+          return true;
+        },
+        restoreOpenOrdersTrackingState: () async {
+          localReconciliationStarted = true;
+          expect(remoteReceiptDurable, isTrue);
+        },
+      );
+
+      expect(localReconciliationStarted, isTrue);
+    },
+  );
+
   final issuedAt = DateTime.utc(2026, 8, 20, 10);
   final mandate = BingxFuturesTradingMandate.issue(
     capsuleRootHex: List<String>.filled(32, '11').join(),

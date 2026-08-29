@@ -41,7 +41,6 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         operations: operations,
         expectedAccountBindingHashHex: profile.accountBindingHashHex,
       );
-      await _restoreOpenOrdersTrackingState();
       await _module.uiLog.log(
         'bingx.remote_session.effects_restored',
         'session_operation_id=${session.operationId} '

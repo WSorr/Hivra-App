@@ -149,6 +149,15 @@ bool tradingUsesTestEndpointAfterRestore({
         ? false
         : mandate.testOrder;
 
+@visibleForTesting
+Future<void> restoreTradingDroneOrderState({
+  required Future<bool> Function() restoreRemoteCompletedEffects,
+  required Future<void> Function() restoreOpenOrdersTrackingState,
+}) async {
+  await restoreRemoteCompletedEffects();
+  await restoreOpenOrdersTrackingState();
+}
+
 String tradingPreferredSideForCycle({
   required String symbol,
   required String currentSide,
@@ -506,9 +515,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         ).build();
     unawaited(_primePublicSessionEvidence(_symbolController.text));
     unawaited(
-      _restoreOpenOrdersTrackingState().then<void>((_) async {
-        await _restoreRemoteCompletedEffects();
-      }),
+      restoreTradingDroneOrderState(
+        restoreRemoteCompletedEffects: _restoreRemoteCompletedEffects,
+        restoreOpenOrdersTrackingState: _restoreOpenOrdersTrackingState,
+      ),
     );
     _loadPerpetualSymbols(silent: true);
     _signalInbox = _module.chatDelivery.loadCachedTradeSignals();
