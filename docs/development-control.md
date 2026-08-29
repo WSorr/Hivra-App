@@ -1,21 +1,22 @@
 # Hivra Development Control
 
-Status date: 2026-08-28
+Status date: 2026-08-29
 Current published test prerelease: commit `9cd70cc` (`v1.0.3-test18`). Its
 macOS and Android assets have exact-byte manual signoff. The invalid `test17`
 evidence remains historical and cannot be reused or replaced under the old
 tag.
 
-Current selected unit: `1.x Trading Remote Runner Bounded Supervisor Recovery`.
-The existing persistent session service currently stops permanently after any
-failed scheduler process, including a temporary network failure. The same
-systemd unit may restart only failed exits under a bounded backoff and start
-limit while re-entering the existing session, cycle, effect journal, and
-reconciliation owners. Terminal, stale, expired, revoked, and exhausted states
-must remain terminal. Exit requires protected merge and exact merge-SHA VPS
-evidence that one forced process failure resumes the same session without a
-second provider POST or duplicate effect. The Runner remains paused until that
-evidence run.
+Current selected unit: `1.x Trading Remote Runner Product Acceptance
+Remediation`. Packaged live evidence exposed one host-lifecycle defect: an
+atomic bundle upgrade retained the staging directory's non-traversable mode, so
+the existing DynamicUser service failed closed before its first observation.
+The same pass seals that path by requiring one canonical traversable bundle and
+also stops successful deployment stdout from becoming a large UI notice.
+Temporary VPS evidence then produced one bounded live order, retained one
+provider receipt, and restored exactly that effect in the packaged app after
+restart without a duplicate. Completion still requires protected merge,
+merge-SHA bundle upgrade evidence, and packaged confirmation of the concise UI
+notice. The service remains paused with no boot enablement.
 
 No multi-account Runner on one VPS, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
@@ -29,7 +30,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Close the selected bounded supervisor recovery without adding another scheduler or effect path. | This board and the Trading specification |
+| What is the next 1.x step? | Close the selected acceptance remediation through protected CI and exact merge-SHA evidence; do not create another trading effect. | This board and the Trading specification |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. It is a
@@ -40,7 +41,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading bounded supervisor recovery selected; NIP-44-only transport baseline and remote-result ownership reconciliation complete | Only the existing persistent session unit may retry a failed scheduler process, and only into the same stable session/cycle/effect identities. Terminal outcomes remain non-restarting. | Unit mutations, replay/reconciliation regressions, protected CI, and exact merge-SHA VPS process-restart evidence must prove no second provider POST or duplicate effect. | Keep the Runner paused until post-merge evidence passes; do not select another unit automatically. |
+| **1.x maintained runtime** | Trading product-acceptance remediation selected; bounded supervisor recovery and NIP-44-only transport baseline complete | The existing bundle owner must install one DynamicUser-traversable runtime; the existing UI owner shows a bounded success notice instead of raw host output. | Automated gates and temporary VPS evidence proved fail-closed startup, one live effect, one receipt, and restart restoration without duplication. | Protected merge, exact merge-SHA disabled upgrade evidence, and concise packaged notice; no additional order is permitted. |
 | **1.x release** | `v1.0.3-test18` published; `test17` exact-byte evidence remains invalid | The published macOS and Android assets are bound to exact SHA-256 manual signoff. | Packaged smoke, guarded tag, and prerelease publication are complete. | No later release candidate is selected. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
