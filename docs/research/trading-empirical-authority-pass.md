@@ -58,8 +58,8 @@ existing remote primitives on the real VPS: exact runner-bound admission,
 encrypted prepared credential, one single-use authenticated read, exact
 completed replay without another provider request, expired unused/pending
 rejection, completed inspection after expiry, mutation rejection, and exact
-cleanup without disturbing the website, nginx, Amnezia containers, or listener
-baseline. These are completed facts, not proposed work.
+cleanup without disturbing unrelated co-hosted workloads or the pre-recorded
+listener baseline. These are completed facts, not proposed work.
 
 ## 3. Minimal Experiment From The Brief
 

@@ -1264,7 +1264,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     subaccount order remains a separate explicit approval.
   - Merge-SHA smoke finding: implementation merged at `d5534e0`, and its exact
     Linux bundle installed disabled with encrypted prepared credentials while
-    website, Amnezia containers, and listeners remained unchanged. Two packaged
+    unrelated co-hosted workloads and listeners remained unchanged. Two packaged
     macOS intent attempts exhausted the bounded cycle timeout before producing a
     fresh signed intent because the snapshot builder awaited independent public
     reads serially. No order artifact, provider POST, schedule, lease, or live
@@ -3351,9 +3351,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Removed or sealed: a target host no longer needs the Flutter source tree or
     SDK to execute the probe. Dirty-source packaging, overwrite, malformed
     manifests, byte substitution, and authenticated authority markers fail
-    closed. Transfer, Linux evidence, VPS installation, supervisor, site or
-    Amnezia changes, credentials, account reads, external anchoring, and remote
-    effects remain sealed.
+    closed. Transfer, Linux evidence, VPS installation, supervisor, changes to
+    unrelated co-hosted workloads or listeners, credentials, account reads,
+    external anchoring, and remote effects remain sealed.
   - Exit evidence: verifier hash/shape/authority negative tests, dirty-tree
     rejection, one clean host-native package, full local and clean-checkout
     gates, protected PR, and green post-merge CI.
@@ -3377,9 +3377,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Removed or sealed: Linux evidence no longer requires the full Flutter Linux
     archive or a duplicate runner. Unlocked resolution, package drift, generic
     target expansion, and target/binary confusion fail closed. Execution,
-    transfer, installation, supervisor, VPS networking/resources, site or
-    Amnezia changes, credentials, account reads, external anchoring, and remote
-    effects remain sealed.
+    transfer, installation, supervisor, VPS networking/resources, changes to
+    unrelated co-hosted workloads or listeners, credentials, account reads,
+    external anchoring, and remote effects remain sealed.
   - Exit evidence: pinned lock validation, target/binary and authority negative
     tests, one clean Linux x64 artifact, full local and clean-checkout gates,
     protected PR, and green post-merge CI.
@@ -3407,8 +3407,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     from ELF shape alone. Loader failure, target mismatch, inherited authority,
     unexpected output, and false success fail closed. The ephemeral artifact is
     not uploaded. Public provider execution, transfer, VPS/SSH, installation,
-    site or Amnezia changes, credentials, account reads, external anchoring,
-    leases, and effects remain sealed.
+    changes to unrelated co-hosted workloads or listeners, credentials, account
+    reads, external anchoring, leases, and effects remain sealed.
   - Exit evidence: focused artifact/parity gates, negative authority mutation,
     full local and clean-checkout gates, protected PR `review-gates`, and green
     post-merge CI.
@@ -3425,9 +3425,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Lane: bounded 1.x Trading host-compatibility evidence; no installation,
     supervisor, credential, account, effect, or release work.
   - Invariant: one exact public-only artifact runs one low-priority observation
-    from a unique temporary host directory, while the website and existing VPN
-    containers remain healthy; every transferred and generated smoke artifact
-    is removed afterward.
+    from a unique temporary host directory, while unrelated co-hosted workloads
+    and existing listeners remain healthy; every transferred and generated
+    smoke artifact is removed afterward.
   - Sole owner: the existing probe owns the cycle and the existing shadow store
     owns its temporary stream. The host adds no service, container, receiver,
     listener, journal, account, or effect owner.
@@ -3441,15 +3441,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     one 3.213-second public observation; peak RSS 24,072 KiB; sequence `1`;
     evidence hash
     `5c8f75b6b7fb32b9f09e4c2b1a33ceec16d18068a0144eb0ca7d06f21986013b`;
-    no stderr; website and VPN continuity; zero residual process/path state.
+    no stderr; co-hosted workload and listener continuity; zero residual process/path state.
     Status: complete (2026-08-17). No following pass is selected automatically.
 
 - `1.x Trading Remote Runner Pass K — Ephemeral VPS Resource Soak Evidence`
   - Lane: bounded 1.x Trading host-resource evidence; no installation,
     supervisor, credential, account, effect, or release work.
   - Invariant: one exact public-only artifact completes 60 strictly serial
-    observations inside one finite transient cgroup while website and VPN
-    continuity remain unchanged; all process and path state is removed.
+    observations inside one finite transient cgroup while co-hosted workload
+    and listener continuity remain unchanged; all process and path state is
+    removed.
   - Sole owner: the existing probe scheduler owns cadence and the existing
     shadow store owns evidence retention. The transient cgroup constrains the
     process but owns no runtime state, retry, journal, authority, or effect.
@@ -3466,8 +3467,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     range 47,095,808–52,887,552 bytes and median 50,786,304 bytes; sequence
     `60`; final evidence hash
     `68915ba57a35e92d50003492030e48ef5c27394d2842b0442b0a783725547945`;
-    no stderr; website and VPN continuity; zero residual unit/process/path
-    state.
+    no stderr; co-hosted workload and listener continuity; zero residual
+    unit/process/path state.
   - Next decision unlocked: a separate resource-bounded supervisor contract
     may start with a fail-closed 128 MiB ceiling. Tightening that ceiling,
     including to 96 MiB, requires longer-duration evidence. Status: complete
@@ -3508,8 +3509,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     The malformed-credential case remained failed with exit status `1` and
     zero restarts after the 60-second restart window. The exact 128 MiB,
     no-swap, 16-task, protected-credential, and no-listener boundaries were
-    observed; the website remained HTTP `200`, Amnezia containers retained
-    zero restarts, listeners were unchanged, and all smoke state was removed.
+    observed; pre-recorded co-hosted workload health and listener baselines
+    remained unchanged, and all smoke state was removed.
   - Next decision unlocked: one verifiable artifact/unit bundle and atomic
     ephemeral install smoke may be evaluated separately before any persistent
     enablement. Status: complete (2026-08-18). No following pass is selected
@@ -3537,8 +3538,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     reads, leases, remote effects, tags, and Releases remain sealed.
   - Exit evidence: bundle and parity self-tests with independent unit/path/
     collision/enablement/cleanup mutations; clean Linux x64 bundle build and
-    verification; exact-unit ephemeral VPS smoke; website, listener, and
-    Amnezia continuity; full local and clean-checkout gates; protected PR and
+    verification; exact-unit ephemeral VPS smoke; co-hosted workload and
+    listener continuity; full local and clean-checkout gates; protected PR and
     green post-merge CI.
   - Evidence: implementation merged on `main` at `0ba5bcc` through protected
     PR `#127`; required run `32077843922` and post-merge run `32078130235`
@@ -3554,8 +3555,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     at cycle `1/288`, had zero restarts, and exposed the exact 128 MiB,
     no-swap, 16-task, DynamicUser, address-family, and listener-denial
     properties. Final cleanup left no bundle, unit, credential, state, lock,
-    source, or enablement path. Website HTTP status, Amnezia container
-    identities/start times, restart counts, and listeners remained unchanged.
+    source, or enablement path. Pre-recorded co-hosted workload health and
+    listener baselines remained unchanged.
     Two earlier attempts failed closed and drove removal of the implicit
     `file` package dependency plus correction of EXIT-trap rollback scope.
     Status: complete (2026-08-18). No following pass is selected automatically.
@@ -3597,8 +3598,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     anchoring, account reads, leases, effects, tags, and Releases remain sealed.
   - Exit evidence: focused probe/store tests, artifact and parity negative
     mutations, full local and clean-checkout gates, one exact-bundle VPS
-    stop/start smoke with website and Amnezia continuity, protected PR, and
-    green post-merge CI.
+    stop/start smoke with co-hosted workload and listener continuity,
+    protected PR, and green post-merge CI.
   - Status: complete on `main` at `96f2628` (2026-08-18) through protected PR
     `#131`; required run `32085039781` and post-merge run `32085133479` passed.
     The exact post-merge Linux x64 bundle used binary SHA-256
@@ -3613,8 +3614,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `1af1f27ea9fc0a7bf5de262f2de4eeee7a8d0c8c52898bfb22532b1a64344bea`.
     `NRestarts` remained zero and the exact 128 MiB/no-swap/16-task boundaries
     remained active. Cleanup removed every bundle, unit, credential, state,
-    lock, and enablement path; website HTTP status, Amnezia container identity,
-    start time/restart count, and listeners were unchanged. Full Flutter
+    lock, and enablement path; pre-recorded co-hosted workload health and
+    listener baselines remained unchanged. Full Flutter
     `934/934`, analyze, Rust workspace, review gates, clean checkout, and focused
     `34/34` passed. No following pass is selected.
 
@@ -3652,8 +3653,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
     The exact unit retained `NRestarts=0`, `MemoryMax=128 MiB`, no swap, and
     `TasksMax=16`; cleanup removed every canonical runner path without
-    enablement. The site remained HTTP `200`, all four Amnezia containers
-    remained active, and the listener-set hash stayed unchanged at
+    enablement. Pre-recorded co-hosted workload health remained stable, and the
+    listener-set hash stayed unchanged at
     `d962a1ffaa457f23708c3ec345a4479063e8de4a3a8e2bd000103adf287dae0e`.
     Full Flutter `934/934`, analyze, Rust workspace, review gates, clean
     checkout, and focused `34/34` passed. No following pass is selected.
@@ -3676,7 +3677,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: artifact self-tests and independent install/uninstall
     mutations, full local and clean-checkout gates, exact merge-SHA VPS
     install/start/stop/uninstall with stable `runner_key_id` and unchanged
-    website/Amnezia/listeners, protected PR, and green post-merge CI.
+    co-hosted workload/listener baselines, protected PR, and green post-merge CI.
   - Status: complete on `main` at `7d93eb6` (2026-08-18) through protected PR
     `#135`; required run `32106482943` and post-merge run `32106609859`
     passed.
@@ -3693,8 +3694,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     the unit SHA-256 was
     `61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
     Exact uninstall removed every runner bundle, link, credential, and state
-    path. The site remained HTTP `200`, all four Amnezia containers remained
-    active, and the listener-set hash stayed unchanged at
+    path. Pre-recorded co-hosted workload health remained stable, and the
+    listener-set hash stayed unchanged at
     `d962a1ffaa457f23708c3ec345a4479063e8de4a3a8e2bd000103adf287dae0e`.
     Full Flutter `934/934`, analyze, Rust workspace, review gates, clean
     checkout, artifact self-tests, and independent lifecycle mutations passed.
@@ -3723,8 +3724,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - required PR and post-merge GitHub Actions;
     - exact merge-SHA VPS install, disabled identity initialization, wrong-key
       rejection, matching-key activation, authenticated evidence, exact
-      deactivation, uninstall, and unchanged site/Amnezia evidence without a
-      host reboot.
+      deactivation, uninstall, and unchanged co-hosted workload/listener
+      evidence without a host reboot.
   - Removed or sealed:
     - boot enablement before identity proof and silent adoption of a different
       runner identity are unreachable through the canonical host lifecycle.
@@ -3752,8 +3753,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `MemoryMax=128 MiB`, zero swap, and `TasksMax=16`;
     - exact deactivation preserved the unit link and identity; exact uninstall
       removed every canonical runner path;
-    - no host reboot occurred; local site probes remained HTTP `200`, all four
-      Amnezia containers remained active, and listener-set hash stayed
+    - no host reboot occurred; pre-recorded co-hosted workload health remained
+      stable, and listener-set hash stayed
       `90032566b9cb2593804feef530cf2673121e52ff7856b7d19b480ce2686d4b50`.
     No following pass, tag, Release, account authority, lease, or remote effect
     is selected.
@@ -3781,7 +3782,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - required PR and post-merge GitHub Actions;
     - exact merge-SHA VPS export copied to macOS, independently verified, then
       followed by one exact next anchor while reverse comparison rejects
-      rollback; site, Amnezia, and listener baselines remain unchanged.
+      rollback; co-hosted workload and listener baselines remain unchanged.
   - Removed or sealed:
     - journal text and mutable VPS state can no longer be the only retained
       evidence of public-shadow continuity; export cannot overwrite an anchor
@@ -3813,8 +3814,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - active service evidence showed `NRestarts=0`, about 20 MiB memory,
       `MemoryMax=128 MiB`, zero swap, and `TasksMax=16`;
     - exact deactivation and uninstall removed every canonical runner path;
-      the site remained HTTP `200`, all four Amnezia containers remained
-      active, and listener-set hash stayed
+      pre-recorded co-hosted workload health remained stable, and listener-set hash stayed
       `90032566b9cb2593804feef530cf2673121e52ff7856b7d19b480ce2686d4b50`.
     No next pass, tag, Release, credential rotation, account authority, lease,
     transport/listener, or remote effect is selected.
@@ -3842,8 +3842,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       local repository gates, clean detached checkout, protected PR and
       post-merge Actions;
     - exact merge-SHA macOS Capsule export to the initialized VPS, exact replay,
-      conflict rejection, exact uninstall, and unchanged site/Amnezia/listener
-      baselines.
+      conflict rejection, exact uninstall, and unchanged co-hosted
+      workload/listener baselines.
   - Removed or sealed:
     - a copied local mandate can no longer be treated as remote authority;
       one host cannot silently adopt a mandate signed for another runner or
@@ -3862,9 +3862,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `a6bbccd14c8615ff3a0da1ef1d672c7f5aa8f73ab2e7287df2906e8bd58bf7f4`,
     accepted exact replay idempotently, rejected a symbol mutation, retained
     byte-identical evidence, remained disabled and inactive, and removed every
-    canonical path on exact uninstall. The site stayed HTTP `200`; all four
-    Amnezia containers and the listener set were byte-identical immediately
-    before and after uninstall. Evidence is retained outside the repository in
+    canonical path on exact uninstall. Pre-recorded co-hosted workload health
+    and the listener set were unchanged immediately before and after uninstall.
+    Evidence is retained outside the repository in
     `/Volumes/Dev/projects/hivra-artifacts/trading-remote-mandate`. The local
     smoke mandate was then revoked. No next pass is selected.
 
@@ -3888,7 +3888,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: executable negative self-tests, full local and clean
     checkout gates, protected PR/post-merge CI, then merge-SHA VPS provisioning,
     exact replay/conflict rejection, exact uninstall, and unchanged
-    site/Amnezia/listener baselines.
+    co-hosted workload/listener baselines.
   - External readiness: the operator reports that one dedicated BingX futures
     subaccount exists. No identifier or secret is retained in the repository;
     this report is not verification of permissions and grants no authority.
@@ -3903,9 +3903,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     account binding neither replaced it nor retained temporary plaintext. The
     runner remained disabled and inactive, and its systemd unit had no exchange
     credential binding. Exact uninstall removed the runner, mandate, seed, and
-    encrypted exchange credential. The website origin remained HTTP `200`, all
-    four Amnezia containers and the normalized listener baseline were unchanged,
-    and evidence remains outside the repository. No account read, lease,
+    encrypted exchange credential. Pre-recorded co-hosted workload health and
+    the normalized listener baseline were unchanged, and evidence remains
+    outside the repository. No account read, lease,
     scheduling authority, exchange effect, tag, or Release occurred. No next
     pass is selected.
 
@@ -3929,7 +3929,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: focused process tests, executable negative mutations, full
     local and clean-checkout gates, protected PR/post-merge CI, then merge-SHA
     VPS proof of one redacted read, transient collection, exact uninstall, and
-    unchanged website/Amnezia/listener baselines.
+    unchanged co-hosted workload/listener baselines.
   - Status: complete on `main` at `4623874` (2026-08-18) through protected PR
     `#150`; required run `32174387634` and post-merge run `32174515264`
     passed. Exact merge-SHA VPS evidence admitted one runner-bound mandate,
@@ -3940,8 +3940,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `62434856c94a233000f7bd05b8f78a785243a53fe268effa2d2ff0565402f2fd`
     and `effect=false`. The persistent unit remained disabled, inactive, and
     free of the exchange credential. Exact uninstall removed the unit, seed,
-    mandate, encrypted credential, and state; the website, all four Amnezia
-    containers, and the normalized listener baseline remained unchanged.
+    mandate, encrypted credential, and state; pre-recorded co-hosted workload
+    health and the normalized listener baseline remained unchanged.
     Evidence remains outside the repository. No account payload was retained,
     no exchange effect, tag, or Release occurred, and no next pass is selected.
 
@@ -3963,7 +3963,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     journal mutations, full local and clean-checkout gates, protected PR and
     post-merge CI, then merge-SHA VPS proof of first read, no-network completed
     replay, unresolved pending rejection, exact uninstall, and unchanged
-    website/Amnezia/listener baselines.
+    co-hosted workload/listener baselines.
   - Review remediation: merged commit `28fc500` correctly bound and consumed
     the authority, but current-activity validation still preceded completed
     journal replay. Static cryptographic verification is now separated from
@@ -3978,8 +3978,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `090be0c844f5fab6625a87ad2d3b81d62217fdfe5958a7f53480ec428a493bb8`.
     Exact-source host self-tests covered expired unused, pending, and completed
     authority plus signature and binding rejection. Exact uninstall removed
-    the unit, seed, mandate, encrypted credential, and state; the website,
-    nginx, four Amnezia containers, and normalized listener baseline remained
+    the unit, seed, mandate, encrypted credential, and state; pre-recorded
+    co-hosted workload health and the normalized listener baseline remained
     unchanged. Evidence remains outside the repository. No account payload,
     exchange effect, schedule, lease, tag, or Release occurred, and no next
     pass is selected.
@@ -4257,11 +4257,6 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `liquidity_anchor_unavailable`. Both cycles logged `effect=false`, retained
     the exact blocking notice, and left pending-zone and derived order fields
     empty.
-  - Follow-up finding, not selected: the screen initializes
-    `_useTestOrderEndpoint` to TEST before restoring Capsule trading state and
-    does not derive the mode from the retained active mandate. Simulation
-    remains a valid explicit no-order mode; silently replacing a retained LIVE
-    mandate selection with TEST after restart is product-state drift.
   - Status: complete (2026-08-22). Provider conformance,
     trigger-bound sizing, one exact live effect, receipt, cancellation,
     no-duplicate restart restoration, side-locked revalidation, and stable-event
