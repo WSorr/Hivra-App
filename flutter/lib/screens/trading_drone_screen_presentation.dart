@@ -277,7 +277,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 (_droneEnabled
                     ? 'Strategy can prepare and execute orders.'
                     : 'Paused. New strategy runs are blocked.');
-    final canBroadcast = hasExecutableIntent;
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
     final intentHashLabel =
@@ -294,8 +293,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
         children: [
           _panel(
             title: 'Intent Builder',
-            subtitle:
-                'Deterministic futures intent for plugin host and broadcast.',
+            subtitle: 'Deterministic pending futures intent for plugin host.',
             children: [
               const Text(
                 'Playbook · Short Breakdown v1',
@@ -322,16 +320,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 ],
               ),
               const SizedBox(height: 12),
-              _TradingPeerScopeCard(
-                peerHex: _peerController.text,
-                onClear:
-                    _peerController.text.trim().isEmpty
-                        ? null
-                        : () {
-                          _updateState(_peerController.clear);
-                        },
-              ),
-              const SizedBox(height: 10),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
@@ -722,11 +710,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: _runningIntent ? null : _choosePeer,
-                    icon: const Icon(Icons.group_outlined),
-                    label: const Text('Choose Trusted Capsule'),
-                  ),
                   FilledButton.icon(
                     onPressed:
                         _runningIntent ||
@@ -803,23 +786,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       _exportingRemoteMandate
                           ? 'Signing VPS session'
                           : 'Authorize VPS Session',
-                    ),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed:
-                        _runningIntent || _broadcastingSignal || !canBroadcast
-                            ? null
-                            : _broadcastLastIntent,
-                    icon:
-                        _broadcastingSignal
-                            ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.campaign_outlined),
-                    label: Text(
-                      _broadcastingSignal ? 'Broadcasting' : 'Broadcast',
                     ),
                   ),
                 ],
@@ -1113,87 +1079,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 const SizedBox(height: 6),
                 for (final order in _openOrders.take(12)) _openOrderCard(order),
               ],
-            ],
-          ),
-          const SizedBox(height: 14),
-          _panel(
-            title: 'Signal Inbox',
-            subtitle: 'Broadcasted intents from trusted consensus peers.',
-            children: [
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed:
-                        _refreshingSignals
-                            ? null
-                            : () => _refreshSignalInbox(silentWhenEmpty: false),
-                    icon:
-                        _refreshingSignals
-                            ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.refresh_rounded),
-                    label: Text(
-                      _refreshingSignals ? 'Refreshing' : 'Fetch Signals',
-                    ),
-                  ),
-                  _statusChip('Inbox ${_signalInbox.length}'),
-                ],
-              ),
-              if (_signalInbox.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 10),
-                  child: Text(
-                    'No trade signals yet.',
-                    style: TextStyle(color: Color(0xFF97A3B5)),
-                  ),
-                )
-              else
-                ..._signalInbox.reversed
-                    .take(10)
-                    .map(
-                      (signal) => Container(
-                        margin: const EdgeInsets.only(top: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0D131C),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFF263244)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${signal.symbol} · ${signal.side.toUpperCase()} · ${signal.orderType.toUpperCase()}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Qty ${signal.quantityDecimal} · mode ${signal.entryMode} · from ${PeerIdentityFormat.capsuleLabelFromRootHex(signal.fromHex)}',
-                              style: const TextStyle(
-                                color: Color(0xFF9AA7BA),
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _repeatSignalAsDraft(signal),
-                                icon: const Icon(Icons.copy_all_rounded),
-                                label: const Text('Repeat as draft'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
             ],
           ),
         ],

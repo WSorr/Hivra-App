@@ -22,6 +22,7 @@ void main() {
       );
 
       final args = handler.lastRequest!.args;
+      expect(args['peer_hex'], isEmpty);
       expect(args['entry_mode'], 'direct');
       expect(args['zone_side'], isNull);
       expect(args['zone_low_decimal'], isNull);
@@ -72,7 +73,6 @@ BingxFuturesIntentCommand _command({
 }) {
   return BingxFuturesIntentCommand(
     screen: 'test',
-    peerHex: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     clientOrderId: 'ord-1',
     symbol: 'BTC-USDT',
     side: 'buy',
@@ -119,8 +119,7 @@ class _CapturingHandler implements PluginHostContractHandler {
   @override
   Future<PluginHostContractResult?> preflightAsync(
     PluginHostApiRequest request,
-  ) async =>
-      null;
+  ) async => null;
 
   @override
   PluginHostContractResult execute(

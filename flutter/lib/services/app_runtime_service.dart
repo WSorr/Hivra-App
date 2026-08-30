@@ -241,10 +241,7 @@ class AppRuntimeService {
     );
     return PluginHostApiService(
       handlers: <PluginHostContractHandler>[
-        BingxFuturesPluginContractHandler(
-          readSignable: consensus.signable,
-          readAttestedSignable: attestedGuard.signable,
-        ),
+        const BingxFuturesPluginContractHandler(),
         CapsuleChatPluginContractHandler(
           readSignable: consensus.signable,
           readAttestedSignable: attestedGuard.signable,

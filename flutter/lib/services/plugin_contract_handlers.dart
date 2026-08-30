@@ -11,8 +11,6 @@ typedef PluginConsensusSignableReader =
     ConsensusSignableResult Function(String peerHex);
 typedef PluginConsensusAsyncSignableReader =
     Future<ConsensusSignableResult> Function(String peerHex);
-typedef BingxConsensusSignableReader = PluginConsensusSignableReader;
-typedef BingxConsensusAsyncSignableReader = PluginConsensusAsyncSignableReader;
 
 class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
   final PluginConsensusSignableReader _readSignable;
@@ -107,14 +105,7 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
 }
 
 class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
-  final BingxConsensusSignableReader _readSignable;
-  final BingxConsensusAsyncSignableReader? _readAttestedSignable;
-
-  const BingxFuturesPluginContractHandler({
-    required BingxConsensusSignableReader readSignable,
-    BingxConsensusAsyncSignableReader? readAttestedSignable,
-  }) : _readSignable = readSignable,
-       _readAttestedSignable = readAttestedSignable;
+  const BingxFuturesPluginContractHandler();
 
   @override
   String get pluginId => bingxFuturesTradingPluginId;
@@ -136,20 +127,13 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
     if (method == rankBingxFuturesSignalsMethod) {
       return const <String>{'exchange.read.bingx.market'};
     }
-    return const <String>{
-      'consensus_guard.read',
-      'exchange.trade.bingx.futures',
-    };
+    return const <String>{'exchange.trade.bingx.futures'};
   }
 
   @override
   PluginHostContractResult? preflight(PluginHostApiRequest request) {
     if (request.method == rankBingxFuturesSignalsMethod) return null;
-    return _consensusPreflight(
-      request: request,
-      readSignable: _readSignable,
-      allowSoloWhenPeerMissing: true,
-    );
+    return _rejectTradingPeerScope(request);
   }
 
   @override
@@ -159,11 +143,8 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
     if (request.method == rankBingxFuturesSignalsMethod) {
       return Future<PluginHostContractResult?>.value();
     }
-    return _consensusPreflightAsync(
-      request: request,
-      readSignable: _readAttestedSignable,
-      fallbackReadSignable: _readSignable,
-      allowSoloWhenPeerMissing: true,
+    return Future<PluginHostContractResult?>.value(
+      _rejectTradingPeerScope(request),
     );
   }
 
@@ -177,12 +158,10 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
     }
     final args = request.args;
     final rawPeerHex = args['peer_hex']?.toString().trim().toLowerCase() ?? '';
-    final peerHex = rawPeerHex.isEmpty ? null : rawPeerHex;
-    if (peerHex != null && !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
+    if (rawPeerHex.isNotEmpty) {
       return const PluginHostContractResult.rejected(
-        code: 'invalid_args',
-        message:
-            'peer_hex must be empty for solo mode or a 64-char lowercase hex',
+        code: 'trading_peer_scope_unsupported',
+        message: 'Trading intents are Capsule-local and cannot select a peer',
       );
     }
     if (runtimeInvoke == null) {
@@ -206,7 +185,7 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
       expectedHashHex: intentHashHex,
       expectedPluginId: pluginId,
       expectedContractKind: contractKind,
-      expectedPeerHex: peerHex,
+      expectedPeerHex: '',
     );
     if (intent == null) {
       return const PluginHostContractResult.rejected(
@@ -227,6 +206,17 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
 
   String? _optional(Map<String, dynamic> args, String key) =>
       args[key]?.toString().trim();
+
+  PluginHostContractResult? _rejectTradingPeerScope(
+    PluginHostApiRequest request,
+  ) {
+    final peerHex = request.args['peer_hex']?.toString().trim() ?? '';
+    if (peerHex.isEmpty) return null;
+    return const PluginHostContractResult.rejected(
+      code: 'trading_peer_scope_unsupported',
+      message: 'Trading intents are Capsule-local and cannot select a peer',
+    );
+  }
 
   PluginHostContractResult _executeSignalRank(
     PluginHostApiRequest request, {

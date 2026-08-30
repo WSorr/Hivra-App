@@ -108,7 +108,8 @@ Legend:
 - [ ] `NO_SIGNAL` managed orders receive a side-locked structural revalidation; transient flow failure alone neither cancels nor preserves them blindly.
 - [ ] Structural-only revalidation can keep/cancel but cannot create or replace an order.
 - [ ] Every managed open order retains capsule-scoped intent/decision provenance across restart.
-- [ ] Stale-zone replacement is same-side only and passes fresh host/consensus, risk, idempotency, and exchange gates.
+- [ ] Stale-zone replacement is same-side only and passes fresh market, host,
+  risk, idempotency, and exchange gates.
 - [ ] Market-dead and side-flip cancellations never auto-replace.
 - [ ] Observability envelopes are emitted (`drone.decision.envelope`, `drone.execution.envelope`).
 
@@ -121,10 +122,9 @@ Legend:
 - [ ] Runtime rejects imports, oversized modules/input/output, invalid signatures, and fuel exhaustion.
 - [ ] Host validates plugin canonical JSON identity and SHA-256 before using the result.
 - [ ] Capability guard includes:
-- [ ] `consensus_guard.read`
 - [ ] `exchange.trade.bingx.futures`
 - [ ] `rank_bingx_futures_signals` requires `exchange.read.bingx.market`, not pair consensus.
-- [ ] Pair-scoped execution is blocked when consensus guard is not signable.
+- [ ] A non-empty Trading `peer_hex` is rejected before WASM invocation.
 
 ## Test Evidence (Required)
 

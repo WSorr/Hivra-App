@@ -12,8 +12,8 @@ class BingxFuturesIntentUseCaseService {
     required PluginHostApiService hostApi,
     BingxFuturesObservabilityEnvelopeService observability =
         const BingxFuturesObservabilityEnvelopeService(),
-  })  : _hostApi = hostApi,
-        _observability = observability;
+  }) : _hostApi = hostApi,
+       _observability = observability;
 
   Future<BingxFuturesIntentUseCaseResult> execute(
     BingxFuturesIntentCommand command,
@@ -25,7 +25,7 @@ class BingxFuturesIntentUseCaseService {
         pluginId: bingxFuturesTradingPluginId,
         method: placeBingxFuturesOrderIntentMethod,
         args: <String, dynamic>{
-          'peer_hex': command.peerHex,
+          'peer_hex': '',
           'client_order_id': command.clientOrderId,
           'symbol': command.symbol,
           'side': command.side,
@@ -72,13 +72,17 @@ class BingxFuturesIntentUseCaseService {
       executionSource: response.executionSource,
       intentHashHex: response.result?['intent_hash_hex']?.toString(),
       errorCode: response.errorCode,
-      marketSnapshotHashHex: command.liveDecision?.marketSnapshotHashHex ??
+      marketSnapshotHashHex:
+          command.liveDecision?.marketSnapshotHashHex ??
           response.result?['market_snapshot_hash_hex']?.toString(),
-      featureHashHex: command.liveDecision?.featureHashHex ??
+      featureHashHex:
+          command.liveDecision?.featureHashHex ??
           response.result?['feature_hash_hex']?.toString(),
-      tvhDecisionHashHex: command.liveDecision?.tvhDecisionHashHex ??
+      tvhDecisionHashHex:
+          command.liveDecision?.tvhDecisionHashHex ??
           response.result?['tvh_decision_hash_hex']?.toString(),
-      liveDecisionHashHex: command.liveDecision?.liveDecisionHashHex ??
+      liveDecisionHashHex:
+          command.liveDecision?.liveDecisionHashHex ??
           response.result?['live_decision_hash_hex']?.toString(),
       blockingFactCodes:
           response.blockingFacts.map((fact) => fact.key).toList(),

@@ -32,7 +32,6 @@ void main() {
         expect(result.status, BingxFuturesTradingCycleStatus.prepared);
         expect(executionCalls, 0);
         expect(capturedIntent!.clientOrderId, 'hivra-$_eventPrefix');
-        expect(capturedIntent!.peerHex, isEmpty);
         expect(capturedIntent!.entryMode, 'zone_pending');
         expect(capturedIntent!.quantityDecimal, '0.5');
         expect(capturedIntent!.stopLossDecimal, '90');

@@ -16,7 +16,6 @@ This document defines the loadable test package shape for BingX futures intent e
   "version": 1,
   "plugin_id": "hivra.contract.bingx-futures-trading.v1",
   "capabilities": [
-    "consensus_guard.read",
     "exchange.read.bingx.market",
     "exchange.trade.bingx.futures"
   ],
@@ -47,14 +46,13 @@ Generated file:
 - `plugin_id`: `hivra.contract.bingx-futures-trading.v1`
 - `method`: `place_bingx_futures_order_intent`
 - required capabilities:
-  - `consensus_guard.read`
   - `exchange.trade.bingx.futures`
 
 ## Notes
 
 - The external package owns deterministic intent validation, normalization,
   canonical JSON and intent hashing.
-- Hivra-App owns sandbox execution, consensus/capability gates, risk and
+- Hivra-App owns sandbox execution, capability gates, risk and
   exchange adapters; it does not mirror plugin contract semantics.
 - Actual exchange execution stays outside host API v1.
 - TVH computation and trading-drone rule-set are specified separately:

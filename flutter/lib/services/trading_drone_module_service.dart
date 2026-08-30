@@ -22,17 +22,11 @@ import 'bingx_futures_signal_rank_use_case_service.dart';
 import 'bingx_futures_strategy_naming_service.dart';
 import 'bingx_futures_trading_cycle_use_case_service.dart';
 import 'bingx_futures_volume_growth_filter_service.dart';
-import 'capsule_chat_delivery_service.dart';
-import 'capsule_contact_label_store.dart';
-import 'capsule_passive_receive_coordinator.dart';
-import 'consensus_attestation_exchange_service.dart';
-import 'manual_consensus_check_service.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
 
 class TradingDroneModule {
   final PluginHostApiService pluginHostApi;
-  final ManualConsensusCheckService manualChecks;
   final BingxFuturesCredentialStore credentialStore;
   final BingxFuturesExchangeService exchangeService;
   final BingxFuturesOrderTrackingStore orderTrackingStore;
@@ -53,10 +47,6 @@ class TradingDroneModule {
   final BingxFuturesStrategyNamingService strategyNaming;
   final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
   final BingxFuturesTradingCycleUseCaseService cycleUseCase;
-  final CapsuleChatDeliveryService chatDelivery;
-  final CapsulePassiveReceivePort passiveReceive;
-  final CapsuleContactLabelStore contactLabels;
-  final ConsensusAttestationExchangeService attestationExchange;
   final UiEventLogService uiLog;
   final String? Function() activeCapsuleRootHex;
   final String? Function(String commitmentHashHex) signRootCommitment;
@@ -69,7 +59,6 @@ class TradingDroneModule {
 
   const TradingDroneModule({
     required this.pluginHostApi,
-    required this.manualChecks,
     required this.credentialStore,
     required this.exchangeService,
     required this.orderTrackingStore,
@@ -90,10 +79,6 @@ class TradingDroneModule {
     required this.strategyNaming,
     required this.volumeGrowthFilter,
     required this.cycleUseCase,
-    required this.chatDelivery,
-    required this.passiveReceive,
-    required this.contactLabels,
-    required this.attestationExchange,
     required this.uiLog,
     required this.activeCapsuleRootHex,
     required this.signRootCommitment,
@@ -155,7 +140,6 @@ class TradingDroneModuleService {
     );
     return TradingDroneModule(
       pluginHostApi: pluginHostApi,
-      manualChecks: runtime.buildManualConsensusCheckService(),
       credentialStore: runtime.buildBingxFuturesCredentialStore(),
       exchangeService: exchangeService,
       orderTrackingStore: orderTrackingStore,
@@ -186,10 +170,6 @@ class TradingDroneModuleService {
         intentUseCase: intentUseCase,
         executionUseCase: executionUseCase,
       ),
-      chatDelivery: runtime.buildCapsuleChatDeliveryService(),
-      passiveReceive: runtime.passiveReceive,
-      contactLabels: runtime.buildCapsuleContactLabelStore(),
-      attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       uiLog: const UiEventLogService(),
       activeCapsuleRootHex: runtime.activeCapsuleRootHex,
       signRootCommitment: runtime.signRootCommitment,

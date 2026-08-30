@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../models/bingx_futures_exchange_models.dart';
 import '../models/bingx_futures_exchange_execution_models.dart';
-import '../models/bingx_futures_intent_models.dart';
 import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_live_strategy_models.dart';
 import '../models/bingx_futures_order_sizing_models.dart';
@@ -13,17 +12,13 @@ import '../models/bingx_futures_order_tracking_models.dart';
 import '../models/bingx_futures_order_replacement_models.dart';
 import '../models/bingx_futures_risk_models.dart';
 import '../models/bingx_futures_signal_rank_models.dart';
-import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
-import '../services/capsule_passive_receive_coordinator.dart';
-import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../services/bingx_futures_trading_cycle_use_case_service.dart';
 import '../services/bingx_futures_remote_runner_provisioning_service.dart';
 import '../utils/bingx_futures_zone_evidence_formatter.dart';
-import '../utils/peer_identity_format.dart';
 
 part 'trading_drone_screen_remote_session.dart';
 part 'trading_drone_screen_market_scan.dart';
@@ -412,7 +407,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   late final TradingDroneModule _module;
 
-  final TextEditingController _peerController = TextEditingController();
   final TextEditingController _symbolController = TextEditingController(
     text: 'BTC-USDT',
   );
@@ -421,7 +415,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   final TextEditingController _quantityController = TextEditingController(
     text: '0.01',
   );
-  final TextEditingController _limitPriceController = TextEditingController();
   final TextEditingController _zoneLowController = TextEditingController();
   final TextEditingController _zoneHighController = TextEditingController();
   final TextEditingController _triggerPriceController = TextEditingController();
@@ -437,10 +430,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   bool _runningIntent = false;
   String _intentProgressLabel = 'Starting';
-  bool _broadcastingSignal = false;
   bool _savingCredentials = false;
   bool _executing = false;
-  bool _refreshingSignals = false;
   bool _fetchingOpenOrders = false;
   bool _loadingPerpSymbols = false;
   bool _scanningSignals = false;
@@ -460,11 +451,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   int _maxEffects = 1;
 
   String _side = 'buy';
-  String _orderType = 'limit';
-  String _timeInForce = 'GTC';
-  String _entryMode = 'direct';
   String _zoneSide = 'buyside';
-  String _zonePriceRule = 'zone_mid';
   String _signalScanScope = _signalScanScopeCore;
 
   PluginHostApiResponse? _lastIntentResponse;
@@ -485,8 +472,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Future<BingxFuturesApiCredentials?>? _credentialsLoadFuture;
   int _lastExecutionAttempts = 0;
   bool _lastExecutionFromCache = false;
-  List<CapsuleTradeSignalInboxMessage> _signalInbox =
-      const <CapsuleTradeSignalInboxMessage>[];
   List<String> _availablePerpSymbols = const <String>[];
   List<BingxFuturesSignalRankEntry> _signalRankEntries =
       const <BingxFuturesSignalRankEntry>[];
@@ -521,19 +506,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       ),
     );
     _loadPerpetualSymbols(silent: true);
-    _signalInbox = _module.chatDelivery.loadCachedTradeSignals();
-    _refreshSignalInbox(silentWhenEmpty: true);
   }
 
   @override
   void dispose() {
     _openOrdersPollTimer?.cancel();
     unawaited(_module.publicSessionStream.disconnect());
-    _peerController.dispose();
     _symbolController.dispose();
     _maxNotionalUsdtController.dispose();
     _quantityController.dispose();
-    _limitPriceController.dispose();
     _zoneLowController.dispose();
     _zoneHighController.dispose();
     _triggerPriceController.dispose();
@@ -827,12 +808,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (!_tradingControlLoaded || _savingTradingControl) return false;
     BingxFuturesTradingMandate? nextMandate = _tradingMandate;
     if (value) {
-      if (_orderType != 'limit') {
-        await _showSnack(
-          'Bounded trading currently requires the Limit strategy path.',
-        );
-        return false;
-      }
       final credentials = await _ensureCredentialsLoaded();
       final capsuleRootHex = _module.orderTrackingStore.activeCapsuleRootHex;
       final symbol = _symbolController.text.trim().toUpperCase();
@@ -1010,24 +985,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
   }
 
-  String _resolveIntentRejectedMessage(PluginHostApiResponse response) {
-    final code = response.errorCode?.trim() ?? '';
-    if (code == 'runtime_invoke_unavailable') {
-      return 'Futures runtime package is missing. Install/reinstall BingX Futures plugin in Plugins and retry.';
-    }
-    if (code == 'runtime_invoke_invalid') {
-      return 'Futures plugin package is invalid. Reinstall BingX Futures plugin.';
-    }
-    if (code == 'runtime_invoke_failed') {
-      return 'Futures runtime invoke failed. Reinstall plugin and retry.';
-    }
-    final message = response.errorMessage?.trim();
-    if (message != null && message.isNotEmpty) {
-      return message;
-    }
-    return 'BingX futures request rejected';
-  }
-
   Future<BingxFuturesApiCredentials?> _loadCredentials({
     bool showError = true,
   }) async {
@@ -1053,79 +1010,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
       return null;
     }
-  }
-
-  Future<String?> _selectConsensusPeer({required String hint}) async {
-    final labels = await _module.contactLabels.load();
-    if (!mounted) return null;
-    final checks =
-        (await _module.manualChecks.loadAttestedChecks()).toList()..sort(
-          (a, b) =>
-              a.peerLabel.toLowerCase().compareTo(b.peerLabel.toLowerCase()),
-        );
-    if (!mounted) return null;
-    if (checks.isEmpty) return null;
-    final selectedPeerHex = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              ListTile(
-                title: const Text(
-                  'Select consensus peer',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(hint),
-              ),
-              for (final check in checks)
-                ListTile(
-                  leading: Icon(
-                    check.isSignable ? Icons.verified_rounded : Icons.warning,
-                    color: check.isSignable ? Colors.green : Colors.orange,
-                  ),
-                  title: Text(
-                    PeerIdentityFormat.capsuleLabelFromRootHex(
-                      check.peerHex,
-                      localLabel:
-                          labels[PeerIdentityFormat.capsuleKeyFromRootHex(
-                            check.peerHex,
-                          )],
-                    ),
-                  ),
-                  subtitle: Text(
-                    '${check.isSignable ? 'Pair consensus verified' : 'Pair consensus needs attention'}\n'
-                    '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(check.peerHex)}',
-                  ),
-                  trailing:
-                      check.isSignable
-                          ? const Text(
-                            'Signable',
-                            style: TextStyle(color: Colors.green),
-                          )
-                          : const Text(
-                            'Blocked',
-                            style: TextStyle(color: Colors.orange),
-                          ),
-                  onTap: () => Navigator.of(sheetContext).pop(check.peerHex),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-    return selectedPeerHex;
-  }
-
-  Future<void> _choosePeer() async {
-    final selectedPeerHex = await _selectConsensusPeer(
-      hint: 'Choose consensus peer for BingX intent routing.',
-    );
-    if (!mounted || selectedPeerHex == null || selectedPeerHex.isEmpty) return;
-    setState(() {
-      _peerController.text = selectedPeerHex;
-    });
   }
 
   Future<void> _saveCredentials() async {
@@ -1190,130 +1074,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return loaded ?? _resolveCredentials();
   }
 
-  String? _deriveDirectLimitFromZone() {
-    final lowRaw = _zoneLowController.text.trim();
-    final highRaw = _zoneHighController.text.trim();
-    if (lowRaw.isEmpty || highRaw.isEmpty) return null;
-    final low = num.tryParse(lowRaw);
-    final high = num.tryParse(highRaw);
-    if (low == null || high == null || low <= 0 || high <= 0 || low >= high) {
-      return null;
-    }
-    return _side == 'buy' ? lowRaw : highRaw;
-  }
-
-  num? _deriveZoneEntryPrice({
-    required String zonePriceRule,
-    required String zoneLowDecimal,
-    required String zoneHighDecimal,
-    String? manualLimitPriceDecimal,
-  }) {
-    final low = _toNum(zoneLowDecimal);
-    final high = _toNum(zoneHighDecimal);
-    if (low == null || high == null || low <= 0 || high <= 0 || low >= high) {
-      return null;
-    }
-    switch (zonePriceRule.trim().toLowerCase()) {
-      case 'zone_low':
-        return low;
-      case 'zone_high':
-        return high;
-      case 'manual':
-        final manual = _toNum(manualLimitPriceDecimal ?? '');
-        if (manual == null || manual <= 0) return null;
-        return manual;
-      case 'zone_mid':
-      default:
-        return (low + high) / 2;
-    }
-  }
-
   String _formatDecimal(num value, {int scale = 8}) {
     final fixed = value.toStringAsFixed(scale);
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
-  String _formatLiveDecisionBlockedMessage(
-    BingxFuturesLiveDecisionResult live,
-  ) {
-    final zone =
-        live.zoneLowDecimal != null && live.zoneHighDecimal != null
-            ? ' zone ${live.zoneLowDecimal}-${live.zoneHighDecimal}'
-            : '';
-    if (live.trendGateBlocked) {
-      return switch (live.trendGateCode) {
-        'momentum_gate_short_missed_retest' =>
-          'Short blocked: retest already missed.$zone',
-        'momentum_gate_long_missed_retest' =>
-          'Long blocked: retest already missed.$zone',
-        'trend_gate_short_far_retest' =>
-          'Short blocked: retest is too far.$zone',
-        'trend_gate_long_far_retest' => 'Long blocked: retest is too far.$zone',
-        'liquidity_anchor_unavailable' =>
-          'No executable liquidity anchor for this symbol.',
-        _ => 'Signal blocked: ${live.trendGateCode}.$zone',
-      };
-    }
-
-    final failed =
-        live.reasons
-            .where((reason) => !reason.passed)
-            .map((reason) => reason.code)
-            .where((code) => code.isNotEmpty)
-            .toList();
-    if (failed.isEmpty) {
-      return 'No executable signal for current market state.';
-    }
-    return 'No executable signal: ${failed.join(', ')}.';
-  }
-
   num? _toNum(String raw) => num.tryParse(raw.trim());
-
-  Future<bool> _applyRiskBudgetQuantity({required String symbol}) async {
-    final maxNotional = _toNum(_maxNotionalUsdtController.text);
-    if (maxNotional == null || maxNotional <= 0) {
-      await _showSnack('Max notional must be a positive number');
-      return false;
-    }
-
-    final sizing = await _module.orderSizing.size(
-      symbol: symbol,
-      maximumNotionalQuote: maxNotional,
-    );
-    await _module.uiLog.log(
-      'bingx.risk.sizing',
-      'symbol=${symbol.trim().toUpperCase()} '
-          'status=${sizing.status.name} code=${sizing.reasonCode} '
-          'risk_notional=$maxNotional '
-          'quantity=${sizing.quantityDecimal ?? "-"} '
-          'order_notional=${sizing.orderNotionalQuoteDecimal ?? "-"} '
-          'min_quantity=${sizing.minimumQuantityDecimal ?? "-"} '
-          'min_notional=${sizing.minimumNotionalQuoteDecimal ?? "-"}',
-    );
-    if (sizing.status != BingxFuturesOrderSizingStatus.sized ||
-        sizing.quantityDecimal == null) {
-      _quantityController.clear();
-      await _showSnack(sizing.reasonMessage, seconds: 4);
-      return false;
-    }
-
-    final quantityDecimal = sizing.quantityDecimal!;
-    if (mounted) {
-      setState(() {
-        _quantityController.text = quantityDecimal;
-      });
-    } else {
-      _quantityController.text = quantityDecimal;
-    }
-    await _module.uiLog.log(
-      'bingx.risk.quantity',
-      'symbol=${symbol.trim().toUpperCase()} '
-          'max_notional_usdt=$maxNotional '
-          'order_notional_usdt=${sizing.orderNotionalQuoteDecimal} '
-          'quantity=$quantityDecimal',
-    );
-    return true;
-  }
 
   Future<void> _autoFitMaxNotionalToRisk() async {
     if (_fittingMaxNotional) return;
@@ -1458,59 +1224,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
   }
 
-  ({bool isSignable, List<String> blockingCodes}) _consensusDecisionContext(
-    String peerHex,
-  ) {
-    final checks = _module.manualChecks.loadChecks();
-    final normalizedPeer = peerHex.trim().toLowerCase();
-    if (checks.isEmpty) {
-      return (isSignable: false, blockingCodes: const <String>[]);
-    }
-
-    if (normalizedPeer.isEmpty) {
-      return (
-        isSignable: false,
-        blockingCodes: const <String>['consensus_peer_not_selected'],
-      );
-    }
-
-    if (normalizedPeer.isNotEmpty) {
-      for (final check in checks) {
-        if (check.peerHex.trim().toLowerCase() == normalizedPeer) {
-          final codes =
-              check.blockingFacts
-                  .map((fact) => fact.code.trim())
-                  .where((code) => code.isNotEmpty)
-                  .toSet()
-                  .toList()
-                ..sort();
-          return (isSignable: check.isSignable, blockingCodes: codes);
-        }
-      }
-    }
-
-    return (
-      isSignable: false,
-      blockingCodes: const <String>['consensus_peer_not_found'],
-    );
-  }
-
   Future<BingxFuturesLiveDecisionResult?> _computeLiveDecision({
     required String symbol,
-    required String peerHex,
     bool silent = false,
-    bool forceConsensusSignable = false,
     String? zoneEvaluationSide,
   }) async {
-    final consensus =
-        forceConsensusSignable
-            ? (isSignable: true, blockingCodes: const <String>[])
-            : _consensusDecisionContext(peerHex);
     final result = await _module.liveStrategyUseCase.execute(
       BingxFuturesLiveStrategyCommand(
         symbol: symbol,
-        isConsensusSignable: consensus.isSignable,
-        blockingFactCodes: consensus.blockingCodes,
         recentMicroBars: _recentMicroBars,
         zoneNearBps: _zoneNearBps,
         zoneFarBps: _zoneFarBps,
@@ -1621,8 +1342,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             cyclePrepared: true,
             decisionZoneSide: executableDecision.zoneSide,
           );
-          _entryMode = 'zone_pending';
-          _zonePriceRule = 'zone_mid';
           _zoneLowController.text = executableDecision.zoneLowDecimal ?? '';
           _zoneHighController.text = executableDecision.zoneHighDecimal ?? '';
           _triggerPriceController.text =
@@ -1693,14 +1412,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Drone is paused. Resume before running strategy.');
       return 'blocked:drone_paused';
     }
-    final peerHex = _peerController.text.trim().toLowerCase();
     final symbol = _symbolController.text.trim();
-    var strategyTag = _strategyTagController.text.trim();
-    var triggerPriceDecimal = _triggerPriceController.text.trim();
-    var stopLossDecimal = _stopLossController.text.trim();
-    var takeProfitDecimal = _takeProfitController.text.trim();
-    final nowUtc = DateTime.now().toUtc().toIso8601String();
-    var clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
     if (symbol.isEmpty) {
       await _showSnack('Symbol is required');
       return 'blocked:symbol_required';
@@ -1708,541 +1420,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (!await _primePublicSessionEvidence(symbol, reportFailure: true)) {
       return 'blocked:session_stream_unavailable';
     }
-    final forceAutoZonePending = _orderType == 'limit';
-    if (forceAutoZonePending &&
-        (_entryMode != 'zone_pending' ||
-            _zonePriceRule == 'manual' ||
-            _zoneSide != (_side == 'buy' ? 'buyside' : 'sellside'))) {
-      if (mounted) {
-        setState(() {
-          _entryMode = 'zone_pending';
-          _zonePriceRule = 'zone_mid';
-          _zoneSide = _side == 'buy' ? 'buyside' : 'sellside';
-        });
-      } else {
-        _entryMode = 'zone_pending';
-        _zonePriceRule = 'zone_mid';
-        _zoneSide = _side == 'buy' ? 'buyside' : 'sellside';
-      }
-      await _module.uiLog.log(
-        'bingx.strategy.entry_mode.auto',
-        'forced=zone_pending rule=zone_mid side=$_zoneSide order_type=$_orderType',
-      );
-    }
-
-    if (peerHex.isEmpty && _orderType == 'limit') {
-      return _runCanonicalSoloCycle(symbol: symbol);
-    }
-
-    final isZonePending = _entryMode == 'zone_pending';
-    BingxFuturesLiveDecisionResult? liveDecision;
-
-    if (_orderType == 'limit') {
-      _setIntentProgress('Analyzing market');
-      liveDecision = await _computeLiveDecision(
-        symbol: symbol,
-        peerHex: peerHex,
-        forceConsensusSignable: peerHex.isEmpty,
-        zoneEvaluationSide: _side,
-      );
-      if (liveDecision == null) return 'blocked:market_analysis_unavailable';
-      final live = liveDecision;
-      if (live.zoneLowDecimal != null && live.zoneHighDecimal != null) {
-        if (mounted) {
-          setState(() {
-            _zoneLowController.text = live.zoneLowDecimal!;
-            _zoneHighController.text = live.zoneHighDecimal!;
-            if (live.zoneSide != null) {
-              _zoneSide = live.zoneSide!;
-            }
-            if (live.side != null) {
-              _side = live.side!;
-            }
-          });
-        } else {
-          _zoneLowController.text = live.zoneLowDecimal!;
-          _zoneHighController.text = live.zoneHighDecimal!;
-          if (live.zoneSide != null) {
-            _zoneSide = live.zoneSide!;
-          }
-          if (live.side != null) {
-            _side = live.side!;
-          }
-        }
-      }
-      if (!live.canPrepareIntent ||
-          live.side == null ||
-          live.zoneSide == null ||
-          live.zoneLowDecimal == null ||
-          live.zoneHighDecimal == null) {
-        final message = _formatLiveDecisionBlockedMessage(live);
-        if (mounted) {
-          setState(() {
-            _intentBlockingMessage = message;
-          });
-        }
-        await _module.uiLog.log(
-          'bingx.strategy.live_decision.blocked',
-          'symbol=$symbol message=$message '
-              'decision=${live.decision.name} side=${live.side ?? "-"} '
-              'zone=${live.zoneLowDecimal ?? "-"}-${live.zoneHighDecimal ?? "-"} '
-              'trend_gate=${live.trendGateCode} '
-              'live_hash=${live.liveDecisionHashHex.substring(0, 12)}',
-        );
-        await _showSnack(message, seconds: 4);
-        return 'blocked:market_decision';
-      }
-      final liquidityEventId = live.liquidityEventId?.trim() ?? '';
-      final latestClosedBar = live.latestClosedMicroBarAtUtc?.trim() ?? '';
-      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(liquidityEventId) ||
-          latestClosedBar.isEmpty) {
-        await _module.uiLog.log(
-          'bingx.strategy.live_decision.blocked',
-          'symbol=$symbol message=liquidity_event_evidence_missing',
-        );
-        await _showSnack('Liquidity event evidence is unavailable', seconds: 4);
-        return 'blocked:liquidity_event_evidence_missing';
-      }
-      clientOrderId = 'hivra-${liquidityEventId.substring(0, 32)}';
-      if (mounted) {
-        setState(() {
-          _side = live.side!;
-          _zoneSide = live.zoneSide!;
-          _entryMode = 'zone_pending';
-          _zonePriceRule = 'zone_mid';
-          _zoneLowController.text = live.zoneLowDecimal!;
-          _zoneHighController.text = live.zoneHighDecimal!;
-        });
-      } else {
-        _side = live.side!;
-        _zoneSide = live.zoneSide!;
-        _entryMode = 'zone_pending';
-        _zonePriceRule = 'zone_mid';
-        _zoneLowController.text = live.zoneLowDecimal!;
-        _zoneHighController.text = live.zoneHighDecimal!;
-      }
-      strategyTag = _module.strategyNaming.tagForDecision(live.decision) ?? '';
-      _strategyTagController.text = strategyTag;
-      triggerPriceDecimal =
-          live.side == 'buy' ? live.zoneHighDecimal! : live.zoneLowDecimal!;
-      _triggerPriceController.text = triggerPriceDecimal;
-    }
-
-    // Market analysis is independent from exchange sizing. A valid setup must
-    // remain observable even when the account cannot safely meet minQty.
-    _setIntentProgress('Sizing risk');
-    final riskReady = await _applyRiskBudgetQuantity(symbol: symbol);
-    if (!riskReady) {
-      return 'blocked:risk_sizing';
-    }
-    final quantityDecimal = _quantityController.text.trim();
-
-    final zoneLowDecimal = _zoneLowController.text.trim();
-    final zoneHighDecimal = _zoneHighController.text.trim();
-    String? limitPriceDecimal =
-        _orderType == 'limit' && !isZonePending
-            ? _limitPriceController.text.trim()
-            : null;
-    if (_orderType == 'limit' &&
-        !isZonePending &&
-        (limitPriceDecimal == null || limitPriceDecimal.isEmpty)) {
-      final derived = _deriveDirectLimitFromZone();
-      if (derived != null && derived.isNotEmpty) {
-        limitPriceDecimal = derived;
-        _limitPriceController.text = derived;
-        await _module.uiLog.log(
-          'bingx.intent.autofill_limit',
-          'mode=direct source=zone side=$_side value=$derived',
-        );
-      }
-    }
-    final timeInForce = _orderType == 'limit' ? _timeInForce : null;
-    if (isZonePending) {
-      final entryPrice = _deriveZoneEntryPrice(
-        zonePriceRule: _zonePriceRule,
-        zoneLowDecimal: zoneLowDecimal,
-        zoneHighDecimal: zoneHighDecimal,
-        manualLimitPriceDecimal:
-            limitPriceDecimal ?? _limitPriceController.text,
-      );
-      if (entryPrice != null && entryPrice > 0) {
-        final derived = deriveBingxFuturesLiquidityTargets(
-          side: _side,
-          entryPrice: entryPrice,
-          stopLossPercent: _stopLossPercent,
-          minimumRiskReward: _takeProfitRiskReward,
-          oppositeLiquidityTargetDecimal:
-              liveDecision?.oppositeLiquidityTargetDecimal,
-        );
-        if (derived.blockerCode != null) {
-          await _module.uiLog.log(
-            'bingx.intent.risk_targets.blocked',
-            'code=${derived.blockerCode} entry=$entryPrice side=$_side '
-                'target=${liveDecision?.oppositeLiquidityTargetDecimal ?? "-"}',
-          );
-          await _showSnack(derived.blockerMessage!, seconds: 4);
-          return 'blocked:${derived.blockerCode}';
-        }
-        stopLossDecimal = derived.stopLossDecimal!;
-        _stopLossController.text = stopLossDecimal;
-        takeProfitDecimal = derived.takeProfitDecimal!;
-        _takeProfitController.text = takeProfitDecimal;
-        await _module.uiLog.log(
-          'bingx.intent.risk_targets.auto',
-          'entry=$entryPrice side=$_side '
-              'sl=$stopLossDecimal tp=$takeProfitDecimal '
-              'slPct=${_stopLossPercent.toStringAsFixed(2)} '
-              'minRr=${_takeProfitRiskReward.toStringAsFixed(2)} '
-              'actualRr=${derived.actualRiskReward!.toStringAsFixed(3)} '
-              'targetSource=${liveDecision?.oppositeLiquidityTargetSource ?? "-"}',
-        );
-      }
-    }
-
-    final stopwatch = Stopwatch()..start();
-    try {
-      await _module.uiLog.log(
-        'bingx.intent.request',
-        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$_side type=$_orderType entry=$_entryMode qty=$quantityDecimal',
-      );
-      if (peerHex.isNotEmpty) {
-        _setIntentProgress('Checking consensus');
-        final attestation = await _module.attestationExchange.ensureForPeer(
-          peerHex,
-        );
-        await _module.uiLog.log(
-          'bingx.attestation.ensure',
-          'peer=${peerHex.substring(0, 8)}.. status=${attestation.status.name} '
-              'receive=${attestation.receiveCode}/${attestation.receivedCount}/${attestation.storedCount} '
-              'mismatch=${attestation.mismatchedEvidenceCount} '
-              'sent=${attestation.localEvidenceSent} send=${attestation.sendCode ?? "-"}',
-        );
-        if (!attestation.isReady) {
-          await _showSnack(
-            attestation.message ??
-                (attestation.status ==
-                        ConsensusAttestationExchangeStatus.syncing
-                    ? 'Pair consensus attestation syncing'
-                    : 'Pair consensus attestation blocked'),
-            seconds: 3,
-          );
-          return 'blocked:consensus_attestation';
-        }
-      }
-
-      _setIntentProgress('Preparing intent');
-      final useCaseResult = await _module.intentUseCase
-          .execute(
-            BingxFuturesIntentCommand(
-              screen: 'trading_drone',
-              peerHex: peerHex,
-              clientOrderId: clientOrderId,
-              symbol: symbol,
-              side: _side,
-              orderType: _orderType,
-              quantityDecimal: quantityDecimal,
-              limitPriceDecimal: limitPriceDecimal,
-              timeInForce: timeInForce,
-              entryMode: _entryMode,
-              zoneSide: _zoneSide,
-              zoneLowDecimal: zoneLowDecimal,
-              zoneHighDecimal: zoneHighDecimal,
-              zonePriceRule: _zonePriceRule,
-              manualEntryPriceDecimal: null,
-              triggerPriceDecimal: triggerPriceDecimal,
-              stopLossDecimal: stopLossDecimal,
-              takeProfitDecimal: takeProfitDecimal,
-              createdAtUtc: nowUtc,
-              strategyTag: strategyTag,
-              liveDecision: liveDecision,
-            ),
-          )
-          .timeout(_hostIntentTimeout);
-      final response = useCaseResult.response;
-      if (!mounted) return 'cancelled:screen_disposed';
-      setState(() {
-        _lastIntentResponse = response;
-        _lastPreparedLiveDecision =
-            response.status == PluginHostApiStatus.executed
-                ? liveDecision
-                : null;
-        _intentBlockingMessage =
-            response.status == PluginHostApiStatus.executed
-                ? null
-                : response.errorMessage ?? 'Intent was not prepared.';
-      });
-      final decisionEnvelope = useCaseResult.decisionEnvelope;
-      await _module.uiLog.log(
-        'bingx.intent.response',
-        'status=${response.status.name} '
-            'elapsedMs=${stopwatch.elapsedMilliseconds} '
-            'source=${response.executionSource}',
-      );
-      if (response.status == PluginHostApiStatus.rejected) {
-        final code =
-            response.errorCode?.trim().isNotEmpty == true
-                ? response.errorCode!.trim()
-                : 'none';
-        final msg =
-            response.errorMessage?.trim().isNotEmpty == true
-                ? response.errorMessage!.trim()
-                : 'none';
-        await _module.uiLog.log(
-          'bingx.intent.rejected.detail',
-          'code=$code message=$msg source=${response.executionSource}',
-        );
-      }
-      await _module.uiLog.log(
-        'drone.decision.envelope',
-        'hash=${decisionEnvelope.envelopeHashHex} '
-            'kind=decision screen=trading_drone',
-      );
-
-      switch (response.status) {
-        case PluginHostApiStatus.executed:
-          final hash = response.result?['intent_hash_hex']?.toString() ?? '';
-          final shortHash =
-              hash.length >= 12 ? '${hash.substring(0, 12)}..' : hash;
-          await _showSnack('BingX intent prepared: $shortHash');
-          break;
-        case PluginHostApiStatus.blocked:
-          final reason =
-              response.blockingFacts.isEmpty
-                  ? 'Consensus guard blocked execution.'
-                  : response.blockingFacts.first.label;
-          await _showSnack(reason);
-          break;
-        case PluginHostApiStatus.rejected:
-          final message = _resolveIntentRejectedMessage(response);
-          await _showSnack(message, seconds: 4);
-          break;
-      }
-      return switch (response.status) {
-        PluginHostApiStatus.executed => preparedTradingIntentTerminalOutcome,
-        PluginHostApiStatus.blocked => 'blocked:intent_guard',
-        PluginHostApiStatus.rejected =>
-          'rejected:${response.errorCode ?? "intent_rejected"}',
-      };
-    } on TimeoutException {
-      await _module.uiLog.log(
-        'bingx.intent.timeout',
-        'elapsedMs=${stopwatch.elapsedMilliseconds} timeoutMs=${_hostIntentTimeout.inMilliseconds}',
-      );
-      await _showSnack(
-        'Intent host timeout (${_hostIntentTimeout.inSeconds}s)',
-        seconds: 3,
-      );
-      return 'timeout:host_intent';
-    }
-  }
-
-  Future<void> _broadcastLastIntent() async {
-    if (_broadcastingSignal) return;
-    final response = _lastIntentResponse;
-    final result = response?.result;
-    if (response?.status != PluginHostApiStatus.executed || result == null) {
-      await _showSnack('Run a BingX intent first, then broadcast it');
-      return;
-    }
-
-    final peers =
-        _module.manualChecks
-            .loadChecks()
-            .where((check) => check.isSignable)
-            .map((check) => check.peerHex)
-            .toSet()
-            .toList()
-          ..sort();
-    if (peers.isEmpty) {
-      await _showSnack('No signable consensus peers available');
-      return;
-    }
-
-    final signalId = 'sig-${DateTime.now().microsecondsSinceEpoch}';
-    final payloadJson = jsonEncode(<String, dynamic>{
-      'schema_version': 1,
-      'plugin_id': bingxFuturesTradingPluginId,
-      'contract_kind': 'bingx_trade_signal_v1',
-      'signal_type': 'intent_prepared',
-      'signal_id': signalId,
-      'intent_hash_hex': result['intent_hash_hex']?.toString(),
-      'canonical_intent_json': result['canonical_intent_json']?.toString(),
-      'symbol': result['symbol']?.toString(),
-      'side': result['side']?.toString(),
-      'order_type': result['order_type']?.toString(),
-      'quantity_decimal': result['quantity_decimal']?.toString(),
-      'entry_mode': result['entry_mode']?.toString() ?? 'direct',
-      'strategy_tag': result['strategy_tag']?.toString(),
-      'created_at_utc': DateTime.now().toUtc().toIso8601String(),
-    });
-
-    setState(() {
-      _broadcastingSignal = true;
-    });
-    var sent = 0;
-    var blocked = 0;
-    var failed = 0;
-    var receipts = 0;
-    try {
-      for (final peerHex in peers) {
-        final sendResult = await _module.chatDelivery.sendCanonicalEnvelope(
-          peerHex: peerHex,
-          canonicalEnvelopeJson: payloadJson,
-        );
-        receipts += sendResult.deliveryReceiptCount;
-        if (sendResult.isSuccess) {
-          sent += 1;
-        } else if (sendResult.blockedByConsensus) {
-          blocked += 1;
-        } else {
-          failed += 1;
-        }
-      }
-      await _module.uiLog.log(
-        'bingx.signal.broadcast',
-        'signal=$signalId peers=${peers.length} sent=$sent blocked=$blocked failed=$failed receipts=$receipts',
-      );
-      await _refreshSignalInbox(silentWhenEmpty: true);
-      await _showSnack(
-        'Signal broadcast: sent $sent/${peers.length}'
-        '${blocked > 0 ? ' · blocked $blocked' : ''}'
-        '${failed > 0 ? ' · failed $failed' : ''}',
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _broadcastingSignal = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _refreshSignalInbox({required bool silentWhenEmpty}) async {
-    if (_refreshingSignals) return;
-    _refreshingSignals = true;
-    try {
-      final capsuleHex = _module.activeCapsuleRootHex();
-      if (capsuleHex == null) {
-        if (!silentWhenEmpty) {
-          await _showSnack('Active capsule identity is unavailable');
-        }
-        return;
-      }
-      final receive = await _module.passiveReceive.trigger(
-        capsuleHex: capsuleHex,
-        reason:
-            silentWhenEmpty
-                ? CapsulePassiveReceiveReason.screenActivation
-                : CapsulePassiveReceiveReason.manual,
-        quick: silentWhenEmpty,
-        manualRetry: !silentWhenEmpty,
-      );
-      final result = receive.chat;
-      if (result.code < 0) {
-        if (!silentWhenEmpty) {
-          await _showSnack(
-            result.errorMessage ?? 'Inbox fetch failed (code ${result.code})',
-          );
-        }
-        return;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        final byId = <String, CapsuleTradeSignalInboxMessage>{
-          for (final signal in _signalInbox) signal.id: signal,
-          for (final signal in _module.chatDelivery.loadCachedTradeSignals())
-            signal.id: signal,
-        };
-        for (final signal in result.tradeSignals) {
-          byId[signal.id] = signal;
-        }
-        final merged =
-            byId.values.toList()
-              ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-        _signalInbox = List<CapsuleTradeSignalInboxMessage>.unmodifiable(
-          merged,
-        );
-      });
-
-      if (result.tradeSignals.isEmpty && silentWhenEmpty) return;
-      await _showSnack(
-        'Signal inbox: +${result.tradeSignals.length}'
-        '${result.droppedByConsensus > 0 ? ' · dropped ${result.droppedByConsensus}' : ''}',
-      );
-    } finally {
-      _refreshingSignals = false;
-    }
-  }
-
-  Future<void> _repeatSignalAsDraft(
-    CapsuleTradeSignalInboxMessage signal,
-  ) async {
-    final decoded = _tryDecodeJsonMap(signal.canonicalIntentJson);
-    if (decoded == null) {
-      await _module.uiLog.log(
-        'bingx.signal.draft.rejected',
-        'signal=${signal.signalId} reason=invalid_canonical_intent',
-      );
-      await _showSnack('Signal intent payload is invalid');
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _peerController.text = signal.fromHex;
-      _symbolController.text = decoded['symbol']?.toString() ?? signal.symbol;
-      _displayedZoneDecision = null;
-      _quantityController.text =
-          decoded['quantity_decimal']?.toString() ?? signal.quantityDecimal;
-      _side = decoded['side']?.toString() ?? signal.side;
-      _orderType = decoded['order_type']?.toString() ?? signal.orderType;
-      _timeInForce = decoded['time_in_force']?.toString() ?? 'GTC';
-      _entryMode = decoded['entry_mode']?.toString() ?? signal.entryMode;
-      _strategyTagController.text = decoded['strategy_tag']?.toString() ?? '';
-      _lastIntentResponse = null;
-      _lastPreparedLiveDecision = null;
-      _intentBlockingMessage = null;
-
-      if (_entryMode == 'zone_pending') {
-        _zoneSide =
-            decoded['zone_side']?.toString() ??
-            (_side == 'buy' ? 'buyside' : 'sellside');
-        _zoneLowController.text = decoded['zone_low_decimal']?.toString() ?? '';
-        _zoneHighController.text =
-            decoded['zone_high_decimal']?.toString() ?? '';
-        final decodedRule =
-            decoded['zone_price_rule']?.toString() ?? 'zone_mid';
-        _zonePriceRule = decodedRule == 'manual' ? 'zone_mid' : decodedRule;
-        _triggerPriceController.text =
-            decoded['trigger_price_decimal']?.toString() ?? '';
-        _stopLossController.text =
-            decoded['stop_loss_decimal']?.toString() ?? '';
-        _takeProfitController.text =
-            decoded['take_profit_decimal']?.toString() ?? '';
-        _limitPriceController.text =
-            decoded['limit_price_decimal']?.toString() ?? '';
-      } else {
-        _limitPriceController.text =
-            decoded['limit_price_decimal']?.toString() ?? '';
-      }
-    });
-
-    final shortSignal =
-        signal.signalId.length <= 12
-            ? signal.signalId
-            : '${signal.signalId.substring(0, 12)}..';
-    await _module.uiLog.log(
-      'bingx.signal.draft.loaded',
-      'signal=${signal.signalId} from=${signal.fromHex} '
-          'symbol=${_symbolController.text} side=$_side '
-          'type=$_orderType mode=$_entryMode qty=${_quantityController.text}',
-    );
-    await _showSnack(
-      'Draft loaded: ${_symbolController.text} · ${_side.toUpperCase()} · '
-      '${_quantityController.text} ($shortSignal)',
-      seconds: 3,
-    );
+    return _runCanonicalSoloCycle(symbol: symbol);
   }
 
   String _formatOrderTime(int? timestampMs) {
@@ -2252,17 +1430,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
         '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
-  }
-
-  Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      return null;
-    } catch (_) {
-      return null;
-    }
   }
 
   @override
@@ -2320,45 +1487,6 @@ class _TradingDroneCredentialFieldState
           ),
           tooltip: _obscureText ? widget.showTooltip : widget.hideTooltip,
         ),
-      ),
-    );
-  }
-}
-
-class _TradingPeerScopeCard extends StatelessWidget {
-  final String peerHex;
-  final VoidCallback? onClear;
-
-  const _TradingPeerScopeCard({required this.peerHex, required this.onClear});
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPeer = peerHex.trim().isNotEmpty;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F141C),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF3B4657)),
-      ),
-      child: ListTile(
-        leading: Icon(
-          hasPeer ? Icons.group_outlined : Icons.person_outline_rounded,
-          color: hasPeer ? const Color(0xFFC9B2FF) : const Color(0xFF9FAABA),
-        ),
-        title: const Text('Intent scope'),
-        subtitle: Text(
-          hasPeer
-              ? 'Shared with ${PeerIdentityFormat.capsuleLabelFromRootHex(peerHex)}'
-              : 'Solo trading. No trusted capsule is selected.',
-        ),
-        trailing:
-            onClear == null
-                ? null
-                : IconButton(
-                  tooltip: 'Use solo trading',
-                  onPressed: onClear,
-                  icon: const Icon(Icons.close_rounded),
-                ),
       ),
     );
   }

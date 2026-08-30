@@ -1427,6 +1427,11 @@ Every WASM drone method MUST declare one execution scope:
 - `market_scan`: the method reads public/external data and may rank opportunities, but does not mutate a pair-scoped contract.
 - `pair_scoped`: the method acts with, for, or toward a specific peer Capsule.
 
+The maintained Trading capability is `solo` for intent preparation and
+exchange effects, and `market_scan` for public observation. A non-empty
+`peer_hex` on a Trading intent MUST be rejected before WASM invocation. Chat
+remains the maintained pair-consensus-bound capability.
+
 Rules:
 
 1. `pair_scoped` methods MUST require an explicit `peer_hex` root identity.

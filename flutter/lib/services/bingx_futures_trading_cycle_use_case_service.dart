@@ -259,7 +259,6 @@ class BingxFuturesTradingCycleUseCaseService {
       intent = await _runIntent(
         BingxFuturesIntentCommand(
           screen: command.screen,
-          peerHex: '',
           clientOrderId: 'hivra-${eventId.substring(0, 32)}',
           symbol: symbol,
           side: decision.side!,
@@ -461,8 +460,6 @@ class BingxFuturesTradingCycleUseCaseService {
     return _runLiveStrategy(
       BingxFuturesLiveStrategyCommand(
         symbol: symbol,
-        isConsensusSignable: true,
-        blockingFactCodes: const <String>[],
         recentMicroBars: command.recentMicroBars,
         zoneNearBps: command.zoneNearBps,
         zoneFarBps: command.zoneFarBps,
