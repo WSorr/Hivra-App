@@ -277,7 +277,8 @@ One cycle executes in this order:
 
 Closing the application stops new cycles. The next launch resumes from durable
 checkpoint/effect evidence. It must not infer that missed time implies missed
-permission.
+permission. Leaving the active Capsule runtime stops the same trigger owner and
+clears its process-scoped AI unlock before another Capsule workspace can run.
 
 ## 8. Bounded limits
 

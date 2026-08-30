@@ -78,6 +78,19 @@ void main() {
     expect(raw, isNot(contains('private_key')));
   });
 
+  test('new configuration defaults to one safe session catch-up', () async {
+    final configuration = MoltbookAmbassadorConfiguration.defaults();
+
+    expect(
+      configuration.triggerPolicy,
+      MoltbookAmbassadorConfiguration.triggerSession,
+    );
+    expect(
+      configuration.approvalMode,
+      MoltbookAmbassadorConfiguration.approvalAssisted,
+    );
+  });
+
   test('migrates schema v1 configuration to on-demand triggering', () {
     final configuration = MoltbookAmbassadorConfiguration.fromJson(
       <String, dynamic>{

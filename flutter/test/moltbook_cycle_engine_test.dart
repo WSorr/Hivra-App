@@ -512,6 +512,24 @@ void main() {
     },
   );
 
+  test('foreground deactivation stops work and clears AI authority', () async {
+    final gate = Completer<void>();
+    connection.observationGate = gate.future;
+    ai.unlocked = true;
+
+    final cycle = module.runMoltbookOnDemandCycle();
+    while (connection.observeCount == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    module.deactivateForegroundSession();
+    gate.complete();
+
+    await expectLater(cycle, throwsA(isA<StateError>()));
+    expect(ai.unlocked, isFalse);
+    expect(checkpoint.commitCount, 0);
+    expect(heartbeatHost.executeCount, 0);
+  });
+
   test('replacement cycle waits for stopped predecessor to quiesce', () async {
     final gate = Completer<void>();
     connection.observationGate = gate.future;
@@ -1829,6 +1847,11 @@ class _CycleAi implements MoltbookPublicBulletinAiService {
 
   @override
   bool get isSessionUnlocked => unlocked;
+
+  @override
+  void lockSession() {
+    unlocked = false;
+  }
 
   @override
   Future<String> solveNumericVerification({
