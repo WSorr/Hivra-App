@@ -95,7 +95,7 @@ Use only the checklist relevant to the selected risk:
 | Trading spec/runtime parity | `checklists/trading-drone-spec-runtime-parity.md` |
 | Trading release evidence | `checklists/trading-drone-evidence-log.md` |
 | Moltbook release smoke | `checklists/moltbook-release-smoke.md` |
-| AI engineering release smoke | `checklists/ai-engineer-release-smoke.md` |
+| Capsule Analyst release smoke | `checklists/capsule-analyst-release-smoke.md` |
 
 Unchecked reusable checklist boxes are templates, not active debt. Current
 priority exists only in `development-control.md`.

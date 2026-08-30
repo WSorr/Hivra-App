@@ -311,12 +311,11 @@ never feeds back into Core truth or domain actions.
 
 Ledger Inspector, raw hashes, signatures, root/transport identities, consensus
 evidence, bootstrap state, delivery queues, and traces belong behind an
-explicit Diagnostics or Developer Mode boundary. They are required for
-recovery, audit, and engineering, but are not normal-user navigation.
+explicit read-only Diagnostics boundary. They are required for recovery and
+audit, but are not normal-user navigation.
 
-Developer Mode must be explicit, scoped, and reversible. It must not change
-Capsule truth, grant a drone additional capabilities, or make a diagnostic
-screen the owner of a domain action.
+Diagnostics must not change Capsule truth, grant a drone additional
+capabilities, expose repository engineering tools, or own a domain action.
 
 ### App Shell acceptance rules
 

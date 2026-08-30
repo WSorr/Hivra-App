@@ -21,11 +21,14 @@ may return to `PASS` only after the exact published bytes are exercised again.
 
 For publication, macOS and Android must each have one row for the build tag.
 `Manual Smoke`, `Trading Smoke`, `Moltbook Smoke`, and `User Lifetime` must be
-`PASS` on both platforms. `AI Engineer` must be `PASS` for macOS and may be
-`PASS` or `N/A` for Android. Historical rows created before the Moltbook gate
-retain `N/A`; new release candidates may not use `N/A` for Moltbook.
+`PASS` on both platforms. `AI Surface` records the release's canonical AI
+product surface: current candidates must complete the Capsule Analyst smoke on
+macOS and may use `PASS` or `N/A` on Android. Historical rows retain the result
+for the AI surface that existed in that artifact; they do not authorize its
+restoration. Historical rows created before the Moltbook gate retain `N/A`;
+new release candidates may not use `N/A` for Moltbook.
 
-| Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Engineer | Signer | Notes |
+| Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | v1.0.3-test12 | 2026-07-16T14:56:13Z | macOS | hivra_app-v1.0.3-test12-macos-universal.zip | 2f680ebf2106873332149d9ba5415fb17f8c0bb0d279b116eb59d6a44c5f5848 | PASS | PASS | N/A | PASS | PASS | codex | Packaged ZIP launch smoke passed from extracted artifact; current-session trading/plugin smoke covered BingX 0.2.3 install path and macOS reopen fix. Unsigned/not notarized test build. |
 | v1.0.3-test12 | 2026-07-16T14:56:13Z | Android | hivra_app-v1.0.3-test12-android-universal.apk | b4fbe2aaf85ba1c3f54aececb1e7ff28f08cede4737f8ad0c247ad06cc27d6e9 | PASS | PASS | N/A | PASS | N/A | codex | Packaged APK installed and launched on connected device irobusydx49dvckf; current-session transport/plugin smoke covered Android release path. |

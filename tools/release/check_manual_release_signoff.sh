@@ -68,7 +68,7 @@ check_platform() {
   row="$(find_row "$platform")"
   [ -n "$row" ] || die "missing $platform signoff row for $BUILD_TAG in $LOG_FILE"
 
-  local date artifact manual trading moltbook lifetime ai signer
+  local date artifact manual trading moltbook lifetime ai_surface signer
   local artifact_sha256
   date="$(field_value "$row" 3)"
   artifact="$(field_value "$row" 5)"
@@ -77,7 +77,7 @@ check_platform() {
   trading="$(field_value "$row" 8)"
   moltbook="$(field_value "$row" 9)"
   lifetime="$(field_value "$row" 10)"
-  ai="$(field_value "$row" 11)"
+  ai_surface="$(field_value "$row" 11)"
   signer="$(field_value "$row" 12)"
 
   [ -n "$date" ] || die "$platform signoff row has empty date"
@@ -93,9 +93,9 @@ check_platform() {
   status_is_pass "$lifetime" || die "$platform User Lifetime must be PASS"
 
   if [ "$platform" = "macOS" ]; then
-    status_is_pass "$ai" || die "macOS AI Engineer must be PASS"
+    status_is_pass "$ai_surface" || die "macOS Capsule Analyst smoke must be PASS"
   else
-    status_is_pass_or_na "$ai" || die "$platform AI Engineer must be PASS or N/A"
+    status_is_pass_or_na "$ai_surface" || die "$platform Capsule Analyst smoke must be PASS or N/A"
   fi
 
   echo "PASS manual-signoff: $BUILD_TAG $platform"
@@ -126,7 +126,7 @@ self_test() {
   cat > "$tmp" <<'EOF'
 # Release Manual Signoff Log
 
-| Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Engineer | Signer | Notes |
+| Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | PASS | PASS | PASS | PASS | codex | self-test |
 | v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | PASS | PASS | PASS | N/A | codex | self-test |

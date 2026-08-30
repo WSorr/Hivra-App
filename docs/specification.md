@@ -596,7 +596,7 @@ Diagnostics:
   pending input checkpoint.
 - Closing the application MUST clear the process-memory AI lease. Hivra 1.x
   does not promise app-closed AI execution.
-- History Advisor, Developer Engineer, Capsule Analyst, and Moltbook AI are
+- History Advisor, Capsule Analyst, and Moltbook AI are
   routed through Capsule AI Runtime. No feature-owned provider dispatch or
   credential-read compatibility path remains. These features MUST NOT regain
   direct credential, provider DTO, provider-adapter, or scheduler access and
@@ -617,8 +617,8 @@ Diagnostics:
   and MUST NOT create plaintext fallback files.
 - Scoped AI chat output is advisory only. It MUST NOT mutate ledger, runtime,
   plugin registry, transport outbox, contact cards, or capsule credentials.
-- Scoped AI chat MUST NOT receive repository access in this phase. Repository
-  inspection belongs to a later explicit developer-mode boundary.
+- Scoped AI chat MUST NOT receive repository access. Repository engineering is
+  outside Capsule Analyst and the Hivra 1.x runtime.
 - Plugin Auditor MAY inspect installed plugin package metadata, declared
   capabilities, ABI, entry export, package kind, package size, and package
   digest.
@@ -626,58 +626,11 @@ Diagnostics:
   catalogs, package files, ledger, transport outbox, or credentials.
 - Plugin Auditor MUST NOT grant capabilities. Unsupported or missing
   capabilities are findings, not authorization inputs.
-- Developer Workspace Preview MAY scan explicit local repository paths supplied
-  by the developer.
-- Developer Workspace UI MUST be behind an explicit Developer Mode boundary
-  that is disabled by default and visually distinct from user-facing Capsule
-  Diagnostics.
-- Developer Workspace Preview MUST be read-only and MUST expose only
-  allowlisted file paths, file sizes, hashes, skip counts, and denylist
-  findings.
-- Developer Workspace Preview MUST skip secret-like files, build/cache
-  directories, symlinks, binaries, oversized files, and unknown top-level paths.
-- Developer Workspace Preview MUST NOT upload source contents, clone remote
-  repositories, execute scripts/hooks, or mutate repositories.
-- Developer Workspace selected context MAY include contents of explicit
-  user-selected allowlisted files after a fresh preview hash check.
-- Developer Workspace selected context MUST reject files changed after preview
-  and MUST label source/log/manifest contents as untrusted prompt input.
-- Developer Workspace selected context MUST remain a local preview until a
-  separate explicit provider submission step is implemented.
-- A deterministic Capsule Analyst finding MAY focus Developer Workspace file
-  suggestions and the Hivra Engineer question. An AI Analyst answer MUST NOT be
-  forwarded as evidence or authority to Hivra Engineer.
-- Focused developer context MUST remain bound to the exact diagnostic snapshot,
-  active Capsule, repository path, and previewed file hashes. Capsule switching
-  or file mutation invalidates the prepared context before provider access.
-- Hivra Engineer Advisory Ask MAY send a selected developer context, redacted
-  capsule summary, and user question to an AI provider after outbound preview.
-- Hivra Engineer output is advisory only. It MUST NOT write files, apply
-  patches, run scripts, commit, push, tag, release, mutate ledger, or mutate
-  plugin registry.
-- Hivra Engineer payload MUST include no-mutation constraints and MUST treat
-  selected source/log/manifest text as untrusted data.
-- Developer Remote Repository Cache MAY clone explicit public repository URLs
-  only into a Hivra-controlled developer cache. It MUST reject SSH/local/file
-  URLs, disable git prompts/hooks/submodule recursion, record the resolved
-  commit, and mark unpinned or mutable refs as dangerous.
-- Remote repository cache contents MUST remain developer-selected evidence.
-  AI providers and plugins MUST NOT receive broad repository/network access
-  through this cache.
-- Plugin Auditor MAY inspect installed plugin package metadata and explicit
-  selected plugin source snippets. It is read-only and MUST NOT install
-  plugins, grant capabilities, mutate registry, or treat source text as
-  trusted instructions.
-- Plugin Scaffolder Draft Mode MAY create draft plugin skeleton files only
-  inside an explicit `hivra-plugins` repository boundary. It MUST NOT build,
-  install, catalog, sign, commit, push, tag, release, or overwrite existing
-  drafts.
-- Patch Proposal Mode MAY parse and preview AI-proposed unified diffs. It MUST
-  NOT apply patches, write files, run scripts, commit, push, tag, or release.
-- AI Review Gate Integration MUST mark advisory, patch, plugin audit, and
-  release-readiness outputs as unverified until the user runs the required
-  Hivra gates. AI output MUST NOT override review gates, release gates, or
-  manual smoke.
+Capsule Analyst is not a repository engineering environment: Hivra 1.x MUST
+NOT scan or cache repositories, prepare patches or plugin scaffolds, or expose
+a Developer/Engineer provider path. Code inspection and modification remain
+owned by external engineering tools and the normal repository review gates.
+
 - Every AI-enabled drone or external capability MUST follow
   `docs/architecture/ai-proposal-boundary.md`: inference produces untrusted
   bounded proposals only; deterministic capability policy remains executable
