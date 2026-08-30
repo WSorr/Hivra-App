@@ -370,7 +370,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                               MaterialPageRoute<void>(
                                 builder:
                                     (_) => MoltbookAmbassadorScreen(
-                                      module: _module,
+                                      module: _module.moltbook,
                                     ),
                               ),
                             );

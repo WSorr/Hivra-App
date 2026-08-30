@@ -8,7 +8,7 @@ import '../models/moltbook_ambassador_models.dart';
 import '../models/moltbook_provider_models.dart';
 import '../services/moltbook_publication_service.dart';
 import '../services/moltbook_public_change_feed_store.dart';
-import '../services/plugin_runtime_module_service.dart';
+import '../services/moltbook_runtime_module.dart';
 import '../widgets/moltbook_person_first_runtime_community_widgets.dart';
 
 void bindMoltbookPublicChangeProposal({
@@ -28,7 +28,7 @@ void bindMoltbookPublicChangeProposal({
 }
 
 class MoltbookAmbassadorScreen extends StatefulWidget {
-  final PluginRuntimeModule module;
+  final MoltbookRuntimeModule module;
 
   const MoltbookAmbassadorScreen({super.key, required this.module});
 

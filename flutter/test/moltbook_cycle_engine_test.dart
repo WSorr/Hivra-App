@@ -10,14 +10,7 @@ import 'package:hivra_app/models/moltbook_ambassador_models.dart';
 import 'package:hivra_app/models/moltbook_provider_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
-import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
-import 'package:hivra_app/services/capsule_contact_label_store.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
-import 'package:hivra_app/services/capsule_passive_receive_coordinator.dart';
-import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
-import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
-import 'package:hivra_app/services/external_effect_service.dart';
-import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/moltbook_ambassador_configuration_store.dart';
 import 'package:hivra_app/services/moltbook_connection_service.dart';
 import 'package:hivra_app/services/moltbook_cycle_trigger_service.dart';
@@ -27,11 +20,9 @@ import 'package:hivra_app/services/moltbook_feed_checkpoint_store.dart';
 import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/moltbook_public_bulletin_ai_service.dart';
 import 'package:hivra_app/services/moltbook_public_change_feed_store.dart';
+import 'package:hivra_app/services/moltbook_runtime_module.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
-import 'package:hivra_app/services/plugin_runtime_module_service.dart';
 import 'package:hivra_app/services/ui_event_log_service.dart';
-import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
-import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 
 void main() {
   late String activeRoot;
@@ -44,20 +35,12 @@ void main() {
   late _RecordingDraftStore drafts;
   late MoltbookPublicChangeFeedStore publicChanges;
   late MoltbookCycleTriggerService triggers;
-  late PluginRuntimeModule module;
+  late MoltbookRuntimeModule module;
 
-  PluginRuntimeModule buildModule(MoltbookCycleTriggerService cycleTriggers) {
-    return PluginRuntimeModule(
-      registry: _UnusedRegistry(),
-      sourceCatalog: _UnusedCatalog(),
-      manualChecks: _UnusedManualChecks(),
+  MoltbookRuntimeModule buildModule(MoltbookCycleTriggerService cycleTriggers) {
+    return MoltbookRuntimeModule(
       pluginHostApi: heartbeatHost,
-      attestationExchange: _UnusedAttestationExchange(),
-      chatDelivery: _UnusedChatDelivery(),
-      passiveReceive: _UnusedPassiveReceive(),
-      contactLabels: _UnusedContactLabels(),
       uiLog: _SilentLog(),
-      externalEffects: _UnusedExternalEffects(),
       moltbookConnection: connection,
       moltbookDrafts: drafts,
       moltbookFeedCheckpoint: checkpoint,
@@ -66,8 +49,6 @@ void main() {
       moltbookPublicChanges: publicChanges,
       moltbookCycleTriggers: cycleTriggers,
       ambassadorConfiguration: configuration,
-      fileStore: _UnusedFileStore(),
-      secretVault: _UnusedSecretVault(),
       readActiveCapsuleRootHex: () => activeRoot,
     );
   }
@@ -927,16 +908,6 @@ void main() {
   });
 }
 
-class _UnusedPassiveReceive implements CapsulePassiveReceivePort {
-  @override
-  Future<CapsulePassiveReceiveResult> trigger({
-    required String capsuleHex,
-    required CapsulePassiveReceiveReason reason,
-    bool quick = true,
-    bool manualRetry = false,
-  }) => throw UnsupportedError('passive receive is unused');
-}
-
 class _CycleConnection implements MoltbookConnectionService {
   int observeCount = 0;
   final List<String> observedConversationPostIds = <String>[];
@@ -1641,42 +1612,6 @@ ExternalEffectOperation _committedReply(String operationId, DateTime updated) =>
       receipt: null,
     );
 
-class _UnusedRegistry implements WasmPluginRegistryService {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnusedCatalog implements WasmPluginSourceCatalogService {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnusedManualChecks implements ManualConsensusCheckService {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnusedAttestationExchange
-    implements ConsensusAttestationExchangeService {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnusedChatDelivery implements CapsuleChatDeliveryService {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnusedContactLabels implements CapsuleContactLabelStore {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnusedExternalEffects implements ExternalEffectService {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 class _RecordingDraftStore implements MoltbookDraftStore {
   final Set<String> deletedHashes = <String>{};
   final List<MoltbookStoredDraft> stored = <MoltbookStoredDraft>[];
@@ -1930,11 +1865,6 @@ class _CycleAi implements MoltbookPublicBulletinAiService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _UnusedFileStore implements CapsuleFileStore {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 class _MemoryFileStore implements CapsuleFileStore {
   final Map<String, String> _state = <String, String>{};
 
@@ -1961,11 +1891,6 @@ class _MemoryFileStore implements CapsuleFileStore {
     _state['${capsuleDir.path}/$pluginId/$fileName'] = rawJson;
   }
 
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnusedSecretVault implements CapsuleScopedSecretVault {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

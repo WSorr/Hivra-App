@@ -272,11 +272,11 @@
     },
     {
       "id": "moltbook_agent",
-      "owner": {"layer": "module", "path": "flutter/lib/services/plugin_runtime_module_service.dart", "symbol": "PluginRuntimeModule"},
+      "owner": {"layer": "module", "path": "flutter/lib/services/moltbook_runtime_module.dart", "symbol": "MoltbookRuntimeModule"},
       "public_contracts": [{"id": "moltbook_engagement_plan", "path": "flutter/lib/models/moltbook_ambassador_models.dart", "symbol": "MoltbookEngagementPlan"}],
       "facts": [], "projections": [],
-      "effect_kinds": [{"id": "moltbook_publication", "path": "flutter/lib/services/plugin_runtime_module_service.dart", "symbol": "prepareMoltbookPublication"}],
-      "entrypoints": [{"id": "moltbook_ambassador_screen", "path": "flutter/lib/screens/moltbook_ambassador_screen.dart", "symbol": "MoltbookAmbassadorScreen", "command_path": "flutter/lib/services/plugin_runtime_module_service.dart", "command_symbol": "runMoltbookOnDemandCycle"}],
+      "effect_kinds": [{"id": "moltbook_publication", "path": "flutter/lib/services/moltbook_runtime_module.dart", "symbol": "prepareMoltbookPublication"}],
+      "entrypoints": [{"id": "moltbook_ambassador_screen", "path": "flutter/lib/screens/moltbook_ambassador_screen.dart", "symbol": "MoltbookAmbassadorScreen", "command_path": "flutter/lib/services/moltbook_runtime_module.dart", "command_symbol": "runMoltbookOnDemandCycle"}],
       "closure": {"verdict": "READY", "missing_boundaries": []}
     },
     {

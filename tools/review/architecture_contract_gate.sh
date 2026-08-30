@@ -225,6 +225,7 @@ MOLTBOOK_PROVIDER_ADAPTER="$ROOT/flutter/lib/services/moltbook_provider_adapter.
 MOLTBOOK_EFFECT_ADAPTER="$ROOT/flutter/lib/services/moltbook_external_effect_adapter.dart"
 MOLTBOOK_PUBLICATION="$ROOT/flutter/lib/services/moltbook_publication_service.dart"
 PLUGIN_RUNTIME_MODULE="$ROOT/flutter/lib/services/plugin_runtime_module_service.dart"
+MOLTBOOK_RUNTIME_MODULE="$ROOT/flutter/lib/services/moltbook_runtime_module.dart"
 PLUGIN_CONTRACT_IDS="$ROOT/flutter/lib/models/plugin_contract_ids.dart"
 MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart"
 MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
@@ -877,21 +878,21 @@ require_present "$PLUGIN_CONTRACT_HANDLERS" 'moltbook_ambassador_delegated_reply
   "Moltbook host validates delegated authorization contract kind"
 require_present "$MOLTBOOK_PUBLICATION" 'validateDelegatedReplyBinding' \
   "Moltbook delegated approval binds the exact canonical reply effect"
-require_present "$PLUGIN_RUNTIME_MODULE" 'maxDailyWrites = 3' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'maxDailyWrites = 3' \
   "Moltbook delegated replies have a conservative daily budget"
-require_present "$PLUGIN_RUNTIME_MODULE" 'minIntervalMinutes = 30' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'minIntervalMinutes = 30' \
   "Moltbook delegated replies have a conservative minimum interval"
 require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "natural_non_repetitive_prose.*true" \
   "Moltbook public-bulletin AI requests bounded natural prose"
 require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "human_review_required.*true" \
   "Moltbook public-bulletin AI requires human review"
-require_present "$PLUGIN_RUNTIME_MODULE" "Future<MoltbookDraftPreview> prepareMoltbookDraft" \
+require_present "$MOLTBOOK_RUNTIME_MODULE" "Future<MoltbookDraftPreview> prepareMoltbookDraft" \
   "Moltbook draft preview is mounted through the plugin runtime module"
-require_present "$PLUGIN_RUNTIME_MODULE" "method: prepareMoltbookDraftMethod" \
+require_present "$MOLTBOOK_RUNTIME_MODULE" "method: prepareMoltbookDraftMethod" \
   "Moltbook draft preview executes the canonical WASM contract method"
-require_present "$PLUGIN_RUNTIME_MODULE" "preview\\.body != reviewedBody\\.trim\\(\\)" \
+require_present "$MOLTBOOK_RUNTIME_MODULE" "preview\\.body != reviewedBody\\.trim\\(\\)" \
   "Moltbook host rejects plugins that do not preserve reviewed prose"
-require_present "$PLUGIN_RUNTIME_MODULE" "moltbookDrafts\\.save\\(preview\\)" \
+require_present "$MOLTBOOK_RUNTIME_MODULE" "moltbookDrafts\\.save\\(preview\\)" \
   "validated Moltbook drafts enter one local store"
 require_present "$MOLTBOOK_DRAFT_STORE" "writePluginState" \
   "Moltbook draft history uses Capsule-scoped plugin state"
@@ -1050,7 +1051,7 @@ require_present "$MOLTBOOK_PUBLICATION" 'findReplyOperations\(' \
   "Moltbook publication owner projects targets from the effect journal"
 require_present "$MOLTBOOK_PUBLICATION" 'conflicting active publication effects' \
   "Moltbook publication owner freezes legacy duplicate targets"
-require_present "$PLUGIN_RUNTIME_MODULE" 'Future<ExternalEffectOperation> advanceMoltbookEngagement\(' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<ExternalEffectOperation> advanceMoltbookEngagement\(' \
   "Moltbook runtime exposes one engagement orchestration port"
 MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT="$(
   rg -c 'advanceMoltbookEngagement' \
@@ -1065,17 +1066,17 @@ require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'prepareMoltbookReplyPublication|au
   "Moltbook screen has no parallel reply authorization or queue route"
 require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookAmbassadorConfiguration\.approvalBounded' \
   "Moltbook release UI exposes bounded policy through canonical configuration"
-require_present "$PLUGIN_RUNTIME_MODULE" 'MoltbookEngagementWritePolicy\.bounded' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'MoltbookEngagementWritePolicy\.bounded' \
   "Moltbook runtime maps bounded policy into the canonical engagement use case"
-require_present "$PLUGIN_RUNTIME_MODULE" 'static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles' \
   "Moltbook runtime serializes cycles by Capsule and provider account"
-require_present "$PLUGIN_RUNTIME_MODULE" 'Future<MoltbookCycleSummary> runMoltbookCycle\(' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<MoltbookCycleSummary> runMoltbookCycle\(' \
   "Moltbook runtime exposes one wake-run-sleep cycle port"
-require_present "$PLUGIN_RUNTIME_MODULE" "operation.state == ExternalEffectState.unresolved" \
+require_present "$MOLTBOOK_RUNTIME_MODULE" "operation.state == ExternalEffectState.unresolved" \
   "Moltbook cycle reconciles unresolved effects before new observation"
-require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeat = await _observeAndPlanMoltbookHeartbeat\(' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'final heartbeat = await _observeAndPlanMoltbookHeartbeat\(' \
   "Moltbook cycle uses generation-bound deterministic heartbeat observation and planning"
-require_present "$PLUGIN_RUNTIME_MODULE" "'sleep inspected=" \
+require_present "$MOLTBOOK_RUNTIME_MODULE" "'sleep inspected=" \
   "Moltbook cycle publishes one bounded local summary"
 require_present "$MOLTBOOK_AMBASSADOR_MODELS" "triggerContinuous = 'continuous_while_running'" \
   "Moltbook configuration separates trigger policy from write policy"
@@ -1089,10 +1090,12 @@ require_present "$MOLTBOOK_CYCLE_TRIGGER" 'void stopAll\(\)' \
   "Moltbook trigger owner exposes an immediate scheduling stop"
 require_absent "$MOLTBOOK_CYCLE_TRIGGER" 'moltbook_provider_adapter|moltbook_external_effect_adapter|plugin_host_api_service' \
   "Moltbook trigger owner depends only on the canonical cycle callback"
-require_present "$PLUGIN_RUNTIME_MODULE" 'Future<MoltbookCycleSummary\?> startConfiguredMoltbookCycles\(' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<MoltbookCycleSummary\?> startConfiguredMoltbookCycles\(' \
   "Moltbook runtime maps persisted trigger policy to one controller"
-require_present "$PLUGIN_RUNTIME_MODULE" 'Future<void> stopMoltbookCyclesAndDisable\(' \
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<void> stopMoltbookCyclesAndDisable\(' \
   "Moltbook runtime exposes one persistent kill-switch route"
+require_absent "$PLUGIN_RUNTIME_MODULE" 'Future<[^>]*Moltbook|runMoltbook|prepareMoltbook|advanceMoltbook' \
+  "generic plugin runtime exposes no parallel Moltbook lifecycle"
 require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'runMoltbookOnDemandCycle\(\)' \
   "Moltbook manual cycle uses the canonical cycle port"
 require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'onStop: _saving \? null : _stopCycles' \
