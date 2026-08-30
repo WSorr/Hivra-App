@@ -207,6 +207,54 @@ void main() {
       expect(projection.blockedCount, 2);
     });
 
+    testWidgets('cycle guidance states bounded publication authority', (
+      tester,
+    ) async {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.idle,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: false,
+        hasQueuedEffect: false,
+        hasReplyDraft: false,
+        hasLocalDraft: false,
+        proposedCount: 0,
+        publishedCount: 0,
+        challengedCount: 0,
+        blockedCount: 0,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MoltbookWorkflowCard(
+              projection: projection,
+              writePolicy: MoltbookAmbassadorConfiguration.approvalBounded,
+              triggerPolicy: MoltbookAmbassadorConfiguration.triggerSession,
+              busy: false,
+              onNextAction: () {},
+              onCancelQueuedEffect: null,
+              onStop: null,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Next: run one bounded cycle'), findsOneWidget);
+      expect(
+        find.text(
+          'Observe eligible activity and publish at most one exact effect within the configured policy.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('without publishing'), findsNothing);
+    });
+
     test(
       'disabled workspace stays stopped and does not deliver queued work',
       () {

@@ -69,6 +69,36 @@ void main() {
     expect(runs, 2);
   });
 
+  test('failed session wake can resume after its dependency unlocks', () async {
+    final service = MoltbookCycleTriggerService();
+    var unlocked = false;
+    var runs = 0;
+
+    Future<MoltbookCycleSummary> runner() async {
+      runs++;
+      if (!unlocked) throw StateError('AI session locked');
+      return _summary(runs);
+    }
+
+    await expectLater(
+      service.startSession(scope: _scopeA, runCycle: runner),
+      throwsStateError,
+    );
+    unlocked = true;
+    final resumed = await service.startSession(
+      scope: _scopeA,
+      runCycle: runner,
+    );
+    final duplicate = await service.startSession(
+      scope: _scopeA,
+      runCycle: runner,
+    );
+
+    expect(resumed, isNotNull);
+    expect(duplicate, isNull);
+    expect(runs, 2);
+  });
+
   test('duplicate continuous start shares one sequential driver', () async {
     final delays = <Completer<void>>[];
     final firstCycleGate = Completer<void>();

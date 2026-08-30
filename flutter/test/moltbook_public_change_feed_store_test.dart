@@ -62,6 +62,28 @@ void main() {
     },
   );
 
+  test(
+    'public changes reject credential and private identifier material',
+    () async {
+      for (final fact in <String>[
+        'api_key=AIza${'x' * 24}',
+        'seed phrase: alpha beta gamma delta',
+        'Capsule ${'h1${'a' * 32}'} changed.',
+        'Commitment ${'a' * 64}',
+      ]) {
+        await expectLater(
+          store.record(
+            sourceId: 'sensitive-${fact.hashCode.abs()}',
+            category: 'hivra-development',
+            facts: <String>[fact],
+          ),
+          throwsFormatException,
+        );
+      }
+      expect(await store.load(), isEmpty);
+    },
+  );
+
   test('bundled manifest is atomic, idempotent, and Capsule scoped', () async {
     final inserted = await store.ingestManifest(
       _manifest(),
@@ -99,19 +121,26 @@ void main() {
     expect(await restarted.load(), hasLength(1));
   });
 
-  test('packaged manifest produces one pending public change', () async {
-    final raw = await rootBundle.loadString(
-      'assets/moltbook_public_changes.v1.json',
-    );
-    final inserted = await store.ingestManifest(
-      raw,
-      allowedTopics:
-          MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
-    );
+  test(
+    'packaged manifest produces independent pending public changes',
+    () async {
+      final raw = await rootBundle.loadString(
+        'assets/moltbook_public_changes.v1.json',
+      );
+      final inserted = await store.ingestManifest(
+        raw,
+        allowedTopics:
+            MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
+      );
 
-    expect(inserted, hasLength(1));
-    expect((await store.nextPending())?.sourceId, inserted.single.sourceId);
-  });
+      expect(inserted, hasLength(2));
+      expect(inserted.map((change) => change.sourceId), <String>[
+        'moltbook-product-cycle-2026-08-29',
+        'moltbook-gemini-verification-2026-08-30',
+      ]);
+      expect((await store.nextPending())?.sourceId, inserted.first.sourceId);
+    },
+  );
 
   test(
     'bundled manifest rejects malformed and conflicting input atomically',

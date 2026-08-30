@@ -24,7 +24,7 @@ void bindMoltbookPublicChangeProposal({
   categoryController.text = change.category;
   titleController.text = proposal.title;
   bodyController.text = proposal.body;
-  factsController.text = proposal.facts.join('\n');
+  factsController.text = change.facts.join('\n');
 }
 
 class MoltbookAmbassadorScreen extends StatefulWidget {
@@ -120,7 +120,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _aiSessionProviderLabel = provider;
       });
       _showNotice('$provider unlocked for this app session');
-      unawaited(_proposeNextPublicChange(showEmptyNotice: false));
+      unawaited(_startConfiguredCycles(showNotice: false, restart: true));
     } catch (error) {
       if (mounted) {
         _showNotice('Could not unlock AI: $error', isError: true);
@@ -206,10 +206,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       });
       if (binding != null && binding.isClaimed && binding.isActive) {
         unawaited(_startConfiguredCycles(showNotice: false));
-      }
-      if (_aiSessionUnlocked &&
-          publicChanges.any((change) => change.isPending)) {
-        unawaited(_proposeNextPublicChange(showEmptyNotice: false));
       }
     } catch (error) {
       if (!mounted) return;
@@ -319,13 +315,19 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     setState(() => _connectionBusy = true);
     try {
       final summary = await widget.module.runMoltbookOnDemandCycle();
-      final publications = await widget.module.loadMoltbookPublications();
+      final artifacts = await Future.wait<Object?>(<Future<Object?>>[
+        widget.module.loadMoltbookDrafts(),
+        widget.module.loadMoltbookPublications(),
+        widget.module.loadMoltbookPublicChanges(),
+      ]);
       if (!mounted) return;
       setState(() {
         _cycleSummary = summary;
         _heartbeatPlan = summary.heartbeatPlan;
         _feedCheckpoint = summary.checkpoint;
-        _publications = publications;
+        _storedDrafts = artifacts[0] as List<MoltbookStoredDraft>;
+        _publications = artifacts[1] as List<ExternalEffectOperation>;
+        _publicChanges = artifacts[2] as List<MoltbookPublicChange>;
       });
       await _refreshCycleProjection();
       _showNotice(
@@ -341,20 +343,32 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
-  Future<void> _startConfiguredCycles({bool showNotice = true}) async {
+  Future<void> _startConfiguredCycles({
+    bool showNotice = true,
+    bool restart = false,
+  }) async {
     if (_binding == null) return;
     if (mounted) setState(() => _connectionBusy = true);
     try {
-      final summary = await widget.module.startConfiguredMoltbookCycles();
+      final summary =
+          restart
+              ? await widget.module.restartConfiguredMoltbookCycles()
+              : await widget.module.startConfiguredMoltbookCycles();
       if (!mounted) return;
       if (summary != null) {
-        final publications = await widget.module.loadMoltbookPublications();
+        final artifacts = await Future.wait<Object?>(<Future<Object?>>[
+          widget.module.loadMoltbookDrafts(),
+          widget.module.loadMoltbookPublications(),
+          widget.module.loadMoltbookPublicChanges(),
+        ]);
         if (!mounted) return;
         setState(() {
           _cycleSummary = summary;
           _heartbeatPlan = summary.heartbeatPlan;
           _feedCheckpoint = summary.checkpoint;
-          _publications = publications;
+          _storedDrafts = artifacts[0] as List<MoltbookStoredDraft>;
+          _publications = artifacts[1] as List<ExternalEffectOperation>;
+          _publicChanges = artifacts[2] as List<MoltbookPublicChange>;
         });
       }
       await _refreshCycleProjection();
@@ -795,10 +809,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     try {
       await widget.module.saveAmbassadorConfiguration(configuration);
       if (!mounted) return;
-      widget.module.stopMoltbookCycles();
       _showNotice('Ambassador profile saved locally');
       if (configuration.enabled && _binding != null) {
-        unawaited(_startConfiguredCycles());
+        unawaited(_startConfiguredCycles(restart: true));
+      } else {
+        widget.module.stopMoltbookCycles();
       }
     } catch (error) {
       if (!mounted) return;
@@ -1377,9 +1392,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   ) async {
     final action = operation.requiredAction;
     if (action == null) return;
-    final answerController = TextEditingController();
     try {
-      final answer = await showDialog<String>(
+      final confirmed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder:
@@ -1406,18 +1420,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       const SizedBox(height: 12),
                       Text('Expires: ${action.expiresAtUtc}'),
                       const SizedBox(height: 14),
-                      TextField(
-                        controller: answerController,
-                        autofocus: true,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                          signed: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Numeric answer',
-                          helperText:
-                              'Enter only the result. It will be normalized to 2 decimal places.',
-                        ),
+                      const Text(
+                        'Gemini receives only the challenge text. It cannot access the Moltbook credential, verification token, or publication effect.',
                       ),
                     ],
                   ),
@@ -1425,23 +1429,22 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(context, false),
                   child: const Text('Not now'),
                 ),
                 FilledButton(
-                  onPressed:
-                      () => Navigator.pop(context, answerController.text),
-                  child: const Text('Verify and confirm visibility'),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Solve with Gemini'),
                 ),
               ],
             ),
       );
-      if (!mounted || answer == null) return;
+      if (!mounted || confirmed != true) return;
       setState(() => _publicationBusy = true);
-      final result = await widget.module.resolveMoltbookPublicationVerification(
-        operationId: operation.operationId,
-        answer: answer,
-      );
+      final result = await widget.module
+          .resolveMoltbookPublicationVerificationWithAi(
+            operationId: operation.operationId,
+          );
       final results = await Future.wait<Object?>(<Future<Object?>>[
         widget.module.loadMoltbookDrafts(),
         widget.module.loadMoltbookPublications(),
@@ -1463,7 +1466,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _showNotice('Moltbook verification failed: $error', isError: true);
       }
     } finally {
-      answerController.dispose();
       if (mounted) setState(() => _publicationBusy = false);
     }
   }
@@ -1808,7 +1810,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Approval mode',
                                 helperText:
-                                    'Bounded applies only to nested replies: at most 3 per UTC day, 30 minutes apart. Provider challenges stay manual.',
+                                    'Bounded may publish one exact confirmed change to the verified Person-First Runtime community and nested replies: at most 3 replies per UTC day, 30 minutes apart. Unlocked Gemini may solve an exact numeric provider challenge without receiving publication authority.',
                               ),
                               items: const [
                                 DropdownMenuItem(
@@ -1827,7 +1829,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                   value:
                                       MoltbookAmbassadorConfiguration
                                           .approvalBounded,
-                                  child: Text('Bounded replies'),
+                                  child: Text('Bounded automation'),
                                 ),
                               ],
                               onChanged: (value) {
@@ -2069,6 +2071,8 @@ class MoltbookWorkflowCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final boundedCycle =
+        writePolicy == MoltbookAmbassadorConfiguration.approvalBounded;
     final (title, description, actionLabel, actionIcon) = switch (projection
         .nextAction) {
       MoltbookWorkspaceNextAction.connect => (
@@ -2078,9 +2082,9 @@ class MoltbookWorkflowCard extends StatelessWidget {
         Icons.key_outlined,
       ),
       MoltbookWorkspaceNextAction.verify => (
-        'Next: verify the challenged publication',
-        'The provider accepted the effect but requires human anti-spam verification.',
-        'Verify now',
+        'Next: solve the challenged publication',
+        'Gemini can solve the numeric prompt without receiving credentials or publication authority.',
+        'Solve with Gemini',
         Icons.verified_user_outlined,
       ),
       MoltbookWorkspaceNextAction.reconcile => (
@@ -2108,8 +2112,12 @@ class MoltbookWorkflowCard extends StatelessWidget {
         Icons.rate_review_outlined,
       ),
       MoltbookWorkspaceNextAction.runCycle => (
-        'Next: observe and plan one cycle',
-        'Read bounded public activity and create local proposals without publishing.',
+        boundedCycle
+            ? 'Next: run one bounded cycle'
+            : 'Next: observe and plan one cycle',
+        boundedCycle
+            ? 'Observe eligible activity and publish at most one exact effect within the configured policy.'
+            : 'Read bounded public activity and create local proposals without publishing.',
         'Run one cycle',
         Icons.play_circle_outline_rounded,
       ),
@@ -2285,7 +2293,7 @@ class MoltbookWorkflowCard extends StatelessWidget {
   static String _writePolicyLabel(String policy) => switch (policy) {
     MoltbookAmbassadorConfiguration.approvalDraft => 'Draft only',
     MoltbookAmbassadorConfiguration.approvalAssisted => 'Assisted',
-    MoltbookAmbassadorConfiguration.approvalBounded => 'Bounded replies',
+    MoltbookAmbassadorConfiguration.approvalBounded => 'Bounded automation',
     _ => 'Unknown',
   };
 
@@ -2599,7 +2607,7 @@ class _MoltbookPublicationCard extends StatelessWidget {
   }
   if (operation.requiredAction != null) {
     return (
-      label: 'Action required: complete verification',
+      label: 'Action required: solve verification with Gemini',
       icon: Icons.verified_user_outlined,
       color: Colors.orange,
     );

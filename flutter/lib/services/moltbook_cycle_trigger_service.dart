@@ -50,11 +50,16 @@ class MoltbookCycleTriggerService {
   }) async {
     _validateScope(scope);
     if (!_sessionStarted.add(scope)) return null;
-    return _runOnce(
-      scope: scope,
-      policy: MoltbookAmbassadorConfiguration.triggerSession,
-      runCycle: runCycle,
-    );
+    try {
+      return await _runOnce(
+        scope: scope,
+        policy: MoltbookAmbassadorConfiguration.triggerSession,
+        runCycle: runCycle,
+      );
+    } catch (_) {
+      _sessionStarted.remove(scope);
+      rethrow;
+    }
   }
 
   Future<MoltbookCycleSummary> startContinuous({

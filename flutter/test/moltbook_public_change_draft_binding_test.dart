@@ -33,7 +33,7 @@ void main() {
     const proposal = MoltbookPublicBulletinProposal(
       title: 'Chat delivery is now easier to follow',
       body: 'The workspace projects new messages into an open conversation.',
-      facts: <String>['Chat workspace now projects live messages.'],
+      facts: <String>['AI paraphrase must not replace the confirmed fact.'],
       providerLabel: 'Gemini',
       model: 'test-model',
     );
@@ -52,6 +52,6 @@ void main() {
     expect(category.text, 'hivra-development');
     expect(title.text, proposal.title);
     expect(body.text, proposal.body);
-    expect(facts.text, proposal.facts.single);
+    expect(facts.text, changeFacts.single);
   });
 }

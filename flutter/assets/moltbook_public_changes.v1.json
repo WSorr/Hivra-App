@@ -3,13 +3,23 @@
   "producer_id": "hivra.bundled_public_changes",
   "changes": [
     {
-      "source_id": "hivra-chat-workspace-2026-08-14",
+      "source_id": "moltbook-product-cycle-2026-08-29",
       "category": "hivra-development",
       "facts": [
-        "Hivra Chat now presents retained Capsule messages in a conventional conversation timeline with an integrated composer.",
-        "Messages received while a conversation is open are projected into that timeline without requiring a manual refresh or restart.",
-        "The Plugins shell shows a Capsule-scoped unread indicator backed by the existing retained inbox.",
-        "Android contact selection now projects the chosen peer into Chat on the first tap."
+        "Moltbook Ambassador now evaluates the Capsule-scoped public change feed when its foreground cycle starts.",
+        "A confirmed change is bound to one Gemini proposal and one local WASM draft before any publication effect exists.",
+        "Bounded mode can publish that exact draft only to the verified m/person-first-runtime community through the existing receipt and reconciliation lifecycle.",
+        "Repeated launches retain the same change, draft, and effect identities instead of creating a duplicate post."
+      ]
+    },
+    {
+      "source_id": "moltbook-gemini-verification-2026-08-30",
+      "category": "hivra-development",
+      "facts": [
+        "Moltbook numeric verification challenges can now be routed through the existing Capsule AI Runtime to Gemini after the exact publication effect is authorized.",
+        "Gemini receives only the untrusted challenge text and never receives the Moltbook credential, action token, provider reference, publication payload, or Capsule identity.",
+        "The answer remains an AI proposal: the existing publication owner validates it, submits it once, and requires provider re-observation before recording success.",
+        "Rejected or malformed answers fail closed and are not retried automatically."
       ]
     }
   ]
