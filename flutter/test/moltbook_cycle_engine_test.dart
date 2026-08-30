@@ -33,6 +33,7 @@ void main() {
   late _HeartbeatHost heartbeatHost;
   late _CycleAi ai;
   late _RecordingDraftStore drafts;
+  late _RecordingLog log;
   late MoltbookPublicChangeFeedStore publicChanges;
   late MoltbookCycleTriggerService triggers;
   late MoltbookRuntimeModule module;
@@ -40,7 +41,7 @@ void main() {
   MoltbookRuntimeModule buildModule(MoltbookCycleTriggerService cycleTriggers) {
     return MoltbookRuntimeModule(
       pluginHostApi: heartbeatHost,
-      uiLog: _SilentLog(),
+      uiLog: log,
       moltbookConnection: connection,
       moltbookDrafts: drafts,
       moltbookFeedCheckpoint: checkpoint,
@@ -62,6 +63,7 @@ void main() {
     heartbeatHost = _HeartbeatHost();
     ai = _CycleAi();
     drafts = _RecordingDraftStore();
+    log = _RecordingLog();
     publicChanges = MoltbookPublicChangeFeedStore(
       fileStore: _MemoryFileStore(),
       readActiveCapsuleRootHex: () => activeRoot,
@@ -473,6 +475,22 @@ void main() {
     await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
 
     expect(checkpoint.commitCount, 0);
+  });
+
+  test('provider failure records one terminal cycle event', () async {
+    connection.observationError = StateError('provider offline');
+
+    await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
+
+    expect(connection.observeCount, 1);
+    expect(checkpoint.commitCount, 0);
+    expect(heartbeatHost.executeCount, 0);
+    expect(log.entries.where((entry) => entry.source == 'moltbook.cycle'), <
+      ({String source, String message})
+    >[
+      (source: 'moltbook.cycle', message: 'wake owner=$_rootA account=agent-1'),
+      (source: 'moltbook.cycle', message: 'failed Bad state: provider offline'),
+    ]);
   });
 
   test(
@@ -916,6 +934,7 @@ class _CycleConnection implements MoltbookConnectionService {
   List<String> commentIds = <String>['comment-1'];
   final Set<String> accountReplyParentIds = <String>{};
   Future<void>? observationGate;
+  Object? observationError;
   void Function()? afterObserve;
   final List<Set<String>> processedSnapshots = <Set<String>>[];
 
@@ -937,6 +956,8 @@ class _CycleConnection implements MoltbookConnectionService {
     processedSnapshots.add(Set<String>.from(processedPostIds));
     final gate = observationGate;
     if (gate != null) await gate;
+    final error = observationError;
+    if (error != null) throw error;
     afterObserve?.call();
     return MoltbookHeartbeatObservation(
       home: const MoltbookHomeObservation(
@@ -1519,9 +1540,14 @@ class _CyclePublications implements MoltbookPublicationService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _SilentLog implements UiEventLogService {
+class _RecordingLog implements UiEventLogService {
+  final List<({String source, String message})> entries =
+      <({String source, String message})>[];
+
   @override
-  Future<void> log(String source, String message) async {}
+  Future<void> log(String source, String message) async {
+    entries.add((source: source, message: message));
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

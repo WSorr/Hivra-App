@@ -811,12 +811,22 @@ class MoltbookRuntimeModule {
       return runMoltbookCycle();
     }
 
-    final cycle = _runMoltbookCycle(
-      ownerHex: ownerHex,
-      accountBindingId: binding.accountId,
-      startedAtUtc: DateTime.now().toUtc(),
-      cycleEpoch: cycleEpoch,
-    );
+    final cycle = () async {
+      try {
+        return await _runMoltbookCycle(
+          ownerHex: ownerHex,
+          accountBindingId: binding.accountId,
+          startedAtUtc: DateTime.now().toUtc(),
+          cycleEpoch: cycleEpoch,
+        );
+      } catch (error, stackTrace) {
+        try {
+          await uiLog.log('moltbook.cycle', 'failed ${_safeError(error)}');
+        } finally {
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+      }
+    }();
     _moltbookCycles[scope] = cycle;
     _moltbookCycleEpochs[scope] = cycleEpoch;
     void releaseCycle() {
