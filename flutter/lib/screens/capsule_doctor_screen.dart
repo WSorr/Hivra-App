@@ -164,7 +164,7 @@ class _ReportView extends StatelessWidget {
         const SizedBox(height: 12),
         _PluginAuditCard(service: pluginAuditService),
         const SizedBox(height: 12),
-        _DeveloperModeBoundary(
+        CapsuleDoctorDeveloperModeBoundary(
           snapshot: report.snapshot,
           workspaceService: developerWorkspaceService,
           engineerService: developerEngineerService,
@@ -699,26 +699,35 @@ class _PluginAuditCardState extends State<_PluginAuditCard> {
   }
 }
 
-class _DeveloperModeBoundary extends StatefulWidget {
+@visibleForTesting
+class CapsuleDoctorDeveloperModeBoundary extends StatefulWidget {
   final AiCapsuleInspectionSnapshot snapshot;
   final AiDeveloperWorkspaceService workspaceService;
   final AiDeveloperEngineerService engineerService;
 
-  const _DeveloperModeBoundary({
+  const CapsuleDoctorDeveloperModeBoundary({
+    super.key,
     required this.snapshot,
     required this.workspaceService,
     required this.engineerService,
   });
 
   @override
-  State<_DeveloperModeBoundary> createState() => _DeveloperModeBoundaryState();
+  State<CapsuleDoctorDeveloperModeBoundary> createState() =>
+      _DeveloperModeBoundaryState();
 }
 
-class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
+class _DeveloperModeBoundaryState
+    extends State<CapsuleDoctorDeveloperModeBoundary>
+    with AutomaticKeepAliveClientMixin<CapsuleDoctorDeveloperModeBoundary> {
   bool _enabled = false;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     return Card(
       color:
