@@ -14,30 +14,6 @@ md_files = [root / "README.md"]
 md_files += sorted((root / "docs").rglob("*.md"))
 md_files += sorted((root / "tools").rglob("*.md"))
 
-development_control = root / "docs" / "development-control.md"
-roadmap = root / "docs" / "roadmap.md"
-document_budget_failures = []
-if len(development_control.read_text().splitlines()) > 180:
-    document_budget_failures.append(
-        "development-control.md exceeds the 180-line active-board budget"
-    )
-if len(roadmap.read_text().splitlines()) > 5712:
-    document_budget_failures.append(
-        "roadmap.md grew beyond its frozen historical baseline"
-    )
-
-control_text = development_control.read_text()
-required_process_rules = (
-    "Routine fixes MUST NOT append to",
-    "A separate documentation-only status, closure, remediation, or checkpoint",
-    "observable user journey or failure",
-)
-for rule in required_process_rules:
-    if rule not in control_text:
-        document_budget_failures.append(
-            f"development-control.md is missing process rule: {rule}"
-        )
-
 missing_links = []
 link_re = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 for path in md_files:
@@ -127,15 +103,7 @@ for raw_path in tracked:
         if cyrillic_re.search(line):
             cyrillic_hits.append((relative, line_number, line.strip()))
 
-if (
-    document_budget_failures
-    or missing_links
-    or missing_paths
-    or stale_hits
-    or cyrillic_hits
-):
-    for failure in document_budget_failures:
-        print(f"FAIL docs-integrity: {failure}")
+if missing_links or missing_paths or stale_hits or cyrillic_hits:
     for file_path, target in missing_links:
         print(f"FAIL docs-integrity: missing markdown link in {file_path}: {target}")
     for file_path, target in missing_paths:

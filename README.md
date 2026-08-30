@@ -29,19 +29,16 @@ Applications normally own their own user relationships. Hivra moves trusted inte
 
 ## Current Development State
 
-Hivra has two deliberately separate development lines:
-
-- **Hivra 1.x** is the only maintained, tested, and releasable runtime. Current
-  work is focused on integrity, reliable delivery, deterministic recovery,
-  platform parity, and removal of proven architectural debt.
-- **Hivra 2.0** is a design-and-proof program. It is currently inventorying
-  capability owners, contracts, facts, projections, effects, and dependency
-  edges. It does not introduce a second production runtime into 1.x.
+Hivra 1.x is the only maintained and releasable runtime. It is converging from
+an application with embedded plugin products into a Person Runtime with an
+installable capability API and a thin App Shell. Hivra 2.0 remains design-only
+and may replace the visual shell only after the runtime boundary is proven in
+1.x; it does not introduce a second Core or Ledger.
 
 The current-stage board is
 [Hivra Development Control](docs/development-control.md). The
-[Roadmap](docs/roadmap.md) is a frozen historical archive, not an active
-backlog or completion source.
+[Milestone Index](docs/roadmap.md) is not an active backlog or completion
+source.
 
 ## Architecture
 
@@ -69,7 +66,7 @@ Transport adapters are not WASM drones. They are host-level system adapters that
 - `adapters/` — transport and cryptographic adapter implementations.
 - `platform/` — FFI, key storage, and WASM runtime composition.
 - `flutter/` — application shell, projections, platform integration, and tests.
-- `docs/` — canonical specification, architecture, roadmap, and checklists.
+- `docs/` — current status, the three laws, focused contracts, and checklists.
 - `tools/review/` — deterministic architecture, dependency, documentation, and
   security gates.
 - `tools/release/` — guarded macOS, Android, and GitHub release workflows.
@@ -99,7 +96,7 @@ business logic back into the application.
 - [Hivra Protocol Specification](docs/specification.md)
 - [Hivra Conceptual Model](docs/hivra-conceptual-model.md)
 - [Current Development Control](docs/development-control.md)
-- [Historical Engineering Archive](docs/roadmap.md)
+- [Milestone Index](docs/roadmap.md)
 - [Hivra 2.0 Architecture Blueprint](docs/architecture-v2-blueprint.md)
 - [Docs Map](docs/README.md)
 

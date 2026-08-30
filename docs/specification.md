@@ -33,11 +33,9 @@ exchange, and provider work follows the effect lane. A production workflow MUST
 NOT create a third path, a second capability owner, a second projection truth,
 or a parallel effect lifecycle.
 
-Implementation work MUST also follow the novelty-before-pattern protocol in
-`docs/architecture-execution-discipline.md`: define the cross-module invariant
-first, inspect existing seams, design the smallest new contract, then run
-adversarial and regression passes. Existing patterns are compatibility
-constraints, not default architecture for new behavior.
+Implementation and review follow the three laws in `product-axis.md`. Focused
+capability contracts define the additional protocol or lifecycle rules needed
+for their own boundaries.
 
 ### 0.2 Person-First Runtime
 
