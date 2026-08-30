@@ -137,6 +137,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _pluginRuntimeModule?.moltbook.deactivateForegroundSession();
     _connectivitySubscription?.cancel();
     _passiveReceive.setResultListener(null);
     _passiveReceive.pauseForeground();

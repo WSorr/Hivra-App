@@ -495,7 +495,7 @@ class MoltbookAmbassadorConfiguration {
     required this.personaSummary,
     required this.allowedTopics,
     required this.approvalMode,
-    this.triggerPolicy = triggerOnDemand,
+    this.triggerPolicy = triggerSession,
     required this.enabled,
   });
 
@@ -511,7 +511,6 @@ class MoltbookAmbassadorConfiguration {
         'wasm-drones',
       ],
       approvalMode: approvalAssisted,
-      triggerPolicy: triggerOnDemand,
       enabled: true,
     );
   }

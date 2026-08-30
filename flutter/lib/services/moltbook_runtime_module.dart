@@ -886,6 +886,11 @@ class MoltbookRuntimeModule {
     moltbookCycleTriggers.stopAll();
   }
 
+  void deactivateForegroundSession() {
+    stopMoltbookCycles();
+    lockMoltbookAiSession();
+  }
+
   Future<void> stopMoltbookCyclesAndDisable() async {
     stopMoltbookCycles();
     final configuration = await _ambassadorConfiguration.load();
