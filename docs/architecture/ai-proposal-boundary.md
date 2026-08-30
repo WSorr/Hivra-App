@@ -3,10 +3,9 @@
 Status: normative architecture contract for AI-assisted Hivra capabilities in
 the maintained 1.x line and the design of Hivra 2.0.
 
-This contract refines `product-axis.md` and
-`architecture-execution-discipline.md`. The single inference owner and runtime
+This contract refines `product-axis.md`. The single inference owner and runtime
 contract are defined by `capsule-ai-runtime.md`. This document does not add an
-AI capability to Core and does not create a third workflow lane.
+AI capability to Core or create another truth or effect path.
 
 ## 1. Purpose
 

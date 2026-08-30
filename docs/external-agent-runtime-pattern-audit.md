@@ -14,9 +14,8 @@ those implementations or importing their ownership models into Hivra:
 - task-, approval-, and standing-operation-oriented runtimes;
 - context-, memory-, skill-, episode-, and artifact-oriented runtimes.
 
-The comparison is governed by `product-axis.md`, `specification.md`, and
-`architecture-execution-discipline.md`. External popularity or convenience is
-not evidence that a pattern fits Hivra.
+The comparison is governed by `product-axis.md` and `specification.md`.
+External popularity or convenience is not evidence that a pattern fits Hivra.
 
 ## 2. Existing Hivra Advantages
 

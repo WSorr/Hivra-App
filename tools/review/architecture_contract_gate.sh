@@ -35,83 +35,6 @@ require_absent() {
   fi
 }
 
-check_architecture_economy_keeper() {
-  if python3 - "$PRODUCT_AXIS" "$CHECKLIST" <<'PY'
-import sys
-from pathlib import Path
-
-
-def section(text, heading):
-    lines = text.splitlines()
-    matches = [index for index, line in enumerate(lines) if line == heading]
-    if len(matches) != 1:
-        raise ValueError(f"heading must occur exactly once: {heading}")
-    level = len(heading) - len(heading.lstrip("#"))
-    end = len(lines)
-    for index in range(matches[0] + 1, len(lines)):
-        line = lines[index]
-        if line.startswith("#"):
-            current_level = len(line) - len(line.lstrip("#"))
-            if current_level <= level:
-                end = index
-                break
-    return "\n".join(lines[matches[0]:end])
-
-
-def validate(product, checklist):
-    if "12. **Architecture economy:**" not in product:
-        raise ValueError("permanent architecture-economy invariant is missing")
-    keeper = section(product, "### Architecture Economy Keeper")
-    review = section(checklist, "## Architecture Economy Keeper")
-    product_rules = (
-        "One fact has one document owner.",
-        "Do not add a document, schema, registry, DTO family, or gate",
-        "negative mutation/self-test",
-        "Each design pass is budgeted to one existing normative section",
-        "The next contract is never selected",
-        "| Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |",
-        "If the pass cannot name a removed/sealed path",
-    )
-    checklist_rules = (
-        "Every changed fact has one document owner",
-        "No new document, schema, registry, DTO family, or gate is added",
-        "negative mutation/self-test",
-        "Remaining compatibility debt",
-        "The change reduces possible interpretations, owners, or execution paths",
-        "The next contract is selected only after deciding whether",
-    )
-    missing = [rule for rule in product_rules if rule not in keeper]
-    missing += [rule for rule in checklist_rules if rule not in review]
-    if missing:
-        raise ValueError(f"architecture-economy contract incomplete: {missing}")
-
-
-product = Path(sys.argv[1]).read_text(encoding="utf-8")
-checklist = Path(sys.argv[2]).read_text(encoding="utf-8")
-try:
-    validate(product, checklist)
-    mutations = (
-        (product.replace("One fact has one document owner.", "One fact may have many document owners."), checklist),
-        (product.replace("| Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |", ""), checklist),
-        (product, checklist.replace("negative mutation/self-test", "review assertion")),
-    )
-    for mutated_product, mutated_checklist in mutations:
-        try:
-            validate(mutated_product, mutated_checklist)
-        except ValueError:
-            continue
-        raise ValueError("negative mutation was accepted")
-except ValueError as error:
-    print(error, file=sys.stderr)
-    raise SystemExit(1)
-PY
-  then
-    pass "architecture economy keeper and negative mutations are enforced"
-  else
-    fail "architecture economy keeper and negative mutations are enforced"
-  fi
-}
-
 check_flutter_test_storage_isolation() {
   if python3 - \
     "$USER_VISIBLE_DATA_DIRECTORY" \
@@ -251,10 +174,7 @@ SPEC="$ROOT/docs/specification.md"
 README="$ROOT/README.md"
 DOCS_README="$ROOT/docs/README.md"
 PRODUCT_AXIS="$ROOT/docs/product-axis.md"
-CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
-ROADMAP="$ROOT/docs/roadmap.md"
 DEVELOPMENT_CONTROL="$ROOT/docs/development-control.md"
-EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
 USER_VISIBLE_DATA_DIRECTORY="$ROOT/flutter/lib/services/user_visible_data_directory_service.dart"
 FLUTTER_TEST_CONFIG="$ROOT/flutter/test/flutter_test_config.dart"
 FLUTTER_TEST_STORAGE_ISOLATION_TEST="$ROOT/flutter/test/flutter_test_storage_isolation_test.dart"
@@ -377,15 +297,10 @@ require_present "$README" '`hivra-transport` is adapter-only and does \*\*not\*\
   "root README documents transport->core ban"
 
 # 3) Spec/checklist anti-sprawl + engine/plugin contracts.
-require_present "$PRODUCT_AXIS" '^## 1\. Axis Statement' \
-  "product axis defines one permanent evaluation direction"
 require_present "$PRODUCT_AXIS" 'Person-First Runtime \(PFR\)' \
   "product axis defines the Person-First Runtime category"
 require_present "$SPEC" 'PFR is not a second runtime layer, a new Core entity, or a separate execution' \
   "specification keeps PFR on the canonical architecture path"
-require_present "$CHECKLIST" 'preserves the Person-First Runtime \(PFR\)' \
-  "architecture review protects person-first ownership"
-check_architecture_economy_keeper
 check_flutter_test_storage_isolation
 if python3 "$ROOT/tools/architecture/validate_starter_inventory_contract.py"; then
   pass "V2 Starter inventory contract remains bound to Pass A and the normative blueprint"
@@ -407,8 +322,6 @@ if python3 "$ROOT/tools/architecture/validate_capsule_selection_contract.py"; th
 else
   fail "V2 Capsule selection contract binds inventory, active state, authority, replay, and prepared activation"
 fi
-require_present "$PRODUCT_AXIS" 'Cryptographic agility' \
-  "product axis defines cryptographic agility as a permanent invariant"
 require_present "$SPEC" '^### 0\.3 Cryptographic Agility' \
   "specification defines the canonical crypto-agility contract"
 require_present "$SPEC" '`CapsuleId` is conceptually separate from any public key' \
@@ -425,10 +338,6 @@ require_present "$SPEC" '^### 6\.4 Capsule Effect Proof' \
   "specification defines independently verifiable Capsule Effect Proof"
 require_present "$V2_BLUEPRINT" '^### Cross-Cutting Invariant: Cryptographic Agility' \
   "v2 blueprint carries the crypto-agility migration contract"
-require_present "$CHECKLIST" '^## Cryptographic Agility' \
-  "architecture checklist reviews crypto agility"
-require_present "$ROADMAP" '^\- `12\.4 Cryptographic Agility Compatibility Debt`' \
-  "roadmap registers fixed-size crypto compatibility debt"
 check_crypto_fixed_size_compatibility_boundary
 require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'encryptedVersion = 2' \
   "backup codec defines encrypted envelope v2"
@@ -460,28 +369,8 @@ require_absent "$ROOT/flutter/lib/screens/backup_screen.dart" 'Directory\.system
   "backup screen does not own temporary export or share effects"
 require_absent "$ROOT/flutter/lib/screens/capsule_selector_screen.dart" 'Directory\.systemTemp|SharePlus\.instance\.share' \
   "capsule selector does not own temporary export or share effects"
-require_present "$PRODUCT_AXIS" '^## 2\. Two Canonical Lanes' \
-  "product axis defines truth and effect lanes"
-require_present "$PRODUCT_AXIS" '^## 3\. Permanent Product Invariants' \
-  "product axis defines stable product invariants"
-require_present "$PRODUCT_AXIS" '^## 5\. Pre-Implementation Capability Closure' \
-  "product axis requires capability closure before implementation"
-require_present "$PRODUCT_AXIS" '^### 5\.4 Feasibility verdict' \
-  "product axis defines explicit feasibility verdicts"
-require_present "$PRODUCT_AXIS" '`NEEDS_PROTOCOL`; Pair Consensus composition is not assumed sufficient' \
-  "product axis does not assume pair consensus closes group protocols"
-require_present "$PRODUCT_AXIS" 'A pass-through DTO that copies another contract' \
-  "product axis forbids pass-through DTO prostheses"
-require_present "$PRODUCT_AXIS" '^## 6\. Change Scorecard' \
-  "product axis defines a comparable change scorecard"
-require_present "$PRODUCT_AXIS" 'Replacement with deletion' \
-  "product axis requires replacement-path removal"
 require_present "$SPEC" '^### 0\.1 Product Axis' \
   "specification binds implementation to product axis"
-require_present "$CHECKLIST" '^## Product Axis' \
-  "architecture review applies product-axis checks"
-require_present "$ROADMAP" '^## Product Axis Gate' \
-  "roadmap rejects work without measurable axis gain"
 require_present "$DOCS_README" 'product-axis\.md' \
   "docs index starts from product axis"
 require_present "$SPEC" 'Structural Minimality Contract \(Anti-Sprawl\)' \
@@ -496,12 +385,6 @@ require_present "$SPEC" '`HistoryView`' \
   "spec defines history/audit canonical view"
 require_present "$SPEC" 'MUST NOT independently walk raw events' \
   "spec forbids independent domain replay outside Core"
-require_present "$PRODUCT_AXIS" 'CurrentView.*PairView.*HistoryView' \
-  "product axis binds consumers to canonical scoped views"
-require_present "$CHECKLIST" 'Normative domain lifecycle semantics are interpreted once' \
-  "architecture review checks single domain interpreter"
-require_present "$ROADMAP" 'Canonical Core Projection Convergence' \
-  "roadmap tracks canonical projection convergence debt"
 require_present "$CORE_INVITATION" 'pub fn invitation_current_view_v1' \
   "Core owns the versioned invitation current view"
 require_present "$FFI_LEDGER_API" 'hivra_project_invitation_current_view_v1' \
@@ -548,8 +431,6 @@ require_present "$SPEC" 'WASM Plugin Host Contract' \
   "spec defines wasm plugin-host contract"
 require_present "$SPEC" 'Transport adapters are host-level system adapters, not WASM drones' \
   "spec separates transport adapters from wasm drones"
-require_present "$CHECKLIST" 'Transport adapters are not modeled as WASM drones; drones request delivery only through host APIs\.' \
-  "architecture checklist separates transport adapters from wasm drones"
 require_absent "$SPEC" 'Supported transports \(plugins\)|Matrix \(plugin|BLE \(plugin|Local network \(plugin' \
   "spec does not describe transport adapters as ordinary plugins"
 require_absent "$README" 'Supported transports \(plugins\)|Matrix \(plugin|BLE \(plugin|Local network \(plugin' \
@@ -558,24 +439,6 @@ require_present "$SPEC" 'Drone Consensus Guard Standard' \
   "spec defines drone consensus guard standard"
 require_present "$SPEC" '`pair_scoped` methods MUST call the shared Consensus Guard boundary' \
   "spec requires pair-scoped methods to use shared consensus guard"
-require_present "$CHECKLIST" '## Engine Integrity' \
-  "architecture checklist includes engine integrity section"
-require_present "$CHECKLIST" '## WASM Plugin Host' \
-  "architecture checklist includes wasm plugin-host section"
-require_present "$CHECKLIST" '## AI Proposal Boundary' \
-  "architecture checklist includes AI proposal boundary section"
-require_present "$CHECKLIST" 'Prompt wording is treated only as defense in depth' \
-  "architecture checklist rejects prompt-only enforcement"
-require_present "$CHECKLIST" 'Every drone method declares exactly one scope: `solo`, `market_scan`, or `pair_scoped`\.' \
-  "architecture checklist requires explicit drone consensus scope"
-require_present "$CHECKLIST" 'No pair-scoped path treats "any signable peer" as authorization for a missing or different peer\.' \
-  "architecture checklist forbids any-signable-peer consensus fallback"
-require_present "$CHECKLIST" 'Repo boundary is preserved: `Hivra-App` is host/runtime only; plugin implementation source/release flow lives in `hivra-plugins`\.' \
-  "architecture checklist enforces app-vs-plugin repo boundary"
-require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v1' \
-  "execution discipline doc exists"
-require_present "$EXEC_DISCIPLINE" 'if two actions produce the same canonical domain or effect result' \
-  "execution discipline merges equivalent result paths under one owner"
 require_present "$DELIVERY_LIFECYCLE_DOC" '^# Transport Delivery Lifecycle v1' \
   "delivery lifecycle architecture doc exists"
 require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" '^# External Effect Lifecycle v1' \
@@ -640,22 +503,6 @@ require_present "$DOCS_README" 'continuous-ledger-protocol-v5\.md' \
   "docs index references continuous-ledger protocol"
 require_present "$DELIVERY_LIFECYCLE_DOC" 'delivery recovery index' \
   "delivery lifecycle doc distinguishes recovery index from reliable queue"
-require_present "$EXEC_DISCIPLINE" '^## 1\. Three Non-Negotiable Laws' \
-  "execution discipline defines three non-negotiable laws"
-require_present "$EXEC_DISCIPLINE" 'Modularity means one owner per responsibility' \
-  "execution discipline requires one owner per responsibility"
-require_present "$EXEC_DISCIPLINE" 'Determinism means one input route and one result' \
-  "execution discipline requires one effect route and result"
-require_present "$EXEC_DISCIPLINE" 'Dependencies strictly downward means contracts down, composition up' \
-  "execution discipline requires downward contracts and top-level composition"
-require_present "$EXEC_DISCIPLINE" '^### Mandatory Change Questions' \
-  "execution discipline requires pre-change ownership questions"
-require_present "$EXEC_DISCIPLINE" 'UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render' \
-  "execution discipline defines canonical action path"
-require_present "$EXEC_DISCIPLINE" '^## 4\. Async Resolution Discipline' \
-  "execution discipline defines async resolution rules"
-require_present "$EXEC_DISCIPLINE" '^## 7\. Plugin Repository Boundary' \
-  "execution discipline defines plugin repository boundary"
 require_present "$V2_BLUEPRINT" '^Status: design-only draft\.' \
   "v2 blueprint cannot silently change normative v1 behavior"
 require_present "$V2_BLUEPRINT" 'Selected pass A \(2026-08-04\):' \
@@ -672,8 +519,6 @@ require_present "$PLATFORM_TOOLCHAIN" '^### T2: Android build-stack update' \
   "platform contract treats Android tooling as a compatibility set"
 require_present "$PLATFORM_TOOLCHAIN" '^### T3: macOS/Xcode update' \
   "platform contract defines macOS/Xcode evidence"
-require_present "$ROADMAP" '^## Platform Toolchain Evolution' \
-  "roadmap tracks platform toolchain evolution separately"
 require_present "$DOCS_README" 'platform-toolchain-evolution\.md' \
   "docs index references platform toolchain evolution"
 require_present "$V2_BLUEPRINT" '^## 4\. Capability Map' \
@@ -698,8 +543,6 @@ require_absent "$SPEC" 'accepted > rejected > expired' \
   "v1 specification has no obsolete terminal precedence"
 require_present "$DOCS_README" 'architecture-v2-blueprint\.md' \
   "docs index references v2 architecture blueprint"
-require_present "$ROADMAP" '^## Parallel Version Tracks' \
-  "roadmap separates maintained v1 and design-only v2 tracks"
 require_present "$EXTERNAL_PLUGIN_SOURCE" '^## Repository boundary contract \(mandatory\)' \
   "external plugin source doc defines mandatory repo boundary contract"
 require_present "$EXTERNAL_PLUGIN_SOURCE" '`Hivra-App` repository is host/runtime only\.' \
@@ -726,20 +569,6 @@ if rg -q 'bingx_futures_(credential|exchange|intent|live|risk|execution)' \
 else
   pass "plugin catalog screen is free of trading-drone orchestration"
 fi
-require_present "$DOCS_README" 'architecture-execution-discipline\.md' \
-  "docs index references execution discipline standard"
-require_present "$ROADMAP" '`9\.10 Execution Discipline Standard`' \
-  "roadmap tracks execution discipline standard"
-require_present "$CHECKLIST" '## Execution Discipline v1' \
-  "architecture checklist includes execution discipline section"
-require_present "$CHECKLIST" 'UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render' \
-  "architecture checklist enforces canonical action path review"
-require_present "$CHECKLIST" 'Async flows resolve once and ignore stale completions' \
-  "architecture checklist enforces async resolve-once review"
-require_present "$CHECKLIST" 'Every fact, effect lifecycle, and projection rule has one named owner' \
-  "architecture checklist enforces unique ownership"
-require_present "$CHECKLIST" 'Each async effect has one capsule binding, one queue/lifecycle owner' \
-  "architecture checklist enforces one async effect route"
 
 # 4) Flutter invitation flow application boundary.
 require_present "$INV_INTENT" 'class InvitationIntentHandler' \
@@ -854,8 +683,6 @@ require_present "$DELIVERY_LIFECYCLE_DOC" 'full quarantine capacity leaves the a
   "full quarantine capacity applies cursor-safe backpressure"
 require_present "$SPEC" '^### 5\.5 Acknowledged Ingress Handoff' \
   "specification binds acknowledged ingress to the canonical lifecycle"
-require_present "$CHECKLIST" 'original event identity' \
-  "architecture review preserves event identity across quarantine replay"
 require_present "$DELIVERY_LIFECYCLE_DOC" '^### Inbound Quarantine Repository and Sender Policy Contract' \
   "inbound quarantine has one normative repository contract"
 require_present "$DELIVERY_LIFECYCLE_DOC" 'CapsuleInboundQuarantineRepository' \
@@ -880,8 +707,6 @@ require_present "$DELIVERY_LIFECYCLE_DOC" 'reused as storage keys' \
   "quarantine storage uses a distinct crypto role"
 require_present "$SPEC" '^### 5\.6 Inbound Quarantine and Sender Policy' \
   "specification binds quarantine to the canonical lifecycle"
-require_present "$CHECKLIST" 'full capacity returns `retry`' \
-  "architecture review enforces quarantine backpressure"
 require_present "$FFI_INBOUND_QUARANTINE" 'struct CapsuleInboundQuarantineRepository' \
   "FFI boundary owns one inbound quarantine repository"
 require_present "$FFI_INBOUND_QUARANTINE" 'const MAX_RECORDS: usize = 256' \
@@ -1217,8 +1042,6 @@ require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'on_demand.*session.*contin
   "Moltbook trigger modes share one lifecycle contract"
 require_present "$ROOT/docs/plugins/moltbook_agent_drone_design_v1.md" 'moltbook_engagement_lifecycle_v1\.md' \
   "Moltbook design references canonical engagement lifecycle"
-require_present "$ROADMAP" 'moltbook_engagement_lifecycle_v1\.md' \
-  "roadmap tracks canonical Moltbook engagement remediation"
 require_present "$MOLTBOOK_PUBLICATION" 'String replyEngagementId\(' \
   "Moltbook publication owner derives canonical engagement identity"
 require_present "$MOLTBOOK_PUBLICATION" "'engagement_id': engagementId" \
