@@ -644,6 +644,12 @@ Diagnostics:
   and MUST label source/log/manifest contents as untrusted prompt input.
 - Developer Workspace selected context MUST remain a local preview until a
   separate explicit provider submission step is implemented.
+- A deterministic Capsule Analyst finding MAY focus Developer Workspace file
+  suggestions and the Hivra Engineer question. An AI Analyst answer MUST NOT be
+  forwarded as evidence or authority to Hivra Engineer.
+- Focused developer context MUST remain bound to the exact diagnostic snapshot,
+  active Capsule, repository path, and previewed file hashes. Capsule switching
+  or file mutation invalidates the prepared context before provider access.
 - Hivra Engineer Advisory Ask MAY send a selected developer context, redacted
   capsule summary, and user question to an AI provider after outbound preview.
 - Hivra Engineer output is advisory only. It MUST NOT write files, apply
