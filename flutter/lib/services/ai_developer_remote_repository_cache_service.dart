@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import 'ai_developer_workspace_service.dart';
 import 'user_visible_data_directory_service.dart';
 
 typedef AiDeveloperGitRunner = Future<ProcessResult> Function(
@@ -22,20 +23,6 @@ class AiDeveloperRemoteRepositoryRequest {
   });
 }
 
-class AiDeveloperRemoteRepositoryFinding {
-  final String severity;
-  final String title;
-  final String detail;
-  final String recommendedAction;
-
-  const AiDeveloperRemoteRepositoryFinding({
-    required this.severity,
-    required this.title,
-    required this.detail,
-    required this.recommendedAction,
-  });
-}
-
 class AiDeveloperRemoteRepositoryCacheReport {
   final int schemaVersion;
   final String normalizedRemoteUrl;
@@ -45,7 +32,7 @@ class AiDeveloperRemoteRepositoryCacheReport {
   final bool mutableRefDangerous;
   final bool submodulesBlocked;
   final List<String> gitCommands;
-  final List<AiDeveloperRemoteRepositoryFinding> findings;
+  final List<AiDeveloperFinding> findings;
   final String reportHashHex;
 
   const AiDeveloperRemoteRepositoryCacheReport({
@@ -168,11 +155,11 @@ class AiDeveloperRemoteRepositoryCacheService {
       <String>['rev-parse', 'HEAD'],
       workingDirectory: repoDir.path,
     );
-    final findings = <AiDeveloperRemoteRepositoryFinding>[];
+    final findings = <AiDeveloperFinding>[];
     final mutableRefDangerous =
         requestedRef == null || !_immutableCommitPattern.hasMatch(requestedRef);
     if (mutableRefDangerous) {
-      findings.add(const AiDeveloperRemoteRepositoryFinding(
+      findings.add(const AiDeveloperFinding(
         severity: 'warning',
         title: 'Mutable repository context',
         detail:
@@ -182,7 +169,7 @@ class AiDeveloperRemoteRepositoryCacheService {
       ));
     }
     if (await File('${repoDir.path}/.gitmodules').exists()) {
-      findings.add(const AiDeveloperRemoteRepositoryFinding(
+      findings.add(const AiDeveloperFinding(
         severity: 'warning',
         title: 'Submodules blocked',
         detail:

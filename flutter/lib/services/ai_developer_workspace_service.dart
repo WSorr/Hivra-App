@@ -3,13 +3,13 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
-class AiDeveloperWorkspaceFinding {
+class AiDeveloperFinding {
   final String severity;
   final String title;
   final String detail;
   final String recommendedAction;
 
-  const AiDeveloperWorkspaceFinding({
+  const AiDeveloperFinding({
     required this.severity,
     required this.title,
     required this.detail,
@@ -48,7 +48,7 @@ class AiDeveloperWorkspaceSnippet {
 class AiDeveloperWorkspaceSelectedContext {
   final int schemaVersion;
   final List<AiDeveloperWorkspaceSnippet> snippets;
-  final List<AiDeveloperWorkspaceFinding> findings;
+  final List<AiDeveloperFinding> findings;
   final String contextHashHex;
 
   const AiDeveloperWorkspaceSelectedContext({
@@ -104,7 +104,7 @@ class AiDeveloperWorkspaceRepoSummary {
   final int skippedFileCount;
   final int skippedDirectoryCount;
   final List<AiDeveloperWorkspaceFileSummary> files;
-  final List<AiDeveloperWorkspaceFinding> findings;
+  final List<AiDeveloperFinding> findings;
 
   const AiDeveloperWorkspaceRepoSummary({
     required this.rootPath,
@@ -127,7 +127,7 @@ class AiDeveloperWorkspaceReport {
     required this.reportHashHex,
   });
 
-  List<AiDeveloperWorkspaceFinding> get findings =>
+  List<AiDeveloperFinding> get findings =>
       repositories.expand((repo) => repo.findings).toList(growable: false);
 }
 
@@ -254,11 +254,11 @@ class AiDeveloperWorkspaceService {
     }
 
     final snippets = <AiDeveloperWorkspaceSnippet>[];
-    final findings = <AiDeveloperWorkspaceFinding>[];
+    final findings = <AiDeveloperFinding>[];
     for (final relativePath in selected) {
       final match = _findScannedFile(report, relativePath);
       if (match == null) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file not in workspace preview',
           detail: relativePath,
@@ -270,7 +270,7 @@ class AiDeveloperWorkspaceService {
       final repo = match.$1;
       final fileSummary = match.$2;
       if (_denylistedPathPattern.hasMatch(fileSummary.relativePath)) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'critical',
           title: 'Selected file is denylisted',
           detail: fileSummary.relativePath,
@@ -279,7 +279,7 @@ class AiDeveloperWorkspaceService {
         continue;
       }
       if (fileSummary.sizeBytes > maxSelectedFileBytes) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file is too large for snippets',
           detail:
@@ -290,7 +290,7 @@ class AiDeveloperWorkspaceService {
       }
       final file = File('${repo.rootPath}/${fileSummary.relativePath}');
       if (!await file.exists()) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file no longer exists',
           detail: fileSummary.relativePath,
@@ -301,7 +301,7 @@ class AiDeveloperWorkspaceService {
       final bytes = await file.readAsBytes();
       final actualHash = sha256.convert(bytes).toString();
       if (actualHash != fileSummary.sha256Hex) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file changed after preview',
           detail: fileSummary.relativePath,
@@ -320,7 +320,7 @@ class AiDeveloperWorkspaceService {
       ));
     }
     if (snippets.isNotEmpty) {
-      findings.add(const AiDeveloperWorkspaceFinding(
+      findings.add(const AiDeveloperFinding(
         severity: 'info',
         title: 'Selected source is untrusted prompt input',
         detail:
@@ -362,7 +362,7 @@ class AiDeveloperWorkspaceService {
 
   Future<AiDeveloperWorkspaceRepoSummary> _scanRepo(String rootPath) async {
     final root = Directory(rootPath);
-    final findings = <AiDeveloperWorkspaceFinding>[];
+    final findings = <AiDeveloperFinding>[];
     if (!await root.exists()) {
       return AiDeveloperWorkspaceRepoSummary(
         rootPath: root.absolute.path,
@@ -370,8 +370,8 @@ class AiDeveloperWorkspaceService {
         skippedFileCount: 0,
         skippedDirectoryCount: 0,
         files: const <AiDeveloperWorkspaceFileSummary>[],
-        findings: <AiDeveloperWorkspaceFinding>[
-          AiDeveloperWorkspaceFinding(
+        findings: <AiDeveloperFinding>[
+          AiDeveloperFinding(
             severity: 'critical',
             title: 'Repository path does not exist',
             detail: root.absolute.path,
@@ -401,7 +401,7 @@ class AiDeveloperWorkspaceService {
       }
       if (_denylistedPathPattern.hasMatch(relativePath)) {
         skippedFiles++;
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Denylisted file skipped',
           detail: relativePath,
@@ -412,7 +412,7 @@ class AiDeveloperWorkspaceService {
       }
       if (entity is Link) {
         skippedFiles++;
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Symlink skipped',
           detail: relativePath,
@@ -429,7 +429,7 @@ class AiDeveloperWorkspaceService {
       final sizeBytes = await entity.length();
       if (sizeBytes > maxFileBytes) {
         skippedFiles++;
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'info',
           title: 'Large file skipped',
           detail: '$relativePath ($sizeBytes bytes)',

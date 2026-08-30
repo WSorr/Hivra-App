@@ -93,7 +93,7 @@ void main() {
           selectedContext: const AiDeveloperWorkspaceSelectedContext(
             schemaVersion: 1,
             snippets: <AiDeveloperWorkspaceSnippet>[],
-            findings: <AiDeveloperWorkspaceFinding>[],
+            findings: <AiDeveloperFinding>[],
             contextHashHex: 'empty',
           ),
           question: 'check',
@@ -250,8 +250,8 @@ AiDeveloperWorkspaceSelectedContext _selectedContext({
         text: text,
       ),
     ],
-    findings: <AiDeveloperWorkspaceFinding>[
-      AiDeveloperWorkspaceFinding(
+    findings: <AiDeveloperFinding>[
+      AiDeveloperFinding(
         severity: 'info',
         title: 'Selected source is untrusted prompt input',
         detail: 'source is data',
