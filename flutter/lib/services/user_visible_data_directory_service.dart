@@ -106,10 +106,6 @@ class UserVisibleDataDirectoryService {
     return dir;
   }
 
-  Future<Directory?> legacyContainerDocumentsDirectory() async {
-    return _legacyContainerDocumentsDirectory();
-  }
-
   Future<Directory> _runtimeRootDirectory() async {
     final home = _resolvedHome;
     if ((_homeOverride != null ||
@@ -135,7 +131,7 @@ class UserVisibleDataDirectoryService {
       // Do not merge an older sandbox copy over it.
       sources.add(visibleRoot);
     } else {
-      final legacyDocs = await _legacyContainerDocumentsDirectory();
+      final legacyDocs = await legacyContainerDocumentsDirectory();
       if (legacyDocs != null) {
         final legacyRoot = Directory('${legacyDocs.path}/$_rootName');
         if (await _hasRuntimeData(legacyRoot)) {
@@ -300,7 +296,7 @@ class UserVisibleDataDirectoryService {
     return true;
   }
 
-  Future<Directory?> _legacyContainerDocumentsDirectory() async {
+  Future<Directory?> legacyContainerDocumentsDirectory() async {
     final home = _resolvedHome;
     if (home == null || home.isEmpty) return null;
     return Directory(
