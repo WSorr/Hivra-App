@@ -7,12 +7,13 @@ Status date: 2026-08-30
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
   artifacts have manual signoff.
-- Current source baseline: `16a70f3`; Capsule Analyst is the sole in-app
-  diagnostic AI surface.
+- Current source baseline: manifest-bound plugin workspace activation; Capsule
+  Analyst is the sole in-app diagnostic AI surface.
 - Trading Remote Runner acceptance remains complete at `b88a886`.
 - Hivra 2.0 remains design-only. No 2.0 runtime or UI implementation is
   authorized.
-- Current selected runtime unit: none.
+- Current selected runtime unit: none. Manifest-driven plugin activation is
+  complete.
 
 ## Product Direction
 
@@ -27,10 +28,9 @@ Core + Ledger
   -> thin App Shell
 ```
 
-The next candidate is **V1 Manifest-Driven Plugin Activation**. It must remove
-hardcoded product-id routing and prove that installing or removing a package
-changes the available capability without rebuilding the application. It is not
-selected for implementation until explicitly approved.
+Plugin workspaces are now activated by the installed package's exact manifest
+profile rather than product-id routing. The direct Trading workspace route was
+removed, so a workspace cannot bypass package installation.
 
 Chat, Moltbook, and Trading then migrate one vertical capability at a time.
 Each pass reuses the existing delivery/effect owners and deletes the host logic

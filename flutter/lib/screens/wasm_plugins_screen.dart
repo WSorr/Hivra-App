@@ -11,6 +11,7 @@ import '../services/app_runtime_service.dart';
 import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../services/plugin_runtime_module_service.dart';
+import '../services/wasm_plugin_runtime_service.dart';
 import '../utils/peer_identity_format.dart';
 import '../widgets/capsule_chat_conversation_workspace.dart';
 import 'moltbook_ambassador_screen.dart';
@@ -73,6 +74,29 @@ String chatWorkspaceNoticeForSendResult(PluginChatSendResult result) {
     PluginChatSendStatus.rejected => result.message,
     PluginChatSendStatus.failed => result.message,
     PluginChatSendStatus.capsuleChanged => result.message,
+  };
+}
+
+@visibleForTesting
+String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
+  if (record.packageKind.trim().toLowerCase() != 'zip' ||
+      record.runtimeAbi?.trim() !=
+          WasmPluginRuntimeService.requiredRuntimeAbi ||
+      record.runtimeEntryExport?.trim() !=
+          WasmPluginRuntimeService.requiredEntryExport ||
+      (record.runtimeModulePath?.trim().isEmpty ?? true)) {
+    return null;
+  }
+
+  final pluginId = record.pluginId?.trim();
+  final contractKind = record.contractKind?.trim();
+  return switch ((pluginId, contractKind)) {
+    (capsuleChatPluginId, capsuleChatContractKind) => capsuleChatContractKind,
+    (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind) =>
+      moltbookAmbassadorContractKind,
+    (bingxFuturesTradingPluginId, bingxFuturesContractKind) =>
+      bingxFuturesContractKind,
+    _ => null,
   };
 }
 
@@ -806,8 +830,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       onInstallPressed: _installPlugin,
                       onRemovePressed: _removePlugin,
                       onOpenWorkspacePressed: (record) {
-                        switch (record.pluginId) {
-                          case bingxFuturesTradingPluginId:
+                        switch (installedPluginWorkspaceContractKind(record)) {
+                          case bingxFuturesContractKind:
                             return () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder:
@@ -816,9 +840,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                                     ),
                               ),
                             );
-                          case capsuleChatPluginId:
+                          case capsuleChatContractKind:
                             return _openCapsuleChatWorkspace;
-                          case moltbookAmbassadorPluginId:
+                          case moltbookAmbassadorContractKind:
                             return () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder:
@@ -1433,9 +1457,6 @@ class _CatalogEntryTile extends StatelessWidget {
 }
 
 class _InstalledPluginTile extends StatelessWidget {
-  static const String _requiredRuntimeAbi = 'hivra_host_abi_v2';
-  static const String _requiredRuntimeEntryExport = 'hivra_evaluate_v1';
-
   final WasmPluginRecord record;
   final Future<void> Function() onRemovePressed;
   final VoidCallback? onOpenWorkspacePressed;
@@ -1456,8 +1477,10 @@ class _InstalledPluginTile extends StatelessWidget {
     final isZipPackage = record.packageKind.trim().toLowerCase() == 'zip';
     final runtimeAbi = record.runtimeAbi?.trim() ?? '';
     final runtimeEntryExport = record.runtimeEntryExport?.trim() ?? '';
-    final abiMatches = runtimeAbi == _requiredRuntimeAbi;
-    final entryMatches = runtimeEntryExport == _requiredRuntimeEntryExport;
+    final abiMatches =
+        runtimeAbi == WasmPluginRuntimeService.requiredRuntimeAbi;
+    final entryMatches =
+        runtimeEntryExport == WasmPluginRuntimeService.requiredEntryExport;
     final ready = !isZipPackage || (abiMatches && entryMatches);
 
     return Container(

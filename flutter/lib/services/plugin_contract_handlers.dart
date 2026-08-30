@@ -28,7 +28,7 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
   String get pluginId => capsuleChatPluginId;
 
   @override
-  String get contractKind => 'capsule_chat';
+  String get contractKind => capsuleChatContractKind;
 
   @override
   Set<String> get methods => const <String>{postCapsuleChatMethod};
@@ -301,7 +301,7 @@ class MoltbookAmbassadorPluginContractHandler
   String get pluginId => moltbookAmbassadorPluginId;
 
   @override
-  String get contractKind => 'moltbook_ambassador_draft';
+  String get contractKind => moltbookAmbassadorContractKind;
 
   @override
   Set<String> get methods => const <String>{
