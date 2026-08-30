@@ -25,6 +25,8 @@ The following product foundations are implemented and retained:
   and Chat module;
 - Trading decision, bounded execution, reconciliation, and Remote Runner
   acceptance;
+- dedicated Trading capability ownership with one Capsule-local pending-intent
+  cycle and no peer-selected or Chat-signal route;
 - guarded repository integration and exact-artifact release signoff.
 
 The current public prerelease is `v1.0.3-test18`. The invalid `test17` artifact
@@ -36,10 +38,8 @@ The 1.x host is a modular monolith around a real Core, Ledger, FFI boundary,
 and WASM sandbox. Product logic is still compiled into Flutter, while installed
 manifest profiles now control which product workspace can be opened.
 
-The remaining migration direction is:
-
-1. Trading capability ownership, including the existing Remote Runner;
-2. a thin App Shell over the proven Person Runtime API.
+The remaining migration direction is a thin App Shell over the proven Person
+Runtime API. Chat, Moltbook, and Trading capability ownership are complete.
 
 Every migration must remove or seal the host path it replaces. V2 does not
 receive a duplicated runtime.

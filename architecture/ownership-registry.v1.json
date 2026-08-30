@@ -63,7 +63,7 @@
     {"id": "ui_capsule_card_scanner", "kind": "ui_entrypoint", "path": "flutter/lib/screens/settings_screen.dart", "symbol": "_CapsuleCardScannerScreen", "capability_id": "capsule_addressing", "status": "COMPATIBILITY_DEBT", "target": "capsule_addressing.import_card", "rationale": "Nested scanner UI is a current address-import surface, not an independent owner."},
     {"id": "ui_settings", "kind": "ui_entrypoint", "path": "flutter/lib/screens/settings_screen.dart", "symbol": "SettingsScreen", "capability_id": "capsule_addressing", "status": "COMPATIBILITY_DEBT", "target": "capsule_addressing.manage", "rationale": "Settings aggregate addressing controls without one frozen capability command."},
     {"id": "ui_starters", "kind": "ui_entrypoint", "path": "flutter/lib/screens/starters_screen.dart", "symbol": "StartersScreen", "capability_id": "starter_inventory", "status": "COMPATIBILITY_DEBT", "target": "starter_inventory.project", "rationale": "Current 1.x Starter UI is not bound to the reviewed V2 inventory contract."},
-    {"id": "ui_trading", "kind": "ui_entrypoint", "path": "flutter/lib/screens/trading_drone_screen.dart", "symbol": "TradingDroneScreen", "capability_id": "trading_drone", "status": "CANONICAL", "target": "trading_drone.build", "rationale": "Registered Trading Drone module entrypoint; command contract remains NEEDS_CONTRACT."},
+    {"id": "ui_trading", "kind": "ui_entrypoint", "path": "flutter/lib/screens/trading_drone_screen.dart", "symbol": "TradingDroneScreen", "capability_id": "trading_drone", "status": "CANONICAL", "target": "trading_drone.run", "rationale": "Registered Trading Drone entrypoint; pending intents converge on the Capsule-local trading cycle."},
     {"id": "ui_transports", "kind": "ui_entrypoint", "path": "flutter/lib/screens/transports_screen.dart", "symbol": "TransportsScreen", "capability_id": "capsule_delivery", "status": "COMPATIBILITY_DEBT", "target": "capsule_delivery.transport_diagnostics", "rationale": "Transport diagnostics are a 1.x adapter view, not a domain truth or frozen command."},
     {"id": "ui_wasm_plugins", "kind": "ui_entrypoint", "path": "flutter/lib/screens/wasm_plugins_screen.dart", "symbol": "WasmPluginsScreen", "capability_id": "wasm_drone_runtime", "status": "CANONICAL", "target": "wasm_drone_runtime.removePlugin", "rationale": "Registered WASM plugin lifecycle entrypoint."},
     {"id": "ffi_app_runtime_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/app_runtime_runtime.dart", "symbol": "AppRuntimeRuntime", "capability_id": "person_runtime_shell", "status": "COMPATIBILITY_DEBT", "target": "person_runtime_shell.ffi_port", "rationale": "Abstract 1.x Flutter/FFI application runtime port."},
@@ -115,8 +115,7 @@
       "capsule_recovery",
       "capsule_selection",
       "capsule_addressing",
-      "person_runtime_shell",
-      "trading_drone"
+      "person_runtime_shell"
     ],
     "first_v2_1_design_contract": {
       "contract_id": "capsule_identity_birth_contract_v2",
@@ -282,11 +281,11 @@
     {
       "id": "trading_drone",
       "owner": {"layer": "module", "path": "flutter/lib/services/trading_drone_module_service.dart", "symbol": "TradingDroneModule"},
-      "public_contracts": [{"id": "trading_module_builder", "path": "flutter/lib/services/trading_drone_module_service.dart", "symbol": "TradingDroneModuleService"}],
+      "public_contracts": [{"id": "trading_cycle", "path": "flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart", "symbol": "BingxFuturesTradingCycleUseCaseService"}],
       "facts": [], "projections": [],
       "effect_kinds": [{"id": "bingx_execution_queue", "path": "flutter/lib/services/bingx_futures_execution_queue_service.dart", "symbol": "BingxFuturesExecutionQueueService"}],
-      "entrypoints": [{"id": "trading_drone_screen", "path": "flutter/lib/screens/trading_drone_screen.dart", "symbol": "TradingDroneScreen", "command_path": "flutter/lib/services/trading_drone_module_service.dart", "command_symbol": "build"}],
-      "closure": {"verdict": "NEEDS_CONTRACT", "missing_boundaries": ["canonical trading capability command contract"]}
+      "entrypoints": [{"id": "trading_drone_screen", "path": "flutter/lib/screens/trading_drone_screen.dart", "symbol": "TradingDroneScreen", "command_path": "flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart", "command_symbol": "run"}],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
     },
     {
       "id": "person_runtime_shell",

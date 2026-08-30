@@ -4,15 +4,16 @@ import 'bingx_futures_live_decision_service.dart';
 import 'bingx_futures_live_snapshot_builder_service.dart';
 import 'bingx_futures_public_market_data_port.dart';
 
-typedef BingxLiveSnapshotLoader = Future<BingxFuturesLiveSnapshotBuildResult>
-    Function({
-  required BingxFuturesPublicMarketDataPort exchange,
-  required String symbol,
-});
+typedef BingxLiveSnapshotLoader =
+    Future<BingxFuturesLiveSnapshotBuildResult> Function({
+      required BingxFuturesPublicMarketDataPort exchange,
+      required String symbol,
+    });
 
-typedef BingxLiveDecisionEvaluator = BingxFuturesLiveDecisionResult Function(
-  BingxFuturesLiveDecisionInput input,
-);
+typedef BingxLiveDecisionEvaluator =
+    BingxFuturesLiveDecisionResult Function(
+      BingxFuturesLiveDecisionInput input,
+    );
 
 class BingxFuturesLiveStrategyUseCaseService {
   final BingxFuturesPublicMarketDataPort _exchange;
@@ -27,9 +28,18 @@ class BingxFuturesLiveStrategyUseCaseService {
         const BingxFuturesLiveDecisionService(),
     BingxLiveSnapshotLoader? loadSnapshot,
     BingxLiveDecisionEvaluator? evaluateDecision,
-  })  : _exchange = exchange,
-        _loadSnapshot = loadSnapshot ?? snapshotBuilder.fetchAndBuild,
-        _evaluateDecision = evaluateDecision ?? decisionService.decide;
+  }) : _exchange = exchange,
+       _loadSnapshot = loadSnapshot ?? snapshotBuilder.fetchAndBuild,
+       _evaluateDecision =
+           evaluateDecision ??
+           ((input) => decisionService.decidePublicMarket(
+             snapshotInput: input.snapshotInput,
+             recentMicroBars: input.recentMicroBars,
+             zoneNearBps: input.zoneNearBps,
+             zoneFarBps: input.zoneFarBps,
+             policy: input.policy,
+             zoneEvaluationSide: input.zoneEvaluationSide,
+           ));
 
   Future<BingxFuturesLiveStrategyResult> execute(
     BingxFuturesLiveStrategyCommand command,
@@ -44,7 +54,8 @@ class BingxFuturesLiveStrategyUseCaseService {
         symbol: snapshot.symbol,
         errorCode: snapshot.errorCode,
         errorMessage: snapshot.errorMessage,
-        diagnostic: 'symbol=${snapshot.symbol} code=${snapshot.errorCode} '
+        diagnostic:
+            'symbol=${snapshot.symbol} code=${snapshot.errorCode} '
             'message=${snapshot.errorMessage}',
       );
     }
@@ -53,8 +64,7 @@ class BingxFuturesLiveStrategyUseCaseService {
       final decision = _evaluateDecision(
         BingxFuturesLiveDecisionInput(
           snapshotInput: snapshot.snapshotInput!,
-          isConsensusSignable: command.isConsensusSignable,
-          blockingFactCodes: command.blockingFactCodes,
+          isConsensusSignable: true,
           recentMicroBars: command.recentMicroBars,
           zoneNearBps: command.zoneNearBps,
           zoneFarBps: command.zoneFarBps,
@@ -69,7 +79,6 @@ class BingxFuturesLiveStrategyUseCaseService {
         diagnostic: _decisionDiagnostic(
           symbol: snapshot.symbol,
           decision: decision,
-          consensusSignable: command.isConsensusSignable,
           liquidationProxyLevels: snapshot.snapshotInput!.liquidityLevels
               .where(
                 (level) =>
@@ -85,7 +94,8 @@ class BingxFuturesLiveStrategyUseCaseService {
         symbol: snapshot.symbol,
         errorCode: 'invalid_snapshot',
         errorMessage: error.message,
-        diagnostic: 'symbol=${snapshot.symbol} code=invalid_snapshot '
+        diagnostic:
+            'symbol=${snapshot.symbol} code=invalid_snapshot '
             'message=${error.message}',
       );
     }
@@ -94,7 +104,6 @@ class BingxFuturesLiveStrategyUseCaseService {
   String _decisionDiagnostic({
     required String symbol,
     required BingxFuturesLiveDecisionResult decision,
-    required bool consensusSignable,
     required List<String> liquidationProxyLevels,
   }) {
     return 'symbol=$symbol '
@@ -114,7 +123,6 @@ class BingxFuturesLiveStrategyUseCaseService {
         'trend1d=${decision.trend1d} '
         'trend_gate=${decision.trendGateCode} '
         'trend_blocked=${decision.trendGateBlocked} '
-        'consensus_signable=$consensusSignable '
         'market_hash=${decision.marketSnapshotHashHex.substring(0, 12)} '
         'feature_hash=${decision.featureHashHex.substring(0, 12)} '
         'tvh_hash=${decision.tvhDecisionHashHex.substring(0, 12)} '

@@ -125,7 +125,9 @@ contract. It is not the WASM ABI version: current external packages use
     plugin-owned semantics
   - host canonical response includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics
 - Runtime capability requirements are method-scoped:
-  - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`
+  - `place_bingx_futures_order_intent` requires
+    `exchange.trade.bingx.futures`; Trading is Capsule-local and a non-empty
+    `peer_hex` is rejected before runtime invocation
   - `post_capsule_chat_message` requires `consensus_guard.read`
   - `authorize_moltbook_delegated_reply` requires
     `content.reply.delegate`; it grants no network access and returns only a

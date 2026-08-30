@@ -694,8 +694,11 @@ Current host API binding:
 - `plugin_id`: `hivra.contract.bingx-futures-trading.v1`
 - `method`: `place_bingx_futures_order_intent`
 - required capabilities:
-  - `consensus_guard.read`
   - `exchange.trade.bingx.futures`
+
+Trading intent preparation is Capsule-local. The compatibility `peer_hex`
+wire field MUST be empty; a non-empty value is rejected before WASM
+invocation. Pair Consensus remains outside the Trading lifecycle.
 
 Runtime execution behavior (v1):
 

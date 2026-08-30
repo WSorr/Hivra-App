@@ -114,8 +114,8 @@ may use the Trust Layer when their capability needs a trusted peer:
 
 - Chat can restrict delivery to trusted Capsules.
 - A collaborative contract can require pair evidence.
-- Trading can operate solo and does not require consensus unless the user
-  explicitly chooses collaborative behavior.
+- Trading is Capsule-local. It does not use Pair Consensus or peer-scoped
+  intent routing.
 - Staking or local AI may ignore relationships entirely.
 
 The Trust Layer is reusable infrastructure, not the product itself.

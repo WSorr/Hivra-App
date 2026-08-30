@@ -423,11 +423,13 @@ Pass A completed on 2026-08-04 with:
   `tools/review/ownership_registry_gate.sh`;
 - no runtime-code or production-path changes.
 
-The baseline records twelve known capability families. `trading_drone` and
-`person_runtime_shell` are explicitly `NEEDS_CONTRACT`; no placeholder 2.0
-contract was added to make them appear ready. The largest registered owner
-surface is the current Moltbook module composition boundary, not a new Core
-owner.
+The Pass A baseline recorded twelve known capability families with
+`trading_drone` and `person_runtime_shell` explicitly `NEEDS_CONTRACT`; no
+placeholder 2.0 contract was added to make them appear ready. Subsequent
+reference-grade 1.x convergence assigned Trading one Capsule-local cycle and
+sealed its peer-selected route, so the current registry marks `trading_drone`
+`READY`. This is admission evidence only: it does not authorize V2 runtime or
+UI implementation. `person_runtime_shell` remains `NEEDS_CONTRACT`.
 
 Selected pass B:
 

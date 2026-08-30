@@ -4,7 +4,6 @@ import 'plugin_host_api_models.dart';
 
 class BingxFuturesIntentCommand {
   final String screen;
-  final String peerHex;
   final String clientOrderId;
   final String symbol;
   final String side;
@@ -27,7 +26,6 @@ class BingxFuturesIntentCommand {
 
   const BingxFuturesIntentCommand({
     required this.screen,
-    required this.peerHex,
     required this.clientOrderId,
     required this.symbol,
     required this.side,

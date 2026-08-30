@@ -158,7 +158,6 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
   Future<void> _scanSignalWatchlist() async {
     if (_scanningSignals) return;
     final currentSymbol = _symbolController.text.trim().toUpperCase();
-    final peerHex = _peerController.text.trim().toLowerCase();
     if (_signalScanScope == _TradingDroneScreenState._signalScanScopeAllPerps &&
         _availablePerpSymbols.isEmpty) {
       await _loadPerpetualSymbols(silent: false);
@@ -204,12 +203,7 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
       for (final symbol in symbols) {
         BingxFuturesLiveDecisionResult? decision;
         try {
-          decision = await _computeLiveDecision(
-            symbol: symbol,
-            peerHex: peerHex,
-            silent: true,
-            forceConsensusSignable: peerHex.isEmpty,
-          );
+          decision = await _computeLiveDecision(symbol: symbol, silent: true);
         } catch (error) {
           skipped += 1;
           await _module.uiLog.log(
@@ -447,8 +441,6 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         _zoneSide = tradingZoneSideForOrderSide(entry.side!);
       }
       if (entry.zoneLowDecimal != null && entry.zoneHighDecimal != null) {
-        _entryMode = 'zone_pending';
-        _zonePriceRule = 'zone_mid';
         _zoneLowController.text = entry.zoneLowDecimal!;
         _zoneHighController.text = entry.zoneHighDecimal!;
       }
@@ -490,13 +482,8 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         _intentBlockingMessage = null;
         _quantityController.text = _playbookQtyForSymbol(normalizedSymbol);
         _side = 'sell';
-        _orderType = 'limit';
-        _entryMode = 'zone_pending';
         _zoneSide = 'sellside';
-        _zonePriceRule = 'zone_mid';
-        _timeInForce = 'GTC';
         _strategyTagController.text = 'tvh_short_breakdown_v1';
-        _limitPriceController.clear();
         _zoneLowController.clear();
         _zoneHighController.clear();
         _triggerPriceController.clear();

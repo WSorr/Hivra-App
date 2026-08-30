@@ -56,10 +56,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
         refreshDecision:
             () => _computeLiveDecision(
               symbol: intentSymbol ?? currentSymbol,
-              peerHex: result['peer_hex']?.toString().trim() ?? '',
               silent: true,
-              forceConsensusSignable:
-                  (result['peer_hex']?.toString().trim() ?? '').isEmpty,
               zoneEvaluationSide: result['side']?.toString(),
             ),
       );
@@ -444,9 +441,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     for (final entry in bySymbol.entries) {
       final actionableDecision = await _computeLiveDecision(
         symbol: entry.key,
-        peerHex: '',
         silent: true,
-        forceConsensusSignable: true,
       );
       if (actionableDecision == null) {
         await _module.uiLog.log(
@@ -468,9 +463,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
           if (!structuralDecisions.containsKey(structuralSide)) {
             structuralDecisions[structuralSide] = await _computeLiveDecision(
               symbol: entry.key,
-              peerHex: '',
               silent: true,
-              forceConsensusSignable: true,
               zoneEvaluationSide: structuralSide,
             );
           }
@@ -634,9 +627,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
           refreshDecision:
               () => _computeLiveDecision(
                 symbol: payload.symbol,
-                peerHex: '',
                 silent: true,
-                forceConsensusSignable: true,
                 zoneEvaluationSide: payload.side,
               ),
         );

@@ -137,8 +137,6 @@ Future<_SignalProbe> _probe(
     final result = await strategy.execute(
       BingxFuturesLiveStrategyCommand(
         symbol: symbol,
-        isConsensusSignable: true,
-        blockingFactCodes: const <String>[],
         recentMicroBars: _recentMicroBars,
         zoneNearBps: _zoneNearBps,
         zoneFarBps: _zoneFarBps,

@@ -2,8 +2,6 @@ import 'bingx_futures_live_decision_models.dart';
 
 class BingxFuturesLiveStrategyCommand {
   final String symbol;
-  final bool isConsensusSignable;
-  final List<String> blockingFactCodes;
   final int recentMicroBars;
   final double zoneNearBps;
   final double zoneFarBps;
@@ -11,8 +9,6 @@ class BingxFuturesLiveStrategyCommand {
 
   const BingxFuturesLiveStrategyCommand({
     required this.symbol,
-    required this.isConsensusSignable,
-    required this.blockingFactCodes,
     required this.recentMicroBars,
     required this.zoneNearBps,
     required this.zoneFarBps,
