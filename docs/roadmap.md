@@ -15,6 +15,7 @@ The following product foundations are implemented and retained:
 - NIP-44-only authenticated Nostr transport with durable delivery and
   acknowledged ingress handling;
 - sandboxed, signed, digest-bound WASM package installation;
+- manifest-bound plugin workspace activation without a direct product bypass;
 - shared external-effect and Capsule AI Runtime boundaries;
 - Chat delivery across macOS and Android;
 - Moltbook proposal, publication, reply, receipt, and restart lifecycle;
@@ -28,16 +29,15 @@ evidence remains immutable history and cannot authorize another publication.
 ## Current Product Convergence
 
 The 1.x host is a modular monolith around a real Core, Ledger, FFI boundary,
-and WASM sandbox. Product logic is still compiled into Flutter and product
-workspaces are selected by known plugin identifiers.
+and WASM sandbox. Product logic is still compiled into Flutter, while installed
+manifest profiles now control which product workspace can be opened.
 
 The migration direction is:
 
-1. manifest-driven plugin activation;
-2. Chat capability ownership;
-3. Moltbook capability ownership;
-4. Trading capability ownership, including the existing Remote Runner;
-5. a thin App Shell over the proven Person Runtime API.
+1. Chat capability ownership;
+2. Moltbook capability ownership;
+3. Trading capability ownership, including the existing Remote Runner;
+4. a thin App Shell over the proven Person Runtime API.
 
 Every migration must remove or seal the host path it replaces. V2 does not
 receive a duplicated runtime.
