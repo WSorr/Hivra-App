@@ -21,6 +21,8 @@ The following product foundations are implemented and retained:
 - Chat capability workspace ownership with host-owned Pair Consensus,
   delivery, durable inbox, and acknowledgement boundaries;
 - Moltbook proposal, publication, reply, receipt, and restart lifecycle;
+- dedicated Moltbook capability runtime ownership outside the generic plugin
+  and Chat module;
 - Trading decision, bounded execution, reconciliation, and Remote Runner
   acceptance;
 - guarded repository integration and exact-artifact release signoff.
@@ -34,11 +36,10 @@ The 1.x host is a modular monolith around a real Core, Ledger, FFI boundary,
 and WASM sandbox. Product logic is still compiled into Flutter, while installed
 manifest profiles now control which product workspace can be opened.
 
-The migration direction is:
+The remaining migration direction is:
 
-1. Moltbook capability ownership;
-2. Trading capability ownership, including the existing Remote Runner;
-3. a thin App Shell over the proven Person Runtime API.
+1. Trading capability ownership, including the existing Remote Runner;
+2. a thin App Shell over the proven Person Runtime API.
 
 Every migration must remove or seal the host path it replaces. V2 does not
 receive a duplicated runtime.

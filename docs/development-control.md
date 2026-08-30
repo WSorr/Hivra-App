@@ -7,14 +7,14 @@ Status date: 2026-08-30
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
   artifacts have manual signoff.
-- Current source baseline: manifest-bound plugin workspaces with Chat UI
-  orchestration removed from the generic App Shell; Capsule Analyst is the
-  sole in-app diagnostic AI surface.
+- Current source baseline: manifest-bound plugin workspaces with Chat UI and
+  the complete Moltbook lifecycle removed from the generic runtime owner;
+  Capsule Analyst is the sole in-app diagnostic AI surface.
 - Trading Remote Runner acceptance remains complete at `b88a886`.
 - Hivra 2.0 remains design-only. No 2.0 runtime or UI implementation is
   authorized.
-- Current selected runtime unit: none. Manifest-driven activation and the Chat
-  capability workspace ownership move are complete.
+- Current selected runtime unit: none. Manifest-driven activation, Chat
+  workspace ownership, and Moltbook lifecycle ownership are complete.
 
 ## Product Direction
 
@@ -38,11 +38,13 @@ runtime module, which ensures attestation and passes through the canonical host
 consensus guard before the existing delivery owner can send or acknowledge
 anything. The generic Plugins screen only composes navigation.
 
-Chat, Moltbook, and Trading then migrate one vertical capability at a time.
-Each pass reuses the existing delivery/effect owners and deletes the host logic
-it replaces. A plugin ABI change, universal agent runtime, new Core fact, V2
-UI, release, VPS mutation, or live financial effect requires a separate
-decision.
+Moltbook now owns its observation, AI proposal, publication, receipt,
+reconciliation, and restart lifecycle in one capability module. The generic
+runtime module composes that owner but no longer exposes Moltbook commands.
+Trading is the remaining embedded product capability. Its migration must reuse
+the accepted Remote Runner and effect lifecycle and delete the host logic it
+replaces. A plugin ABI change, universal agent runtime, new Core fact, V2 UI,
+release, VPS mutation, or live financial effect requires a separate decision.
 
 ## Authority
 
