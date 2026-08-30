@@ -18,6 +18,8 @@ The following product foundations are implemented and retained:
 - manifest-bound plugin workspace activation without a direct product bypass;
 - shared external-effect and Capsule AI Runtime boundaries;
 - Chat delivery across macOS and Android;
+- Chat capability workspace ownership with host-owned Pair Consensus,
+  delivery, durable inbox, and acknowledgement boundaries;
 - Moltbook proposal, publication, reply, receipt, and restart lifecycle;
 - Trading decision, bounded execution, reconciliation, and Remote Runner
   acceptance;
@@ -34,10 +36,9 @@ manifest profiles now control which product workspace can be opened.
 
 The migration direction is:
 
-1. Chat capability ownership;
-2. Moltbook capability ownership;
-3. Trading capability ownership, including the existing Remote Runner;
-4. a thin App Shell over the proven Person Runtime API.
+1. Moltbook capability ownership;
+2. Trading capability ownership, including the existing Remote Runner;
+3. a thin App Shell over the proven Person Runtime API.
 
 Every migration must remove or seal the host path it replaces. V2 does not
 receive a duplicated runtime.
