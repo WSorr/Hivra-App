@@ -1,7 +1,8 @@
+import '../models/consensus_models.dart';
 import 'consensus_runtime_service.dart';
 import 'consensus_attested_guard_service.dart';
 
-typedef ManualConsensusCheck = ConsensusCheck;
+typedef ManualConsensusCheck = ConsensusPreview;
 
 class ManualConsensusCheckService {
   final ConsensusRuntimeService _consensus;
@@ -14,7 +15,7 @@ class ManualConsensusCheckService {
        _attestedGuard = attestedGuard;
 
   List<ManualConsensusCheck> loadChecks() {
-    return _consensus.checks();
+    return _consensus.preview();
   }
 
   /// User-facing actions require both local facts and matching peer evidence.
@@ -29,14 +30,13 @@ class ManualConsensusCheckService {
     return List<ManualConsensusCheck>.generate(checks.length, (index) {
       final check = checks[index];
       final result = results[index];
-      return ConsensusCheck(
+      return ConsensusPreview(
         peerHex: check.peerHex,
         peerLabel: check.peerLabel,
         invitationCount: check.invitationCount,
         relationshipCount: check.relationshipCount,
         hashHex: check.hashHex,
         canonicalJson: check.canonicalJson,
-        isSignable: result.isSignable,
         blockingFacts: result.blockingFacts,
       );
     });

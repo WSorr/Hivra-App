@@ -434,7 +434,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -510,7 +509,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]);
@@ -593,7 +591,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -651,7 +648,6 @@ void main() {
             hashHex:
                 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
             canonicalJson: '{}',
-            isSignable: true,
             blockingFacts: <ConsensusBlockingFact>[],
           ),
         ]),
@@ -725,7 +721,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]);
@@ -1143,7 +1138,6 @@ void main() {
             hashHex:
                 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
             canonicalJson: '{}',
-            isSignable: true,
             blockingFacts: <ConsensusBlockingFact>[],
           ),
         ]),
@@ -1216,7 +1210,6 @@ void main() {
             hashHex:
                 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
             canonicalJson: '{}',
-            isSignable: true,
             blockingFacts: <ConsensusBlockingFact>[],
           ),
         ]),
@@ -1289,7 +1282,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -1403,7 +1395,6 @@ void main() {
             hashHex:
                 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
             canonicalJson: '{}',
-            isSignable: true,
             blockingFacts: <ConsensusBlockingFact>[],
           ),
         ]),
@@ -1461,7 +1452,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -1518,7 +1508,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -1570,7 +1559,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -1640,7 +1628,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -1700,7 +1687,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ]),
@@ -1807,7 +1793,6 @@ void main() {
               hashHex:
                   'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
               canonicalJson: '{}',
-              isSignable: true,
               blockingFacts: <ConsensusBlockingFact>[],
             ),
           ]),
@@ -1887,7 +1872,6 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
-          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       ];
@@ -2086,7 +2070,6 @@ void main() {
             hashHex:
                 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
             canonicalJson: '{}',
-            isSignable: true,
             blockingFacts: <ConsensusBlockingFact>[],
           ),
         ]),
@@ -2184,7 +2167,6 @@ void main() {
             hashHex:
                 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
             canonicalJson: '{}',
-            isSignable: true,
             blockingFacts: <ConsensusBlockingFact>[],
           ),
         ]),
