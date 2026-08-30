@@ -164,8 +164,9 @@ class _ReportView extends StatelessWidget {
         const SizedBox(height: 12),
         _PluginAuditCard(service: pluginAuditService),
         const SizedBox(height: 12),
-        _DeveloperModeBoundary(
+        CapsuleDoctorDeveloperModeBoundary(
           snapshot: report.snapshot,
+          findings: report.findings,
           workspaceService: developerWorkspaceService,
           engineerService: developerEngineerService,
         ),
@@ -699,26 +700,56 @@ class _PluginAuditCardState extends State<_PluginAuditCard> {
   }
 }
 
-class _DeveloperModeBoundary extends StatefulWidget {
+@visibleForTesting
+class CapsuleDoctorDeveloperModeBoundary extends StatefulWidget {
   final AiCapsuleInspectionSnapshot snapshot;
+  final List<AiCapsuleInspectionFinding> findings;
   final AiDeveloperWorkspaceService workspaceService;
   final AiDeveloperEngineerService engineerService;
+  final UiEventLogService uiLog;
 
-  const _DeveloperModeBoundary({
+  const CapsuleDoctorDeveloperModeBoundary({
+    super.key,
     required this.snapshot,
+    this.findings = const <AiCapsuleInspectionFinding>[],
     required this.workspaceService,
     required this.engineerService,
+    this.uiLog = const UiEventLogService(),
   });
 
   @override
-  State<_DeveloperModeBoundary> createState() => _DeveloperModeBoundaryState();
+  State<CapsuleDoctorDeveloperModeBoundary> createState() =>
+      _DeveloperModeBoundaryState();
 }
 
-class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
+class _DeveloperModeBoundaryState
+    extends State<CapsuleDoctorDeveloperModeBoundary>
+    with AutomaticKeepAliveClientMixin<CapsuleDoctorDeveloperModeBoundary> {
   bool _enabled = false;
+  AiCapsuleInspectionFinding? _focusedFinding;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusedFinding = _defaultFinding(widget.findings);
+  }
+
+  @override
+  void didUpdateWidget(covariant CapsuleDoctorDeveloperModeBoundary oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final currentKey = _findingKey(_focusedFinding);
+    _focusedFinding = widget.findings
+        .where((finding) => _findingKey(finding) == currentKey)
+        .firstOrNull;
+    _focusedFinding ??= _defaultFinding(widget.findings);
+  }
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     return Card(
       color:
@@ -765,12 +796,14 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
             ),
             if (!_enabled) ...[
               const SizedBox(height: 12),
-              const ListTile(
+              ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.lock_outline),
-                title: Text('Workspace tools are locked'),
+                leading: const Icon(Icons.lock_outline),
+                title: const Text('Workspace tools are locked'),
                 subtitle: Text(
-                  'Capsule Analyst remains user-facing until Developer Mode is explicitly enabled.',
+                  _focusedFinding == null
+                      ? 'Capsule Analyst remains user-facing until Developer Mode is explicitly enabled.'
+                      : 'Prepared focus: ${_focusedFinding!.title}. Enable Developer Mode to build local evidence.',
                 ),
               ),
             ],
@@ -788,10 +821,39 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
                 ),
               ),
               const SizedBox(height: 12),
+              if (widget.findings.isNotEmpty) ...[
+                DropdownButtonFormField<AiCapsuleInspectionFinding>(
+                  key: ValueKey<String>(
+                    'developer_focus_${_findingKey(_focusedFinding)}',
+                  ),
+                  initialValue: _focusedFinding,
+                  decoration: const InputDecoration(
+                    labelText: 'Investigation focus',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: widget.findings
+                      .map(
+                        (finding) => DropdownMenuItem(
+                          value: finding,
+                          child: Text('${finding.area} · ${finding.title}'),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (finding) {
+                    if (finding == null) return;
+                    setState(() {
+                      _focusedFinding = finding;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
               _DeveloperWorkspaceCard(
                 snapshot: widget.snapshot,
+                focusedFinding: _focusedFinding,
                 workspaceService: widget.workspaceService,
                 engineerService: widget.engineerService,
+                uiLog: widget.uiLog,
               ),
             ],
           ],
@@ -799,17 +861,39 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
       ),
     );
   }
+
+  AiCapsuleInspectionFinding? _defaultFinding(
+    List<AiCapsuleInspectionFinding> findings,
+  ) {
+    return findings
+            .where(
+              (finding) =>
+                  finding.severity == 'critical' ||
+                  finding.severity == 'warning',
+            )
+            .firstOrNull ??
+        findings.firstOrNull;
+  }
+
+  String _findingKey(AiCapsuleInspectionFinding? finding) {
+    if (finding == null) return '';
+    return '${finding.severity}|${finding.area}|${finding.title}|${finding.detail}';
+  }
 }
 
 class _DeveloperWorkspaceCard extends StatefulWidget {
   final AiCapsuleInspectionSnapshot snapshot;
+  final AiCapsuleInspectionFinding? focusedFinding;
   final AiDeveloperWorkspaceService workspaceService;
   final AiDeveloperEngineerService engineerService;
+  final UiEventLogService uiLog;
 
   const _DeveloperWorkspaceCard({
     required this.snapshot,
+    required this.focusedFinding,
     required this.workspaceService,
     required this.engineerService,
+    required this.uiLog,
   });
 
   @override
@@ -818,8 +902,6 @@ class _DeveloperWorkspaceCard extends StatefulWidget {
 }
 
 class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
-  static const UiEventLogService _uiLog = UiEventLogService();
-
   final TextEditingController _pathsController = TextEditingController(
     text: '/Volumes/Dev/projects/hivra\n/Volumes/Dev/projects/hivra-plugins',
   );
@@ -845,7 +927,38 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   @override
   void initState() {
     super.initState();
+    final focus = widget.focusedFinding;
+    if (focus != null) {
+      _engineerQuestionController.text = _questionForFocus(focus);
+    }
     unawaited(_loadPreferredProvider());
+  }
+
+  @override
+  void didUpdateWidget(covariant _DeveloperWorkspaceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_focusKey(oldWidget.focusedFinding) ==
+        _focusKey(widget.focusedFinding)) {
+      return;
+    }
+    final focus = widget.focusedFinding;
+    _engineerQuestionController.text =
+        focus == null
+            ? 'What is the safest next code path to inspect?'
+            : _questionForFocus(focus);
+    final report = _report;
+    if (report != null) {
+      final selections = _automaticFileSelections(report);
+      _selectedFilesController.text = selections.join('\n');
+      _selectedFilesController.selection = TextSelection.collapsed(
+        offset: _selectedFilesController.text.length,
+      );
+      _selectionNotice =
+          focus == null
+              ? 'Prepared general repository context. Review before building.'
+              : 'Prepared ${selections.length} file${selections.length == 1 ? '' : 's'} for ${focus.area}. Review before building context.';
+    }
+    _invalidateSelectedContext();
   }
 
   @override
@@ -871,7 +984,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         _engineerModelController.text = provider.defaultModel;
       });
     } catch (error) {
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'provider_preference_load_error ${_doctorErrorMessage(error)}',
       );
@@ -887,27 +1000,46 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
     try {
       final paths = _allowedWorkspacePaths();
       final pathCount = paths.length;
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'workspace_scan_start paths=$pathCount',
       );
       final report = await widget.workspaceService.scanLocalRepositories(paths);
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'workspace_scan_ok repos=${report.repositories.length} '
             'hash=${report.reportHashHex}',
       );
       if (!mounted) return;
+      final availableSelections = _fileSelectionsFor(report);
+      final retainedSelections = _selectedFilePaths()
+          .where(availableSelections.contains)
+          .take(AiDeveloperWorkspaceService.maxSelectedFiles)
+          .toList(growable: false);
+      final nextSelections =
+          retainedSelections.isNotEmpty
+              ? retainedSelections
+              : _automaticFileSelections(report);
+      _selectedFilesController.text = nextSelections.join('\n');
+      _selectedFilesController.selection = TextSelection.collapsed(
+        offset: _selectedFilesController.text.length,
+      );
       setState(() {
         _report = report;
         _selectedContext = null;
         _engineerPreview = null;
         _selectedFileRequestCount = null;
         _engineerAnswer = null;
+        _selectionNotice =
+            nextSelections.isEmpty
+                ? null
+                : retainedSelections.isNotEmpty
+                ? 'Retained ${nextSelections.length} exact repository file${nextSelections.length == 1 ? '' : 's'} from the refreshed preview.'
+                : 'Selected ${nextSelections.length} safe preview file${nextSelections.length == 1 ? '' : 's'} automatically. Review before building context.';
       });
     } catch (error) {
       if (!mounted) return;
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'workspace_scan_error ${_doctorErrorMessage(error)}',
       );
@@ -933,7 +1065,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         .toList(growable: false);
     if (selections.isEmpty) {
       const message = 'Select at least one file from scanned repositories';
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'selected_context_error empty_selection',
       );
@@ -948,20 +1080,22 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
     });
     try {
       final selectionCount = selections.length;
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'selected_context_start files=$selectionCount',
       );
       final context = await widget.workspaceService.buildSelectedFileContext(
         report: report,
-        selectedRelativePaths: selections,
+        selectedFilePaths: selections,
       );
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'selected_context_ok requested=$selectionCount '
             'included=${context.snippets.length} '
             'payloadBytes=${context.payloadBytes} '
-            'hash=${context.contextHashHex}',
+            'hash=${context.contextHashHex} '
+            'focus=${widget.focusedFinding?.area ?? 'general'} '
+            'paths=${context.snippets.map((snippet) => snippet.relativePath).join('|')}',
       );
       if (!mounted) return;
       setState(() {
@@ -972,7 +1106,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
       });
     } catch (error) {
       if (!mounted) return;
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'selected_context_error ${_doctorErrorMessage(error)}',
       );
@@ -1001,7 +1135,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
     _pathsController.selection = TextSelection.collapsed(
       offset: _pathsController.text.length,
     );
-    await _uiLog.log(
+    await widget.uiLog.log(
       'hivra_engineer',
       'workspace_path_added paths=${sorted.length}',
     );
@@ -1019,12 +1153,17 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         .toList(growable: false);
   }
 
-  void _addSelectedFile(String relativePath) {
-    _addSuggestedFiles(<String>[relativePath]);
+  void _addSelectedFile(String rootPath, String relativePath) {
+    _addSuggestedFiles(<String>[
+      AiDeveloperWorkspaceService.canonicalSelectionPath(
+        rootPath: rootPath,
+        relativePath: relativePath,
+      ),
+    ]);
   }
 
   void _addSuggestedFiles(Iterable<String> relativePaths) {
-    final previous = _selectedRelativePaths();
+    final previous = _selectedFilePaths();
     final suggested =
         relativePaths
             .map((path) => path.trim())
@@ -1053,7 +1192,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
     });
   }
 
-  List<String> _selectedRelativePaths() {
+  List<String> _selectedFilePaths() {
     return _selectedFilesController.text
         .split(RegExp(r'[\n,]+'))
         .map((path) => path.trim())
@@ -1072,34 +1211,110 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   void _onSelectedFilesChanged(String _) {
     setState(() {
       _selectionNotice =
-          '${_selectedRelativePaths().length}/${AiDeveloperWorkspaceService.maxSelectedFiles} files selected; rebuild context before asking.';
+          '${_selectedFilePaths().length}/${AiDeveloperWorkspaceService.maxSelectedFiles} files selected; rebuild context before asking.';
       _invalidateSelectedContext();
     });
   }
 
-  List<String> _availableRelativePaths() {
+  List<String> _availableFileSelections() {
     final report = _report;
     if (report == null) return const <String>[];
+    return _fileSelectionsFor(report);
+  }
+
+  List<String> _fileSelectionsFor(AiDeveloperWorkspaceReport report) {
     final paths =
         report.repositories
-            .expand((repo) => repo.files)
-            .map((file) => file.relativePath)
+            .expand(
+              (repo) => repo.files.map(
+                (file) => AiDeveloperWorkspaceService.canonicalSelectionPath(
+                  rootPath: repo.rootPath,
+                  relativePath: file.relativePath,
+                ),
+              ),
+            )
             .toSet()
             .toList()
           ..sort();
     return paths;
   }
 
+  List<String> _automaticFileSelections(
+    AiDeveloperWorkspaceReport report,
+  ) {
+    final focus = widget.focusedFinding;
+    if (focus != null) {
+      final focused = widget.workspaceService.suggestFocusedFileSelections(
+        report: report,
+        area: focus.area,
+        title: focus.title,
+      );
+      if (focused.isNotEmpty) return focused;
+    }
+    if (report.repositories.isEmpty) return const <String>[];
+    const primaryMarkers = <String>{
+      'docs/development-control.md',
+      'docs/product-axis.md',
+      'docs/specification.md',
+    };
+    var primaryRepo = report.repositories.first;
+    for (final repo in report.repositories) {
+      if (repo.files.any(
+        (file) => primaryMarkers.contains(file.relativePath),
+      )) {
+        primaryRepo = repo;
+        break;
+      }
+    }
+    const preferredPaths = <String>[
+      'README.md',
+      'docs/development-control.md',
+      'docs/product-axis.md',
+    ];
+    final selected = <String>[];
+    for (final relativePath in preferredPaths) {
+      if (!primaryRepo.files.any((file) => file.relativePath == relativePath)) {
+        continue;
+      }
+      selected.add(
+        AiDeveloperWorkspaceService.canonicalSelectionPath(
+          rootPath: primaryRepo.rootPath,
+          relativePath: relativePath,
+        ),
+      );
+    }
+    for (final file in primaryRepo.files) {
+      if (selected.length >= 3) break;
+      final selection = AiDeveloperWorkspaceService.canonicalSelectionPath(
+        rootPath: primaryRepo.rootPath,
+        relativePath: file.relativePath,
+      );
+      if (!selected.contains(selection)) selected.add(selection);
+    }
+    return selected.take(3).toList(growable: false);
+  }
+
   List<String> _matchingAvailableFiles(Iterable<String> preferredPaths) {
-    final available = _availableRelativePaths().toSet();
-    return preferredPaths
-        .where(available.contains)
+    final report = _report;
+    if (report == null) return const <String>[];
+    final preferred = preferredPaths.toSet();
+    return report.repositories
+        .expand(
+          (repo) => repo.files
+              .where((file) => preferred.contains(file.relativePath))
+              .map(
+                (file) => AiDeveloperWorkspaceService.canonicalSelectionPath(
+                  rootPath: repo.rootPath,
+                  relativePath: file.relativePath,
+                ),
+              ),
+        )
         .take(AiDeveloperWorkspaceService.maxSelectedFiles)
         .toList(growable: false);
   }
 
   List<String> _firstAvailableFiles([int count = 3]) {
-    return _availableRelativePaths().take(count).toList(growable: false);
+    return _availableFileSelections().take(count).toList(growable: false);
   }
 
   bool get _hasEngineerSnippets =>
@@ -1128,8 +1343,9 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         snapshot: widget.snapshot,
         selectedContext: selectedContext,
         question: _engineerQuestionController.text,
+        focus: widget.focusedFinding,
       );
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'preview_ok snippets=${preview.snippetCount} '
             'payloadBytes=${preview.payloadBytes} '
@@ -1140,7 +1356,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         _error = null;
       });
     } catch (error) {
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'preview_error ${_doctorErrorMessage(error)}',
       );
@@ -1167,7 +1383,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
           _engineerModelController.text.trim().isEmpty
               ? _engineerProvider.defaultModel
               : _engineerModelController.text.trim();
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'ask_start provider=${_engineerProvider.id} model=$model '
             'snippets=${selectedContext.snippets.length}',
@@ -1178,8 +1394,9 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         question: _engineerQuestionController.text,
         model: model,
         providerId: _engineerProvider.id,
+        focus: widget.focusedFinding,
       );
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'ask_ok provider=${result.providerId} '
             'model=${result.model} '
@@ -1193,7 +1410,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
       });
     } catch (error) {
       if (!mounted) return;
-      await _uiLog.log(
+      await widget.uiLog.log(
         'hivra_engineer',
         'ask_error ${_doctorErrorMessage(error)}',
       );
@@ -1243,6 +1460,33 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
               'Explicit local repository allowlist. Read-only scan returns file paths, sizes, hashes, and denylist findings; no source contents are uploaded or sent to AI.',
               style: theme.textTheme.bodyMedium,
             ),
+            if (widget.focusedFinding != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Investigation focus · ${widget.focusedFinding!.area}',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(widget.focusedFinding!.title),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Prepared from deterministic local diagnostics. No AI Analyst answer is forwarded.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             TextField(
               controller: _pathsController,
@@ -1280,7 +1524,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
               SelectableText('Workspace ${_report!.reportHashHex}'),
               const SizedBox(height: 8),
               AiDeveloperWorkspaceQuickAddPanel(
-                availableFiles: _availableRelativePaths(),
+                availableFiles: _availableFileSelections(),
                 onAddFiles: _addSuggestedFiles,
                 firstFiles: _firstAvailableFiles(),
                 coreFiles: _matchingAvailableFiles(const <String>[
@@ -1306,7 +1550,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                 maxLines: 6,
                 onChanged: _onSelectedFilesChanged,
                 decoration: const InputDecoration(
-                  labelText: 'Selected relative files for developer context',
+                  labelText: 'Selected repository files for developer context',
                   helperText: 'Maximum 8 files. Build context after selection.',
                   border: OutlineInputBorder(),
                 ),
@@ -1321,6 +1565,13 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                 icon: const Icon(Icons.fact_check),
                 label: const Text('Build selected context preview'),
               ),
+              if (_selectedContext != null) ...[
+                const SizedBox(height: 12),
+                AiDeveloperSelectedContextPanel(
+                  contextData: _selectedContext!,
+                  requestedFileCount: _selectedFileRequestCount,
+                ),
+              ],
               const SizedBox(height: 12),
               ..._report!.repositories.map(
                 (repo) => AiDeveloperWorkspaceRepoTile(
@@ -1330,11 +1581,6 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
               ),
             ],
             if (_selectedContext != null) ...[
-              const SizedBox(height: 12),
-              AiDeveloperSelectedContextPanel(
-                contextData: _selectedContext!,
-                requestedFileCount: _selectedFileRequestCount,
-              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<InferenceProviderKind>(
                 key: ValueKey<String>(
@@ -1368,7 +1614,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                             widget.engineerService
                                 .savePreferredProviderId(provider.id)
                                 .catchError((Object error) {
-                                  return _uiLog.log(
+                                  return widget.uiLog.log(
                                     'hivra_engineer',
                                     'provider_preference_save_error '
                                         '${_doctorErrorMessage(error)}',
@@ -1436,5 +1682,15 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         ),
       ),
     );
+  }
+
+  String _questionForFocus(AiCapsuleInspectionFinding focus) {
+    return 'Investigate the ${focus.area} finding "${focus.title}". '
+        'Identify the canonical owner, likely root cause, missing evidence, and the smallest regression test. Do not propose a parallel path.';
+  }
+
+  String _focusKey(AiCapsuleInspectionFinding? focus) {
+    if (focus == null) return '';
+    return '${focus.severity}|${focus.area}|${focus.title}|${focus.detail}|${focus.recommendedAction}';
   }
 }

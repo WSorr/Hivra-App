@@ -3,13 +3,13 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
-class AiDeveloperWorkspaceFinding {
+class AiDeveloperFinding {
   final String severity;
   final String title;
   final String detail;
   final String recommendedAction;
 
-  const AiDeveloperWorkspaceFinding({
+  const AiDeveloperFinding({
     required this.severity,
     required this.title,
     required this.detail,
@@ -48,7 +48,7 @@ class AiDeveloperWorkspaceSnippet {
 class AiDeveloperWorkspaceSelectedContext {
   final int schemaVersion;
   final List<AiDeveloperWorkspaceSnippet> snippets;
-  final List<AiDeveloperWorkspaceFinding> findings;
+  final List<AiDeveloperFinding> findings;
   final String contextHashHex;
 
   const AiDeveloperWorkspaceSelectedContext({
@@ -104,7 +104,7 @@ class AiDeveloperWorkspaceRepoSummary {
   final int skippedFileCount;
   final int skippedDirectoryCount;
   final List<AiDeveloperWorkspaceFileSummary> files;
-  final List<AiDeveloperWorkspaceFinding> findings;
+  final List<AiDeveloperFinding> findings;
 
   const AiDeveloperWorkspaceRepoSummary({
     required this.rootPath,
@@ -127,15 +127,30 @@ class AiDeveloperWorkspaceReport {
     required this.reportHashHex,
   });
 
-  List<AiDeveloperWorkspaceFinding> get findings =>
+  List<AiDeveloperFinding> get findings =>
       repositories.expand((repo) => repo.findings).toList(growable: false);
 }
 
 class AiDeveloperWorkspaceService {
-  static const int maxFilesPerRepo = 120;
+  static const int maxFilesPerRepo = 512;
   static const int maxFileBytes = 96 * 1024;
   static const int maxSelectedFiles = 8;
   static const int maxSelectedFileBytes = 24 * 1024;
+
+  static String canonicalSelectionPath({
+    required String rootPath,
+    required String relativePath,
+  }) {
+    final normalizedRoot = rootPath
+        .trim()
+        .replaceAll('\\', '/')
+        .replaceFirst(RegExp(r'/+$'), '');
+    final normalizedRelative = relativePath
+        .trim()
+        .replaceAll('\\', '/')
+        .replaceFirst(RegExp(r'^/+'), '');
+    return '$normalizedRoot/$normalizedRelative';
+  }
 
   static const Set<String> _allowedRootFiles = <String>{
     'README.md',
@@ -178,6 +193,64 @@ class AiDeveloperWorkspaceService {
   );
 
   const AiDeveloperWorkspaceService();
+
+  List<String> suggestFocusedFileSelections({
+    required AiDeveloperWorkspaceReport report,
+    required String area,
+    required String title,
+    int maxSelections = 5,
+  }) {
+    if (maxSelections <= 0) return const <String>[];
+    final terms = RegExp(r'[a-z0-9]+')
+        .allMatches('${area.toLowerCase()} ${title.toLowerCase()}')
+        .map((match) => match.group(0)!)
+        .where((term) => term.length >= 4 && term != 'work')
+        .toSet();
+    if (terms.isEmpty) return const <String>[];
+
+    final candidates = <({String selection, String path, int score})>[];
+    for (final repo in report.repositories) {
+      for (final file in repo.files) {
+        if (file.sizeBytes > maxSelectedFileBytes) continue;
+        final score = _focusedPathScore(file.relativePath, terms, area);
+        if (score <= 0) continue;
+        candidates.add((
+          selection: canonicalSelectionPath(
+            rootPath: repo.rootPath,
+            relativePath: file.relativePath,
+          ),
+          path: file.relativePath,
+          score: score,
+        ));
+      }
+    }
+    candidates.sort((left, right) {
+      final scoreOrder = right.score.compareTo(left.score);
+      return scoreOrder != 0 ? scoreOrder : left.path.compareTo(right.path);
+    });
+
+    final selected = <String>[];
+    void addFirst(bool Function(String path) accepts) {
+      for (final candidate in candidates) {
+        if (!accepts(candidate.path) || selected.contains(candidate.selection)) {
+          continue;
+        }
+        selected.add(candidate.selection);
+        return;
+      }
+    }
+
+    addFirst(_isImplementationPath);
+    addFirst(_isTestPath);
+    addFirst(_isContractPath);
+    for (final candidate in candidates) {
+      if (selected.length >= maxSelections) break;
+      if (!selected.contains(candidate.selection)) {
+        selected.add(candidate.selection);
+      }
+    }
+    return selected.take(maxSelections).toList(growable: false)..sort();
+  }
 
   Future<AiDeveloperWorkspaceReport> scanLocalRepositories(
     Iterable<String> rootPaths,
@@ -236,9 +309,9 @@ class AiDeveloperWorkspaceService {
 
   Future<AiDeveloperWorkspaceSelectedContext> buildSelectedFileContext({
     required AiDeveloperWorkspaceReport report,
-    required Iterable<String> selectedRelativePaths,
+    required Iterable<String> selectedFilePaths,
   }) async {
-    final selected = selectedRelativePaths
+    final selected = selectedFilePaths
         .map((path) => path.trim().replaceAll('\\', '/'))
         .where((path) => path.isNotEmpty)
         .toSet()
@@ -254,14 +327,14 @@ class AiDeveloperWorkspaceService {
     }
 
     final snippets = <AiDeveloperWorkspaceSnippet>[];
-    final findings = <AiDeveloperWorkspaceFinding>[];
-    for (final relativePath in selected) {
-      final match = _findScannedFile(report, relativePath);
+    final findings = <AiDeveloperFinding>[];
+    for (final selectedPath in selected) {
+      final match = _findScannedFile(report, selectedPath);
       if (match == null) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file not in workspace preview',
-          detail: relativePath,
+          detail: selectedPath,
           recommendedAction:
               'Run workspace preview again and select only listed files.',
         ));
@@ -270,7 +343,7 @@ class AiDeveloperWorkspaceService {
       final repo = match.$1;
       final fileSummary = match.$2;
       if (_denylistedPathPattern.hasMatch(fileSummary.relativePath)) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'critical',
           title: 'Selected file is denylisted',
           detail: fileSummary.relativePath,
@@ -279,7 +352,7 @@ class AiDeveloperWorkspaceService {
         continue;
       }
       if (fileSummary.sizeBytes > maxSelectedFileBytes) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file is too large for snippets',
           detail:
@@ -290,7 +363,7 @@ class AiDeveloperWorkspaceService {
       }
       final file = File('${repo.rootPath}/${fileSummary.relativePath}');
       if (!await file.exists()) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file no longer exists',
           detail: fileSummary.relativePath,
@@ -301,7 +374,7 @@ class AiDeveloperWorkspaceService {
       final bytes = await file.readAsBytes();
       final actualHash = sha256.convert(bytes).toString();
       if (actualHash != fileSummary.sha256Hex) {
-        findings.add(AiDeveloperWorkspaceFinding(
+        findings.add(AiDeveloperFinding(
           severity: 'warning',
           title: 'Selected file changed after preview',
           detail: fileSummary.relativePath,
@@ -320,7 +393,7 @@ class AiDeveloperWorkspaceService {
       ));
     }
     if (snippets.isNotEmpty) {
-      findings.add(const AiDeveloperWorkspaceFinding(
+      findings.add(const AiDeveloperFinding(
         severity: 'info',
         title: 'Selected source is untrusted prompt input',
         detail:
@@ -362,7 +435,7 @@ class AiDeveloperWorkspaceService {
 
   Future<AiDeveloperWorkspaceRepoSummary> _scanRepo(String rootPath) async {
     final root = Directory(rootPath);
-    final findings = <AiDeveloperWorkspaceFinding>[];
+    final findings = <AiDeveloperFinding>[];
     if (!await root.exists()) {
       return AiDeveloperWorkspaceRepoSummary(
         rootPath: root.absolute.path,
@@ -370,8 +443,8 @@ class AiDeveloperWorkspaceService {
         skippedFileCount: 0,
         skippedDirectoryCount: 0,
         files: const <AiDeveloperWorkspaceFileSummary>[],
-        findings: <AiDeveloperWorkspaceFinding>[
-          AiDeveloperWorkspaceFinding(
+        findings: <AiDeveloperFinding>[
+          AiDeveloperFinding(
             severity: 'critical',
             title: 'Repository path does not exist',
             detail: root.absolute.path,
@@ -386,69 +459,77 @@ class AiDeveloperWorkspaceService {
     var skippedFiles = 0;
     var skippedDirs = 0;
 
-    await for (final entity in root.list(recursive: true, followLinks: false)) {
-      final relativePath = _relativePath(rootAbsolute, entity.absolute.path);
-      if (relativePath == null || relativePath.isEmpty) continue;
-      if (!_isAllowedTopLevel(relativePath)) {
-        if (entity is Directory) skippedDirs++;
-        if (entity is File) skippedFiles++;
-        continue;
-      }
-      if (_hasSkippedDirectory(relativePath)) {
-        if (entity is Directory) skippedDirs++;
-        if (entity is File) skippedFiles++;
-        continue;
-      }
-      if (_denylistedPathPattern.hasMatch(relativePath)) {
-        skippedFiles++;
-        findings.add(AiDeveloperWorkspaceFinding(
-          severity: 'warning',
-          title: 'Denylisted file skipped',
-          detail: relativePath,
-          recommendedAction:
-              'Keep secrets outside AI workspace context and repository commits.',
+    Future<void> scanDirectory(Directory directory) async {
+      final entities = await directory.list(followLinks: false).toList()
+        ..sort((left, right) => left.path.compareTo(right.path));
+      for (final entity in entities) {
+        final relativePath = _relativePath(rootAbsolute, entity.absolute.path);
+        if (relativePath == null || relativePath.isEmpty) continue;
+        if (entity is Link) {
+          skippedFiles++;
+          findings.add(AiDeveloperFinding(
+            severity: 'warning',
+            title: 'Symlink skipped',
+            detail: relativePath,
+            recommendedAction:
+                'Use real files inside the repository when sharing context.',
+          ));
+          continue;
+        }
+        if (entity is Directory) {
+          if (!_isAllowedTopLevel(relativePath) ||
+              _hasSkippedDirectory(relativePath)) {
+            skippedDirs++;
+            continue;
+          }
+          await scanDirectory(entity);
+          continue;
+        }
+        if (entity is! File || !_isAllowedTopLevel(relativePath)) {
+          skippedFiles++;
+          continue;
+        }
+        if (_denylistedPathPattern.hasMatch(relativePath)) {
+          skippedFiles++;
+          findings.add(AiDeveloperFinding(
+            severity: 'warning',
+            title: 'Denylisted file skipped',
+            detail: relativePath,
+            recommendedAction:
+                'Keep secrets outside AI workspace context and repository commits.',
+          ));
+          continue;
+        }
+        if (!_allowedFilePattern.hasMatch(relativePath)) {
+          skippedFiles++;
+          continue;
+        }
+        final sizeBytes = await entity.length();
+        if (sizeBytes > maxFileBytes) {
+          skippedFiles++;
+          findings.add(AiDeveloperFinding(
+            severity: 'info',
+            title: 'Large file skipped',
+            detail: '$relativePath ($sizeBytes bytes)',
+            recommendedAction:
+                'Select smaller focused snippets when developer mode supports excerpts.',
+          ));
+          continue;
+        }
+        if (files.length >= maxFilesPerRepo) {
+          skippedFiles++;
+          continue;
+        }
+        final bytes = await entity.readAsBytes();
+        files.add(AiDeveloperWorkspaceFileSummary(
+          relativePath: relativePath,
+          sizeBytes: sizeBytes,
+          sha256Hex: sha256.convert(bytes).toString(),
         ));
-        continue;
       }
-      if (entity is Link) {
-        skippedFiles++;
-        findings.add(AiDeveloperWorkspaceFinding(
-          severity: 'warning',
-          title: 'Symlink skipped',
-          detail: relativePath,
-          recommendedAction:
-              'Use real files inside the repository when sharing context.',
-        ));
-        continue;
-      }
-      if (entity is! File) continue;
-      if (!_allowedFilePattern.hasMatch(relativePath)) {
-        skippedFiles++;
-        continue;
-      }
-      final sizeBytes = await entity.length();
-      if (sizeBytes > maxFileBytes) {
-        skippedFiles++;
-        findings.add(AiDeveloperWorkspaceFinding(
-          severity: 'info',
-          title: 'Large file skipped',
-          detail: '$relativePath ($sizeBytes bytes)',
-          recommendedAction:
-              'Select smaller focused snippets when developer mode supports excerpts.',
-        ));
-        continue;
-      }
-      if (files.length >= maxFilesPerRepo) {
-        skippedFiles++;
-        continue;
-      }
-      final bytes = await entity.readAsBytes();
-      files.add(AiDeveloperWorkspaceFileSummary(
-        relativePath: relativePath,
-        sizeBytes: sizeBytes,
-        sha256Hex: sha256.convert(bytes).toString(),
-      ));
     }
+
+    await scanDirectory(root);
 
     files
         .sort((left, right) => left.relativePath.compareTo(right.relativePath));
@@ -474,14 +555,63 @@ class AiDeveloperWorkspaceService {
         .any((segment) => _skippedDirs.contains(segment));
   }
 
+  int _focusedPathScore(
+    String relativePath,
+    Set<String> terms,
+    String area,
+  ) {
+    final normalized = relativePath.toLowerCase().replaceAll('-', '_');
+    final basename = normalized.split('/').last;
+    var score = 0;
+    for (final term in terms) {
+      if (basename.contains(term)) score += 6;
+      if (normalized.contains(term)) score += 2;
+    }
+    final normalizedArea = area.toLowerCase().trim();
+    if (normalizedArea.isNotEmpty && normalized.contains(normalizedArea)) {
+      score += 8;
+    }
+    if (_isImplementationPath(relativePath)) score += 2;
+    if (_isTestPath(relativePath)) score += 1;
+    return score;
+  }
+
+  bool _isImplementationPath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    if (_isTestPath(normalized) || _isContractPath(normalized)) return false;
+    return normalized.endsWith('.dart') ||
+        normalized.endsWith('.rs') ||
+        normalized.endsWith('.sh');
+  }
+
+  bool _isTestPath(String path) {
+    final normalized = path.replaceAll('\\', '/').toLowerCase();
+    return normalized.startsWith('test/') ||
+        normalized.startsWith('tests/') ||
+        normalized.contains('/test/') ||
+        normalized.contains('/tests/') ||
+        normalized.endsWith('_test.dart');
+  }
+
+  bool _isContractPath(String path) {
+    final normalized = path.replaceAll('\\', '/').toLowerCase();
+    return normalized.startsWith('docs/') ||
+        normalized.startsWith('checklists/') ||
+        normalized.contains('/checklists/');
+  }
+
   (AiDeveloperWorkspaceRepoSummary, AiDeveloperWorkspaceFileSummary)?
       _findScannedFile(
     AiDeveloperWorkspaceReport report,
-    String relativePath,
+    String selectedPath,
   ) {
     for (final repo in report.repositories) {
       for (final file in repo.files) {
-        if (file.relativePath == relativePath) {
+        if (canonicalSelectionPath(
+              rootPath: repo.rootPath,
+              relativePath: file.relativePath,
+            ) ==
+            selectedPath) {
           return (repo, file);
         }
       }

@@ -5401,7 +5401,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - no dependencies from core/engine/platform back into Flutter provider
       code.
   - Verification:
-    - `flutter test test/ai_doctor_credential_store_test.dart test/ai_doctor_prompt_service_test.dart test/ai_doctor_provider_adapter_test.dart`
+    - `flutter test test/ai_doctor_credential_store_test.dart test/ai_doctor_prompt_service_test.dart test/inference_provider_adapter_test.dart`
     - `flutter test`
     - `flutter analyze`
     - `tools/review/review_all.sh`
@@ -5536,7 +5536,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Hivra Engineer now revalidates selected snippet paths before provider
       submission instead of trusting only the workspace preview layer.
   - Verification:
-    - `flutter test test/ai_developer_engineer_service_test.dart test/ai_developer_workspace_service_test.dart test/ai_doctor_provider_adapter_test.dart`
+    - `flutter test test/ai_developer_engineer_service_test.dart test/ai_developer_workspace_service_test.dart test/inference_provider_adapter_test.dart`
     - `flutter analyze`
     - `tools/review/review_all.sh`
   - Status: completed (2026-07-06).

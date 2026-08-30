@@ -189,7 +189,7 @@ AiDeveloperWorkspaceSelectedContext _selectedPluginSourceContext({
       _snippet('plugins/demo/src/lib.rs', runtimeText),
       _snippet('catalog/plugin_catalog.json', catalogText),
     ],
-    findings: const <AiDeveloperWorkspaceFinding>[],
+    findings: const <AiDeveloperFinding>[],
     contextHashHex: 'source-context',
   );
 }

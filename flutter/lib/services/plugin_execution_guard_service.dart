@@ -30,7 +30,7 @@ class PluginExecutionGuardService {
   }) : _consensus = consensus;
 
   PluginExecutionGuardSnapshot inspectHostReadiness() {
-    final checks = _consensus.checks();
+    final checks = _consensus.preview();
     if (checks.isEmpty) {
       return const PluginExecutionGuardSnapshot(
         state: ConsensusGuardState.pending,

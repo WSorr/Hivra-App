@@ -78,10 +78,9 @@ adapter_import_files="$({
 
 check_bounded_files \
   "legacy direct inference-adapter imports" \
-  3 \
+  2 \
   "$adapter_import_files" \
   flutter/lib/services/ai_doctor_credential_store.dart \
-  flutter/lib/services/ai_doctor_provider_adapter.dart \
   flutter/lib/services/capsule_ai_runtime_service.dart
 
 credential_reader_files="$({

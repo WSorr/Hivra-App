@@ -54,7 +54,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
     });
 
     try {
-      _module.stateManager.refreshWithFullState();
+      _module.stateManager.refresh();
       final state = _module.stateManager.state;
       final ownerKey = state.publicKey.length == 32
           ? HivraIdFormat.formatCapsuleKeyBytes(state.publicKey)

@@ -9,28 +9,6 @@ typedef RootKeyReader = Uint8List? Function();
 typedef PairViewProjector =
     String? Function(String ledgerJson, Uint8List? localTransportKey);
 
-class ConsensusCheck {
-  final String peerHex;
-  final String peerLabel;
-  final int invitationCount;
-  final int relationshipCount;
-  final String hashHex;
-  final String canonicalJson;
-  final bool isSignable;
-  final List<ConsensusBlockingFact> blockingFacts;
-
-  const ConsensusCheck({
-    required this.peerHex,
-    required this.peerLabel,
-    required this.invitationCount,
-    required this.relationshipCount,
-    required this.hashHex,
-    required this.canonicalJson,
-    required this.isSignable,
-    required this.blockingFacts,
-  });
-}
-
 class ConsensusRuntimeService {
   final LedgerExporter _exportLedger;
   final TransportKeyReader _readLocalTransportKey;
@@ -57,26 +35,6 @@ class ConsensusRuntimeService {
     final inputs = _runtimeInputs();
     if (inputs == null) return const <ConsensusPreview>[];
     return _processor.preview(inputs.pairViewJson);
-  }
-
-  List<ConsensusCheck> checks() {
-    final inputs = _runtimeInputs();
-    if (inputs == null) return const <ConsensusCheck>[];
-    final previews = _processor.preview(inputs.pairViewJson);
-    return previews
-        .map((preview) {
-          return ConsensusCheck(
-            peerHex: preview.peerHex,
-            peerLabel: preview.peerLabel,
-            invitationCount: preview.invitationCount,
-            relationshipCount: preview.relationshipCount,
-            hashHex: preview.hashHex,
-            canonicalJson: preview.canonicalJson,
-            isSignable: preview.isSignable,
-            blockingFacts: preview.blockingFacts,
-          );
-        })
-        .toList(growable: false);
   }
 
   ConsensusSignableResult signable(String peerHex) {

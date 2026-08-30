@@ -118,7 +118,7 @@ class AiDeveloperSelectedContextPanel extends StatelessWidget {
 
 class AiDeveloperWorkspaceRepoTile extends StatelessWidget {
   final AiDeveloperWorkspaceRepoSummary repo;
-  final ValueChanged<String> onAddFile;
+  final void Function(String rootPath, String relativePath) onAddFile;
 
   const AiDeveloperWorkspaceRepoTile({
     super.key,
@@ -145,7 +145,7 @@ class AiDeveloperWorkspaceRepoTile extends StatelessWidget {
                   '${file.sizeBytes} bytes · ${file.sha256Hex}',
                 ),
                 trailing: TextButton.icon(
-                  onPressed: () => onAddFile(file.relativePath),
+                  onPressed: () => onAddFile(repo.rootPath, file.relativePath),
                   icon: const Icon(Icons.add),
                   label: const Text('Add'),
                 ),
@@ -216,7 +216,7 @@ class AiDeveloperWorkspaceQuickAddPanel extends StatelessWidget {
           Text('Quick add context files', style: theme.textTheme.titleSmall),
           const SizedBox(height: 6),
           Text(
-            'Pick files before building selected context. Nothing is sent to AI until you press Ask Hivra Engineer.',
+            'Safe preview files are selected automatically. Review or extend the list before building context; nothing is sent to AI until you press Ask Hivra Engineer.',
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 8),

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/consensus_models.dart';
 import '../models/invitation.dart';
 import 'consensus_runtime_service.dart';
 import 'capsule_diagnostics_service.dart';
@@ -128,7 +129,7 @@ class AiCapsuleInspectionService {
     final capsuleSnapshot = _ledgerView.loadCapsuleSnapshot();
     final invitations = _ledgerView.loadInvitations();
     final relationshipGroups = _ledgerView.loadRelationshipGroups();
-    final consensusChecks = _consensus.checks();
+    final consensusChecks = _consensus.preview();
     final diagnosticsReport = await _tryDiagnosticsReport();
     final bootstrapReport = diagnosticsReport.bootstrap;
     final traceReport = diagnosticsReport.trace;
@@ -427,7 +428,7 @@ class AiCapsuleInspectionService {
     };
   }
 
-  Map<String, dynamic> _consensusSummary(List<ConsensusCheck> checks) {
+  Map<String, dynamic> _consensusSummary(List<ConsensusPreview> checks) {
     final blocked = checks.where((check) => !check.isSignable).toList();
     final blockingCodes =
         blocked

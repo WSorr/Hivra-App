@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hivra_app/services/ai_doctor_provider_adapter.dart';
+import 'package:hivra_app/services/inference_provider_adapter.dart';
 
 void main() {
-  group('OpenAiResponsesDoctorProviderAdapter', () {
+  group('OpenAiResponsesInferenceProviderAdapter', () {
     test('extracts direct output text', () {
-      final text = OpenAiResponsesDoctorProviderAdapter.extractOutputText(
+      final text = OpenAiResponsesInferenceProviderAdapter.extractOutputText(
         <String, dynamic>{
           'output_text': 'Check transport outbox first.',
         },
@@ -14,7 +14,7 @@ void main() {
     });
 
     test('extracts nested response content text', () {
-      final text = OpenAiResponsesDoctorProviderAdapter.extractOutputText(
+      final text = OpenAiResponsesInferenceProviderAdapter.extractOutputText(
         <String, dynamic>{
           'output': <Map<String, dynamic>>[
             <String, dynamic>{
@@ -37,7 +37,7 @@ void main() {
     });
 
     test('rejects malformed response without text', () {
-      final text = OpenAiResponsesDoctorProviderAdapter.extractOutputText(
+      final text = OpenAiResponsesInferenceProviderAdapter.extractOutputText(
         <String, dynamic>{
           'output': <Object?>[],
         },
@@ -48,7 +48,7 @@ void main() {
 
     test('formats quota errors for users', () {
       final message =
-          OpenAiResponsesDoctorProviderAdapter.friendlyErrorMessageForTest(
+          OpenAiResponsesInferenceProviderAdapter.friendlyErrorMessageForTest(
         <String, dynamic>{
           'error': <String, dynamic>{
             'message':
