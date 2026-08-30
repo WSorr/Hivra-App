@@ -2,49 +2,21 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../models/plugin_contract_ids.dart';
 import '../models/wasm_plugin_models.dart';
-import '../services/app_runtime_service.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../services/wasm_plugin_runtime_service.dart';
-import 'capsule_chat_plugin_screen.dart';
-import 'moltbook_ambassador_screen.dart';
-import 'trading_drone_screen.dart';
-
-@visibleForTesting
-String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
-  if (record.packageKind.trim().toLowerCase() != 'zip' ||
-      record.runtimeAbi?.trim() !=
-          WasmPluginRuntimeService.requiredRuntimeAbi ||
-      record.runtimeEntryExport?.trim() !=
-          WasmPluginRuntimeService.requiredEntryExport ||
-      (record.runtimeModulePath?.trim().isEmpty ?? true)) {
-    return null;
-  }
-
-  final pluginId = record.pluginId?.trim();
-  final contractKind = record.contractKind?.trim();
-  return switch ((pluginId, contractKind)) {
-    (capsuleChatPluginId, capsuleChatContractKind) => capsuleChatContractKind,
-    (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind) =>
-      moltbookAmbassadorContractKind,
-    (bingxFuturesTradingPluginId, bingxFuturesContractKind) =>
-      bingxFuturesContractKind,
-    _ => null,
-  };
-}
 
 class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
-  final AppRuntimeService? runtime;
-  final VoidCallback? onChatUnreadChanged;
+  final PluginRuntimeModule module;
+  final VoidCallback? Function(WasmPluginRecord record) onOpenWorkspacePressed;
 
   const WasmPluginsScreen({
     super.key,
     this.embedded = false,
-    this.runtime,
-    this.onChatUnreadChanged,
+    required this.module,
+    required this.onOpenWorkspacePressed,
   });
 
   @override
@@ -88,10 +60,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   void initState() {
     super.initState();
-    _module =
-        PluginRuntimeModuleService(
-          runtime: widget.runtime ?? AppRuntimeService(),
-        ).build();
+    _module = widget.module;
     _reload();
     _reloadSourceCatalog();
   }
@@ -343,41 +312,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       installed: _installed,
                       onInstallPressed: _installPlugin,
                       onRemovePressed: _removePlugin,
-                      onOpenWorkspacePressed: (record) {
-                        switch (installedPluginWorkspaceContractKind(record)) {
-                          case bingxFuturesContractKind:
-                            return () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder:
-                                    (_) => TradingDroneScreen(
-                                      runtime: widget.runtime,
-                                    ),
-                              ),
-                            );
-                          case capsuleChatContractKind:
-                            return () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder:
-                                    (_) => CapsuleChatPluginScreen(
-                                      module: _module,
-                                      onUnreadChanged:
-                                          widget.onChatUnreadChanged,
-                                    ),
-                              ),
-                            );
-                          case moltbookAmbassadorContractKind:
-                            return () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder:
-                                    (_) => MoltbookAmbassadorScreen(
-                                      module: _module.moltbook,
-                                    ),
-                              ),
-                            );
-                          default:
-                            return null;
-                        }
-                      },
+                      onOpenWorkspacePressed: widget.onOpenWorkspacePressed,
                     ),
                     const SizedBox(height: 16),
                     _SourceCatalogSection(

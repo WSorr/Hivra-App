@@ -518,17 +518,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await _notifyLedgerChanged();
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.extension),
-                title: const Text('WASM plugins'),
-                subtitle: const Text(
-                  'Install and inspect sandboxed drone packages',
-                ),
-                onTap: () async {
-                  await Navigator.pushNamed(context, '/wasm_plugins');
-                  await _notifyLedgerChanged();
-                },
-              ),
             ],
           ),
           if (Theme.of(context).platform == TargetPlatform.android) ...[

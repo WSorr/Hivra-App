@@ -16,6 +16,8 @@ The following product foundations are implemented and retained:
   acknowledged ingress handling;
 - sandboxed, signed, digest-bound WASM package installation;
 - manifest-bound plugin workspace activation without a direct product bypass;
+- one App Shell workspace navigation path with the legacy Settings route
+  removed;
 - shared external-effect and Capsule AI Runtime boundaries;
 - Chat delivery across macOS and Android;
 - Chat capability workspace ownership with host-owned Pair Consensus,
@@ -39,7 +41,9 @@ and WASM sandbox. Product logic is still compiled into Flutter, while installed
 manifest profiles now control which product workspace can be opened.
 
 The remaining migration direction is a thin App Shell over the proven Person
-Runtime API. Chat, Moltbook, and Trading capability ownership are complete.
+Runtime API. Chat, Moltbook, and Trading capability ownership are complete, and
+workspace navigation now has one App Shell owner without a duplicate Settings
+entry or plugin-screen runtime composition path.
 
 Every migration must remove or seal the host path it replaces. V2 does not
 receive a duplicated runtime.
