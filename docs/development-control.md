@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-08-30
+Status date: 2026-08-31
 
 ## Current State
 
@@ -43,7 +43,10 @@ consensus guard before the existing delivery owner can send or acknowledge
 anything.
 
 Moltbook owns its observation, AI proposal, publication, receipt,
-reconciliation, and restart lifecycle in one capability module. Trading now
+reconciliation, and restart lifecycle in one capability module. New Moltbook
+configurations default to one foreground session catch-up; leaving the active
+Capsule runtime stops that trigger and clears its process-scoped AI unlock.
+Existing saved trigger choices remain unchanged. Trading now
 prepares pending liquidity-zone intents through one Capsule-local cycle and
 reuses the accepted execution, reconciliation, and Remote Runner owners. The
 former peer-selected intent route, Chat signal inbox, and Trading-side Pair
