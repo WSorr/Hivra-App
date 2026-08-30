@@ -72,11 +72,6 @@ class CapsuleStateManager {
     _currentState = _loadState();
   }
 
-  // Will be used by our new FFI function
-  void refreshWithFullState() {
-    refresh();
-  }
-
   CapsuleState _loadState() {
     final snapshot = _ledgerView.loadCapsuleSnapshot();
     return CapsuleState(

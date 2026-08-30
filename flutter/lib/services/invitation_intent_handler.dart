@@ -637,7 +637,7 @@ class InvitationIntentHandler {
   int _rejectReasonForInvitation(Invitation invitation) {
     final manager = _stateManager;
     if (manager == null) return 1;
-    manager.refreshWithFullState();
+    manager.refresh();
     final state = manager.state;
     final hasEmptySlot = state.starterSlots.any((slot) => !slot.occupied);
     return hasEmptySlot ? 0 : 1;
@@ -650,7 +650,7 @@ class InvitationIntentHandler {
     }
     final manager = _stateManager;
     if (manager == null) return 'unknown';
-    manager.refreshWithFullState();
+    manager.refresh();
     final bytes = manager.state.publicKey;
     if (bytes.isEmpty) return 'unknown';
     return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();

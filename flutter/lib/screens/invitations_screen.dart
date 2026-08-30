@@ -702,7 +702,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   String _buildRejectDiagnostics(Invitation invitation) {
-    widget.runtime.stateManager.refreshWithFullState();
+    widget.runtime.stateManager.refresh();
     final state = widget.runtime.stateManager.state;
     final matchingSlots = state.starterSlots
         .asMap()
@@ -833,7 +833,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     final controller = TextEditingController();
     final contacts = await _module.addressBook.listInvitationRecipients();
     if (!mounted) return;
-    widget.runtime.stateManager.refreshWithFullState();
+    widget.runtime.stateManager.refresh();
     final state = widget.runtime.stateManager.state;
     final lockedSlots = state.lockedStarterSlots;
     final availableSlots = <int>[
@@ -1069,7 +1069,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   List<Widget> _lockedSlotRows(Set<int> lockedSlots) {
-    widget.runtime.stateManager.refreshWithFullState();
+    widget.runtime.stateManager.refresh();
     final state = widget.runtime.stateManager.state;
     return lockedSlots.map((slot) {
       final kind =

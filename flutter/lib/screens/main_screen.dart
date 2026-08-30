@@ -298,7 +298,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   void _loadCapsuleData({bool refreshInvitationsProjection = false}) {
-    _stateManager.refreshWithFullState();
+    _stateManager.refresh();
     final state = _stateManager.state;
     final runtimeRootKey = _runtime.capsuleRootPublicKey();
     final runtimeRootHex =
