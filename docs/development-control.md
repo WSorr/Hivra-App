@@ -1,20 +1,16 @@
 # Hivra Development Control
 
-Status date: 2026-08-29
+Status date: 2026-08-30
 Current published test prerelease: commit `9cd70cc` (`v1.0.3-test18`). Its
 macOS and Android assets have exact-byte manual signoff. The invalid `test17`
 evidence remains historical and cannot be reused or replaced under the old
 tag.
 
-Current selected unit: none. `1.x Trading Remote Runner Product Acceptance
-Remediation` completed at `b88a886`. One bounded live order retained one
-provider receipt and restored exactly that managed effect after packaged-app
-restart without duplication. The atomic bundle upgrade now produces one
-DynamicUser-traversable runtime, while successful deployment output is reduced
-to one bounded UI notice. Exact merge-SHA disabled upgrade evidence preserved
-all Runner state, left both units inactive with no boot links, and kept the
-pre-recorded co-hosted workload and listener baselines unchanged. No following
-implementation unit is selected.
+Current selected unit: none. Capsule Analyst is the sole in-app diagnostic AI
+surface. Experimental Developer Mode, repository scan/cache, Hivra Engineer,
+patch/scaffold preview, and AI review-gate prototypes are removed. The installed
+Plugin Auditor remains read-only. Trading Remote Runner product acceptance
+remains complete at `b88a886`. No following implementation unit is selected.
 
 No multi-account Runner on one VPS, second scheduler/effect route, new exchange
 endpoint, Core/Ledger change, plugin ABI change, release, or Hivra 2.0 runtime
@@ -43,7 +39,7 @@ then open only the contract and tests for the selected product outcome.
 | **1.x release** | `v1.0.3-test18` published; `test17` exact-byte evidence remains invalid | The published macOS and Android assets are bound to exact SHA-256 manual signoff. | Packaged smoke, guarded tag, and prerelease publication are complete. | No later release candidate is selected. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
-| **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
+| **Capsule AI Runtime** | Analyst simplification complete | Capsule Analyst, installed Plugin Auditor, one credential owner, and one process lease remain; repository engineering paths are removed. | No second credential owner or new developer surface is selected. |
 | **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, further Moltbook authority, user-facing Storage & Recovery observability, and profile-scoped multi-account Runner isolation remain unselected. | Each requires its own approved contract and capability-closure decision. |
 
 ### Quarantined 1.x cleanup evidence

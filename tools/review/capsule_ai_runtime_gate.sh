@@ -115,14 +115,6 @@ else
 fi
 
 if rg -q \
-  "ai_doctor_credential_store\.dart|inference_provider_adapter\.dart|inferenceProviderAdapterFor|loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(" \
-  flutter/lib/services/ai_developer_engineer_service.dart; then
-  fail "Developer Engineer must remain behind Capsule AI Runtime"
-else
-  pass "Developer Engineer remains behind Capsule AI Runtime"
-fi
-
-if rg -q \
   "ai_doctor_credential_store\.dart|inference_provider_adapter\.dart|InferenceProviderResponse|inferenceProviderAdapterFor|loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(" \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart; then
   fail "Moltbook AI must remain behind Capsule AI Runtime"

@@ -170,7 +170,7 @@ one protected credential read after configuration migration; a legacy
 Keychain-stored provider id is read once and then removed without enumerating
 unrelated Keychain records.
 
-- The lease may be reused by Capsule Analyst, Developer Mode, and authorized
+- The lease may be reused by Capsule Analyst and authorized
   drones while the app process remains open.
 - Every request is still bound to its originating Capsule and capability.
 - Switching Capsules cannot transfer request context or a late proposal.
@@ -216,8 +216,9 @@ budget, and revocation evidence.
 
 ## 9. 1.x Convergence
 
-The existing 1.x implementation grew as separate Capsule Analyst, Developer
-Mode, history-advisor, and Moltbook AI services. The safe convergence path is:
+The 1.x implementation grew as separate Capsule Analyst, history-advisor, and
+Moltbook AI services; its experimental Developer Mode was removed rather than
+promoted into another runtime surface. The convergence path is:
 
 1. one process-scoped credential/session owner;
 2. one provider-independent inference request port;
@@ -232,8 +233,8 @@ callable paths or duplicated ownership and preserve current release behavior.
 
 ### 9.1 AI-0 Inventory Baseline
 
-AI-0 registered four legacy feature-owned dispatch paths: Capsule Analyst,
-Developer Engineer, history advisor, and Moltbook. The only allowed
+AI-0 registered the feature-owned dispatch paths for Capsule Analyst, history
+advisor, and Moltbook. The only allowed
 composition access to the shared process lease remains
 `AiToolingModuleService` and `PluginRuntimeModuleService`.
 
@@ -256,20 +257,11 @@ advisory proposal semantics. Its direct credential and adapter imports are
 deleted, and the executable gate rejects their return. No Core, FFI, truth, or
 effect path changed.
 
-### 9.3 AI-2 Developer Engineer Checkpoint
+### 9.3 AI-2 Developer Engineer Removal
 
-AI-2 routes `AiDeveloperEngineerService` through the same
-`CapsuleAiRuntimeService`. Developer Engineer retains selected-context
-construction, path denylisting, redaction constraints, payload preview, and
-advisory proposal semantics. The runtime now binds explicit provider and model
-selection into request identity, owns temporary session unlock, validates exact
-provider/model response evidence, and keeps persistent preference separate from
-the process session.
-
-The feature's direct credential, provider-adapter, provider DTO, and dispatch
-access are deleted and gated against return. Its existing provider/model UI
-remains available through semantic ids; no Core, FFI, repository-write, patch,
-git, release, truth, or effect authority was added.
+The experimental Developer Engineer, repository workspace/cache, plugin
+scaffold, patch preview, and AI review-gate paths are removed from Hivra 1.x.
+Capsule Analyst exposes no repository context or code-modification surface.
 
 ### 9.4 AI-3 Capsule Analyst Checkpoint
 

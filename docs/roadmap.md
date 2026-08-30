@@ -76,8 +76,8 @@ Current 2.0 program:
 Capsule AI Runtime is a named cross-version architecture program governed by
 `docs/architecture/capsule-ai-runtime.md`:
 
-- 1.x incrementally consolidates existing Capsule Analyst, Developer Mode,
-  history-advisor, and drone inference behind one process session owner and one
+- 1.x consolidates Capsule Analyst, history-advisor, and drone inference behind
+  one process session owner and one
   provider-independent request port;
 - each 1.x migration must delete or seal the replaced feature-local credential,
   provider-dispatch, disclosure, or scheduling path;
@@ -5626,7 +5626,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       Auditor, Developer Mode boundary, Workspace Preview, Selected Context,
       and Hivra Engineer Advisory Ask.
     - Android smoke remains a separate release pass after macOS is stable.
-    - added `docs/checklists/ai-engineer-release-smoke.md`.
+    - added an AI engineering smoke checklist, since consolidated into
+      `docs/checklists/capsule-analyst-release-smoke.md`.
     - macOS release checklist now requires AI Engineer smoke completion.
     - release discipline gate now enforces the AI Engineer smoke checklist
       exists and covers the required surfaces.

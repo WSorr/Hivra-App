@@ -56,7 +56,7 @@ CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
 CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
 CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
 CHECKLIST_USER_LIFETIME="$ROOT/docs/checklists/user-lifetime-safety-pack.md"
-CHECKLIST_AI_ENGINEER_SMOKE="$ROOT/docs/checklists/ai-engineer-release-smoke.md"
+CHECKLIST_CAPSULE_ANALYST_SMOKE="$ROOT/docs/checklists/capsule-analyst-release-smoke.md"
 CHECKLIST_MOLTBOOK_SMOKE="$ROOT/docs/checklists/moltbook-release-smoke.md"
 CHECKLIST_MANUAL_SIGNOFF="$ROOT/docs/checklists/release-manual-signoff-log.md"
 CHECKLIST_DRONE_PARITY="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
@@ -86,7 +86,7 @@ require_file "$CHECKLIST_ANDROID" "Android release checklist exists"
 require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist exists"
 require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
 require_file "$CHECKLIST_USER_LIFETIME" "user lifetime safety checklist exists"
-require_file "$CHECKLIST_AI_ENGINEER_SMOKE" "AI Engineer release smoke checklist exists"
+require_file "$CHECKLIST_CAPSULE_ANALYST_SMOKE" "Capsule Analyst release smoke checklist exists"
 require_file "$CHECKLIST_MOLTBOOK_SMOKE" "Moltbook release smoke checklist exists"
 require_file "$CHECKLIST_MANUAL_SIGNOFF" "manual release signoff log exists"
 require_file "$CHECKLIST_DRONE_PARITY" "trading drone spec/runtime parity checklist exists"
@@ -166,8 +166,8 @@ require_present "$CHECKLIST_MAC" 'Trading Drone smoke gate completed' \
   "macOS checklist requires trading drone smoke gate"
 require_present "$CHECKLIST_MAC" 'Trading drone spec/runtime parity checklist was completed' \
   "macOS checklist requires drone spec/runtime parity completion"
-require_present "$CHECKLIST_MAC" 'AI Engineer release smoke checklist was completed' \
-  "macOS checklist requires AI Engineer smoke completion"
+require_present "$CHECKLIST_MAC" 'Capsule Analyst release smoke checklist was completed' \
+  "macOS checklist requires Capsule Analyst smoke completion"
 require_present "$CHECKLIST_MAC" 'Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log\.md`' \
   "macOS checklist requires trading drone evidence log row"
 require_present "$CHECKLIST_MAC" 'tools/release/record_trading_drone_evidence\.sh' \
@@ -348,10 +348,12 @@ require_present "$CHECKLIST_DRONE_EVIDENCE" 'tools/release/check_trading_drone_e
   "drone evidence log includes coverage verification command"
 require_present "$CHECKLIST_DRONE_EVIDENCE" 'release approval is recorded separately' \
   "drone evidence log cannot replace manual release signoff"
-require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Platform \| Artifact \| Artifact SHA-256 \| Manual Smoke \| Trading Smoke \| Moltbook Smoke \| User Lifetime \| AI Engineer \| Signer \| Notes \|' \
+require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Platform \| Artifact \| Artifact SHA-256 \| Manual Smoke \| Trading Smoke \| Moltbook Smoke \| User Lifetime \| AI Surface \| Signer \| Notes \|' \
   "manual signoff log includes required table columns"
 require_present "$MANUAL_SIGNOFF_CHECK" 'Moltbook Smoke must be PASS' \
   "manual signoff checker requires Moltbook smoke"
+require_present "$MANUAL_SIGNOFF_CHECK" 'macOS Capsule Analyst smoke must be PASS' \
+  "manual signoff checker requires Capsule Analyst smoke"
 require_present "$DRONE_EVIDENCE_CHECK" 'hash_pattern = re\.compile\(r"\^\[0-9a-f\]\{64\}\$"\)' \
   "drone evidence checker requires canonical lowercase 64-hex hashes"
 require_present "$DRONE_EVIDENCE_CHECK" 'trading_drone_evidence_fixture\.json' \
@@ -397,26 +399,14 @@ require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 4: Update Truth Preservatio
   "user lifetime checklist covers update safety"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 5: Long-Pending Invitation Stability' \
   "user lifetime checklist covers pending stability"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Capsule Analyst opens from Settings' \
-  "AI Engineer smoke covers Capsule Analyst entry"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Outbound preview is shown before provider submission' \
-  "AI Engineer smoke covers scoped AI preview"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Last selected inference provider persists across Capsule Analyst and' \
-  "AI Engineer smoke covers provider preference persistence"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Installed plugin package audit renders package digest' \
-  "AI Engineer smoke covers Plugin Auditor evidence"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Developer Mode is disabled by default' \
-  "AI Engineer smoke covers Developer Mode boundary"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Workspace preview scans only explicit local repository paths' \
-  "AI Engineer smoke covers Workspace Preview"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Selected Context includes only user-selected allowlisted files' \
-  "AI Engineer smoke covers Selected Context"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Hivra Engineer outbound preview shows capsule snapshot hash' \
-  "AI Engineer smoke covers Hivra Engineer outbound preview"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Preview/Ask Hivra Engineer stays disabled until selected context has at' \
-  "AI Engineer smoke covers empty selected-context guard"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'AI advisory output is marked unverified until required gates are run' \
-  "AI Engineer smoke covers Review Gate integration"
+require_present "$CHECKLIST_CAPSULE_ANALYST_SMOKE" 'Capsule Analyst opens from Settings' \
+  "Capsule Analyst smoke covers its Settings entry"
+require_present "$CHECKLIST_CAPSULE_ANALYST_SMOKE" 'No repository, patch, scaffold, or developer controls are present' \
+  "Capsule Analyst smoke seals the removed developer surface"
+require_present "$CHECKLIST_CAPSULE_ANALYST_SMOKE" 'Outbound preview is shown before provider submission' \
+  "Capsule Analyst smoke covers scoped AI preview"
+require_present "$CHECKLIST_CAPSULE_ANALYST_SMOKE" 'Installed package audit renders package digest' \
+  "Capsule Analyst smoke covers installed Plugin Auditor evidence"
 
 require_present "$PRECHECK" 'tools/review/review_all\.sh' \
   "preflight executes review_all"
