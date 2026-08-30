@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
-import 'package:hivra_app/screens/wasm_plugins_screen.dart';
+import 'package:hivra_app/screens/main_screen.dart';
 
 void main() {
   test('installed manifest profiles select the canonical workspace', () {

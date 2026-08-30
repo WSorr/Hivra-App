@@ -7,9 +7,10 @@ Status date: 2026-08-30
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
   artifacts have manual signoff.
-- Current source baseline: manifest-bound plugin workspaces with Chat UI,
-  Moltbook lifecycle, and the local Trading intent route assigned to dedicated
-  capability owners; Capsule Analyst is the sole in-app diagnostic AI surface.
+- Current source baseline: manifest-bound plugin workspaces opened through one
+  App Shell navigation path, with Chat UI, Moltbook lifecycle, and the local
+  Trading intent route assigned to dedicated capability owners; Capsule
+  Analyst is the sole in-app diagnostic AI surface.
 - Trading Remote Runner acceptance remains complete at `b88a886`.
 - Hivra 2.0 remains design-only. No 2.0 runtime or UI implementation is
   authorized.
@@ -29,24 +30,28 @@ Core + Ledger
   -> thin App Shell
 ```
 
-Plugin workspaces are now activated by the installed package's exact manifest
-profile rather than product-id routing. The direct Trading workspace route was
-removed, so a workspace cannot bypass package installation.
+Plugin workspaces are activated by the installed package's exact manifest
+profile rather than product-id routing. The App Shell owns the single workspace
+navigation decision; the generic Plugins screen owns package/catalog UI and
+cannot construct product screens or a second runtime module. The direct
+Trading route and the legacy Settings plugin route are sealed, so a workspace
+cannot bypass package installation.
 
 Chat remains pair-consensus-bound: the capability screen calls the existing
 runtime module, which ensures attestation and passes through the canonical host
 consensus guard before the existing delivery owner can send or acknowledge
-anything. The generic Plugins screen only composes navigation.
+anything.
 
 Moltbook owns its observation, AI proposal, publication, receipt,
 reconciliation, and restart lifecycle in one capability module. Trading now
 prepares pending liquidity-zone intents through one Capsule-local cycle and
 reuses the accepted execution, reconciliation, and Remote Runner owners. The
 former peer-selected intent route, Chat signal inbox, and Trading-side Pair
-Consensus dependencies are removed. The next convergence boundary is the thin
-App Shell; it must not duplicate capability UI or runtime ownership. A plugin
-ABI change, universal agent runtime, new Core fact, V2 UI, release, VPS
-mutation, or live financial effect requires a separate decision.
+Consensus dependencies are removed. The thin App Shell navigation boundary is
+closed without duplicating capability UI or runtime ownership. No next runtime
+unit is selected. A plugin ABI change, universal agent runtime, new Core fact,
+V2 UI, release, VPS mutation, or live financial effect requires a separate
+decision.
 
 ## Authority
 

@@ -12,13 +12,43 @@ import '../services/main_screen_module_service.dart';
 import '../services/transport_health_policy_service.dart';
 import '../services/ui_feedback_service.dart';
 import '../services/ui_event_log_service.dart';
+import '../services/plugin_runtime_module_service.dart';
+import '../services/wasm_plugin_runtime_service.dart';
 import '../models/invitation.dart';
+import '../models/plugin_contract_ids.dart';
+import '../models/wasm_plugin_models.dart';
 import 'starters_screen.dart';
 import 'capsule_history_screen.dart';
+import 'capsule_chat_plugin_screen.dart';
 import 'invitations_screen.dart';
+import 'moltbook_ambassador_screen.dart';
 import 'relationships_screen.dart';
 import 'settings_screen.dart';
+import 'trading_drone_screen.dart';
 import 'wasm_plugins_screen.dart';
+
+@visibleForTesting
+String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
+  if (record.packageKind.trim().toLowerCase() != 'zip' ||
+      record.runtimeAbi?.trim() !=
+          WasmPluginRuntimeService.requiredRuntimeAbi ||
+      record.runtimeEntryExport?.trim() !=
+          WasmPluginRuntimeService.requiredEntryExport ||
+      (record.runtimeModulePath?.trim().isEmpty ?? true)) {
+    return null;
+  }
+
+  final pluginId = record.pluginId?.trim();
+  final contractKind = record.contractKind?.trim();
+  return switch ((pluginId, contractKind)) {
+    (capsuleChatPluginId, capsuleChatContractKind) => capsuleChatContractKind,
+    (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind) =>
+      moltbookAmbassadorContractKind,
+    (bingxFuturesTradingPluginId, bingxFuturesContractKind) =>
+      bingxFuturesContractKind,
+    _ => null,
+  };
+}
 
 @visibleForTesting
 Widget chatUnreadNavigationIcon(int unreadCount) {
@@ -46,6 +76,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final AppRuntimeService _runtime = AppRuntimeService();
   final UiEventLogService _uiLog = const UiEventLogService();
   late final MainScreenModule _module;
+  PluginRuntimeModule? _pluginRuntimeModule;
   late final CapsuleStateManager _stateManager;
   late final InvitationIntentHandler _invitationIntents;
   late final CapsulePassiveReceiveCoordinator _passiveReceive;
@@ -99,6 +130,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _listenConnectivityChanges();
     Future.microtask(_bootstrapActiveRuntime);
   }
+
+  PluginRuntimeModule get _pluginRuntime =>
+      _pluginRuntimeModule ??=
+          PluginRuntimeModuleService(runtime: _runtime).build();
 
   @override
   void dispose() {
@@ -511,8 +546,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return WasmPluginsScreen(
           key: ValueKey('plugins-$_activeCapsuleHex-$_ledgerVersion'),
           embedded: true,
-          runtime: _runtime,
-          onChatUnreadChanged: _refreshChatUnreadCount,
+          module: _pluginRuntime,
+          onOpenWorkspacePressed: _installedPluginWorkspaceAction,
         );
       case 4:
         return SettingsScreen(
@@ -527,6 +562,37 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           onLedgerChanged: _handleLedgerChanged,
           onOpenHistory: _openCapsuleHistory,
         );
+    }
+  }
+
+  VoidCallback? _installedPluginWorkspaceAction(WasmPluginRecord record) {
+    switch (installedPluginWorkspaceContractKind(record)) {
+      case bingxFuturesContractKind:
+        return () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => TradingDroneScreen(runtime: _runtime),
+          ),
+        );
+      case capsuleChatContractKind:
+        return () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder:
+                (_) => CapsuleChatPluginScreen(
+                  module: _pluginRuntime,
+                  onUnreadChanged: _refreshChatUnreadCount,
+                ),
+          ),
+        );
+      case moltbookAmbassadorContractKind:
+        return () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder:
+                (_) =>
+                    MoltbookAmbassadorScreen(module: _pluginRuntime.moltbook),
+          ),
+        );
+      default:
+        return null;
     }
   }
 

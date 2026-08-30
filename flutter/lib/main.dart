@@ -8,7 +8,6 @@ import 'screens/main_screen.dart';
 import 'screens/ledger_inspector_screen.dart';
 import 'screens/capsule_doctor_screen.dart';
 import 'screens/transports_screen.dart';
-import 'screens/wasm_plugins_screen.dart';
 import 'services/app_runtime_service.dart';
 import 'services/recovery_service.dart';
 import 'services/ui_feedback_service.dart';
@@ -60,8 +59,6 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(
               builder: (_) => CapsuleDoctorScreen(runtime: AppRuntimeService()),
             );
-          case '/wasm_plugins':
-            return MaterialPageRoute(builder: (_) => const WasmPluginsScreen());
           case '/transports':
             return MaterialPageRoute(
               builder: (_) => TransportsScreen(runtime: AppRuntimeService()),
