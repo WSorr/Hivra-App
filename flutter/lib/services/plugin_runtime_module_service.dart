@@ -1371,9 +1371,25 @@ class PluginRuntimeModule {
         }.contains(configuration.approvalMode)) {
       throw StateError('Assisted Moltbook publication is not enabled');
     }
+    final matchingPublicChanges = (await moltbookPublicChanges.load())
+        .where((change) => change.draftHashHex == draft.draftHashHex)
+        .toList(growable: false);
+    if (matchingPublicChanges.length > 1) {
+      throw StateError('Moltbook draft has conflicting public-change owners');
+    }
+    final boundPublicChange = matchingPublicChanges.singleOrNull;
+    if (boundPublicChange != null &&
+        (boundPublicChange.sourceId != draft.bulletinId ||
+            boundPublicChange.category != draft.category)) {
+      throw StateError('Moltbook public-change draft binding is inconsistent');
+    }
+    final effectiveSubmoltName =
+        boundPublicChange == null
+            ? submoltName
+            : MoltbookPublicationService.personFirstRuntimeSubmoltName;
     final operation = await moltbookPublications.prepare(
       draft: draft,
-      submoltName: submoltName,
+      submoltName: effectiveSubmoltName,
     );
     if (operation.state == ExternalEffectState.succeeded) {
       await moltbookDrafts.delete(draft.draftHashHex);

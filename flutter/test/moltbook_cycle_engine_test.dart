@@ -304,6 +304,64 @@ void main() {
   );
 
   test(
+    'assisted review seals a public-change draft to the PFR community',
+    () async {
+      await publicChanges.record(
+        sourceId: 'capsule-change-assisted-review',
+        category: 'hivra',
+        facts: const <String>[
+          'Moltbook public changes retain their community boundary.',
+        ],
+      );
+      await module.runMoltbookCycle();
+
+      await module.prepareMoltbookPublication(
+        draft: drafts.stored.single.preview,
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      );
+
+      expect(publications.preparedPostDestinations, <String>[
+        MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      ]);
+    },
+  );
+
+  test('ordinary assisted drafts retain their reviewed destination', () async {
+    await module.prepareMoltbookPublication(
+      draft: _draftPreview('8' * 64),
+      submoltName: MoltbookPublicationService.defaultSubmolt,
+    );
+
+    expect(publications.preparedPostDestinations, <String>[
+      MoltbookPublicationService.defaultSubmolt,
+    ]);
+  });
+
+  test('mutated public-change draft binding creates no post effect', () async {
+    final change = await publicChanges.record(
+      sourceId: 'another-public-change',
+      category: 'hivra',
+      facts: const <String>['A different public change.'],
+    );
+    await publicChanges.markDrafted(change.commitmentHashHex, '8' * 64);
+
+    await expectLater(
+      module.prepareMoltbookPublication(
+        draft: _draftPreview('8' * 64),
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Moltbook public-change draft binding is inconsistent',
+        ),
+      ),
+    );
+    expect(publications.preparedPostDestinations, isEmpty);
+  });
+
+  test(
     'bounded cycle publishes one exact change only to verified PFR community',
     () async {
       configuration.approvalMode =
