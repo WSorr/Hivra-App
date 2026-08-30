@@ -22,7 +22,7 @@ import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/transport_health_policy_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
-import 'package:hivra_app/screens/wasm_plugins_screen.dart';
+import 'package:hivra_app/screens/capsule_chat_plugin_screen.dart';
 import 'package:hivra_app/screens/main_screen.dart';
 import 'package:flutter/material.dart';
 

@@ -1,81 +1,16 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
-import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
-import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../services/wasm_plugin_runtime_service.dart';
-import '../utils/peer_identity_format.dart';
-import '../widgets/capsule_chat_conversation_workspace.dart';
+import 'capsule_chat_plugin_screen.dart';
 import 'moltbook_ambassador_screen.dart';
 import 'trading_drone_screen.dart';
-
-@visibleForTesting
-Future<CapsuleChatDeliveryReceiveResult>
-projectCachedMessagesBeforeChatRefresh({
-  required List<CapsuleChatInboxMessage> currentMessages,
-  required Future<List<CapsuleChatInboxMessage>> Function() loadCachedMessages,
-  required Future<CapsuleChatDeliveryReceiveResult> Function() refresh,
-  required void Function(List<CapsuleChatInboxMessage> messages)
-  projectMessages,
-}) async {
-  Future<void> projectCachedMessages() async {
-    final byId = <String, CapsuleChatInboxMessage>{
-      for (final message in currentMessages) message.id: message,
-      for (final message in await loadCachedMessages()) message.id: message,
-    };
-    final merged =
-        byId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    projectMessages(List<CapsuleChatInboxMessage>.unmodifiable(merged));
-  }
-
-  await projectCachedMessages();
-  try {
-    return await refresh();
-  } finally {
-    await projectCachedMessages();
-  }
-}
-
-@visibleForTesting
-List<CapsuleChatInboxMessage> chatMessagesForPeer(
-  List<CapsuleChatInboxMessage> messages,
-  String peerHex,
-) {
-  final normalizedPeer = peerHex.trim().toLowerCase();
-  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedPeer)) return messages;
-  return messages
-      .where(
-        (message) =>
-            (message.direction == CapsuleChatMessageDirection.outgoing
-                ? message.toHex
-                : message.fromHex) ==
-            normalizedPeer,
-      )
-      .toList(growable: false);
-}
-
-@visibleForTesting
-String chatWorkspaceNoticeForSendResult(PluginChatSendResult result) {
-  return switch (result.status) {
-    PluginChatSendStatus.sent => 'Accepted by transport',
-    PluginChatSendStatus.syncing =>
-      'Securing this conversation. Your draft is preserved; press Send again when it is ready.',
-    PluginChatSendStatus.blocked =>
-      'This conversation is not ready yet. Your draft is preserved.',
-    PluginChatSendStatus.rejected => result.message,
-    PluginChatSendStatus.failed => result.message,
-    PluginChatSendStatus.capsuleChanged => result.message,
-  };
-}
 
 @visibleForTesting
 String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
@@ -118,26 +53,13 @@ class WasmPluginsScreen extends StatefulWidget {
 
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   late final PluginRuntimeModule _module;
-  final TextEditingController _chatPeerController = TextEditingController();
-  final TextEditingController _chatMessageController = TextEditingController();
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
   WasmPluginSourceCatalog? _sourceCatalogSnapshot;
   String? _sourceCatalogError;
   bool _loading = true;
   bool _loadingSourceCatalog = true;
   bool _installing = false;
-  bool _runningChat = false;
-  bool _refreshingChatInbox = false;
   Set<String> _installingSourceEntryIds = <String>{};
-  PluginHostApiResponse? _lastChatResponse;
-  String? _chatWorkspaceNotice;
-  bool _chatWorkspaceNoticeIsError = false;
-  String? _chatSelectedPeerLabel;
-  Map<String, String> _chatContactLabels = const <String, String>{};
-  List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
-
-  int _chatDroppedByConsensus = 0;
-  int _chatDeferredByConsensus = 0;
 
   static const List<_BoundaryRule> _boundaryRules = <_BoundaryRule>[
     _BoundaryRule(
@@ -172,13 +94,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ).build();
     _reload();
     _reloadSourceCatalog();
-  }
-
-  @override
-  void dispose() {
-    _chatPeerController.dispose();
-    _chatMessageController.dispose();
-    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -390,407 +305,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
-  Future<String?> _selectChatContact({required String hint}) async {
-    final checks = await _module.manualChecks.loadAttestedChecks();
-    final labels = await _module.contactLabels.load();
-    if (!mounted) return null;
-    if (checks.isEmpty) {
-      if (!mounted) return null;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No trusted contacts yet. Create at least one relationship first.',
-          ),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return null;
-    }
-
-    final candidates =
-        checks.toList()..sort((left, right) {
-          if (left.isSignable == right.isSignable) {
-            return left.peerHex.compareTo(right.peerHex);
-          }
-          return left.isSignable ? -1 : 1;
-        });
-
-    if (candidates.length == 1) {
-      return candidates.first.peerHex;
-    }
-
-    final selectedPeerHex = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              ListTile(
-                title: Text(
-                  'New conversation',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(hint),
-              ),
-              for (final check in candidates)
-                ListTile(
-                  leading: Icon(
-                    check.isSignable ? Icons.verified_rounded : Icons.warning,
-                    color: check.isSignable ? Colors.green : Colors.orange,
-                  ),
-                  title: Text(
-                    PeerIdentityFormat.capsuleLabelFromRootHex(
-                      check.peerHex,
-                      localLabel:
-                          labels[PeerIdentityFormat.capsuleKeyFromRootHex(
-                            check.peerHex,
-                          )],
-                    ),
-                  ),
-                  subtitle: Text(
-                    '${check.isSignable ? 'Ready to chat' : 'Select to secure this conversation'}\n'
-                    '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(check.peerHex)}',
-                  ),
-                  trailing:
-                      check.isSignable
-                          ? const Text(
-                            'Ready',
-                            style: TextStyle(color: Colors.green),
-                          )
-                          : const Text(
-                            'Needs verification',
-                            style: TextStyle(color: Colors.orange),
-                          ),
-                  onTap: () => Navigator.of(sheetContext).pop(check.peerHex),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-
-    return selectedPeerHex;
-  }
-
-  Future<void> _chooseChatContact() async {
-    final selectedPeerHex = await _selectChatContact(
-      hint: 'Choose a trusted Capsule.',
-    );
-    if (!mounted || selectedPeerHex == null || selectedPeerHex.isEmpty) return;
-    final peerKey = PeerIdentityFormat.capsuleKeyFromRootHex(selectedPeerHex);
-    final labels = await _module.contactLabels.load();
-    if (!mounted) return;
-    setState(() {
-      _chatPeerController.text = selectedPeerHex;
-      _chatContactLabels = labels;
-      _chatSelectedPeerLabel = labels[peerKey];
-      _lastChatResponse = null;
-      _chatWorkspaceNotice = null;
-      _chatWorkspaceNoticeIsError = false;
-    });
-  }
-
-  Future<void> _runCapsuleChat() async {
-    if (_runningChat) return;
-    if (!mounted) return;
-
-    final peerHex = _chatPeerController.text.trim().toLowerCase();
-    final messageText = _chatMessageController.text;
-
-    setState(() {
-      _runningChat = true;
-      _chatWorkspaceNotice = 'Sending...';
-      _chatWorkspaceNoticeIsError = false;
-    });
-
-    try {
-      final result = await _module.sendChatMessage(
-        peerHex: peerHex,
-        messageText: messageText,
-      );
-      if (!mounted) return;
-      setState(() {
-        _lastChatResponse = result.hostResponse;
-        _chatWorkspaceNotice = chatWorkspaceNoticeForSendResult(result);
-        _chatWorkspaceNoticeIsError =
-            result.status != PluginChatSendStatus.sent &&
-            result.status != PluginChatSendStatus.syncing;
-        if (result.isSuccess) _chatMessageController.clear();
-      });
-      if (result.isSuccess) {
-        await _refreshCapsuleChatInbox(silentWhenEmpty: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _runningChat = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _openCapsuleChatWorkspace() async {
-    if (!mounted) return;
-    final labels = await _module.contactLabels.load();
-    if (!mounted) return;
-    setState(() {
-      _chatContactLabels = labels;
-      _chatSelectedPeerLabel =
-          labels[PeerIdentityFormat.capsuleKeyFromRootHex(
-            _chatPeerController.text,
-          )];
-    });
-    var initialInboxRefreshStarted = false;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> runAndRefresh(Future<void> Function() action) async {
-              final pending = action();
-              setDialogState(() {});
-              await pending;
-              if (dialogContext.mounted) {
-                setDialogState(() {});
-              }
-            }
-
-            if (!initialInboxRefreshStarted) {
-              initialInboxRefreshStarted = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) async {
-                if (!dialogContext.mounted) return;
-                await runAndRefresh(_refreshCapsuleChatInbox);
-              });
-            }
-
-            return Dialog(
-              insetPadding: const EdgeInsets.all(20),
-              clipBehavior: Clip.antiAlias,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 760,
-                  maxHeight: 820,
-                ),
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 10, 12),
-                      child: Row(
-                        children: [
-                          const _PluginIconPlate(
-                            icon: Icons.forum_outlined,
-                            accent: Color(0xFFC5A8FF),
-                            glow: Color(0xFF32254D),
-                            size: 38,
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Capsule Chat',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                Text(
-                                  'Plugin workspace',
-                                  style: TextStyle(
-                                    color: Color(0xFF8E98A7),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                            icon: const Icon(Icons.close_rounded),
-                            tooltip: 'Close',
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: CapsuleChatConversationWorkspace(
-                          sending: _runningChat,
-                          checkingForMessages: _refreshingChatInbox,
-                          lastResponse: _lastChatResponse,
-                          notice: _chatWorkspaceNotice,
-                          noticeIsError: _chatWorkspaceNoticeIsError,
-                          messages: _chatInbox,
-                          hiddenMessageCount: _chatDroppedByConsensus,
-                          deferredMessageCount: _chatDeferredByConsensus,
-                          peerController: _chatPeerController,
-                          selectedPeerLabel: _chatSelectedPeerLabel,
-                          contactLabels: _chatContactLabels,
-                          messageController: _chatMessageController,
-                          onInputChanged: () => setDialogState(() {}),
-                          onChooseContact:
-                              () => runAndRefresh(_chooseChatContact),
-                          onRetryReceive:
-                              () => runAndRefresh(_refreshCapsuleChatInbox),
-                          onSend: () => runAndRefresh(_runCapsuleChat),
-                          loadCachedMessages:
-                              _module.chatDelivery.loadCachedMessagesDurably,
-                          onMessagesProjected: (messages) {
-                            unawaited(
-                              _markProjectedChatMessagesRead(
-                                _chatMessagesVisibleForSelectedPeer(messages),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _refreshCapsuleChatInbox({bool silentWhenEmpty = false}) async {
-    if (_refreshingChatInbox) {
-      if (!silentWhenEmpty && mounted) {
-        setState(() {
-          _chatWorkspaceNotice = 'Inbox refresh already in progress';
-          _chatWorkspaceNoticeIsError = true;
-        });
-      }
-      return;
-    }
-    _refreshingChatInbox = true;
-    if (!silentWhenEmpty && mounted) {
-      setState(() {
-        _chatWorkspaceNotice = 'Checking for messages...';
-        _chatWorkspaceNoticeIsError = false;
-      });
-    }
-    try {
-      if (!mounted) return;
-      final stopwatch = Stopwatch()..start();
-      final capsuleHex = _module.activeCapsuleRootHex();
-      if (capsuleHex == null) {
-        if (mounted) {
-          setState(() {
-            _chatWorkspaceNotice = 'Active capsule identity is unavailable';
-            _chatWorkspaceNoticeIsError = true;
-          });
-        }
-        return;
-      }
-      final receive = await projectCachedMessagesBeforeChatRefresh(
-        currentMessages: _chatInbox,
-        loadCachedMessages: _module.chatDelivery.loadCachedMessagesDurably,
-        refresh:
-            () => _module.passiveReceive
-                .trigger(
-                  capsuleHex: capsuleHex,
-                  reason:
-                      silentWhenEmpty
-                          ? CapsulePassiveReceiveReason.screenActivation
-                          : CapsulePassiveReceiveReason.manual,
-                  quick: silentWhenEmpty,
-                  manualRetry: !silentWhenEmpty,
-                )
-                .then((value) => value.chat),
-        projectMessages: (messages) {
-          if (!mounted) return;
-          setState(() {
-            _chatInbox = messages;
-          });
-          unawaited(
-            _markProjectedChatMessagesRead(
-              _chatMessagesVisibleForSelectedPeer(messages),
-            ),
-          );
-        },
-      );
-      final result = receive;
-      stopwatch.stop();
-      await _module.uiLog.log(
-        'chat.fetch.result',
-        'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus} deferred=${result.deferredByConsensus}'
-            '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
-      );
-      if (!mounted) return;
-      if (result.code < 0) {
-        setState(() {
-          _chatWorkspaceNotice =
-              'Could not check for new messages. Saved conversation remains available.';
-          _chatWorkspaceNoticeIsError = true;
-        });
-        return;
-      }
-
-      final hasUpdates = result.messages.isNotEmpty;
-      final updateNotice =
-          result.messages.isEmpty
-              ? 'Conversation is up to date.'
-              : 'New messages: ${result.messages.length}';
-      final cachedMessages =
-          await _module.chatDelivery.loadCachedMessagesDurably();
-      if (!mounted) return;
-      setState(() {
-        final byId = <String, CapsuleChatInboxMessage>{
-          for (final message in _chatInbox) message.id: message,
-          for (final message in cachedMessages) message.id: message,
-        };
-        for (final message in result.messages) {
-          byId[message.id] = message;
-        }
-        final merged =
-            byId.values.toList()
-              ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-
-        _chatDroppedByConsensus = result.droppedByConsensus;
-        _chatDeferredByConsensus = result.deferredByConsensus;
-        _chatInbox = List<CapsuleChatInboxMessage>.unmodifiable(merged);
-        if (!silentWhenEmpty || hasUpdates) {
-          _chatWorkspaceNotice = updateNotice;
-          _chatWorkspaceNoticeIsError = false;
-        }
-      });
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _chatWorkspaceNotice = 'Chat history is unavailable: $error';
-          _chatWorkspaceNoticeIsError = true;
-        });
-      }
-    } finally {
-      _refreshingChatInbox = false;
-    }
-  }
-
-  Future<void> _markProjectedChatMessagesRead(
-    List<CapsuleChatInboxMessage> messages,
-  ) async {
-    if (messages.isEmpty) return;
-    try {
-      await _module.chatDelivery.markCachedMessagesRead(messages);
-    } catch (_) {
-      return;
-    }
-    widget.onChatUnreadChanged?.call();
-  }
-
-  List<CapsuleChatInboxMessage> _chatMessagesVisibleForSelectedPeer(
-    List<CapsuleChatInboxMessage> messages,
-  ) => chatMessagesForPeer(messages, _chatPeerController.text);
-
   @override
   Widget build(BuildContext context) {
     final content = LayoutBuilder(
@@ -841,7 +355,16 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                               ),
                             );
                           case capsuleChatContractKind:
-                            return _openCapsuleChatWorkspace;
+                            return () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder:
+                                    (_) => CapsuleChatPluginScreen(
+                                      module: _module,
+                                      onUnreadChanged:
+                                          widget.onChatUnreadChanged,
+                                    ),
+                              ),
+                            );
                           case moltbookAmbassadorContractKind:
                             return () => Navigator.of(context).push(
                               MaterialPageRoute<void>(

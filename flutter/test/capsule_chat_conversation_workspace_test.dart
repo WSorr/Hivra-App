@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
-import 'package:hivra_app/screens/wasm_plugins_screen.dart';
+import 'package:hivra_app/screens/capsule_chat_plugin_screen.dart';
 import 'package:hivra_app/services/plugin_runtime_module_service.dart';
 import 'package:hivra_app/widgets/capsule_chat_conversation_workspace.dart';
 

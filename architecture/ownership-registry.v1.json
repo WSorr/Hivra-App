@@ -49,6 +49,7 @@
   },
   "surface_mappings": [
     {"id": "ui_backup", "kind": "ui_entrypoint", "path": "flutter/lib/screens/backup_screen.dart", "symbol": "BackupScreen", "capability_id": "capsule_continuity", "status": "COMPATIBILITY_DEBT", "target": "capsule_continuity.export", "rationale": "Backup UI is the current 1.x export mechanism for Capsule continuity."},
+    {"id": "ui_capsule_chat", "kind": "ui_entrypoint", "path": "flutter/lib/screens/capsule_chat_plugin_screen.dart", "symbol": "CapsuleChatPluginScreen", "capability_id": "capsule_delivery", "status": "CANONICAL", "target": "capsule_delivery.sendChatMessage", "rationale": "Chat workspace entrypoint; pair consensus, delivery, durable inbox, and ACK remain owned by the existing host lifecycle."},
     {"id": "ui_capsule_doctor", "kind": "ui_entrypoint", "path": "flutter/lib/screens/capsule_doctor_screen.dart", "symbol": "CapsuleDoctorScreen", "capability_id": "capsule_ai_runtime", "status": "COMPATIBILITY_DEBT", "target": "capsule_ai_runtime.inspect", "rationale": "Capsule Analyst composes deterministic diagnostics, installed-package audit, and canonical inference without one registered read-only inspection command."},
     {"id": "ui_capsule_history", "kind": "ui_entrypoint", "path": "flutter/lib/screens/capsule_history_screen.dart", "symbol": "CapsuleHistoryScreen", "capability_id": "history_projection", "status": "CANONICAL", "target": "history_projection.project", "rationale": "Registered history projection entrypoint."},
     {"id": "ui_capsule_selector", "kind": "ui_entrypoint", "path": "flutter/lib/screens/capsule_selector_screen.dart", "symbol": "CapsuleSelectorScreen", "capability_id": "capsule_selection", "status": "COMPATIBILITY_DEBT", "target": "capsule_selection.activate", "rationale": "Selection is current 1.x runtime continuity behavior without a frozen capability command."},
@@ -239,7 +240,7 @@
       "public_contracts": [{"id": "delivery_cycle", "path": "flutter/lib/services/capsule_delivery_lifecycle_service.dart", "symbol": "pumpDueNow"}],
       "facts": [], "projections": [],
       "effect_kinds": [{"id": "delivery_outbox", "path": "flutter/lib/services/delivery_outbox_store.dart", "symbol": "DeliveryOutboxStore"}],
-      "entrypoints": [],
+      "entrypoints": [{"id": "capsule_chat_plugin_screen", "path": "flutter/lib/screens/capsule_chat_plugin_screen.dart", "symbol": "CapsuleChatPluginScreen", "command_path": "flutter/lib/services/plugin_runtime_module_service.dart", "command_symbol": "sendChatMessage"}],
       "closure": {"verdict": "READY", "missing_boundaries": []}
     },
     {

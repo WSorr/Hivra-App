@@ -7,13 +7,14 @@ Status date: 2026-08-30
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
   artifacts have manual signoff.
-- Current source baseline: manifest-bound plugin workspace activation; Capsule
-  Analyst is the sole in-app diagnostic AI surface.
+- Current source baseline: manifest-bound plugin workspaces with Chat UI
+  orchestration removed from the generic App Shell; Capsule Analyst is the
+  sole in-app diagnostic AI surface.
 - Trading Remote Runner acceptance remains complete at `b88a886`.
 - Hivra 2.0 remains design-only. No 2.0 runtime or UI implementation is
   authorized.
-- Current selected runtime unit: none. Manifest-driven plugin activation is
-  complete.
+- Current selected runtime unit: none. Manifest-driven activation and the Chat
+  capability workspace ownership move are complete.
 
 ## Product Direction
 
@@ -31,6 +32,11 @@ Core + Ledger
 Plugin workspaces are now activated by the installed package's exact manifest
 profile rather than product-id routing. The direct Trading workspace route was
 removed, so a workspace cannot bypass package installation.
+
+Chat remains pair-consensus-bound: the capability screen calls the existing
+runtime module, which ensures attestation and passes through the canonical host
+consensus guard before the existing delivery owner can send or acknowledge
+anything. The generic Plugins screen only composes navigation.
 
 Chat, Moltbook, and Trading then migrate one vertical capability at a time.
 Each pass reuses the existing delivery/effect owners and deletes the host logic
