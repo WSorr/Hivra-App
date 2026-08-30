@@ -55,7 +55,11 @@ This repository implements the current Hivra 1.x runtime:
 - **Flutter App Shell** — local projection and explicit user-action surfaces
   for macOS and Android.
 
-Chat, trading, staking, AI, and other user-facing features are drones, not Core. Core stays minimal: Capsule, Ledger, Invitations, Trust Layer, Pair Consensus, and the runtime contracts required for safe drone execution.
+Chat, Moltbook, and Trading are the current plugin products. Capsule AI Runtime
+is a host capability shared by authorized product surfaces, not a drone and not
+Core. Staking is not implemented. Core stays minimal: Capsule, Ledger,
+Invitations, Trust Layer, Pair Consensus, and the contracts required for safe
+capability execution.
 
 Transport adapters are not WASM drones. They are host-level system adapters that move signed capsule envelopes through external networks. WASM drones can request delivery through host APIs, but they do not get direct network, keychain, relay, or transport-session access.
 
@@ -73,8 +77,9 @@ Transport adapters are not WASM drones. They are host-level system adapters that
 
 Drone source packages are developed and released separately from the host
 application. This repository owns the Capsule runtime, plugin host contracts,
-installation boundary, and runtime integration; it must not absorb plugin
-business logic back into the application.
+installation boundary, and runtime integration. Current 1.x still contains
+product-specific presentation and orchestration in Flutter; that is measured
+migration debt, not the target ownership model.
 
 ### Compile-Time Dependency Contract
 
@@ -143,7 +148,9 @@ Users can own multiple independent capsules.
 
 ### Capsule Selection Screen
 
-Shown on app launch when at least one capsule exists.
+The selector is the application entry route when capsules exist. A single
+Capsule may be activated automatically; multiple Capsules remain available for
+explicit selection.
 
 - Displays capsule public key.
 - Displays active network.
@@ -155,21 +162,20 @@ Shown on app launch when at least one capsule exists.
 - On selection, the app loads the selected capsule seed and ledger.
 - The previously active capsule is unloaded from memory.
 - Runtime diagnostics are available through Capsule Analyst in Settings.
-  Capsule Analyst is local-only and must not upload seed, ledger, or
-  transport material.
+  Its optional AI call sends only the selected, redacted summary sections shown
+  in the outbound preview, which may include Ledger or transport summaries.
+  Seed material, private keys, plugin credentials, raw Ledger entries, raw
+  transport envelopes, and repository context are excluded.
 
 ## Building
 
 ### Prerequisites
 
-- A current Rust toolchain compatible with the workspace `edition = "2021"`.
-- Flutter with Dart `>=3.7.0 <4.0.0`.
-- Android SDK (API 36) for Android builds
-- Xcode 15+ for macOS builds
-
-The checked-in platform evolution contract defines the verified SDK matrix and
-the only permitted upgrade process. Local manifests and IDE defaults are not
-independent release authority; see `docs/platform-toolchain-evolution.md`.
+Repository and release evidence require the exact versions in
+`toolchains/hivra-baseline.conf`. Verify them with
+`tools/toolchain/verify_environment.sh`. Language ranges, local manifests, and
+IDE defaults are not an independent toolchain authority; the only permitted
+upgrade process is defined in `docs/platform-toolchain-evolution.md`.
 
 ### Development Verification
 
