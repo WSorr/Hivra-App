@@ -72,12 +72,10 @@ void main() {
       expect(result.concurrentPositions, 2);
       expect(result.lossStreakCount, 1);
       expect(result.lastLossAtUtc, '2024-03-09T16:00:00.000Z');
-      expect(result.usedBalanceFallback, isFalse);
-      expect(result.usedPnlFallback, isFalse);
-      expect(result.usedPositionsFallback, isFalse);
+      expect(result.isComplete, isTrue);
     });
 
-    test('falls back deterministically on exchange failure', () async {
+    test('keeps unavailable exchange inputs absent', () async {
       final exchange = BingxFuturesExchangeService(
         clockMs: () => 1710000000000,
         requestSender: (request) async {
@@ -105,16 +103,14 @@ void main() {
           apiKey: 'key',
           apiSecret: 'secret',
         ),
-        fallbackEquityQuote: 250,
         nowUtc: DateTime.fromMillisecondsSinceEpoch(1710000000000, isUtc: true),
       );
 
-      expect(result.accountEquityQuoteDecimal, '250.00000000');
-      expect(result.realizedDailyPnlQuoteDecimal, '0.00000000');
-      expect(result.concurrentPositions, 0);
-      expect(result.usedBalanceFallback, isTrue);
-      expect(result.usedPnlFallback, isTrue);
-      expect(result.usedPositionsFallback, isTrue);
+      expect(result.accountEquityQuoteDecimal, isNull);
+      expect(result.realizedDailyPnlQuoteDecimal, isNull);
+      expect(result.concurrentPositions, isNull);
+      expect(result.lossStreakCount, isNull);
+      expect(result.isComplete, isFalse);
       expect(result.balanceUnavailableCode, '100001');
       expect(result.balanceUnavailableMessage, 'signature invalid');
       expect(result.positionsUnavailableCode, '500');
@@ -157,12 +153,11 @@ void main() {
           apiKey: 'key',
           apiSecret: 'secret',
         ),
-        fallbackEquityQuote: 250,
         nowUtc: DateTime.fromMillisecondsSinceEpoch(1710000000000, isUtc: true),
       );
 
-      expect(result.accountEquityQuoteDecimal, '250.00000000');
-      expect(result.usedBalanceFallback, isTrue);
+      expect(result.accountEquityQuoteDecimal, isNull);
+      expect(result.isComplete, isFalse);
       expect(result.balanceUnavailableCode, 'account_equity_non_positive');
       expect(
         result.firstUnavailableReason,

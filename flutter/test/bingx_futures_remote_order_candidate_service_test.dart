@@ -352,9 +352,6 @@ void main() {
           concurrentPositions: 0,
           lossStreakCount: 0,
           lastLossAtUtc: null,
-          usedBalanceFallback: true,
-          usedPnlFallback: false,
-          usedPositionsFallback: false,
           balanceUnavailableCode: 'balance_unavailable',
         ),
       );
@@ -565,9 +562,6 @@ const _completeRisk = BingxFuturesExchangeRiskInput(
   concurrentPositions: 0,
   lossStreakCount: 0,
   lastLossAtUtc: null,
-  usedBalanceFallback: false,
-  usedPnlFallback: false,
-  usedPositionsFallback: false,
 );
 
 const _rules = BingxFuturesContractRules(

@@ -168,10 +168,7 @@ class BingxFuturesRemoteOrderCandidateService {
       return _blocked('market_proposal_blocked');
     }
     if (!mandate.isActiveAt(now)) return _blocked('mandate_inactive');
-    if (accountRisk.usedBalanceFallback ||
-        accountRisk.usedPnlFallback ||
-        accountRisk.usedPositionsFallback ||
-        accountRisk.firstUnavailableReason != null) {
+    if (!accountRisk.isComplete) {
       return _blocked('account_risk_incomplete');
     }
     final accountObservedAt = accountRiskObservedAtUtc.toUtc();
@@ -248,10 +245,10 @@ class BingxFuturesRemoteOrderCandidateService {
         quantityDecimal: sizing.quantityDecimal!,
         entryPriceDecimal: _decimal(entry),
         stopLossDecimal: targets.stopLossDecimal!,
-        accountEquityQuoteDecimal: accountRisk.accountEquityQuoteDecimal,
-        realizedDailyPnlQuoteDecimal: accountRisk.realizedDailyPnlQuoteDecimal,
-        concurrentPositions: accountRisk.concurrentPositions,
-        lossStreakCount: accountRisk.lossStreakCount,
+        accountEquityQuoteDecimal: accountRisk.accountEquityQuoteDecimal!,
+        realizedDailyPnlQuoteDecimal: accountRisk.realizedDailyPnlQuoteDecimal!,
+        concurrentPositions: accountRisk.concurrentPositions!,
+        lossStreakCount: accountRisk.lossStreakCount!,
         lastLossAtUtc: accountRisk.lastLossAtUtc,
         nowUtc: now.toIso8601String(),
         exchangeMinimumQuantityDecimal: contractRules.minimumQuantityDecimal,

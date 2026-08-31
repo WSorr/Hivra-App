@@ -50,7 +50,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
         rawIntentResult: result,
         credentials: credentials,
         riskPolicy: _TradingDroneScreenState._executionRiskPolicy,
-        fallbackEquityQuote: _TradingDroneScreenState._fallbackRiskEquityQuote,
         testOrder: _useTestOrderEndpoint,
         preparedDecision: _lastPreparedLiveDecision,
         refreshDecision:
@@ -237,7 +236,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       rawIntentResult: rawIntentResult,
       credentials: credentials,
       riskPolicy: _TradingDroneScreenState._executionRiskPolicy,
-      fallbackEquityQuote: _TradingDroneScreenState._fallbackRiskEquityQuote,
     );
     for (final diagnostic in evaluation.diagnostics) {
       await _module.uiLog.log('bingx.exchange.risk_detail', diagnostic);
@@ -620,8 +618,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
           rawIntentResult: rawIntentResult,
           credentials: credentials,
           riskPolicy: _TradingDroneScreenState._executionRiskPolicy,
-          fallbackEquityQuote:
-              _TradingDroneScreenState._fallbackRiskEquityQuote,
           testOrder: testOrder,
           preparedDecision: liveDecision,
           refreshDecision:

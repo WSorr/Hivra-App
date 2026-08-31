@@ -377,7 +377,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const Duration _openOrdersPollInterval = Duration(seconds: 12);
   static const double _zoneNearBps = 15.0;
   static const double _zoneFarBps = 35.0;
-  static const double _fallbackRiskEquityQuote = 100.0;
   static const double _defaultStopLossPercent = 10.0;
   static const List<double> _stopLossPercentOptions = <double>[
     5.0,
@@ -1102,15 +1101,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         riskHistoryService: _module.riskHistory,
         credentials: credentials,
         nowUtc: DateTime.now().toUtc(),
-        fallbackEquityQuote: _fallbackRiskEquityQuote,
       );
-      if (riskInput.usedBalanceFallback) {
+      if (riskInput.accountEquityQuoteDecimal == null) {
         final reason = riskInput.firstUnavailableReason;
         await _module.uiLog.log(
           'bingx.risk.autofit.blocked',
-          'reason=balance_unavailable fallback_equity='
-              '${riskInput.accountEquityQuoteDecimal} '
-              'exchange_reason=${reason ?? "-"}',
+          'reason=balance_unavailable exchange_reason=${reason ?? "-"}',
         );
         await _showSnack(
           reason == null
@@ -1120,7 +1116,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         );
         return;
       }
-      final equity = _toNum(riskInput.accountEquityQuoteDecimal);
+      final equity = _toNum(riskInput.accountEquityQuoteDecimal!);
       if (equity == null || equity <= 0) {
         await _showSnack('Cannot auto-fit risk: invalid equity');
         return;
@@ -1310,7 +1306,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         takeProfitRiskReward: _takeProfitRiskReward,
         credentials: _resolveCredentials(),
         riskPolicy: _executionRiskPolicy,
-        fallbackEquityQuote: _fallbackRiskEquityQuote,
         testOrder: _useTestOrderEndpoint,
         executeEffect: false,
         recentMicroBars: _recentMicroBars,

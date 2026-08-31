@@ -15,6 +15,7 @@ import 'package:hivra_app/services/bingx_futures_exchange_execution_use_case_ser
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_execution_queue_service.dart';
+import 'package:hivra_app/services/bingx_futures_exchange_risk_input_service.dart';
 import 'package:hivra_app/services/bingx_futures_order_tracking_store.dart';
 import 'package:hivra_app/services/bingx_futures_risk_history_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
@@ -67,7 +68,6 @@ void main() {
         rawIntentResult: const <String, dynamic>{},
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
       );
 
@@ -104,7 +104,6 @@ void main() {
           rawIntentResult: _marketIntent,
           credentials: _credentials,
           riskPolicy: _policy,
-          fallbackEquityQuote: 100,
           testOrder: true,
         );
 
@@ -147,7 +146,6 @@ void main() {
           rawIntentResult: _marketIntent,
           credentials: _credentials,
           riskPolicy: _policy,
-          fallbackEquityQuote: 100,
           testOrder: true,
         );
 
@@ -203,6 +201,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskInput: const _CompleteRiskInputService(),
         riskHistory: riskHistory,
         orderTrackingStore: store,
       );
@@ -216,7 +215,6 @@ void main() {
         },
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
       );
 
@@ -260,7 +258,6 @@ void main() {
         rawIntentResult: _marketIntent,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
       );
 
@@ -382,7 +379,6 @@ void main() {
         rawIntentResult: _zoneIntent,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
         preparedDecision: _decision(),
         refreshDecision: () async => _decision(eventHex: 'b'),
@@ -425,6 +421,7 @@ void main() {
               );
             },
           ),
+          riskInput: const _CompleteRiskInputService(),
           riskHistory: riskHistory,
           orderTrackingStore: store,
         );
@@ -434,7 +431,6 @@ void main() {
           rawIntentResult: _zoneIntent,
           credentials: _credentials,
           riskPolicy: _policy,
-          fallbackEquityQuote: 100,
           testOrder: true,
           preparedDecision: _decision(),
           refreshDecision: () async => _decision(liveHashHex: '5'),
@@ -444,7 +440,6 @@ void main() {
           rawIntentResult: _zoneIntent,
           credentials: _credentials,
           riskPolicy: _policy,
-          fallbackEquityQuote: 100,
           testOrder: true,
           preparedDecision: _decision(),
           refreshDecision: () async => _decision(liveHashHex: '6'),
@@ -465,7 +460,7 @@ void main() {
       },
     );
 
-    test('test validation falls back when account equity is zero', () async {
+    test('test validation blocks when account equity is unavailable', () async {
       var placeOrderCalls = 0;
       final exchange = BingxFuturesExchangeService(
         requestSender: (request) async {
@@ -533,7 +528,6 @@ void main() {
         rawIntentResult: _zoneIntent,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
         preparedDecision: _decision(),
         refreshDecision: () async => _decision(liveHashHex: '5'),
@@ -541,15 +535,16 @@ void main() {
 
       expect(
         result.status,
-        BingxFuturesExchangeExecutionUseCaseStatus.validated,
+        BingxFuturesExchangeExecutionUseCaseStatus.riskUnavailable,
         reason: result.errorCode,
       );
-      expect(result.diagnostics, contains(contains('fallbacks=balance,-,-')));
+      expect(result.errorCode, 'exchange_risk_inputs_unavailable');
+      expect(result.diagnostics, contains(contains('complete=false')));
       expect(
         result.diagnostics,
         contains(contains('account_equity_non_positive')),
       );
-      expect(placeOrderCalls, 1);
+      expect(placeOrderCalls, 0);
       expect((await store.load())!.liquidityEventEffectClaims, isEmpty);
     });
 
@@ -579,6 +574,7 @@ void main() {
             );
           },
         ),
+        riskInput: const _CompleteRiskInputService(),
         riskHistory: riskHistory,
         orderTrackingStore: store,
       );
@@ -588,7 +584,6 @@ void main() {
         rawIntentResult: _zoneIntent,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
         preparedDecision: _decision(),
         refreshDecision: () async => _decision(),
@@ -649,7 +644,6 @@ void main() {
           rawIntentResult: _zoneIntent,
           credentials: credentials,
           riskPolicy: _policy,
-          fallbackEquityQuote: 100,
           testOrder: true,
           preparedDecision: _decision(),
           refreshDecision: () async => _decision(),
@@ -696,6 +690,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskInput: const _CompleteRiskInputService(),
         riskHistory: riskHistory,
         orderTrackingStore: executionControlStore,
       );
@@ -705,7 +700,6 @@ void main() {
         rawIntentResult: direct,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
       );
 
@@ -733,6 +727,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskInput: const _CompleteRiskInputService(),
         riskHistory: riskHistory,
         orderTrackingStore: executionControlStore,
       );
@@ -742,7 +737,6 @@ void main() {
         rawIntentResult: _zoneIntent,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
         preparedDecision: _decision(),
         refreshDecision: () async => _decision(zoneLowDecimal: '98'),
@@ -847,7 +841,6 @@ void main() {
           rawIntentResult: _zoneIntent,
           credentials: _credentials,
           riskPolicy: _policy,
-          fallbackEquityQuote: 100,
           testOrder: false,
           preparedDecision: _decision(),
           refreshDecision: () async => _decision(),
@@ -943,6 +936,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskInput: const _CompleteRiskInputService(),
         riskHistory: riskHistory,
         orderTrackingStore: executionControlStore,
       );
@@ -955,7 +949,6 @@ void main() {
         },
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: true,
       );
 
@@ -975,7 +968,7 @@ void main() {
       expect(placeOrderCalled, isFalse);
     });
 
-    test('blocks live execution when exchange risk inputs use fallback', () async {
+    test('blocks live execution without account risk inputs', () async {
       await _setDroneEnabled(executionControlStore, true, testOrder: false);
       var placeOrderCalled = false;
       final exchange = BingxFuturesExchangeService(
@@ -1033,7 +1026,6 @@ void main() {
         rawIntentResult: _marketIntent,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: false,
       );
 
@@ -1046,7 +1038,7 @@ void main() {
         result.errorMessage,
         'Risk check failed: BingX futures access unavailable (100001 signature invalid)',
       );
-      expect(result.diagnostics, contains(contains('fallbacks=balance,pnl')));
+      expect(result.diagnostics, contains(contains('complete=false')));
       expect(
         result.diagnostics,
         contains(contains('exchange_reason=100001 signature invalid')),
@@ -1134,7 +1126,6 @@ void main() {
         rawIntentResult: _marketIntent,
         credentials: _credentials,
         riskPolicy: _policy,
-        fallbackEquityQuote: 100,
         testOrder: false,
       );
 
@@ -1987,6 +1978,26 @@ const BingxFuturesRiskPolicy _policy = BingxFuturesRiskPolicy(
   cooldownAfterLossStreak: 2,
   cooldownMinutes: 60,
 );
+
+class _CompleteRiskInputService extends BingxFuturesExchangeRiskInputService {
+  const _CompleteRiskInputService();
+
+  @override
+  Future<BingxFuturesExchangeRiskInput> read({
+    required BingxFuturesExchangeService exchangeService,
+    required BingxFuturesRiskHistoryService riskHistoryService,
+    required BingxFuturesApiCredentials credentials,
+    required DateTime nowUtc,
+  }) async {
+    return const BingxFuturesExchangeRiskInput(
+      accountEquityQuoteDecimal: '1000',
+      realizedDailyPnlQuoteDecimal: '0',
+      concurrentPositions: 0,
+      lossStreakCount: 0,
+      lastLossAtUtc: null,
+    );
+  }
+}
 
 BingxFuturesTradingMandate _mandate({
   required DateTime now,

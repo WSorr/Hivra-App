@@ -3,14 +3,11 @@ import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 
 class BingxFuturesExchangeRiskInput {
-  final String accountEquityQuoteDecimal;
-  final String realizedDailyPnlQuoteDecimal;
-  final int concurrentPositions;
-  final int lossStreakCount;
+  final String? accountEquityQuoteDecimal;
+  final String? realizedDailyPnlQuoteDecimal;
+  final int? concurrentPositions;
+  final int? lossStreakCount;
   final String? lastLossAtUtc;
-  final bool usedBalanceFallback;
-  final bool usedPnlFallback;
-  final bool usedPositionsFallback;
   final String? balanceUnavailableCode;
   final String? balanceUnavailableMessage;
   final String? positionsUnavailableCode;
@@ -24,9 +21,6 @@ class BingxFuturesExchangeRiskInput {
     required this.concurrentPositions,
     required this.lossStreakCount,
     required this.lastLossAtUtc,
-    required this.usedBalanceFallback,
-    required this.usedPnlFallback,
-    required this.usedPositionsFallback,
     this.balanceUnavailableCode,
     this.balanceUnavailableMessage,
     this.positionsUnavailableCode,
@@ -34,6 +28,13 @@ class BingxFuturesExchangeRiskInput {
     this.pnlUnavailableCode,
     this.pnlUnavailableMessage,
   });
+
+  bool get isComplete =>
+      accountEquityQuoteDecimal != null &&
+      realizedDailyPnlQuoteDecimal != null &&
+      concurrentPositions != null &&
+      lossStreakCount != null &&
+      firstUnavailableReason == null;
 
   String? get firstUnavailableReason {
     final balanceReason = _formatUnavailableReason(
@@ -70,11 +71,7 @@ class BingxFuturesExchangeRiskInputService {
     required BingxFuturesRiskHistoryService riskHistoryService,
     required BingxFuturesApiCredentials credentials,
     required DateTime nowUtc,
-    double fallbackEquityQuote = 100.0,
   }) async {
-    final safeFallbackEquity =
-        fallbackEquityQuote > 0 ? fallbackEquityQuote : 100.0;
-
     final balanceFuture = exchangeService.getUserBalance(
       credentials: credentials,
     );
@@ -94,42 +91,38 @@ class BingxFuturesExchangeRiskInputService {
     final hasPositiveEquity = parsedEquity != null && parsedEquity > 0;
     final concurrentPositions = _countConcurrentPositions(positions.positions);
 
-    final usedBalanceFallback = !balance.isSuccess || !hasPositiveEquity;
-    final usedPnlFallback = !riskHistory.isComplete;
-    final usedPositionsFallback = !positions.isSuccess;
+    final balanceUnavailable = !balance.isSuccess || !hasPositiveEquity;
+    final pnlUnavailable = !riskHistory.isComplete;
+    final positionsUnavailable = !positions.isSuccess;
 
     return BingxFuturesExchangeRiskInput(
       accountEquityQuoteDecimal:
-          usedBalanceFallback
-              ? safeFallbackEquity.toStringAsFixed(8)
-              : parsedEquity.toStringAsFixed(8),
-      realizedDailyPnlQuoteDecimal: riskHistory.realizedDailyPnlQuoteDecimal,
+          balanceUnavailable ? null : parsedEquity.toStringAsFixed(8),
+      realizedDailyPnlQuoteDecimal:
+          pnlUnavailable ? null : riskHistory.realizedDailyPnlQuoteDecimal,
       concurrentPositions:
-          usedPositionsFallback ? 0 : concurrentPositions.clamp(0, 1000),
-      lossStreakCount: riskHistory.lossStreakCount,
-      lastLossAtUtc: riskHistory.lastLossAtUtc,
-      usedBalanceFallback: usedBalanceFallback,
-      usedPnlFallback: usedPnlFallback,
-      usedPositionsFallback: usedPositionsFallback,
+          positionsUnavailable ? null : concurrentPositions.clamp(0, 1000),
+      lossStreakCount: pnlUnavailable ? null : riskHistory.lossStreakCount,
+      lastLossAtUtc: pnlUnavailable ? null : riskHistory.lastLossAtUtc,
       balanceUnavailableCode:
-          usedBalanceFallback
+          balanceUnavailable
               ? balance.isSuccess && !hasPositiveEquity
                   ? 'account_equity_non_positive'
                   : balance.exchangeCode
               : null,
       balanceUnavailableMessage:
-          usedBalanceFallback
+          balanceUnavailable
               ? balance.isSuccess && !hasPositiveEquity
                   ? 'BingX account equity must be positive'
                   : balance.exchangeMessage
               : null,
       positionsUnavailableCode:
-          usedPositionsFallback ? positions.exchangeCode : null,
+          positionsUnavailable ? positions.exchangeCode : null,
       positionsUnavailableMessage:
-          usedPositionsFallback ? positions.exchangeMessage : null,
-      pnlUnavailableCode: usedPnlFallback ? riskHistory.unavailableCode : null,
+          positionsUnavailable ? positions.exchangeMessage : null,
+      pnlUnavailableCode: pnlUnavailable ? riskHistory.unavailableCode : null,
       pnlUnavailableMessage:
-          usedPnlFallback ? riskHistory.unavailableMessage : null,
+          pnlUnavailable ? riskHistory.unavailableMessage : null,
     );
   }
 

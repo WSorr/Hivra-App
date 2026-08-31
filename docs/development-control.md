@@ -48,7 +48,9 @@ configurations default to one foreground session catch-up; leaving the active
 Capsule runtime stops that trigger and clears its process-scoped AI unlock.
 Existing saved trigger choices remain unchanged. Trading now
 prepares pending liquidity-zone intents through one Capsule-local cycle and
-reuses the accepted execution, reconciliation, and Remote Runner owners. The
+reuses the accepted execution, reconciliation, and Remote Runner owners.
+Unavailable equity, realized PnL, or position evidence remains absent and
+blocks both test and live execution before the risk governor. The
 former peer-selected intent route, Chat signal inbox, and Trading-side Pair
 Consensus dependencies are removed. The thin App Shell navigation boundary is
 closed without duplicating capability UI or runtime ownership. No next runtime
