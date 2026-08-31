@@ -752,7 +752,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.copy, size: 16),
+                            icon: const Icon(
+                              Icons.copy,
+                              size: 16,
+                              semanticLabel: 'Copy capsule key',
+                            ),
                             splashRadius: 16,
                             tooltip: 'Copy capsule key',
                             onPressed:
@@ -826,7 +830,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
                 if (showGlobalHeaderRefreshForTab(_selectedIndex))
                   IconButton(
-                    icon: const Icon(Icons.refresh),
+                    icon: const Icon(
+                      Icons.refresh,
+                      semanticLabel: 'Refresh current view',
+                    ),
                     onPressed: _refreshFromTopBar,
                     tooltip: 'Refresh',
                   ),

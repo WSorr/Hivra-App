@@ -699,9 +699,15 @@ class _SourceCatalogSection extends StatelessWidget {
                         ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            semanticsLabel: 'Refreshing plugin catalog',
+                          ),
                         )
-                        : const Icon(Icons.refresh_rounded),
+                        : const Icon(
+                          Icons.refresh_rounded,
+                          semanticLabel: 'Refresh plugin catalog',
+                        ),
               );
 
               return Row(
@@ -994,7 +1000,11 @@ class _InstalledPluginTile extends StatelessWidget {
                 ),
                 IconButton(
                   onPressed: onRemovePressed,
-                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    size: 20,
+                    semanticLabel: 'Remove $displayName',
+                  ),
                   tooltip: 'Remove plugin',
                 ),
               ],
