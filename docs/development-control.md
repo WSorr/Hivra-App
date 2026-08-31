@@ -54,9 +54,10 @@ blocks both test and live execution before the risk governor. The
 former peer-selected intent route, Chat signal inbox, and Trading-side Pair
 Consensus dependencies are removed. The thin App Shell navigation boundary is
 closed without duplicating capability UI or runtime ownership. No next runtime
-unit is selected. A plugin ABI change, universal agent runtime, new Core fact,
-V2 UI, release, VPS mutation, or live financial effect requires a separate
-decision.
+unit is selected. Secure seed access failures remain distinct from a missing
+seed and cannot open the recovery path. A plugin ABI change, universal agent
+runtime, new Core fact, V2 UI, release, VPS mutation, or live financial effect
+requires a separate decision.
 
 ## Authority
 

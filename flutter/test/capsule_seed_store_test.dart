@@ -102,13 +102,11 @@ void main() {
 
     await store.storeSeed(capsuleHex, seed);
 
+    expect(secureStorage.values['hivra.seed.$capsuleHex'], base64.encode(seed));
     expect(
-      secureStorage.values['hivra.seed.$capsuleHex'],
-      base64.encode(seed),
-    );
-    expect(
-      File('${tempHome.path}/Documents/Hivra/capsules/capsule_seeds.json')
-          .existsSync(),
+      File(
+        '${tempHome.path}/Documents/Hivra/capsules/capsule_seeds.json',
+      ).existsSync(),
       isFalse,
     );
   });
@@ -126,13 +124,14 @@ void main() {
       throwsA(isA<StateError>()),
     );
     expect(
-      File('${tempHome.path}/Documents/Hivra/capsules/capsule_seeds.json')
-          .existsSync(),
+      File(
+        '${tempHome.path}/Documents/Hivra/capsules/capsule_seeds.json',
+      ).existsSync(),
       isFalse,
     );
   });
 
-  test('does not leak an asynchronous keychain read failure', () async {
+  test('does not report secure storage failure as a missing seed', () async {
     final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
     addTearDown(() => tempHome.delete(recursive: true));
     final store = CapsuleSeedStore(
@@ -140,7 +139,34 @@ void main() {
       dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
     );
 
-    expect(await store.loadSeed(capsuleHex), isNull);
+    await expectLater(
+      store.loadSeed(capsuleHex),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('Secure seed access is unavailable'),
+        ),
+      ),
+    );
+    await expectLater(
+      store.hasStoredSeed(capsuleHex),
+      throwsA(isA<StateError>()),
+    );
+    await expectLater(
+      store.loadValidatedSeed(
+        capsuleHex,
+        isValidSeed: (_) async => true,
+        persistValidatedSeed: (_) async {},
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      File(
+        '${tempHome.path}/Documents/Hivra/capsules/capsule_seeds.json',
+      ).existsSync(),
+      isFalse,
+    );
   });
 
   test('migrates legacy plaintext seed into secure storage', () async {
@@ -162,10 +188,7 @@ void main() {
     final loaded = await store.loadSeed(capsuleHex);
 
     expect(loaded, orderedEquals(seed));
-    expect(
-      secureStorage.values['hivra.seed.$capsuleHex'],
-      base64.encode(seed),
-    );
+    expect(secureStorage.values['hivra.seed.$capsuleHex'], base64.encode(seed));
     expect(await fallbackFile.exists(), isFalse);
   });
 
