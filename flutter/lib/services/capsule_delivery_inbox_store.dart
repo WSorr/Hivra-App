@@ -303,17 +303,28 @@ class CapsuleDeliveryInboxStore {
   }
 
   Future<int> unreadMessageCount(String capsuleRootHex) async {
+    final counts = await unreadMessageCountsByPeer(capsuleRootHex);
+    return counts.values.fold<int>(0, (total, count) => total + count);
+  }
+
+  Future<Map<String, int>> unreadMessageCountsByPeer(
+    String capsuleRootHex,
+  ) async {
     final normalized = capsuleRootHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return 0;
+    if (!_isHex64(normalized)) return const <String, int>{};
     await hydrateCapsule(normalized);
-    final retainedIds = loadMessages(normalized)
-        .where(
-          (message) =>
-              message.direction == CapsuleChatMessageDirection.incoming,
-        )
-        .map((message) => message.id);
     final readIds = await _loadReadMessageIds(normalized);
-    return retainedIds.where((id) => !readIds.contains(id)).length;
+    final counts = <String, int>{};
+    for (final message in loadMessages(normalized)) {
+      if (message.direction != CapsuleChatMessageDirection.incoming ||
+          readIds.contains(message.id)) {
+        continue;
+      }
+      final peerHex = message.fromHex.trim().toLowerCase();
+      if (!_isHex64(peerHex)) continue;
+      counts.update(peerHex, (count) => count + 1, ifAbsent: () => 1);
+    }
+    return Map<String, int>.unmodifiable(counts);
   }
 
   Future<void> markMessagesRead(

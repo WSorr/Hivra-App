@@ -69,6 +69,55 @@ String chatWorkspaceNoticeForSendResult(PluginChatSendResult result) {
   };
 }
 
+@visibleForTesting
+Map<String, int> latestChatMessageTimestampByPeer(
+  Iterable<CapsuleChatInboxMessage> messages,
+) {
+  final latestByPeer = <String, int>{};
+  for (final message in messages) {
+    final peerHex =
+        (message.direction == CapsuleChatMessageDirection.outgoing
+                ? message.toHex
+                : message.fromHex)
+            ?.trim()
+            .toLowerCase();
+    if (peerHex == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
+      continue;
+    }
+    final previous = latestByPeer[peerHex];
+    if (previous == null || message.timestampMs > previous) {
+      latestByPeer[peerHex] = message.timestampMs;
+    }
+  }
+  return Map<String, int>.unmodifiable(latestByPeer);
+}
+
+@visibleForTesting
+List<String> orderChatConversationPeerHexes({
+  required Iterable<String> peerHexes,
+  required Map<String, bool> signableByPeer,
+  required Map<String, int> unreadByPeer,
+  required Map<String, int> latestTimestampByPeer,
+}) {
+  final ordered = peerHexes.toList(growable: false);
+  ordered.sort((left, right) {
+    final unreadOrder = (unreadByPeer[right] ?? 0).compareTo(
+      unreadByPeer[left] ?? 0,
+    );
+    if (unreadOrder != 0) return unreadOrder;
+    final recentOrder = (latestTimestampByPeer[right] ?? 0).compareTo(
+      latestTimestampByPeer[left] ?? 0,
+    );
+    if (recentOrder != 0) return recentOrder;
+    final signableOrder = ((signableByPeer[right] ?? false) ? 1 : 0).compareTo(
+      (signableByPeer[left] ?? false) ? 1 : 0,
+    );
+    if (signableOrder != 0) return signableOrder;
+    return left.compareTo(right);
+  });
+  return List<String>.unmodifiable(ordered);
+}
+
 class CapsuleChatPluginScreen extends StatefulWidget {
   final PluginRuntimeModule module;
   final VoidCallback? onUnreadChanged;
@@ -140,14 +189,34 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       return null;
     }
 
-    final candidates =
-        checks.toList()..sort((left, right) {
-          if (left.isSignable == right.isSignable) {
-            return left.peerHex.compareTo(right.peerHex);
-          }
-          return left.isSignable ? -1 : 1;
-        });
+    final candidates = checks.toList();
     if (candidates.length == 1) return candidates.first.peerHex;
+
+    var unreadByPeer = const <String, int>{};
+    var timeline = _messages;
+    try {
+      unreadByPeer =
+          await _module.chatDelivery.unreadCachedMessageCountsByPeer();
+      timeline = await _module.chatDelivery.loadCachedMessagesDurably();
+    } catch (_) {}
+    if (!mounted) return null;
+    final peerOrder = orderChatConversationPeerHexes(
+      peerHexes: candidates.map((check) => check.peerHex),
+      signableByPeer: <String, bool>{
+        for (final check in candidates) check.peerHex: check.isSignable,
+      },
+      unreadByPeer: unreadByPeer,
+      latestTimestampByPeer: latestChatMessageTimestampByPeer(timeline),
+    );
+    final rankByPeer = <String, int>{
+      for (var index = 0; index < peerOrder.length; index += 1)
+        peerOrder[index]: index,
+    };
+    candidates.sort(
+      (left, right) => (rankByPeer[left.peerHex] ?? peerOrder.length).compareTo(
+        rankByPeer[right.peerHex] ?? peerOrder.length,
+      ),
+    );
 
     return showModalBottomSheet<String>(
       context: context,
@@ -183,7 +252,11 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
                       '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(check.peerHex)}',
                     ),
                     trailing:
-                        check.isSignable
+                        (unreadByPeer[check.peerHex] ?? 0) > 0
+                            ? Badge.count(
+                              count: unreadByPeer[check.peerHex] ?? 0,
+                            )
+                            : check.isSignable
                             ? const Text(
                               'Ready',
                               style: TextStyle(color: Colors.green),
