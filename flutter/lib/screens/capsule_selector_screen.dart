@@ -12,11 +12,13 @@ import 'first_launch_screen.dart';
 class CapsuleSelectorScreen extends StatefulWidget {
   final bool autoSelectSingle;
   final CapsuleSelectorService? service;
+  final UiEventLogService uiLog;
 
   const CapsuleSelectorScreen({
     super.key,
     this.autoSelectSingle = true,
     this.service,
+    this.uiLog = const UiEventLogService(),
   });
 
   @override
@@ -26,7 +28,7 @@ class CapsuleSelectorScreen extends StatefulWidget {
 class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   late final CapsuleSelectorService _service =
       widget.service ?? CapsuleSelectorService();
-  final UiEventLogService _uiLog = const UiEventLogService();
+  late final UiEventLogService _uiLog = widget.uiLog;
   final TemporaryBackupShareService _backupShare =
       TemporaryBackupShareService();
   List<CapsuleSelectorItem> _capsules = [];
@@ -480,12 +482,15 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
         title: const Text('Select Capsule'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add, semanticLabel: 'Create new capsule'),
             onPressed: _createNewCapsule,
             tooltip: 'Create new capsule',
           ),
           IconButton(
-            icon: const Icon(Icons.file_upload),
+            icon: const Icon(
+              Icons.file_upload,
+              semanticLabel: 'Import capsule',
+            ),
             onPressed: _importCapsule,
             tooltip: 'Import capsule',
           ),
@@ -569,14 +574,21 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
                         dimension: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                      : const Icon(Icons.chevron_right),
+                      : IconButton(
+                        tooltip: 'Capsule actions',
+                        icon: Icon(
+                          Icons.more_vert,
+                          semanticLabel:
+                              'Capsule actions for ${capsule.displayKeyText}',
+                        ),
+                        onPressed:
+                            _selectingCapsuleHex == null
+                                ? () => _showCapsuleMenu(capsule)
+                                : null,
+                      ),
               onTap:
                   _selectingCapsuleHex == null
                       ? () async => _selectCapsule(capsule)
-                      : null,
-              onLongPress:
-                  _selectingCapsuleHex == null
-                      ? () => _showCapsuleMenu(capsule)
                       : null,
             ),
           );
@@ -622,6 +634,14 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
         return SafeArea(
           child: Wrap(
             children: [
+              ListTile(
+                leading: const Icon(Icons.hub),
+                title: const Text('Capsule actions'),
+                subtitle: Text(
+                  '${capsule.network} · ${capsule.displayKeyText}',
+                ),
+              ),
+              const Divider(height: 1),
               ListTile(
                 leading: const Icon(Icons.vpn_key),
                 title: const Text('Restore / Replace Seed'),

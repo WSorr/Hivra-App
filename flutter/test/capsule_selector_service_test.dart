@@ -1,6 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/capsule_selector_runtime.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
+import 'package:hivra_app/screens/capsule_selector_screen.dart';
 import 'package:hivra_app/services/capsule_delivery_inbox_store.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/capsule_selector_service.dart';
@@ -87,6 +89,23 @@ class _DeletionRuntime implements CapsuleSelectorRuntime {
     deleted.add(pubKeyHex);
     if (deletionError != null) throw deletionError!;
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ScreenService extends CapsuleSelectorService {
+  final List<CapsuleSelectorItem> items;
+
+  _ScreenService(this.items) : super(_ActivationRuntime());
+
+  @override
+  Future<List<CapsuleSelectorItem>> loadCapsules() async => items;
+}
+
+class _NoopUiLog implements UiEventLogService {
+  @override
+  Future<void> log(String source, String message) async {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -410,4 +429,46 @@ void main() {
       expect(inbox.loadMessages(capsuleHex), hasLength(1));
     },
   );
+
+  testWidgets('exposes capsule actions without a long press', (tester) async {
+    final now = DateTime.utc(2026, 8, 31, 12);
+    final service = _ScreenService(<CapsuleSelectorItem>[
+      _item(
+        pubKeyHex: List.filled(32, 'aa').join(),
+        displayKeyText: 'h1capsule',
+        network: 'NESTE',
+        ledgerVersion: 1,
+        lastActive: now,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CapsuleSelectorScreen(
+          autoSelectSingle: false,
+          service: service,
+          uiLog: _NoopUiLog(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final actions = find.byTooltip('Capsule actions');
+    expect(actions, findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Capsule actions for h1capsule'),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Create new capsule'), findsOneWidget);
+    expect(find.bySemanticsLabel('Import capsule'), findsOneWidget);
+
+    await tester.tap(actions.first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('NESTE · h1capsule'), findsOneWidget);
+    expect(find.text('Delete Capsule'), findsOneWidget);
+    expect(find.text('Export Backup'), findsOneWidget);
+    expect(find.text('Restore / Replace Seed'), findsOneWidget);
+  });
 }
