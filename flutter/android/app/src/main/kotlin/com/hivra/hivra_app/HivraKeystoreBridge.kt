@@ -69,8 +69,8 @@ object HivraKeystoreBridge {
     @Keep
     fun deleteSeedBlob(account: String): Boolean {
         return runCatching {
-            prefs().edit().remove(account).apply()
-            true
+            val storage = prefs()
+            storage.edit().remove(account).commit() && !storage.contains(account)
         }.getOrDefault(false)
     }
 

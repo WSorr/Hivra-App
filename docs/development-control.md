@@ -55,9 +55,11 @@ former peer-selected intent route, Chat signal inbox, and Trading-side Pair
 Consensus dependencies are removed. The thin App Shell navigation boundary is
 closed without duplicating capability UI or runtime ownership. No next runtime
 unit is selected. Secure seed access failures remain distinct from a missing
-seed and cannot open the recovery path. A plugin ABI change, universal agent
-runtime, new Core fact, V2 UI, release, VPS mutation, or live financial effect
-requires a separate decision.
+seed and cannot open the recovery path; irreversible Capsule deletion verifies
+both the active native seed and the Capsule-scoped secure seed before removing
+local history. A plugin ABI change, universal agent runtime, new Core fact, V2
+UI, release, VPS mutation, or live financial effect requires a separate
+decision.
 
 ## Authority
 

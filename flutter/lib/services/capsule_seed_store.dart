@@ -97,12 +97,16 @@ class CapsuleSeedStore {
   }
 
   Future<void> deleteSeed(String pubKeyHex) async {
-    _processSeedCache.remove(await _cacheKey(pubKeyHex));
+    final key = '$_seedKeyPrefix$pubKeyHex';
     try {
-      await _secureStorage.delete(key: '$_seedKeyPrefix$pubKeyHex');
-    } catch (_) {
-      // Ignore secure storage cleanup errors.
+      await _secureStorage.delete(key: key);
+      if (await _secureStorage.read(key: key) != null) {
+        throw StateError('Secure seed cleanup read-back mismatch');
+      }
+    } catch (error) {
+      throw StateError('Secure seed cleanup failed: $error');
     }
+    _processSeedCache.remove(await _cacheKey(pubKeyHex));
     await deleteFallback(pubKeyHex);
   }
 

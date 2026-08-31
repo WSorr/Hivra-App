@@ -1093,6 +1093,21 @@ class CapsulePersistenceService {
       hivra: hivra,
     );
     if (hivra != null) {
+      final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
+      final currentHex =
+          currentPubKey != null && currentPubKey.length == 32
+              ? _bytesToHex(currentPubKey)
+              : null;
+      if (currentHex != null && keysToDelete.contains(currentHex)) {
+        if (!hivra.resetCapsule()) {
+          throw StateError(
+            hivra.lastErrorMessage() ??
+                'Failed to clear the active Capsule seed from native secure storage',
+          );
+        }
+      }
+    }
+    if (hivra != null) {
       for (final key in keysToDelete) {
         if (!hivra.deleteInboundQuarantine(_hexToBytes(key))) {
           throw StateError(
@@ -1102,16 +1117,8 @@ class CapsulePersistenceService {
       }
     }
     await _secretVault.deleteCapsules(keysToDelete);
-
-    if (hivra != null) {
-      final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
-      final currentHex =
-          currentPubKey != null && currentPubKey.length == 32
-              ? _bytesToHex(currentPubKey)
-              : null;
-      if (currentHex != null && keysToDelete.contains(currentHex)) {
-        hivra.resetCapsule();
-      }
+    for (final key in keysToDelete) {
+      await _seedStore.deleteSeed(key);
     }
 
     for (final key in keysToDelete) {
@@ -1120,7 +1127,6 @@ class CapsulePersistenceService {
         await _deleteLegacyFilesForCapsule(key);
         await _cleanupCapsuleArtifactsEverywhere(key);
       }
-      await _seedStore.deleteSeed(key);
       index.capsules.remove(key);
       if (index.activePubKeyHex == key) {
         index.activePubKeyHex = null;
