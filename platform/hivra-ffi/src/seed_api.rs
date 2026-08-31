@@ -176,3 +176,26 @@ pub unsafe extern "C" fn hivra_seed_delete() -> i32 {
         }
     }
 }
+
+/// Delete the legacy platform credential bound to one exact seed.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_seed_delete_for(seed_ptr: *const u8) -> i32 {
+    clear_last_error();
+    if seed_ptr.is_null() {
+        set_last_error("Seed delete failed: seed pointer was null");
+        return -1;
+    }
+
+    let seed_bytes = std::slice::from_raw_parts(seed_ptr, 32);
+    let mut seed_array = [0u8; 32];
+    seed_array.copy_from_slice(seed_bytes);
+    let seed = Seed(seed_array);
+
+    match delete_seed_for(&seed) {
+        Ok(()) => 0,
+        Err(err) => {
+            set_last_error(format!("Seed delete failed: {err}"));
+            -1
+        }
+    }
+}

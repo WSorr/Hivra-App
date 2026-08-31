@@ -56,6 +56,9 @@ typedef HivraSeedLoadDart = int Function(Pointer<Uint8> outSeed);
 typedef HivraSeedDeleteC = Int32 Function();
 typedef HivraSeedDeleteDart = int Function();
 
+typedef HivraSeedDeleteForC = Int32 Function(Pointer<Uint8> seed);
+typedef HivraSeedDeleteForDart = int Function(Pointer<Uint8> seed);
+
 typedef HivraSetApplicationStorageRootC = Int32 Function(Pointer<Int8> path);
 typedef HivraSetApplicationStorageRootDart = int Function(Pointer<Int8> path);
 typedef HivraDeleteInboundQuarantineC =
@@ -338,6 +341,7 @@ class HivraBindings {
   late final HivraSeedSaveDart _seedSave;
   late final HivraSeedLoadDart _seedLoad;
   late final HivraSeedDeleteDart _seedDelete;
+  late final HivraSeedDeleteForDart _seedDeleteFor;
   late final HivraSetApplicationStorageRootDart _setApplicationStorageRoot;
   late final HivraDeleteInboundQuarantineDart _deleteInboundQuarantine;
   late final HivraCapsuleCreateDart _capsuleCreate;
@@ -458,6 +462,13 @@ class HivraBindings {
     _seedDelete =
         _lib
             .lookup<NativeFunction<HivraSeedDeleteC>>('hivra_seed_delete')
+            .asFunction();
+
+    _seedDeleteFor =
+        _lib
+            .lookup<NativeFunction<HivraSeedDeleteForC>>(
+              'hivra_seed_delete_for',
+            )
             .asFunction();
 
     _setApplicationStorageRoot =
@@ -875,6 +886,18 @@ class HivraBindings {
   }
 
   bool deleteSeed() => _seedDelete() == 0;
+
+  bool deleteSeedFor(Uint8List seed) {
+    if (seed.length != 32) return false;
+    final seedPtr = calloc<Uint8>(32);
+    try {
+      seedPtr.asTypedList(32).setAll(0, seed);
+      return _seedDeleteFor(seedPtr) == 0;
+    } finally {
+      seedPtr.asTypedList(32).fillRange(0, 32, 0);
+      calloc.free(seedPtr);
+    }
+  }
 
   bool setApplicationStorageRoot(String path) {
     final normalized = path.trim();

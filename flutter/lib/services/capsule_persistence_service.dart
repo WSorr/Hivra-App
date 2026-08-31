@@ -1118,6 +1118,13 @@ class CapsulePersistenceService {
     }
     await _secretVault.deleteCapsules(keysToDelete);
     for (final key in keysToDelete) {
+      final seed = await _loadSeedForCapsule(key);
+      if (seed != null && hivra != null && !hivra.deleteSeedFor(seed)) {
+        throw StateError(
+          hivra.lastErrorMessage() ??
+              'Failed to clear the Capsule legacy platform seed',
+        );
+      }
       await _seedStore.deleteSeed(key);
     }
 

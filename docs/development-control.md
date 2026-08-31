@@ -56,10 +56,10 @@ Consensus dependencies are removed. The thin App Shell navigation boundary is
 closed without duplicating capability UI or runtime ownership. No next runtime
 unit is selected. Secure seed access failures remain distinct from a missing
 seed and cannot open the recovery path; irreversible Capsule deletion verifies
-the active native seed, Capsule-scoped secure seed, and known legacy plaintext
-seed locations before removing local history. A plugin ABI change, universal
-agent runtime, new Core fact, V2 UI, release, VPS mutation, or live financial
-effect requires a separate decision.
+the active native seed, Capsule-scoped secure seed, and known legacy seed
+locations before removing local history. A plugin ABI change, universal agent
+runtime, new Core fact, V2 UI, release, VPS mutation, or live financial effect
+requires a separate decision.
 
 ## Authority
 

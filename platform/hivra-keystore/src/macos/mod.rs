@@ -1,6 +1,7 @@
 //! macOS Keychain implementation.
 
 use crate::{Error, Result, Seed};
+use sha2::{Digest, Sha256};
 use std::sync::{Mutex, OnceLock};
 
 const KEYCHAIN_SERVICE: &str = "com.hivra.keystore";
@@ -89,6 +90,11 @@ pub fn delete_seed() -> Result<()> {
     Ok(())
 }
 
+/// Deletes the legacy namespaced Keychain credential for one exact seed.
+pub fn delete_seed_for(seed: &Seed) -> Result<()> {
+    delete_account_credential(&seed_account(seed))
+}
+
 fn cache_active_seed(seed: &Seed) -> Result<()> {
     let mut cached = active_seed_cache()
         .lock()
@@ -138,6 +144,24 @@ fn is_seed_account(account: &str) -> bool {
         return false;
     };
     digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn seed_account(seed: &Seed) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    hasher.update(b"hivra_capsule_seed_account_v1");
+    let hash = hasher.finalize();
+    format!("capsule_seed:{}", encode_hex(hash.as_slice()))
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
 }
 
 fn map_get_error(err: keyring::Error) -> Error {
@@ -196,5 +220,14 @@ mod tests {
             "capsule_seed:{}",
             "g".repeat(64)
         )));
+    }
+
+    #[test]
+    fn legacy_seed_account_is_deterministic_and_seed_bound() {
+        let first = Seed::new([0x11; 32]);
+        let second = Seed::new([0x12; 32]);
+        assert_eq!(seed_account(&first), seed_account(&first));
+        assert_ne!(seed_account(&first), seed_account(&second));
+        assert!(is_seed_account(&seed_account(&first)));
     }
 }

@@ -119,6 +119,29 @@ pub fn delete_seed() -> Result<()> {
     Ok(())
 }
 
+/// Deletes the Keystore-backed credential for one exact seed.
+pub fn delete_seed_for(seed: &Seed) -> Result<()> {
+    let dir = keystore_dir()?;
+    let account = seed_account(seed);
+    if !delete_seed_blob(&account)? || seed_blob_exists(&account)? {
+        return Err(Error::PlatformError(
+            "Android keystore helper did not delete the requested seed".to_string(),
+        ));
+    }
+    remove_file_if_exists(dir.join(&account))?;
+
+    let active_account_path = dir.join(ACTIVE_SEED_ACCOUNT);
+    match fs::read_to_string(&active_account_path) {
+        Ok(active_account) if active_account.trim() == account => {
+            remove_file_if_exists(active_account_path)?;
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(Error::IoError(error)),
+    }
+    Ok(())
+}
+
 fn is_seed_account(account: &str) -> bool {
     let Some(digest) = account.strip_prefix("capsule_seed:") else {
         return false;

@@ -258,13 +258,13 @@ pub mod macos;
 
 // Re-export platform functions at the crate root for convenience
 #[cfg(target_os = "macos")]
-pub use macos::{delete_seed, load_seed, seed_exists, store_seed};
+pub use macos::{delete_seed, delete_seed_for, load_seed, seed_exists, store_seed};
 
 #[cfg(target_os = "android")]
 pub mod android;
 
 #[cfg(target_os = "android")]
-pub use android::{delete_seed, load_seed, seed_exists, store_seed};
+pub use android::{delete_seed, delete_seed_for, load_seed, seed_exists, store_seed};
 
 #[cfg(test)]
 mod tests {
