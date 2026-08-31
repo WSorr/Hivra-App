@@ -489,7 +489,11 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
         title: const Text('Relationships'),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filter relationships',
+            icon: const Icon(
+              Icons.filter_list,
+              semanticLabel: 'Filter relationships',
+            ),
             onSelected: (value) {
               setState(() {
                 _filterKind = value == 'all' ? null : value;
@@ -520,7 +524,11 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                 ],
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh relationships',
+            icon: const Icon(
+              Icons.refresh,
+              semanticLabel: 'Refresh relationships',
+            ),
             onPressed:
                 _isSyncingTransport ? null : () => _syncTransportAndReload(),
           ),
@@ -641,6 +649,14 @@ class _RelationshipPeerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final activeKinds = group.activeKinds;
+    final breakActionLabel =
+        group.pendingRemoteBreakRelationships.isNotEmpty
+            ? (group.pendingRemoteBreakRelationships.length == 1
+                ? 'Confirm break request'
+                : 'Choose break request to confirm')
+            : (group.activeRelationships.length == 1
+                ? 'Break relationship'
+                : 'Choose relationship to break');
     const brokenSurface = Color(0xFF21191D);
     const brokenBorder = Color(0xFF633038);
     const brokenAccent = Color(0xFFFF6B63);
@@ -846,20 +862,14 @@ class _RelationshipPeerCard extends StatelessWidget {
                             group.pendingRemoteBreakRelationships.isNotEmpty
                                 ? Icons.check_circle_outline
                                 : Icons.link_off,
+                            semanticLabel: breakActionLabel,
                             color:
                                 group.pendingRemoteBreakRelationships.isNotEmpty
                                     ? Colors.orange
                                     : Colors.red,
                           ),
                   onPressed: isBreaking ? null : onBreak,
-                  tooltip:
-                      group.pendingRemoteBreakRelationships.isNotEmpty
-                          ? (group.pendingRemoteBreakRelationships.length == 1
-                              ? 'Confirm break request'
-                              : 'Choose break request to confirm')
-                          : (group.activeRelationships.length == 1
-                              ? 'Break relationship'
-                              : 'Choose relationship to break'),
+                  tooltip: breakActionLabel,
                 ),
             ],
           ),

@@ -291,15 +291,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       final card = cards[index];
                                       final label =
                                           labels[card.rootKey.toLowerCase()];
+                                      final displayLabel =
+                                          label ??
+                                          'Capsule ${HivraIdFormat.short(card.rootKey)}';
                                       return ListTile(
                                         contentPadding: EdgeInsets.zero,
                                         leading: const Icon(
                                           Icons.person_outline,
                                         ),
-                                        title: Text(
-                                          label ??
-                                              'Capsule ${HivraIdFormat.short(card.rootKey)}',
-                                        ),
+                                        title: Text(displayLabel),
                                         subtitle: Text(
                                           label == null
                                               ? 'Verified delivery card'
@@ -309,8 +309,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           spacing: 2,
                                           children: [
                                             IconButton(
-                                              icon: const Icon(
+                                              icon: Icon(
                                                 Icons.edit_outlined,
+                                                semanticLabel:
+                                                    'Name $displayLabel',
                                               ),
                                               tooltip: 'Name capsule',
                                               onPressed: () async {
@@ -337,8 +339,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                               },
                                             ),
                                             IconButton(
-                                              icon: const Icon(
+                                              icon: Icon(
                                                 Icons.delete_outline,
+                                                semanticLabel:
+                                                    'Remove $displayLabel',
                                               ),
                                               tooltip: 'Remove',
                                               onPressed: () async {

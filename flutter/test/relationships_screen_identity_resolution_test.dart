@@ -17,9 +17,11 @@ void main() {
     'uses imported root key when contact card matches non-representative transport key in group',
     (tester) async {
       String b64(int value) => base64Encode(List<int>.filled(32, value));
-      String hex32(int value) => List<int>.filled(32, value)
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
+      String hex32(int value) =>
+          List<int>.filled(
+            32,
+            value,
+          ).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
       final representativePeerB64 = b64(11);
       final linkedPeerWithCardB64 = b64(12);
@@ -68,17 +70,18 @@ void main() {
       );
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: RelationshipsScreen(service: service),
-        ),
+        MaterialApp(home: RelationshipsScreen(service: service)),
       );
       await tester.pumpAndSettle();
 
-      expect(
-        find.textContaining(HivraIdFormat.short(rootKey)),
-        findsWidgets,
-      );
+      expect(find.textContaining(HivraIdFormat.short(rootKey)), findsWidgets);
       expect(find.textContaining('Unknown root'), findsNothing);
+      expect(find.bySemanticsLabel('Filter relationships'), findsOneWidget);
+      expect(find.bySemanticsLabel('Refresh relationships'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Choose relationship to break'),
+        findsOneWidget,
+      );
     },
   );
 }
@@ -86,9 +89,7 @@ void main() {
 class _FakeCapsuleAddressService extends CapsuleAddressService {
   final List<CapsuleAddressCard> cards;
 
-  const _FakeCapsuleAddressService({
-    required this.cards,
-  });
+  const _FakeCapsuleAddressService({required this.cards});
 
   @override
   Future<List<CapsuleAddressCard>> listTrustedCards() async => cards;

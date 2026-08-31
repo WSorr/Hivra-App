@@ -1132,7 +1132,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
               const Spacer(),
               IconButton(
                 tooltip: 'Send invitation',
-                icon: const Icon(Icons.add),
+                icon: const Icon(Icons.add, semanticLabel: 'Send invitation'),
                 onPressed: _showSendInvitationDialog,
               ),
             ],
