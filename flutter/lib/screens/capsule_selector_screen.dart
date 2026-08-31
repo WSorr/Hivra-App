@@ -282,9 +282,20 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
           ),
     );
     if (confirm != true) return;
-    await _service.deleteCapsule(capsule.publicKeyHex);
-    if (!mounted) return;
-    await _loadCapsules();
+    try {
+      await _service.deleteCapsule(capsule.publicKeyHex);
+      if (!mounted) return;
+      await _loadCapsules();
+    } catch (error) {
+      await _uiLog.log(
+        'capsule.selector.delete',
+        'error target=${capsule.publicKeyHex} $error',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Capsule was not deleted: $error')),
+      );
+    }
   }
 
   Future<bool> _restoreSeedForCapsule(CapsuleSelectorItem capsule) async {

@@ -106,27 +106,72 @@ class CapsuleSeedStore {
     } catch (error) {
       throw StateError('Secure seed cleanup failed: $error');
     }
-    _processSeedCache.remove(await _cacheKey(pubKeyHex));
     await deleteFallback(pubKeyHex);
+    _processSeedCache.remove(await _cacheKey(pubKeyHex));
   }
 
   Future<void> deleteFallback(String pubKeyHex) async {
-    final file = await _seedFallbackFile();
-    if (!await file.exists()) return;
+    final normalizedPubKey = pubKeyHex.trim().toLowerCase();
+    for (final file in await _seedFallbackFiles()) {
+      await _deleteFallbackEntry(file, normalizedPubKey);
+    }
+  }
 
+  Future<List<File>> _seedFallbackFiles() async {
+    final canonicalFile = await _seedFallbackFile();
+    final visibleRoot = await _dirs.userVisibleRootDirectory();
+    final files = <String, File>{
+      canonicalFile.absolute.path: canonicalFile,
+      File('${visibleRoot.path}/capsules/$_seedFallbackFileName')
+          .absolute
+          .path: File('${visibleRoot.path}/capsules/$_seedFallbackFileName'),
+    };
+    final legacyDocs = await _dirs.legacyContainerDocumentsDirectory();
+    if (legacyDocs != null) {
+      for (final root in <Directory>[
+        legacyDocs,
+        Directory('${legacyDocs.path}/Hivra'),
+      ]) {
+        final file = File('${root.path}/capsules/$_seedFallbackFileName');
+        files[file.absolute.path] = file;
+      }
+    }
+    return files.values.toList(growable: false);
+  }
+
+  Future<void> _deleteFallbackEntry(File file, String normalizedPubKey) async {
+    if (!await file.exists()) return;
     try {
       final raw = await file.readAsString();
-      if (raw.trim().isEmpty) return;
+      if (raw.trim().isEmpty) {
+        await file.delete();
+        if (await file.exists()) {
+          throw StateError('Legacy seed file still exists after deletion');
+        }
+        return;
+      }
       final map = _parseJsonMap(raw);
-      if (map == null) return;
-      map.remove(pubKeyHex);
+      if (map == null) {
+        throw StateError('Legacy seed file is malformed');
+      }
+      map.removeWhere((key, _) => key.trim().toLowerCase() == normalizedPubKey);
       if (map.isEmpty) {
         await file.delete();
+        if (await file.exists()) {
+          throw StateError('Legacy seed file still exists after deletion');
+        }
         return;
       }
       await _atomicWrites.writeString(file, jsonEncode(map));
-    } catch (_) {
-      // Ignore fallback cleanup errors.
+      final persisted = _parseJsonMap(await file.readAsString());
+      if (persisted == null ||
+          persisted.keys.any(
+            (key) => key.trim().toLowerCase() == normalizedPubKey,
+          )) {
+        throw StateError('Legacy seed cleanup read-back mismatch');
+      }
+    } catch (error) {
+      throw StateError('Legacy seed cleanup failed for ${file.path}: $error');
     }
   }
 

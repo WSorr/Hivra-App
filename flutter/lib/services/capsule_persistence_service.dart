@@ -1395,10 +1395,6 @@ class CapsulePersistenceService {
       File('${capsulesDir.path}/capsules_index.json'),
       pubKeyHex,
     );
-    await _removeCapsuleFromSeedsFile(
-      File('${capsulesDir.path}/capsule_seeds.json'),
-      pubKeyHex,
-    );
     await _removeCapsuleFromContactCards(
       File('${root.path}/capsule_contact_cards.json'),
       pubKeyHex,
@@ -1426,20 +1422,6 @@ class CapsulePersistenceService {
         root['active'] = null;
       }
       await _atomicWrites.writeString(indexFile, jsonEncode(root));
-    } catch (_) {}
-  }
-
-  Future<void> _removeCapsuleFromSeedsFile(
-    File seedsFile,
-    String pubKeyHex,
-  ) async {
-    if (!await seedsFile.exists()) return;
-    try {
-      final raw = await seedsFile.readAsString();
-      final map = _parseJsonMap(raw);
-      if (map == null) return;
-      map.remove(pubKeyHex);
-      await _atomicWrites.writeString(seedsFile, jsonEncode(map));
     } catch (_) {}
   }
 

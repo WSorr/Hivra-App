@@ -78,10 +78,14 @@ class _PublicSummaryRuntime implements CapsuleSelectorRuntime {
 
 class _DeletionRuntime implements CapsuleSelectorRuntime {
   final List<String> deleted = <String>[];
+  final Object? deletionError;
+
+  _DeletionRuntime({this.deletionError});
 
   @override
   Future<void> deleteCapsule(String pubKeyHex) async {
     deleted.add(pubKeyHex);
+    if (deletionError != null) throw deletionError!;
   }
 
   @override
@@ -367,4 +371,43 @@ void main() {
     expect(runtime.deleted, <String>[capsuleHex]);
     expect(inbox.loadMessages(capsuleHex), isEmpty);
   });
+
+  test(
+    'failed capsule deletion preserves its process chat projection',
+    () async {
+      const capsuleHex =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final runtime = _DeletionRuntime(
+        deletionError: StateError('secure seed cleanup failed'),
+      );
+      final inbox = CapsuleDeliveryInboxStore();
+      inbox.merge(
+        capsuleHex,
+        messages: const <CapsuleChatInboxMessage>[
+          CapsuleChatInboxMessage(
+            id: 'message',
+            fromHex: capsuleHex,
+            messageText: 'must remain',
+            createdAtUtc: '2026-08-09T08:00:00.000Z',
+            envelopeHashHex: '',
+            timestampMs: 1,
+          ),
+        ],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+      final service = CapsuleSelectorService(
+        runtime,
+        const UiEventLogService(),
+        inbox,
+      );
+
+      await expectLater(
+        service.deleteCapsule(capsuleHex),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(runtime.deleted, <String>[capsuleHex]);
+      expect(inbox.loadMessages(capsuleHex), hasLength(1));
+    },
+  );
 }

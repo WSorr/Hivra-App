@@ -253,4 +253,73 @@ void main() {
     expect(secureStorage.values['hivra.seed.$capsuleHex'], isNull);
     expect(await store.loadSeed(capsuleHex), isNull);
   });
+
+  test('deletes legacy seed copies while preserving other Capsules', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final secureStorage = _FakeSecureStorage();
+    final store = CapsuleSeedStore(
+      secureStorage: secureStorage,
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    await store.storeSeed(capsuleHex, seed);
+    final otherCapsule = List<String>.filled(64, 'b').join();
+    final fallbackFiles = <File>[
+      File(
+        '${tempHome.path}/Library/Application Support/Hivra/capsules/capsule_seeds.json',
+      ),
+      File('${tempHome.path}/Documents/Hivra/capsules/capsule_seeds.json'),
+      File(
+        '${tempHome.path}/Library/Containers/com.hivra.hivraApp/Data/Documents/capsules/capsule_seeds.json',
+      ),
+      File(
+        '${tempHome.path}/Library/Containers/com.hivra.hivraApp/Data/Documents/Hivra/capsules/capsule_seeds.json',
+      ),
+    ];
+    for (final file in fallbackFiles) {
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode(<String, String>{
+          capsuleHex.toUpperCase(): base64.encode(seed),
+          otherCapsule: base64.encode(seed.reversed.toList()),
+        }),
+      );
+    }
+
+    await store.deleteSeed(capsuleHex);
+
+    for (final file in fallbackFiles) {
+      final persisted = jsonDecode(await file.readAsString()) as Map;
+      expect(persisted.keys, equals(<Object?>[otherCapsule]));
+    }
+  });
+
+  test('malformed legacy seed file blocks deletion fail closed', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final secureStorage = _FakeSecureStorage();
+    final store = CapsuleSeedStore(
+      secureStorage: secureStorage,
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    await store.storeSeed(capsuleHex, seed);
+    final fallbackFile = File(
+      '${tempHome.path}/Library/Application Support/Hivra/capsules/capsule_seeds.json',
+    );
+    await fallbackFile.writeAsString('{malformed');
+
+    await expectLater(
+      store.deleteSeed(capsuleHex),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('Legacy seed cleanup failed'),
+        ),
+      ),
+    );
+
+    expect(await fallbackFile.readAsString(), equals('{malformed'));
+    expect(await store.loadSeed(capsuleHex), orderedEquals(seed));
+  });
 }

@@ -36,15 +36,24 @@ pub fn load_seed() -> Result<Seed> {
         return Ok(seed);
     }
 
-    if let Ok(account) = active_seed_account() {
-        match load_seed_from_account(&account) {
-            Ok(seed) => {
-                cache_active_seed(&seed)?;
-                return Ok(seed);
+    match active_seed_account() {
+        Ok(account) => {
+            if !is_seed_account(&account) {
+                return Err(Error::PlatformError(
+                    "macOS Keychain active seed account is malformed".to_string(),
+                ));
             }
-            Err(Error::KeyNotFound) => {}
-            Err(other) => return Err(other),
+            match load_seed_from_account(&account) {
+                Ok(seed) => {
+                    cache_active_seed(&seed)?;
+                    return Ok(seed);
+                }
+                Err(Error::KeyNotFound) => {}
+                Err(other) => return Err(other),
+            }
         }
+        Err(Error::KeyNotFound) => {}
+        Err(other) => return Err(other),
     }
 
     // Backward-compatibility for old single-account storage.
@@ -59,14 +68,24 @@ pub fn load_seed() -> Result<Seed> {
 
 /// Deletes the capsule seed from the macOS Keychain.
 pub fn delete_seed() -> Result<()> {
-    if let Ok(mut cached) = active_seed_cache().lock() {
-        *cached = None;
-    }
-    if let Ok(account) = active_seed_account() {
-        delete_account_credential(&account)?;
+    match active_seed_account() {
+        Ok(account) => {
+            if !is_seed_account(&account) {
+                return Err(Error::PlatformError(
+                    "macOS Keychain active seed account is malformed".to_string(),
+                ));
+            }
+            delete_account_credential(&account)?;
+        }
+        Err(Error::KeyNotFound) => {}
+        Err(other) => return Err(other),
     }
     delete_account_credential(ACTIVE_SEED_ACCOUNT)?;
     delete_account_credential(LEGACY_KEYCHAIN_ACCOUNT)?;
+    let mut cached = active_seed_cache()
+        .lock()
+        .map_err(|_| Error::PlatformError("active seed cache poisoned".to_string()))?;
+    *cached = None;
     Ok(())
 }
 
@@ -100,13 +119,25 @@ fn load_seed_from_account(account: &str) -> Result<Seed> {
 }
 
 fn delete_account_credential(account: &str) -> Result<()> {
-    match entry_for_account(account)?
-        .delete_credential()
-        .map_err(map_get_error)
-    {
-        Ok(()) | Err(Error::KeyNotFound) => Ok(()),
+    let entry = entry_for_account(account)?;
+    match entry.delete_credential().map_err(map_get_error) {
+        Ok(()) | Err(Error::KeyNotFound) => {}
+        Err(other) => return Err(other),
+    }
+    match entry.get_password().map_err(map_get_error) {
+        Err(Error::KeyNotFound) => Ok(()),
+        Ok(_) => Err(Error::PlatformError(
+            "macOS Keychain credential still exists after deletion".to_string(),
+        )),
         Err(other) => Err(other),
     }
+}
+
+fn is_seed_account(account: &str) -> bool {
+    let Some(digest) = account.strip_prefix("capsule_seed:") else {
+        return false;
+    };
+    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn map_get_error(err: keyring::Error) -> Error {
@@ -152,5 +183,18 @@ mod tests {
         store_seed(&seed).unwrap();
         assert_eq!(load_seed().unwrap().as_bytes(), seed.as_bytes());
         assert!(seed_exists());
+    }
+
+    #[test]
+    fn legacy_seed_account_binding_rejects_malformed_values() {
+        assert!(is_seed_account(&format!("capsule_seed:{}", "a".repeat(64))));
+        assert!(!is_seed_account("capsule_seed"));
+        assert!(!is_seed_account(
+            "capsule_seed:../active_capsule_seed_account"
+        ));
+        assert!(!is_seed_account(&format!(
+            "capsule_seed:{}",
+            "g".repeat(64)
+        )));
     }
 }
