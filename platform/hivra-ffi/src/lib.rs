@@ -20,8 +20,9 @@ use hivra_engine::{
     CryptoProvider, Engine, EngineConfig, PreparedEvent, RandomSource, SecureKeyStore, TimeSource,
 };
 use hivra_keystore::{
-    delete_seed, derive_nostr_keypair, derive_root_keypair, derive_root_public_key, load_seed,
-    mnemonic_to_seed, seed_exists, seed_to_mnemonic, store_seed, Seed,
+    delete_seed, delete_seed_for, derive_nostr_keypair, derive_root_keypair,
+    derive_root_public_key, load_seed, mnemonic_to_seed, seed_exists, seed_to_mnemonic, store_seed,
+    Seed,
 };
 use hivra_transport::nostr::{NostrConfig, NostrTransport};
 use hivra_transport::{

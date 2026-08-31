@@ -94,14 +94,67 @@ pub fn load_seed() -> Result<Seed> {
 /// Deletes the capsule seed from Android secure storage.
 pub fn delete_seed() -> Result<()> {
     let dir = keystore_dir()?;
+    let active_account_path = dir.join(ACTIVE_SEED_ACCOUNT);
 
-    if let Ok(account) = fs::read_to_string(dir.join(ACTIVE_SEED_ACCOUNT)) {
-        let _ = delete_seed_blob(account.trim());
-        let _ = fs::remove_file(dir.join(account.trim()));
+    let active_account = match fs::read_to_string(&active_account_path) {
+        Ok(account) => Some(account.trim().to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(Error::IoError(error)),
+    };
+    if let Some(account) = active_account.filter(|account| !account.is_empty()) {
+        if !is_seed_account(&account) {
+            return Err(Error::PlatformError(
+                "Android keystore active seed account is malformed".to_string(),
+            ));
+        }
+        if !delete_seed_blob(&account)? || seed_blob_exists(&account)? {
+            return Err(Error::PlatformError(
+                "Android keystore helper did not delete the active seed".to_string(),
+            ));
+        }
+        remove_file_if_exists(dir.join(&account))?;
     }
-    let _ = fs::remove_file(dir.join(ACTIVE_SEED_ACCOUNT));
-    let _ = fs::remove_file(dir.join(LEGACY_SEED_FILE));
+    remove_file_if_exists(active_account_path)?;
+    remove_file_if_exists(dir.join(LEGACY_SEED_FILE))?;
     Ok(())
+}
+
+/// Deletes the Keystore-backed credential for one exact seed.
+pub fn delete_seed_for(seed: &Seed) -> Result<()> {
+    let dir = keystore_dir()?;
+    let account = seed_account(seed);
+    if !delete_seed_blob(&account)? || seed_blob_exists(&account)? {
+        return Err(Error::PlatformError(
+            "Android keystore helper did not delete the requested seed".to_string(),
+        ));
+    }
+    remove_file_if_exists(dir.join(&account))?;
+
+    let active_account_path = dir.join(ACTIVE_SEED_ACCOUNT);
+    match fs::read_to_string(&active_account_path) {
+        Ok(active_account) if active_account.trim() == account => {
+            remove_file_if_exists(active_account_path)?;
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(Error::IoError(error)),
+    }
+    Ok(())
+}
+
+fn is_seed_account(account: &str) -> bool {
+    let Some(digest) = account.strip_prefix("capsule_seed:") else {
+        return false;
+    };
+    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn remove_file_if_exists(path: PathBuf) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(Error::IoError(error)),
+    }
 }
 
 /// Returns `true` if a seed entry exists in Android secure storage.

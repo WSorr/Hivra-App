@@ -1093,6 +1093,21 @@ class CapsulePersistenceService {
       hivra: hivra,
     );
     if (hivra != null) {
+      final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
+      final currentHex =
+          currentPubKey != null && currentPubKey.length == 32
+              ? _bytesToHex(currentPubKey)
+              : null;
+      if (currentHex != null && keysToDelete.contains(currentHex)) {
+        if (!hivra.resetCapsule()) {
+          throw StateError(
+            hivra.lastErrorMessage() ??
+                'Failed to clear the active Capsule seed from native secure storage',
+          );
+        }
+      }
+    }
+    if (hivra != null) {
       for (final key in keysToDelete) {
         if (!hivra.deleteInboundQuarantine(_hexToBytes(key))) {
           throw StateError(
@@ -1102,16 +1117,15 @@ class CapsulePersistenceService {
       }
     }
     await _secretVault.deleteCapsules(keysToDelete);
-
-    if (hivra != null) {
-      final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
-      final currentHex =
-          currentPubKey != null && currentPubKey.length == 32
-              ? _bytesToHex(currentPubKey)
-              : null;
-      if (currentHex != null && keysToDelete.contains(currentHex)) {
-        hivra.resetCapsule();
+    for (final key in keysToDelete) {
+      final seed = await _loadSeedForCapsule(key);
+      if (seed != null && hivra != null && !hivra.deleteSeedFor(seed)) {
+        throw StateError(
+          hivra.lastErrorMessage() ??
+              'Failed to clear the Capsule legacy platform seed',
+        );
       }
+      await _seedStore.deleteSeed(key);
     }
 
     for (final key in keysToDelete) {
@@ -1120,7 +1134,6 @@ class CapsulePersistenceService {
         await _deleteLegacyFilesForCapsule(key);
         await _cleanupCapsuleArtifactsEverywhere(key);
       }
-      await _seedStore.deleteSeed(key);
       index.capsules.remove(key);
       if (index.activePubKeyHex == key) {
         index.activePubKeyHex = null;
@@ -1389,10 +1402,6 @@ class CapsulePersistenceService {
       File('${capsulesDir.path}/capsules_index.json'),
       pubKeyHex,
     );
-    await _removeCapsuleFromSeedsFile(
-      File('${capsulesDir.path}/capsule_seeds.json'),
-      pubKeyHex,
-    );
     await _removeCapsuleFromContactCards(
       File('${root.path}/capsule_contact_cards.json'),
       pubKeyHex,
@@ -1420,20 +1429,6 @@ class CapsulePersistenceService {
         root['active'] = null;
       }
       await _atomicWrites.writeString(indexFile, jsonEncode(root));
-    } catch (_) {}
-  }
-
-  Future<void> _removeCapsuleFromSeedsFile(
-    File seedsFile,
-    String pubKeyHex,
-  ) async {
-    if (!await seedsFile.exists()) return;
-    try {
-      final raw = await seedsFile.readAsString();
-      final map = _parseJsonMap(raw);
-      if (map == null) return;
-      map.remove(pubKeyHex);
-      await _atomicWrites.writeString(seedsFile, jsonEncode(map));
     } catch (_) {}
   }
 

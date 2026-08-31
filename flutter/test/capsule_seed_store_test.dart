@@ -10,6 +10,7 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
   final Map<String, int> readCounts = <String, int>{};
+  bool failDelete = false;
 
   @override
   Future<void> write({
@@ -53,6 +54,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    if (failDelete) throw Exception('secure storage delete unavailable');
     values.remove(key);
   }
 }
@@ -208,5 +210,116 @@ void main() {
     expect(first, orderedEquals(seed));
     expect(second, orderedEquals(seed));
     expect(secureStorage.readCounts['hivra.seed.$capsuleHex'], equals(1));
+  });
+
+  test('failed secure deletion preserves the retained seed', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final secureStorage = _FakeSecureStorage();
+    final store = CapsuleSeedStore(
+      secureStorage: secureStorage,
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    await store.storeSeed(capsuleHex, seed);
+    secureStorage.failDelete = true;
+
+    await expectLater(
+      store.deleteSeed(capsuleHex),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('Secure seed cleanup failed'),
+        ),
+      ),
+    );
+
+    expect(await store.loadSeed(capsuleHex), orderedEquals(seed));
+    expect(secureStorage.values['hivra.seed.$capsuleHex'], base64.encode(seed));
+  });
+
+  test('successful secure deletion clears storage and process cache', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final secureStorage = _FakeSecureStorage();
+    final store = CapsuleSeedStore(
+      secureStorage: secureStorage,
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    await store.storeSeed(capsuleHex, seed);
+
+    await store.deleteSeed(capsuleHex);
+
+    expect(secureStorage.values['hivra.seed.$capsuleHex'], isNull);
+    expect(await store.loadSeed(capsuleHex), isNull);
+  });
+
+  test('deletes legacy seed copies while preserving other Capsules', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final secureStorage = _FakeSecureStorage();
+    final store = CapsuleSeedStore(
+      secureStorage: secureStorage,
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    await store.storeSeed(capsuleHex, seed);
+    final otherCapsule = List<String>.filled(64, 'b').join();
+    final fallbackFiles = <File>[
+      File(
+        '${tempHome.path}/Library/Application Support/Hivra/capsules/capsule_seeds.json',
+      ),
+      File('${tempHome.path}/Documents/Hivra/capsules/capsule_seeds.json'),
+      File(
+        '${tempHome.path}/Library/Containers/com.hivra.hivraApp/Data/Documents/capsules/capsule_seeds.json',
+      ),
+      File(
+        '${tempHome.path}/Library/Containers/com.hivra.hivraApp/Data/Documents/Hivra/capsules/capsule_seeds.json',
+      ),
+    ];
+    for (final file in fallbackFiles) {
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode(<String, String>{
+          capsuleHex.toUpperCase(): base64.encode(seed),
+          otherCapsule: base64.encode(seed.reversed.toList()),
+        }),
+      );
+    }
+
+    await store.deleteSeed(capsuleHex);
+
+    for (final file in fallbackFiles) {
+      final persisted = jsonDecode(await file.readAsString()) as Map;
+      expect(persisted.keys, equals(<Object?>[otherCapsule]));
+    }
+  });
+
+  test('malformed legacy seed file blocks deletion fail closed', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final secureStorage = _FakeSecureStorage();
+    final store = CapsuleSeedStore(
+      secureStorage: secureStorage,
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    await store.storeSeed(capsuleHex, seed);
+    final fallbackFile = File(
+      '${tempHome.path}/Library/Application Support/Hivra/capsules/capsule_seeds.json',
+    );
+    await fallbackFile.writeAsString('{malformed');
+
+    await expectLater(
+      store.deleteSeed(capsuleHex),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('Legacy seed cleanup failed'),
+        ),
+      ),
+    );
+
+    expect(await fallbackFile.readAsString(), equals('{malformed'));
+    expect(await store.loadSeed(capsuleHex), orderedEquals(seed));
   });
 }

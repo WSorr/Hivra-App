@@ -1,6 +1,7 @@
 //! macOS Keychain implementation.
 
 use crate::{Error, Result, Seed};
+use sha2::{Digest, Sha256};
 use std::sync::{Mutex, OnceLock};
 
 const KEYCHAIN_SERVICE: &str = "com.hivra.keystore";
@@ -36,15 +37,24 @@ pub fn load_seed() -> Result<Seed> {
         return Ok(seed);
     }
 
-    if let Ok(account) = active_seed_account() {
-        match load_seed_from_account(&account) {
-            Ok(seed) => {
-                cache_active_seed(&seed)?;
-                return Ok(seed);
+    match active_seed_account() {
+        Ok(account) => {
+            if !is_seed_account(&account) {
+                return Err(Error::PlatformError(
+                    "macOS Keychain active seed account is malformed".to_string(),
+                ));
             }
-            Err(Error::KeyNotFound) => {}
-            Err(other) => return Err(other),
+            match load_seed_from_account(&account) {
+                Ok(seed) => {
+                    cache_active_seed(&seed)?;
+                    return Ok(seed);
+                }
+                Err(Error::KeyNotFound) => {}
+                Err(other) => return Err(other),
+            }
         }
+        Err(Error::KeyNotFound) => {}
+        Err(other) => return Err(other),
     }
 
     // Backward-compatibility for old single-account storage.
@@ -59,15 +69,30 @@ pub fn load_seed() -> Result<Seed> {
 
 /// Deletes the capsule seed from the macOS Keychain.
 pub fn delete_seed() -> Result<()> {
-    if let Ok(mut cached) = active_seed_cache().lock() {
-        *cached = None;
-    }
-    if let Ok(account) = active_seed_account() {
-        delete_account_credential(&account)?;
+    match active_seed_account() {
+        Ok(account) => {
+            if !is_seed_account(&account) {
+                return Err(Error::PlatformError(
+                    "macOS Keychain active seed account is malformed".to_string(),
+                ));
+            }
+            delete_account_credential(&account)?;
+        }
+        Err(Error::KeyNotFound) => {}
+        Err(other) => return Err(other),
     }
     delete_account_credential(ACTIVE_SEED_ACCOUNT)?;
     delete_account_credential(LEGACY_KEYCHAIN_ACCOUNT)?;
+    let mut cached = active_seed_cache()
+        .lock()
+        .map_err(|_| Error::PlatformError("active seed cache poisoned".to_string()))?;
+    *cached = None;
     Ok(())
+}
+
+/// Deletes the legacy namespaced Keychain credential for one exact seed.
+pub fn delete_seed_for(seed: &Seed) -> Result<()> {
+    delete_account_credential(&seed_account(seed))
 }
 
 fn cache_active_seed(seed: &Seed) -> Result<()> {
@@ -100,13 +125,43 @@ fn load_seed_from_account(account: &str) -> Result<Seed> {
 }
 
 fn delete_account_credential(account: &str) -> Result<()> {
-    match entry_for_account(account)?
-        .delete_credential()
-        .map_err(map_get_error)
-    {
-        Ok(()) | Err(Error::KeyNotFound) => Ok(()),
+    let entry = entry_for_account(account)?;
+    match entry.delete_credential().map_err(map_get_error) {
+        Ok(()) | Err(Error::KeyNotFound) => {}
+        Err(other) => return Err(other),
+    }
+    match entry.get_password().map_err(map_get_error) {
+        Err(Error::KeyNotFound) => Ok(()),
+        Ok(_) => Err(Error::PlatformError(
+            "macOS Keychain credential still exists after deletion".to_string(),
+        )),
         Err(other) => Err(other),
     }
+}
+
+fn is_seed_account(account: &str) -> bool {
+    let Some(digest) = account.strip_prefix("capsule_seed:") else {
+        return false;
+    };
+    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn seed_account(seed: &Seed) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    hasher.update(b"hivra_capsule_seed_account_v1");
+    let hash = hasher.finalize();
+    format!("capsule_seed:{}", encode_hex(hash.as_slice()))
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
 }
 
 fn map_get_error(err: keyring::Error) -> Error {
@@ -152,5 +207,27 @@ mod tests {
         store_seed(&seed).unwrap();
         assert_eq!(load_seed().unwrap().as_bytes(), seed.as_bytes());
         assert!(seed_exists());
+    }
+
+    #[test]
+    fn legacy_seed_account_binding_rejects_malformed_values() {
+        assert!(is_seed_account(&format!("capsule_seed:{}", "a".repeat(64))));
+        assert!(!is_seed_account("capsule_seed"));
+        assert!(!is_seed_account(
+            "capsule_seed:../active_capsule_seed_account"
+        ));
+        assert!(!is_seed_account(&format!(
+            "capsule_seed:{}",
+            "g".repeat(64)
+        )));
+    }
+
+    #[test]
+    fn legacy_seed_account_is_deterministic_and_seed_bound() {
+        let first = Seed::new([0x11; 32]);
+        let second = Seed::new([0x12; 32]);
+        assert_eq!(seed_account(&first), seed_account(&first));
+        assert_ne!(seed_account(&first), seed_account(&second));
+        assert!(is_seed_account(&seed_account(&first)));
     }
 }
