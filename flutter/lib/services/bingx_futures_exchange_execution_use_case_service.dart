@@ -59,7 +59,6 @@ class BingxFuturesExchangeExecutionUseCaseService {
     required Map<String, dynamic> rawIntentResult,
     required BingxFuturesApiCredentials credentials,
     required BingxFuturesRiskPolicy riskPolicy,
-    required double fallbackEquityQuote,
     required bool testOrder,
     BingxFuturesLiveDecisionResult? preparedDecision,
     Future<BingxFuturesLiveDecisionResult?> Function()? refreshDecision,
@@ -108,8 +107,6 @@ class BingxFuturesExchangeExecutionUseCaseService {
       rawIntentResult: rawIntentResult,
       credentials: credentials,
       riskPolicy: riskPolicy,
-      fallbackEquityQuote: fallbackEquityQuote,
-      allowExchangeRiskInputFallbacks: testOrder,
     );
     if (risk.decision == null) {
       return _result(
@@ -863,8 +860,6 @@ class BingxFuturesExchangeExecutionUseCaseService {
     required Map<String, dynamic> rawIntentResult,
     required BingxFuturesApiCredentials credentials,
     required BingxFuturesRiskPolicy riskPolicy,
-    required double fallbackEquityQuote,
-    bool allowExchangeRiskInputFallbacks = false,
   }) async {
     final diagnostics = <String>[];
     var entryPriceDecimal =
@@ -921,7 +916,6 @@ class BingxFuturesExchangeExecutionUseCaseService {
       riskHistoryService: _riskHistory,
       credentials: credentials,
       nowUtc: nowUtc,
-      fallbackEquityQuote: fallbackEquityQuote,
     );
     diagnostics.add(
       'risk_inputs symbol=${payload.symbol} '
@@ -930,15 +924,10 @@ class BingxFuturesExchangeExecutionUseCaseService {
       'positions=${exchangeRiskInput.concurrentPositions} '
       'loss_streak=${exchangeRiskInput.lossStreakCount} '
       'last_loss_at=${exchangeRiskInput.lastLossAtUtc ?? "-"} '
-      'fallbacks=${exchangeRiskInput.usedBalanceFallback ? "balance" : "-"},'
-      '${exchangeRiskInput.usedPnlFallback ? "pnl" : "-"},'
-      '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"} '
+      'complete=${exchangeRiskInput.isComplete} '
       'exchange_reason=${exchangeRiskInput.firstUnavailableReason ?? "-"}',
     );
-    if (!allowExchangeRiskInputFallbacks &&
-        (exchangeRiskInput.usedBalanceFallback ||
-            exchangeRiskInput.usedPnlFallback ||
-            exchangeRiskInput.usedPositionsFallback)) {
+    if (!exchangeRiskInput.isComplete) {
       final reason = exchangeRiskInput.firstUnavailableReason;
       return BingxFuturesRiskEvaluationResult(
         decision: null,
@@ -956,11 +945,11 @@ class BingxFuturesExchangeExecutionUseCaseService {
         quantityDecimal: payload.quantityDecimal,
         entryPriceDecimal: entryPriceDecimal,
         stopLossDecimal: stopLossDecimal,
-        accountEquityQuoteDecimal: exchangeRiskInput.accountEquityQuoteDecimal,
+        accountEquityQuoteDecimal: exchangeRiskInput.accountEquityQuoteDecimal!,
         realizedDailyPnlQuoteDecimal:
-            exchangeRiskInput.realizedDailyPnlQuoteDecimal,
-        concurrentPositions: exchangeRiskInput.concurrentPositions,
-        lossStreakCount: exchangeRiskInput.lossStreakCount,
+            exchangeRiskInput.realizedDailyPnlQuoteDecimal!,
+        concurrentPositions: exchangeRiskInput.concurrentPositions!,
+        lossStreakCount: exchangeRiskInput.lossStreakCount!,
         lastLossAtUtc: exchangeRiskInput.lastLossAtUtc,
         nowUtc: nowUtc.toIso8601String(),
         exchangeMinimumQuantityDecimal: rules?.minimumQuantityDecimal,

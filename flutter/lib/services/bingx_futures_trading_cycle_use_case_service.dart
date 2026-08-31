@@ -35,7 +35,6 @@ class BingxFuturesTradingCycleCommand {
   final double takeProfitRiskReward;
   final BingxFuturesApiCredentials? credentials;
   final BingxFuturesRiskPolicy riskPolicy;
-  final double fallbackEquityQuote;
   final bool testOrder;
   final bool executeEffect;
   final int recentMicroBars;
@@ -51,7 +50,6 @@ class BingxFuturesTradingCycleCommand {
     required this.takeProfitRiskReward,
     required this.credentials,
     required this.riskPolicy,
-    required this.fallbackEquityQuote,
     required this.testOrder,
     required this.executeEffect,
     required this.recentMicroBars,
@@ -109,7 +107,6 @@ typedef BingxFuturesExecutionCycleRunner =
       required Map<String, dynamic> rawIntentResult,
       required BingxFuturesApiCredentials credentials,
       required BingxFuturesRiskPolicy riskPolicy,
-      required double fallbackEquityQuote,
       required bool testOrder,
       BingxFuturesLiveDecisionResult? preparedDecision,
       Future<BingxFuturesLiveDecisionResult?> Function()? refreshDecision,
@@ -339,7 +336,6 @@ class BingxFuturesTradingCycleUseCaseService {
       rawIntentResult: intent.response.result!,
       credentials: credentials,
       riskPolicy: command.riskPolicy,
-      fallbackEquityQuote: command.fallbackEquityQuote,
       testOrder: command.testOrder,
       preparedDecision: decision,
       refreshDecision: () async {
