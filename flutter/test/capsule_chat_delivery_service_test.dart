@@ -162,6 +162,84 @@ void main() {
       },
     );
 
+    test('conversation metadata projects both directions by peer', () {
+      const otherPeerHex =
+          '3333333333333333333333333333333333333333333333333333333333333333';
+      CapsuleChatInboxMessage message({
+        required String id,
+        required String fromHex,
+        String? toHex,
+        required int timestampMs,
+        CapsuleChatMessageDirection direction =
+            CapsuleChatMessageDirection.incoming,
+      }) => CapsuleChatInboxMessage(
+        id: id,
+        fromHex: fromHex,
+        toHex: toHex,
+        messageText: id,
+        createdAtUtc: '2026-08-13T08:00:00.000Z',
+        envelopeHashHex: '',
+        timestampMs: timestampMs,
+        direction: direction,
+      );
+
+      expect(
+        latestChatMessageTimestampByPeer(<CapsuleChatInboxMessage>[
+          message(
+            id: 'incoming',
+            fromHex: peerHex,
+            toHex: capsuleHex,
+            timestampMs: 10,
+          ),
+          message(
+            id: 'outgoing',
+            fromHex: capsuleHex,
+            toHex: peerHex,
+            timestampMs: 20,
+            direction: CapsuleChatMessageDirection.outgoing,
+          ),
+          message(id: 'other', fromHex: otherPeerHex, timestampMs: 30),
+          message(id: 'malformed', fromHex: 'not-a-peer', timestampMs: 40),
+        ]),
+        <String, int>{peerHex: 20, otherPeerHex: 30},
+      );
+    });
+
+    test('conversation order prioritizes unread, recency, and readiness', () {
+      const unreadPeer = peerHex;
+      const recentPeer =
+          '3333333333333333333333333333333333333333333333333333333333333333';
+      const readyPeer =
+          '4444444444444444444444444444444444444444444444444444444444444444';
+      const lexicalPeer =
+          '5555555555555555555555555555555555555555555555555555555555555555';
+
+      expect(
+        orderChatConversationPeerHexes(
+          peerHexes: const <String>[
+            lexicalPeer,
+            readyPeer,
+            recentPeer,
+            unreadPeer,
+          ],
+          signableByPeer: const <String, bool>{
+            unreadPeer: false,
+            recentPeer: false,
+            readyPeer: true,
+            lexicalPeer: false,
+          },
+          unreadByPeer: const <String, int>{unreadPeer: 1},
+          latestTimestampByPeer: const <String, int>{
+            unreadPeer: 1,
+            recentPeer: 30,
+            readyPeer: 20,
+            lexicalPeer: 20,
+          },
+        ),
+        const <String>[unreadPeer, recentPeer, readyPeer, lexicalPeer],
+      );
+    });
+
     test('persists incoming and outgoing messages across restart', () async {
       final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
       addTearDown(() async {
@@ -918,6 +996,10 @@ void main() {
   test('unread state survives restart without replay inflation', () async {
     const capsuleHex =
         '1111111111111111111111111111111111111111111111111111111111111111';
+    const firstPeerHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    const secondPeerHex =
+        '3333333333333333333333333333333333333333333333333333333333333333';
     final tempHome = await Directory.systemTemp.createTemp('hivra-unread-');
     addTearDown(() async {
       if (await tempHome.exists()) await tempHome.delete(recursive: true);
@@ -928,7 +1010,7 @@ void main() {
     final firstStore = CapsuleDeliveryInboxStore(fileStore: fileStore);
     const first = CapsuleChatInboxMessage(
       id: 'message-1',
-      fromHex: capsuleHex,
+      fromHex: firstPeerHex,
       messageText: 'first',
       createdAtUtc: '2026-08-13T08:00:00.000Z',
       envelopeHashHex: '',
@@ -936,30 +1018,66 @@ void main() {
     );
     const second = CapsuleChatInboxMessage(
       id: 'message-2',
-      fromHex: capsuleHex,
+      fromHex: secondPeerHex,
       messageText: 'second',
       createdAtUtc: '2026-08-13T08:00:01.000Z',
       envelopeHashHex: '',
       timestampMs: 2,
     );
+    const third = CapsuleChatInboxMessage(
+      id: 'message-3',
+      fromHex: firstPeerHex,
+      messageText: 'third',
+      createdAtUtc: '2026-08-13T08:00:02.000Z',
+      envelopeHashHex: '',
+      timestampMs: 3,
+    );
+    const outgoing = CapsuleChatInboxMessage(
+      id: 'message-4',
+      fromHex: capsuleHex,
+      toHex: firstPeerHex,
+      messageText: 'outgoing',
+      createdAtUtc: '2026-08-13T08:00:03.000Z',
+      envelopeHashHex: '',
+      timestampMs: 4,
+      direction: CapsuleChatMessageDirection.outgoing,
+    );
 
     firstStore.merge(
       capsuleHex,
-      messages: const <CapsuleChatInboxMessage>[first, second],
+      messages: const <CapsuleChatInboxMessage>[first, second, third, outgoing],
       tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
-    expect(await firstStore.unreadMessageCount(capsuleHex), 2);
+    expect(await firstStore.unreadMessageCount(capsuleHex), 3);
+    expect(
+      await firstStore.unreadMessageCountsByPeer(capsuleHex),
+      <String, int>{firstPeerHex: 2, secondPeerHex: 1},
+    );
     await firstStore.markMessagesRead(capsuleHex, const <String>['message-1']);
-    expect(await firstStore.unreadMessageCount(capsuleHex), 1);
+    expect(await firstStore.unreadMessageCount(capsuleHex), 2);
+    expect(
+      await firstStore.unreadMessageCountsByPeer(capsuleHex),
+      <String, int>{firstPeerHex: 1, secondPeerHex: 1},
+    );
 
     final restartedStore = CapsuleDeliveryInboxStore(fileStore: fileStore);
     restartedStore.merge(
       capsuleHex,
-      messages: const <CapsuleChatInboxMessage>[first, second, first],
+      messages: const <CapsuleChatInboxMessage>[
+        first,
+        second,
+        third,
+        outgoing,
+        first,
+      ],
       tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
 
-    expect(await restartedStore.unreadMessageCount(capsuleHex), 1);
+    expect(await restartedStore.unreadMessageCount(capsuleHex), 2);
+    expect(
+      await restartedStore.unreadMessageCountsByPeer(capsuleHex),
+      <String, int>{firstPeerHex: 1, secondPeerHex: 1},
+    );
     await restartedStore.markMessagesRead(
       capsuleHex,
       restartedStore.loadMessages(capsuleHex).map((message) => message.id),
@@ -1009,6 +1127,9 @@ void main() {
       }),
     );
     expect(await store.unreadMessageCount(capsuleHex), 1);
+    expect(await store.unreadMessageCountsByPeer(capsuleHex), <String, int>{
+      otherCapsuleHex: 1,
+    });
     expect(await store.unreadMessageCount(otherCapsuleHex), 0);
   });
 

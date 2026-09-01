@@ -190,6 +190,12 @@ class CapsuleChatDeliveryService {
     return _deliveryInboxStore.unreadMessageCount(_hex(root));
   }
 
+  Future<Map<String, int>> unreadCachedMessageCountsByPeer() async {
+    final root = _runtime.capsuleRootPublicKey();
+    if (root == null || root.length != 32) return const <String, int>{};
+    return _deliveryInboxStore.unreadMessageCountsByPeer(_hex(root));
+  }
+
   Future<void> markCachedMessagesRead(
     Iterable<CapsuleChatInboxMessage> messages,
   ) async {
