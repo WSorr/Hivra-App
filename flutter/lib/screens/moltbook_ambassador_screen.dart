@@ -55,7 +55,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   );
   final TextEditingController _reviewedBodyController = TextEditingController();
   final TextEditingController _audienceController = TextEditingController(
-    text: 'agent-developers',
+    text: MoltbookPublicationService.personFirstRuntimeSubmoltName,
   );
   final TextEditingController _publicSourceNotesController =
       TextEditingController();

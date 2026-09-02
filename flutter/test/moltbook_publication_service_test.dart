@@ -645,7 +645,7 @@ void main() {
 
         final general = await publications.prepare(
           draft: _postDraft('3'),
-          submoltName: MoltbookPublicationService.defaultSubmolt,
+          submoltName: 'general',
         );
         await expectLater(
           publications.approveBoundedPublicChangeAndQueue(

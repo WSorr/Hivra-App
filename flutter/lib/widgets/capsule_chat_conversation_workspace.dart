@@ -98,7 +98,7 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
                           onMessagesProjected: onMessagesProjected,
                           cacheProjectionInterval: cacheProjectionInterval,
                         )
-                        : _EmptyConversation(onChooseContact: onChooseContact),
+                        : const _EmptyConversation(),
               ),
               const Divider(height: 1, color: Color(0xFF2B3846)),
               _ConversationComposer(
@@ -385,9 +385,7 @@ class _ConversationNotice extends StatelessWidget {
 }
 
 class _EmptyConversation extends StatelessWidget {
-  final Future<void> Function() onChooseContact;
-
-  const _EmptyConversation({required this.onChooseContact});
+  const _EmptyConversation();
 
   @override
   Widget build(BuildContext context) {
@@ -412,12 +410,6 @@ class _EmptyConversation extends StatelessWidget {
               'Messages stay scoped to the active Capsule.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Color(0xFF96A2B2)),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: onChooseContact,
-              icon: const Icon(Icons.add_comment_outlined),
-              label: const Text('New conversation'),
             ),
           ],
         ),

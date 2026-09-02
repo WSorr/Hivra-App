@@ -18,7 +18,7 @@ class MoltbookPublicationService {
       moltbookPersonFirstRuntimeSubmoltDisplayName;
   static const String personFirstRuntimeSubmoltDescription =
       moltbookPersonFirstRuntimeSubmoltDescription;
-  static const String defaultSubmolt = 'general';
+  static const String defaultSubmolt = personFirstRuntimeSubmoltName;
   static const String replyActionClass = 'reply_draft';
   static final Map<String, Future<void>> _engagementTails =
       <String, Future<void>>{};

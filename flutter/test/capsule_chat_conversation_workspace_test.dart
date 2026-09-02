@@ -61,6 +61,30 @@ void main() {
     expect(find.byKey(const Key('capsule-chat-composer')), findsOneWidget);
   });
 
+  testWidgets('empty state keeps one conversation action in the header', (
+    tester,
+  ) async {
+    final peerController = TextEditingController();
+    final messageController = TextEditingController();
+    addTearDown(peerController.dispose);
+    addTearDown(messageController.dispose);
+
+    await tester.pumpWidget(
+      _testApp(
+        peerController: peerController,
+        messageController: messageController,
+      ),
+    );
+
+    expect(find.text('New conversation'), findsOneWidget);
+
+    peerController.text = peerHex;
+    await tester.pump();
+
+    expect(find.text('New conversation'), findsNothing);
+    expect(find.text('Change'), findsOneWidget);
+  });
+
   testWidgets('renders chronological directional bubbles with honest states', (
     tester,
   ) async {
