@@ -21,7 +21,8 @@ import 'ui_event_log_service.dart';
 
 class MoltbookRuntimeModule {
   static const String _automaticMoltbookReleaseTag = 'development';
-  static const String _automaticMoltbookAudience = 'agent-developers';
+  static const String _automaticMoltbookAudience =
+      MoltbookPublicationService.personFirstRuntimeSubmoltName;
   static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles =
       <String, Future<MoltbookCycleSummary>>{};
   static final Map<String, int> _moltbookCycleEpochs = <String, int>{};
