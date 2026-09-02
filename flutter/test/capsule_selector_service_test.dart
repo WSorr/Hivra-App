@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/capsule_selector_runtime.dart';
@@ -33,11 +35,15 @@ CapsuleSelectorItem _item({
 
 class _ActivationRuntime implements CapsuleSelectorRuntime {
   final Object? activationError;
+  final Completer<void>? activationCompleter;
 
-  _ActivationRuntime({this.activationError});
+  _ActivationRuntime({this.activationError, this.activationCompleter});
 
   @override
   Future<void> activateCapsule(String pubKeyHex) async {
+    if (activationCompleter != null) {
+      return activationCompleter!.future;
+    }
     if (activationError != null) throw activationError!;
   }
 
@@ -358,6 +364,20 @@ void main() {
     );
 
     expect(() => service.activateCapsule('aa'), throwsA(isA<StateError>()));
+  });
+
+  test('times out a stalled activation instead of hanging selector', () async {
+    final service = CapsuleSelectorService(
+      _ActivationRuntime(activationCompleter: Completer<void>()),
+      _NoopUiLog(),
+      null,
+      const Duration(milliseconds: 1),
+    );
+
+    expect(
+      () => service.activateCapsule('aa'),
+      throwsA(isA<TimeoutException>()),
+    );
   });
 
   test('deleting a capsule clears its process chat projection', () async {

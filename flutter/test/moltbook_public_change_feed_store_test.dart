@@ -133,12 +133,51 @@ void main() {
             MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
       );
 
-      expect(inserted, hasLength(2));
+      expect(inserted, hasLength(3));
       expect(inserted.map((change) => change.sourceId), <String>[
         'moltbook-product-cycle-2026-08-29',
         'moltbook-gemini-verification-2026-08-30',
+        'moltbook-pfr-destination-2026-09-02',
       ]);
       expect((await store.nextPending())?.sourceId, inserted.first.sourceId);
+    },
+  );
+
+  test(
+    'packaged manifest appends a new pending change after earlier drafts',
+    () async {
+      final raw = await rootBundle.loadString(
+        'assets/moltbook_public_changes.v1.json',
+      );
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final changes = List<Map<String, dynamic>>.from(
+        (decoded['changes'] as List).cast<Map<String, dynamic>>(),
+      );
+      final previousRaw = jsonEncode(<String, dynamic>{
+        ...decoded,
+        'changes': changes.take(changes.length - 1).toList(growable: false),
+      });
+      final previousInserted = await store.ingestManifest(
+        previousRaw,
+        allowedTopics:
+            MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
+      );
+      for (final change in previousInserted) {
+        await store.markDrafted(change.commitmentHashHex, 'a' * 64);
+      }
+
+      final appended = await store.ingestManifest(
+        raw,
+        allowedTopics:
+            MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
+      );
+
+      expect(appended, hasLength(1));
+      expect(appended.single.sourceId, 'moltbook-pfr-destination-2026-09-02');
+      expect(
+        (await store.nextPending())?.sourceId,
+        'moltbook-pfr-destination-2026-09-02',
+      );
     },
   );
 

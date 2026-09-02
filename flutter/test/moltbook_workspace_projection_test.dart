@@ -5,6 +5,34 @@ import 'package:hivra_app/models/moltbook_provider_models.dart';
 import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
 
 void main() {
+  group('Moltbook AI session status', () {
+    test('busy unlock keeps a visible waiting state', () {
+      expect(
+        moltbookAiSessionTitle(
+          busy: true,
+          unlocked: false,
+          providerLabel: null,
+        ),
+        'Unlocking AI session…',
+      );
+      expect(
+        moltbookAiSessionDescription(busy: true, unlocked: false),
+        contains('Waiting for host credential confirmation'),
+      );
+    });
+
+    test('unlocked status names the active provider', () {
+      expect(
+        moltbookAiSessionTitle(
+          busy: false,
+          unlocked: true,
+          providerLabel: 'Gemini',
+        ),
+        'AI available · Gemini',
+      );
+    });
+  });
+
   group('MoltbookWorkspaceProjection', () {
     test('gives an active effect priority over every new proposal path', () {
       final projection = MoltbookWorkspaceProjection.resolve(

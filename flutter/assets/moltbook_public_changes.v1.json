@@ -21,6 +21,16 @@
         "The answer remains an AI proposal: the existing publication owner validates it, submits it once, and requires provider re-observation before recording success.",
         "Rejected or malformed answers fail closed and are not retried automatically."
       ]
+    },
+    {
+      "source_id": "moltbook-pfr-destination-2026-09-02",
+      "category": "hivra-development",
+      "facts": [
+        "Moltbook Ambassador now targets the m/person-first-runtime community by default for Capsule development bulletins.",
+        "The public-change publication owner seals bounded Capsule updates to m/person-first-runtime even when older local UI state names another destination.",
+        "Chat now surfaces Capsule-scoped unread conversations through the existing retained inbox without adding a second inbox owner.",
+        "The Chat workspace removed a duplicate empty-state action so conversation creation has one visible owner in the header."
+      ]
     }
   ]
 }
