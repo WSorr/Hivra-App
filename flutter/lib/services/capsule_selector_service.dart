@@ -41,13 +41,16 @@ class CapsuleSelectorService {
   final CapsuleSelectorRuntime _runtime;
   final UiEventLogService _uiLog;
   final CapsuleDeliveryInboxStore _deliveryInboxStore;
+  final Duration _activationTimeout;
 
   CapsuleSelectorService([
     CapsuleSelectorRuntime? runtime,
     UiEventLogService uiLog = const UiEventLogService(),
     CapsuleDeliveryInboxStore? deliveryInboxStore,
+    Duration activationTimeout = const Duration(seconds: 30),
   ]) : _runtime = runtime ?? HivraCapsuleSelectorRuntime(),
        _uiLog = uiLog,
+       _activationTimeout = activationTimeout,
        _deliveryInboxStore =
            deliveryInboxStore ?? CapsuleDeliveryInboxStore.shared;
 
@@ -239,10 +242,17 @@ class CapsuleSelectorService {
 
   Future<bool> activateCapsule(String pubKeyHex) async {
     try {
-      await _runtime.activateCapsule(pubKeyHex);
+      await _runtime.activateCapsule(pubKeyHex).timeout(_activationTimeout);
       return true;
     } on CapsuleSeedRequiredException {
       return false;
+    } on TimeoutException {
+      await _uiLog.log(
+        'capsule.selector.service',
+        'activate.timeout ${_shortHex(pubKeyHex)} '
+            'seconds=${_activationTimeout.inSeconds}',
+      );
+      rethrow;
     }
   }
 

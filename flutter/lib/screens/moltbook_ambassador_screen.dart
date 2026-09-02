@@ -27,6 +27,29 @@ void bindMoltbookPublicChangeProposal({
   factsController.text = change.facts.join('\n');
 }
 
+String moltbookAiSessionTitle({
+  required bool busy,
+  required bool unlocked,
+  required String? providerLabel,
+}) {
+  if (busy) return 'Unlocking AI session…';
+  if (unlocked) return 'AI available · ${providerLabel ?? "provider"}';
+  return 'AI locked for this session';
+}
+
+String moltbookAiSessionDescription({
+  required bool busy,
+  required bool unlocked,
+}) {
+  if (busy) {
+    return 'Waiting for host credential confirmation. Keep this dialog open until the unlock finishes.';
+  }
+  if (unlocked) {
+    return 'The credential is held in host memory only. WASM never receives it.';
+  }
+  return 'Unlock once to let foreground cycles prepare drafts. Locked cycles pause before inference.';
+}
+
 class MoltbookAmbassadorScreen extends StatefulWidget {
   final MoltbookRuntimeModule module;
 
@@ -1967,9 +1990,11 @@ class _MoltbookAiSessionCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    unlocked
-                        ? 'AI available · ${providerLabel ?? "provider"}'
-                        : 'AI locked for this session',
+                    moltbookAiSessionTitle(
+                      busy: busy,
+                      unlocked: unlocked,
+                      providerLabel: providerLabel,
+                    ),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -1977,9 +2002,10 @@ class _MoltbookAiSessionCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    unlocked
-                        ? 'The credential is held in host memory only. WASM never receives it.'
-                        : 'Unlock once to let foreground cycles prepare drafts. Locked cycles pause before inference.',
+                    moltbookAiSessionDescription(
+                      busy: busy,
+                      unlocked: unlocked,
+                    ),
                     style: const TextStyle(
                       color: Color(0xFF9CA7B5),
                       height: 1.3,
