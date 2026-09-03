@@ -127,21 +127,62 @@ class MoltbookPublicBulletinAiService {
         .map((fact) => fact.trim())
         .where((fact) => fact.isNotEmpty)
         .toList(growable: false);
-    if (!_sameOrderedStrings(proposal.facts, sourceFacts) ||
-        sourceFacts.any((fact) => !proposal.body.contains(fact))) {
-      throw const FormatException(
-        'AI public bulletin must preserve every confirmed fact exactly',
-      );
-    }
-    return proposal;
+    return _bindConfirmedFacts(proposal, sourceFacts);
   }
 
-  static bool _sameOrderedStrings(List<String> left, List<String> right) {
-    if (left.length != right.length) return false;
-    for (var index = 0; index < left.length; index++) {
-      if (left[index] != right[index]) return false;
+  static MoltbookPublicBulletinProposal _bindConfirmedFacts(
+    MoltbookPublicBulletinProposal proposal,
+    List<String> sourceFacts,
+  ) {
+    final normalizedFacts = sourceFacts
+        .map((fact) => fact.trim())
+        .where((fact) => fact.isNotEmpty)
+        .toList(growable: false);
+    if (normalizedFacts.isEmpty) {
+      throw const FormatException(
+        'Public bulletin must have confirmed facts to bind',
+      );
     }
-    return true;
+    final factsBlock = _confirmedFactsBlock(normalizedFacts);
+    final body =
+        normalizedFacts.every(proposal.body.contains)
+            ? proposal.body
+            : _appendConfirmedFacts(proposal.body, factsBlock);
+    final bound = MoltbookPublicBulletinProposal(
+      title: proposal.title,
+      body: body,
+      facts: normalizedFacts,
+      providerLabel: proposal.providerLabel,
+      model: proposal.model,
+    );
+    bound.validate();
+    return bound;
+  }
+
+  static String _confirmedFactsBlock(List<String> facts) =>
+      'Confirmed facts:\n${facts.join('\n')}';
+
+  static String _appendConfirmedFacts(String body, String factsBlock) {
+    if (factsBlock.length > MoltbookPublicBulletinAiService.maxBodyCharacters) {
+      throw const FormatException(
+        'Confirmed public facts exceed bulletin body bounds',
+      );
+    }
+    final separatorLength = body.isEmpty ? 0 : 2;
+    final availableBodyCharacters =
+        MoltbookPublicBulletinAiService.maxBodyCharacters -
+        factsBlock.length -
+        separatorLength;
+    if (availableBodyCharacters < 0) {
+      throw const FormatException(
+        'Confirmed public facts exceed bulletin body bounds',
+      );
+    }
+    final prefix =
+        body.length <= availableBodyCharacters
+            ? body
+            : _truncate(body, availableBodyCharacters).trimRight();
+    return prefix.isEmpty ? factsBlock : '$prefix\n\n$factsBlock';
   }
 
   Future<MoltbookReplyProposal> proposeReply({

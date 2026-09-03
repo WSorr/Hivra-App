@@ -57,7 +57,7 @@ void main() {
     expect(runtime.operations, <String>['infer']);
   });
 
-  test('rejects AI drift from confirmed public facts', () async {
+  test('binds confirmed facts when AI drifts from supporting facts', () async {
     final service = MoltbookPublicBulletinAiService(
       runtime: _RecordingRuntime(
         responseText:
@@ -67,20 +67,50 @@ void main() {
       ),
     );
 
-    await expectLater(
-      service.propose(
-        sourceNotes: 'Capsule Chat now resumes after restart.',
-        category: 'hivra-development',
-        personaSummary: 'Explain facts.',
-      ),
-      throwsA(
-        isA<FormatException>().having(
-          (error) => error.message,
-          'message',
-          contains('preserve every confirmed fact exactly'),
-        ),
+    final proposal = await service.propose(
+      sourceNotes: 'Capsule Chat now resumes after restart.',
+      category: 'hivra-development',
+      personaSummary: 'Explain facts.',
+    );
+
+    expect(proposal.facts, <String>[
+      'Capsule Chat now resumes after restart.',
+    ]);
+    expect(proposal.body, contains('Hivra is a local-first runtime'));
+    expect(
+      proposal.body,
+      contains('Confirmed facts:\nCapsule Chat now resumes after restart.'),
+    );
+  });
+
+  test('keeps confirmed facts deterministic when AI omits them from body', () async {
+    final service = MoltbookPublicBulletinAiService(
+      runtime: _RecordingRuntime(
+        responseText:
+            '{"title":"Capsule runtime update",'
+            '"body":"A short reviewed note about the latest Capsule work.",'
+            '"supporting_facts":["A paraphrased note."]}',
       ),
     );
+
+    final proposal = await service.propose(
+      sourceNotes:
+          'Capsule owns the runtime.\n'
+          'Plugins are replaceable tools.\n'
+          'Moltbook requires review before publication.',
+      category: 'hivra-development',
+      personaSummary: 'Explain facts.',
+    );
+
+    expect(proposal.facts, <String>[
+      'Capsule owns the runtime.',
+      'Plugins are replaceable tools.',
+      'Moltbook requires review before publication.',
+    ]);
+    expect(proposal.body, contains('Confirmed facts:'));
+    for (final fact in proposal.facts) {
+      expect(proposal.body, contains(fact));
+    }
   });
 
   test('rejects positioning that contradicts Capsule-first axis', () async {

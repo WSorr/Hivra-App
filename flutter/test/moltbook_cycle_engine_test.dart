@@ -378,6 +378,44 @@ void main() {
   );
 
   test(
+    'bounded cycle does not log unresolved public-change effect as published',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      publications.operations.add(_succeededPfrCommunityOperation());
+      publications.leavePostUnresolved = true;
+      await publicChanges.record(
+        sourceId: 'capsule-change-unresolved-publication',
+        category: 'hivra',
+        facts: const <String>[
+          'Moltbook keeps ambiguous publication separate from success.',
+        ],
+      );
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(summary.blockedCount, 0);
+      expect(
+        log.entries.where(
+          (entry) =>
+              entry.source == 'moltbook.cycle.public_change' &&
+              entry.message.startsWith('published '),
+        ),
+        isEmpty,
+      );
+      expect(
+        log.entries.where(
+          (entry) =>
+              entry.source == 'moltbook.cycle.public_change' &&
+              entry.message.contains('publication.pending') &&
+              entry.message.contains('state=unresolved'),
+        ),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
     'bounded cycle keeps change pending without verified PFR ownership',
     () async {
       configuration.approvalMode =
@@ -1371,6 +1409,7 @@ class _CyclePublications implements MoltbookPublicationService {
   final List<String> processedPostIds = <String>[];
   final List<String> cancelledIds = <String>[];
   int postApprovalCount = 0;
+  bool leavePostUnresolved = false;
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
@@ -1406,6 +1445,14 @@ class _CyclePublications implements MoltbookPublicationService {
     );
     if (postIndex >= 0) {
       processedPostIds.add(operationId);
+      if (leavePostUnresolved) {
+        final unresolved = _operationWithState(
+          operations[postIndex],
+          ExternalEffectState.unresolved,
+        );
+        operations[postIndex] = unresolved;
+        return unresolved;
+      }
       final succeeded = _operationWithState(
         operations[postIndex],
         ExternalEffectState.succeeded,
