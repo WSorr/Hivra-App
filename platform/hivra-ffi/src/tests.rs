@@ -47,6 +47,31 @@ fn runtime_capsule_state() -> hivra_core::capsule::CapsuleState {
     current_capsule_state().expect("runtime capsule state")
 }
 
+#[test]
+fn capsule_state_binary_ffi_preserves_v1_layout() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(PubKey::from([17u8; 32]), Network::Neste);
+    let state = runtime_capsule_state();
+    let expected = bincode::serialize(&(
+        state.public_key,
+        state.capsule_type,
+        state.network,
+        state.slots,
+        state.ledger_hash,
+        state.ledger_head_commitment,
+        state.relationships_count,
+        state.version,
+    ))
+    .unwrap();
+
+    let encoded = unsafe { crate::ledger_api::capsule_state_encode(std::ptr::null()) };
+    let actual = unsafe { std::slice::from_raw_parts(encoded.data, encoded.len) };
+    assert_eq!(actual, expected);
+    unsafe { crate::ffi_support::free_bytes(encoded.data, encoded.len) };
+    clear_runtime_state();
+}
+
 fn relationship_established_count() -> usize {
     runtime_events()
         .into_iter()

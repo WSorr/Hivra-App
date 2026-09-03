@@ -7,6 +7,7 @@ import '../ffi/app_runtime_runtime.dart';
 import '../ffi/capsule_chat_runtime.dart';
 import '../models/capsule_chat_models.dart';
 import '../models/consensus_models.dart';
+import '../models/invitation.dart';
 import '../models/relationship.dart';
 import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
@@ -14,7 +15,6 @@ import 'capsule_chat_deferred_inbox_store.dart';
 import 'capsule_delivery_inbox_store.dart';
 import 'capsule_ffi_worker_queue.dart';
 import 'manual_consensus_check_service.dart';
-import 'ledger_view_support.dart';
 import 'transport_health_policy_service.dart';
 
 // Chat send may need two relay publish passes under degraded connectivity.
@@ -43,6 +43,7 @@ String tradeSignalInboxRecordId({
 typedef ChatWorkerRunner =
     Future<Map<String, Object?>> Function(Map<String, Object?> args);
 typedef ChatRelationshipsLoader = List<Relationship> Function();
+typedef ChatInvitationsLoader = List<Invitation> Function();
 typedef ChatTrustedCardsLoader = Future<List<CapsuleAddressCard>> Function();
 typedef ChatAttestedSignableReader =
     Future<ConsensusSignableResult> Function(String peerRootHex);
@@ -78,6 +79,7 @@ Future<Map<String, Object?>> _defaultAcknowledgeWorkerRunner(
 }
 
 List<Relationship> _emptyRelationships() => const <Relationship>[];
+List<Invitation> _emptyInvitations() => const <Invitation>[];
 Future<List<CapsuleAddressCard>> _emptyTrustedCards() async =>
     const <CapsuleAddressCard>[];
 DateTime _defaultNowUtc() => DateTime.now().toUtc();
@@ -100,6 +102,7 @@ class CapsuleChatDeliveryService {
   final ManualConsensusCheckService _manualChecks;
   final ChatAttestedSignableReader? _readAttestedSignable;
   final ChatRelationshipsLoader _loadRelationships;
+  final ChatInvitationsLoader _loadInvitations;
   final ChatTrustedCardsLoader _listTrustedCards;
   final ChatWorkerRunner _sendWorkerRunner;
   final ChatWorkerRunner _receiveWorkerRunner;
@@ -112,13 +115,12 @@ class CapsuleChatDeliveryService {
   final ExecutionKnownIntentLookup? _hasKnownIntentHash;
   final UtcNowProvider _nowUtc;
   final TransportHealthPolicyService _transportHealth;
-  final LedgerViewSupport _ledgerSupport = const LedgerViewSupport();
-
   CapsuleChatDeliveryService({
     required AppRuntimeRuntime runtime,
     required ManualConsensusCheckService manualChecks,
     ChatAttestedSignableReader? readAttestedSignable,
     ChatRelationshipsLoader? loadRelationships,
+    ChatInvitationsLoader? loadInvitations,
     ChatTrustedCardsLoader? listTrustedCards,
     ChatWorkerRunner sendWorkerRunner = _defaultSendWorkerRunner,
     ChatWorkerRunner receiveWorkerRunner = _defaultReceiveWorkerRunner,
@@ -135,6 +137,7 @@ class CapsuleChatDeliveryService {
        _manualChecks = manualChecks,
        _readAttestedSignable = readAttestedSignable,
        _loadRelationships = loadRelationships ?? _emptyRelationships,
+       _loadInvitations = loadInvitations ?? _emptyInvitations,
        _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
        _sendWorkerRunner = sendWorkerRunner,
        _receiveWorkerRunner = receiveWorkerRunner,
@@ -1042,7 +1045,7 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    _mergeInvitationIdentityFacts(
+    _mergeInvitationIdentityProjection(
       transportPeers: transportPeers,
       transportToRoot: transportToRoot,
       rootToTransport: rootToTransport,
@@ -1055,25 +1058,16 @@ class CapsuleChatDeliveryService {
     );
   }
 
-  void _mergeInvitationIdentityFacts({
+  void _mergeInvitationIdentityProjection({
     required Set<String> transportPeers,
     required Map<String, String> transportToRoot,
     required Map<String, String> rootToTransport,
   }) {
-    final ledgerRoot = _ledgerSupport.exportLedgerRoot(_runtime.exportLedger());
-    if (ledgerRoot == null) return;
-
-    for (final raw in _ledgerSupport.events(ledgerRoot)) {
-      if (raw is! Map) continue;
-      final event = Map<String, dynamic>.from(raw);
-      if (_ledgerSupport.kindCode(event['kind']) != 9) continue;
-      final payload = _ledgerSupport.payloadBytes(event['payload']);
-      if (payload.length < 161) continue;
-
-      final senderRoot = _hex(Uint8List.fromList(payload.sublist(96, 128)));
-      final senderTransport = _hex(
-        Uint8List.fromList(payload.sublist(129, 161)),
-      );
+    for (final invitation in _loadInvitations()) {
+      if (!invitation.isIncoming) continue;
+      final senderRoot = _decodeB64ToHex32(invitation.fromRootPubkey ?? '');
+      final senderTransport = _decodeB64ToHex32(invitation.fromPubkey);
+      if (senderRoot == null || senderTransport == null) continue;
       _rememberPeerTransport(
         transportPeers: transportPeers,
         transportToRoot: transportToRoot,

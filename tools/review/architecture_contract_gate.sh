@@ -1023,10 +1023,14 @@ require_absent "$BINDINGS" 'hivra_starter_get_id|hivra_starter_get_type|hivra_st
   "flutter bindings do not bind legacy starter FFI symbols"
 require_present "$LEDGER_VIEW" '_starterIdsFromCapsuleState\(capsuleState\)' \
   "ledger view consumes Core-owned starter slot projection"
+require_present "$LEDGER_VIEW" '_starterKindsFromCapsuleState\(' \
+  "ledger view consumes Core-owned starter kind projection"
 require_present "$LEDGER_VIEW" 'stateVersion == events\.length' \
   "ledger view requires a version-matched Core projection"
 require_absent "$LEDGER_VIEW" '_starterIdsFromLedger|StarterBurned.*StarterCreated|StarterCreated.*StarterBurned' \
   "ledger view does not mirror starter lifecycle transitions"
+require_absent "$LEDGER_VIEW" '_starterKindsFromLedger' \
+  "ledger view does not decode starter kinds from raw ledger events"
 require_present "$LEDGER_SUMMARY" '_starterCountFromCoreProjection' \
   "capsule selector consumes Core-owned starter slot projection"
 require_absent "$LEDGER_SUMMARY" '_parseStarterCreated|_parseStarterBurnedId|activeStartersById' \

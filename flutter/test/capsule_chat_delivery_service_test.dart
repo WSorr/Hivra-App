@@ -9,6 +9,7 @@ import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/ffi/ledger_view_runtime.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/models/consensus_models.dart';
+import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/services/bingx_futures_execution_command_service.dart';
@@ -1472,7 +1473,7 @@ void main() {
   });
 
   test(
-    'chat send recovers transport endpoint from incoming invitation ledger fact',
+    'chat send uses canonical invitation projection for transport endpoint',
     () async {
       const peerRootHex =
           '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
@@ -1482,21 +1483,8 @@ void main() {
           '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
       Uint8List? sentToPubkey;
 
-      final invitationPayload = <int>[
-        ...Uint8List.fromList(List<int>.filled(32, 1)),
-        ...Uint8List.fromList(List<int>.filled(32, 2)),
-        ..._hexToBytes(localRootHex),
-        ..._hexToBytes(peerRootHex),
-        0,
-        ..._hexToBytes(peerTransportHex),
-      ];
       final ledgerJson = jsonEncode(<String, Object?>{
-        'events': <Map<String, Object?>>[
-          <String, Object?>{
-            'kind': 'InvitationReceived',
-            'payload': invitationPayload,
-          },
-        ],
+        'events': <Map<String, Object?>>[],
       });
 
       final service = CapsuleChatDeliveryService(
@@ -1530,6 +1518,17 @@ void main() {
                   Uint8List.fromList(List<int>.filled(32, 1)),
                 ),
                 establishedAt: DateTime.utc(2026, 6, 28),
+              ),
+            ],
+        loadInvitations:
+            () => <Invitation>[
+              Invitation(
+                id: base64Encode(Uint8List.fromList(List<int>.filled(32, 1))),
+                fromPubkey: base64Encode(_hexToBytes(peerTransportHex)),
+                fromRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                kind: StarterKind.juice,
+                status: InvitationStatus.pending,
+                sentAt: DateTime.utc(2026, 6, 28),
               ),
             ],
         sendWorkerRunner: (args) async {

@@ -145,7 +145,10 @@ class LedgerViewService {
         stateVersion == events.length
             ? _starterIdsFromCapsuleState(capsuleState)
             : List<Uint8List?>.filled(5, null);
-    final starterKinds = _starterKindsFromLedger(root, starterIds);
+    final starterKinds = _starterKindsFromCapsuleState(
+      capsuleState,
+      starterIds,
+    );
     final starterCount = starterIds.whereType<Uint8List>().length;
 
     final version = stateVersion ?? events.length;
@@ -259,23 +262,23 @@ class LedgerViewService {
     });
   }
 
-  List<String?> _starterKindsFromLedger(
-    Map<String, dynamic> root,
+  List<String?> _starterKindsFromCapsuleState(
+    Map<String, dynamic>? root,
     List<Uint8List?> starterIds,
   ) {
-    final byId = <String, String>{};
-    for (final event in _support.events(root)) {
-      if (_support.kindCode(event['kind']) != 5) continue;
-      final payload = _support.payloadBytes(event['payload']);
-      if (payload.length != 66) continue;
-      final id = base64.encode(payload.sublist(0, 32));
-      byId[id] = _support.starterKindFromByte(payload[64]).displayName;
+    final projectedKinds = root?['starter_kinds'];
+    if (projectedKinds is! List || projectedKinds.length != 5) {
+      return List<String?>.generate(
+        5,
+        (index) => starterIds[index] == null ? null : 'Unknown',
+      );
     }
 
     return List<String?>.generate(5, (index) {
-      final starterId = starterIds[index];
-      if (starterId == null) return null;
-      return byId[base64.encode(starterId)] ?? 'Unknown';
+      if (starterIds[index] == null) return null;
+      final rawKind = projectedKinds[index];
+      if (rawKind is! num || rawKind < 0 || rawKind > 4) return 'Unknown';
+      return _support.starterKindFromByte(rawKind.toInt()).displayName;
     });
   }
 }

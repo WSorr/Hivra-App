@@ -43,6 +43,10 @@ pub struct CapsuleState {
 
     /// State version (using events count as version)
     pub version: u32,
+
+    /// Starter kinds aligned with `slots`.
+    #[serde(default)]
+    pub starter_kinds: [Option<u8>; 5],
 }
 
 impl CapsuleState {
@@ -50,6 +54,7 @@ impl CapsuleState {
     /// This is a pure function called by Engine, never by Core internally.
     pub fn from_capsule(capsule: &Capsule) -> Self {
         let slot_layout = SlotLayout::from_ledger(&capsule.ledger);
+        let slot_entries = slot_layout.entries_with_kinds(&capsule.ledger);
         Self {
             public_key: capsule.pubkey.as_bytes().clone(),
             capsule_type: capsule.capsule_type as u8,
@@ -61,6 +66,7 @@ impl CapsuleState {
             ledger_head_commitment: capsule.ledger.head_commitment_v5(),
             relationships_count: count_relationships(&capsule.ledger),
             version: capsule.ledger.events().len() as u32,
+            starter_kinds: slot_entries.map(|entry| entry.starter_kind.map(|kind| kind.to_byte())),
         }
     }
 }
@@ -102,6 +108,7 @@ mod tests {
             ledger_head_commitment: None,
             relationships_count: 0,
             version: 1,
+            starter_kinds: [None, None, None, None, None],
         };
 
         let serialized = bincode::serialize(&state).unwrap();

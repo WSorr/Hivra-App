@@ -137,7 +137,7 @@ void main() {
             'timestamp': 1891000000000,
             'signer': owner,
           },
-          for (final entry in <(int, int)>[(0x21, 1), (0x31, 2), (0x41, 3)])
+          for (final entry in <(int, int)>[(0x21, 1), (0x31, 2), (0x41, 1)])
             <String, dynamic>{
               'kind': 'StarterCreated',
               'payload': starterCreatedPayload(
@@ -159,6 +159,7 @@ void main() {
               'version': 4,
               'ledger_hash': 'beef',
               'slots': <Object?>[bytes32(0x41), null, null, null, null],
+              'starter_kinds': <Object?>[3, null, null, null, null],
             }),
         readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
       );
