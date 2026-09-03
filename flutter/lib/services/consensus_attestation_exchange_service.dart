@@ -3,15 +3,15 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/consensus_models.dart';
+import '../models/invitation.dart';
 import '../models/relationship.dart';
 import 'capsule_address_service.dart';
 import 'consensus_attestation_sync_service.dart';
-import 'ledger_view_support.dart';
 
 typedef AttestationRelationshipsLoader = List<Relationship> Function();
+typedef AttestationInvitationsLoader = List<Invitation> Function();
 typedef AttestationTrustedCardsLoader =
     Future<List<CapsuleAddressCard>> Function();
-typedef AttestationLedgerExporter = String? Function();
 
 enum ConsensusAttestationExchangeStatus { ready, syncing, blocked }
 
@@ -42,19 +42,18 @@ class ConsensusAttestationExchangeResult {
 class ConsensusAttestationExchangeService {
   final ConsensusAttestationSyncService _sync;
   final AttestationRelationshipsLoader _loadRelationships;
+  final AttestationInvitationsLoader _loadInvitations;
   final AttestationTrustedCardsLoader _listTrustedCards;
-  final AttestationLedgerExporter _exportLedger;
-  final LedgerViewSupport _ledgerSupport = const LedgerViewSupport();
 
   ConsensusAttestationExchangeService({
     required ConsensusAttestationSyncService sync,
     required AttestationRelationshipsLoader loadRelationships,
+    AttestationInvitationsLoader? loadInvitations,
     required AttestationTrustedCardsLoader listTrustedCards,
-    AttestationLedgerExporter? exportLedger,
   }) : _sync = sync,
        _loadRelationships = loadRelationships,
-       _listTrustedCards = listTrustedCards,
-       _exportLedger = exportLedger ?? _nullAttestationLedgerExport;
+       _loadInvitations = loadInvitations ?? _emptyAttestationInvitations,
+       _listTrustedCards = listTrustedCards;
 
   Future<ConsensusAttestationExchangeResult> ensureForPeer(
     String peerRootHex,
@@ -297,22 +296,13 @@ class ConsensusAttestationExchangeService {
       }
     }
 
-    final ledgerRoot = _ledgerSupport.exportLedgerRoot(_exportLedger());
-    if (ledgerRoot != null) {
-      for (final raw in _ledgerSupport.events(ledgerRoot)) {
-        if (raw is! Map) continue;
-        final event = Map<String, dynamic>.from(raw);
-        if (_ledgerSupport.kindCode(event['kind']) != 9) continue;
-        final payload = _ledgerSupport.payloadBytes(event['payload']);
-        if (payload.length < 161) continue;
-        final senderRoot = _hex(Uint8List.fromList(payload.sublist(96, 128)));
-        if (senderRoot != peerRootHex) continue;
-        final senderTransport = _hex(
-          Uint8List.fromList(payload.sublist(129, 161)),
-        );
-        if (senderTransport != peerRootHex) {
-          rootToTransport[peerRootHex] = senderTransport;
-        }
+    for (final invitation in _loadInvitations()) {
+      if (!invitation.isIncoming) continue;
+      final senderRoot = _decodeB64ToHex32(invitation.fromRootPubkey ?? '');
+      if (senderRoot != peerRootHex) continue;
+      final senderTransport = _decodeB64ToHex32(invitation.fromPubkey);
+      if (senderTransport != null && senderTransport != peerRootHex) {
+        rootToTransport[peerRootHex] = senderTransport;
       }
     }
     return rootToTransport[peerRootHex];
@@ -350,4 +340,4 @@ class ConsensusAttestationExchangeService {
   }
 }
 
-String? _nullAttestationLedgerExport() => null;
+List<Invitation> _emptyAttestationInvitations() => const <Invitation>[];

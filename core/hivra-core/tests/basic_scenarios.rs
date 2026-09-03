@@ -80,6 +80,10 @@ fn genesis_capsule_projection_tracks_full_slots_and_version() {
             Some([5u8; 32]),
         ]
     );
+    assert_eq!(
+        state.starter_kinds,
+        [Some(0), Some(1), Some(2), Some(3), Some(4)]
+    );
 }
 
 #[test]

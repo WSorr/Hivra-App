@@ -92,14 +92,15 @@ class AppRuntimeService {
     _attestationExchange = ConsensusAttestationExchangeService(
       sync: _consensusAttestations,
       loadRelationships: _ledgerView.loadRelationships,
+      loadInvitations: _ledgerView.loadInvitations,
       listTrustedCards: addressBook.listTrustedCards,
-      exportLedger: _runtime.exportLedger,
     );
     _chatDelivery = CapsuleChatDeliveryService(
       runtime: _runtime,
       manualChecks: buildManualConsensusCheckService(),
       readAttestedSignable: buildConsensusAttestedGuardService().signable,
       loadRelationships: _ledgerView.loadRelationships,
+      loadInvitations: _ledgerView.loadInvitations,
       listTrustedCards: addressBook.listTrustedCards,
     );
     _passiveReceive = CapsulePassiveReceiveCoordinator(

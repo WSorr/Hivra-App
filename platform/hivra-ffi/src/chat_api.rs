@@ -341,6 +341,7 @@ mod ingress_tests {
             ledger_head_commitment: None,
             relationships_count: 0,
             version: 0,
+            starter_kinds: [None; 5],
         }
     }
 

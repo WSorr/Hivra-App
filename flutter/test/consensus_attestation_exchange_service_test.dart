@@ -7,6 +7,7 @@ import 'package:hivra_app/ffi/capsule_address_runtime.dart';
 import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/ffi/ledger_view_runtime.dart';
 import 'package:hivra_app/models/consensus_models.dart';
+import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/services/capsule_address_service.dart';
@@ -303,32 +304,13 @@ void main() {
     });
 
     test(
-      'recovers peer transport from incoming invitation ledger fact',
+      'recovers peer transport from canonical invitation projection',
       () async {
         const peerRootHex =
             '1111111111111111111111111111111111111111111111111111111111111111';
         const peerTransportHex =
             '2222222222222222222222222222222222222222222222222222222222222222';
-        const localRootHex =
-            '3333333333333333333333333333333333333333333333333333333333333333';
         final sync = _FakeConsensusAttestationSyncService();
-        final invitationPayload = <int>[
-          ...Uint8List.fromList(List<int>.filled(32, 1)),
-          ...Uint8List.fromList(List<int>.filled(32, 2)),
-          ..._hexToBytes(localRootHex),
-          ..._hexToBytes(peerRootHex),
-          0,
-          ..._hexToBytes(peerTransportHex),
-        ];
-        final ledgerJson = jsonEncode(<String, Object?>{
-          'events': <Map<String, Object?>>[
-            <String, Object?>{
-              'kind': 'InvitationReceived',
-              'payload': invitationPayload,
-            },
-          ],
-        });
-
         final service = ConsensusAttestationExchangeService(
           sync: sync,
           loadRelationships:
@@ -345,7 +327,17 @@ void main() {
                 ),
               ],
           listTrustedCards: () async => const <CapsuleAddressCard>[],
-          exportLedger: () => ledgerJson,
+          loadInvitations:
+              () => <Invitation>[
+                Invitation(
+                  id: base64Encode(Uint8List.fromList(List<int>.filled(32, 1))),
+                  fromPubkey: base64Encode(_hexToBytes(peerTransportHex)),
+                  fromRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                  kind: StarterKind.juice,
+                  status: InvitationStatus.pending,
+                  sentAt: DateTime.utc(2026, 7, 10),
+                ),
+              ],
         );
 
         final result = await service.ensureForPeer(peerRootHex);

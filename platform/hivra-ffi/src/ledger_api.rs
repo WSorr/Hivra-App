@@ -11,7 +11,16 @@ struct HistoryViewRequestV1 {
 #[no_mangle]
 pub unsafe extern "C" fn capsule_state_encode(_capsule_ptr: *const c_void) -> FfiBytes {
     if let Some(state) = current_capsule_state() {
-        match bincode::serialize(&state) {
+        match bincode::serialize(&(
+            state.public_key,
+            state.capsule_type,
+            state.network,
+            state.slots,
+            state.ledger_hash,
+            state.ledger_head_commitment,
+            state.relationships_count,
+            state.version,
+        )) {
             Ok(bytes) => {
                 let mut boxed = bytes.into_boxed_slice();
                 let data = boxed.as_mut_ptr();

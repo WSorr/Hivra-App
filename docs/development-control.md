@@ -99,7 +99,10 @@ cannot bypass package installation.
 Chat remains pair-consensus-bound: the capability screen calls the existing
 runtime module, which ensures attestation and passes through the canonical host
 consensus guard before the existing delivery owner can send or acknowledge
-anything.
+anything. Chat and consensus attestation resolve invitation root-to-transport
+identity through the canonical invitation projection. Starter labels consume
+the version-matched Core Capsule projection rather than replaying
+`StarterCreated` events in Flutter.
 
 Moltbook owns its observation, AI proposal, publication, receipt,
 reconciliation, and restart lifecycle in one capability module. New Moltbook

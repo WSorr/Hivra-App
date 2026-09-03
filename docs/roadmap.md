@@ -22,6 +22,8 @@ The following product foundations are implemented and retained:
 - Chat delivery across macOS and Android;
 - Chat capability workspace ownership with host-owned Pair Consensus,
   delivery, durable inbox, and acknowledgement boundaries;
+- Core-owned Starter-kind and invitation identity projections consumed by the
+  Flutter runtime without product-side Ledger payload decoding;
 - Moltbook proposal, publication, reply, receipt, and restart lifecycle;
 - dedicated Moltbook capability runtime ownership outside the generic plugin
   and Chat module;
@@ -41,9 +43,11 @@ and WASM sandbox. Product logic is still compiled into Flutter, while installed
 manifest profiles now control which product workspace can be opened.
 
 The remaining migration direction is a thin App Shell over the proven Person
-Runtime API. Chat, Moltbook, and Trading capability ownership are complete, and
-workspace navigation now has one App Shell owner without a duplicate Settings
-entry or plugin-screen runtime composition path.
+Runtime API. Chat, Moltbook, and Trading have dedicated capability owners, and
+workspace navigation has one App Shell owner without a duplicate Settings
+entry or plugin-screen runtime composition path. Full boundary proof still
+requires the retained compatibility and effect paths below to converge or be
+sealed.
 
 Every migration must remove or seal the host path it replaces. V2 does not
 receive a duplicated runtime.
@@ -67,6 +71,10 @@ implementation decision. No later V2 pass is selected.
 - Flutter host product logic remains too large and too aware of concrete
   plugins.
 - Plugin UI activation is hardcoded in the application shell.
+- Bootstrap/recovery compatibility and invitation delivery reconstruction
+  still inspect bounded Ledger fields outside canonical Core projections.
+- Local and remote Trading order execution do not yet share one durable effect
+  lifecycle.
 - Several 1.x FFI and screen surfaces remain measured compatibility boundaries
   in `architecture/ownership-registry.v1.json`.
 - Crypto-agility migration is specified but no post-quantum 1.x runtime is
