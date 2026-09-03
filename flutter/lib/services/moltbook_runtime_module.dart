@@ -270,11 +270,22 @@ class MoltbookRuntimeModule {
       cycleAccountBindingId: accountBindingId,
       cycleEpoch: cycleEpoch,
     );
-    await uiLog.log(
-      'moltbook.cycle.public_change',
-      'published destination=m/${MoltbookPublicationService.personFirstRuntimeSubmoltName} '
-          'operation=${result.operationId} state=${result.state.wireName}',
-    );
+    final destination =
+        'm/${MoltbookPublicationService.personFirstRuntimeSubmoltName}';
+    if (result.state == ExternalEffectState.succeeded) {
+      await uiLog.log(
+        'moltbook.cycle.public_change',
+        'published destination=$destination '
+            'operation=${result.operationId} state=${result.state.wireName}',
+      );
+    } else {
+      await uiLog.log(
+        'moltbook.cycle.public_change',
+        'publication.pending destination=$destination '
+            'operation=${result.operationId} state=${result.state.wireName} '
+            'error=${result.lastErrorCode ?? "none"}',
+      );
+    }
     return preview;
   }
 
