@@ -965,14 +965,15 @@ shadow_stream_is_durable() {
   local unexpected_deletes
   local checkpoint_commit_line
   local checkpoint_cleanup_line
-  unexpected_deletes="$(rg -n '\.delete\(' "$1" | rg -v '(interrupted|pending)\.delete\(|await entry\.delete\(\);' || true)"
+  unexpected_deletes="$(rg -n '\.delete\(' "$1" | rg -v '(interrupted|pending)\.delete\(|await entry\.delete\(\);|await lockFile\.delete\(\);' || true)"
   checkpoint_commit_line="$(rg -n 'await _commitCheckpoint\(checkpoint\);' "$1" | cut -d: -f1)"
   checkpoint_cleanup_line="$(rg -n 'await _deleteCheckpointedEvidence\(checkpoint\);' "$1" | head -1 | cut -d: -f1)"
-  rg -q 'static const int maxEntries = 256;' "$1" &&
+    rg -q 'static const int maxEntries = 256;' "$1" &&
     rg -q 'static const int _lockAttemptLimit = 100;' "$1" &&
+    rg -q "_lockTokenFileName = 'stream.lock.v2'" "$1" &&
+    rg -q 'lockFile\.create\(exclusive: true\)' "$1" &&
     rg -q "_pendingDirectoryName = 'pending'" "$1" &&
     rg -q "_pendingIdentityFileName =" "$1" &&
-    rg -q 'FileLock\.exclusive' "$1" &&
     rg -q 'pending\.writeAsString\(encoded, flush: true\)' "$1" &&
     rg -q 'pending\.rename\(identity\.path\)' "$1" &&
     rg -q '_requireEmptyUnboundStream' "$1" &&

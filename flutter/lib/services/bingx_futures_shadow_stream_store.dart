@@ -25,6 +25,7 @@ class BingxFuturesShadowStreamStore {
   static const String _pendingCheckpointFileName =
       'stream_checkpoint.v1.json.pending';
   static const String _lockFileName = 'stream.lock';
+  static const String _lockTokenFileName = 'stream.lock.v2';
   static const String _evidenceDirectoryName = 'evidence';
   static const String _pendingDirectoryName = 'pending';
   static const String _emptyEvidenceHash =
@@ -66,11 +67,12 @@ class BingxFuturesShadowStreamStore {
     required BingxFuturesShadowEvidenceProducer produce,
   }) async {
     await _prepareRootDirectory();
-    final lockFile = File('${directory.path}/$_lockFileName');
+    final lockFile = File('${directory.path}/$_lockTokenFileName');
     await _rejectLink(lockFile.path);
-    final lock = await lockFile.open(mode: FileMode.append);
+    var lockAcquired = false;
     try {
-      await _acquireLock(lock);
+      await _acquireLock(lockFile);
+      lockAcquired = true;
       await _prepareStreamDirectories();
       await _ensureKnownRootEntries();
       await _bindIdentity(runnerKeyId);
@@ -104,10 +106,8 @@ class BingxFuturesShadowStreamStore {
       await _commitEvidence(evidence);
       return evidence;
     } finally {
-      try {
-        await lock.unlock();
-      } finally {
-        await lock.close();
+      if (lockAcquired) {
+        await lockFile.delete();
       }
     }
   }
@@ -132,15 +132,20 @@ class BingxFuturesShadowStreamStore {
     return completer.future;
   }
 
-  Future<void> _acquireLock(RandomAccessFile lock) async {
+  Future<void> _acquireLock(File lockFile) async {
     for (var attempt = 1; attempt <= _lockAttemptLimit; attempt++) {
       try {
-        await lock.lock(FileLock.exclusive);
+        await lockFile.create(exclusive: true);
         return;
       } on FileSystemException {
         if (attempt == _lockAttemptLimit) rethrow;
-        await Future<void>.delayed(_lockRetryDelay);
       }
+      if (attempt == _lockAttemptLimit) {
+        throw const FileSystemException(
+          'shadow stream lock budget exhausted',
+        );
+      }
+      await Future<void>.delayed(_lockRetryDelay);
     }
   }
 
@@ -198,6 +203,7 @@ class BingxFuturesShadowStreamStore {
       _checkpointFileName,
       _pendingCheckpointFileName,
       _lockFileName,
+      _lockTokenFileName,
       _evidenceDirectoryName,
       _pendingDirectoryName,
     };

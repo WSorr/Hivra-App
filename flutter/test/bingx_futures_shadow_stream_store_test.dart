@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
@@ -222,19 +223,17 @@ void main() {
     );
 
     test('serializes independent processes into one chain', () async {
-      final first = await Process.start('dart', <String>[
-        'run',
+      final first = await _startSupportScript(
         'test/support/bingx_shadow_stream_append_process.dart',
-        temp.path,
-      ]);
-      final second = await Process.start('dart', <String>[
-        'run',
+        <String>[temp.path],
+      );
+      final second = await _startSupportScript(
         'test/support/bingx_shadow_stream_append_process.dart',
-        temp.path,
-      ]);
+        <String>[temp.path],
+      );
       final exits = await Future.wait(<Future<int>>[
-        first.exitCode,
-        second.exitCode,
+        _waitForSupportScript(first),
+        _waitForSupportScript(second),
       ]);
 
       expect(exits, <int>[0, 0]);
@@ -249,12 +248,10 @@ void main() {
 
     test('fails closed after the bounded lock budget', () async {
       final ready = File('${temp.path}.lock-ready');
-      final holder = await Process.start('dart', <String>[
-        'run',
+      final holder = await _startSupportScript(
         'test/support/bingx_shadow_stream_lock_holder.dart',
-        temp.path,
-        ready.path,
-      ]);
+        <String>[temp.path, ready.path],
+      );
       try {
         for (
           var attempt = 0;
@@ -677,6 +674,45 @@ void main() {
 Future<void> _prepareEmptyStream(Directory directory) async {
   await Directory('${directory.path}/evidence').create();
   await Directory('${directory.path}/pending').create();
+}
+
+Future<Process> _startSupportScript(
+  String scriptPath,
+  List<String> arguments,
+) {
+  return Process.start('dart', <String>[
+    '--packages=.dart_tool/package_config.json',
+    scriptPath,
+    ...arguments,
+  ], workingDirectory: Directory.current.path);
+}
+
+Future<int> _waitForSupportScript(Process process) async {
+  final stdout = process.stdout.transform(systemEncoding.decoder).join();
+  final stderr = process.stderr.transform(systemEncoding.decoder).join();
+  late final int exitCode;
+  try {
+    exitCode = await process.exitCode.timeout(const Duration(seconds: 12));
+  } on TimeoutException {
+    process.kill();
+    final output = await stdout;
+    final error = await stderr;
+    fail(
+      'shadow stream support process timed out\n'
+      'stdout:\n$output\n'
+      'stderr:\n$error',
+    );
+  }
+  final output = await stdout;
+  final error = await stderr;
+  if (exitCode != 0) {
+    fail(
+      'shadow stream support process failed with $exitCode\n'
+      'stdout:\n$output\n'
+      'stderr:\n$error',
+    );
+  }
+  return exitCode;
 }
 
 Future<BingxFuturesShadowEvidence> _evidence(

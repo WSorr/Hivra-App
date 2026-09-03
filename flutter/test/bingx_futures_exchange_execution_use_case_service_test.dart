@@ -82,7 +82,7 @@ void main() {
       'blocks execution when durable trading control is unavailable',
       () async {
         var placeOrderCalled = false;
-        final exchange = BingxFuturesExchangeService();
+        final exchange = _deterministicMarketExchange();
         final service = BingxFuturesExchangeExecutionUseCaseService(
           exchange: exchange,
           queue: BingxFuturesExecutionQueueService(
@@ -123,7 +123,7 @@ void main() {
         final store = _trackingStore(tempHome);
         await _setDroneEnabled(store, false);
         final restartedStore = _trackingStore(tempHome);
-        final exchange = BingxFuturesExchangeService();
+        final exchange = _deterministicMarketExchange();
         final service = BingxFuturesExchangeExecutionUseCaseService(
           exchange: exchange,
           queue: BingxFuturesExecutionQueueService(
@@ -366,7 +366,7 @@ void main() {
     );
 
     test('blocks a zone intent when the liquidity event changes', () async {
-      final exchange = BingxFuturesExchangeService();
+      final exchange = _deterministicMarketExchange();
       final service = BingxFuturesExchangeExecutionUseCaseService(
         exchange: exchange,
         queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
@@ -395,7 +395,7 @@ void main() {
       'test validation is idempotent without a durable effect claim',
       () async {
         var placeOrderCalls = 0;
-        final exchange = BingxFuturesExchangeService();
+        final exchange = _deterministicMarketExchange();
         final store = _trackingStore(tempHome);
         await _setDroneEnabled(store, true);
         final service = BingxFuturesExchangeExecutionUseCaseService(
@@ -549,7 +549,7 @@ void main() {
     });
 
     test('reports rejected provider effect as execution failure', () async {
-      final exchange = BingxFuturesExchangeService();
+      final exchange = _deterministicMarketExchange();
       final store = _trackingStore(tempHome);
       await _setDroneEnabled(store, true);
       final service = BingxFuturesExchangeExecutionUseCaseService(
@@ -604,7 +604,7 @@ void main() {
       var placeOrderCalled = false;
       final store = _trackingStore(tempHome);
       final now = DateTime.utc(2026, 8, 16, 12);
-      final exchange = BingxFuturesExchangeService();
+      final exchange = _deterministicMarketExchange();
       final service = BingxFuturesExchangeExecutionUseCaseService(
         exchange: exchange,
         queue: BingxFuturesExecutionQueueService(
@@ -676,7 +676,7 @@ void main() {
 
     test('bounded mandate rejects effects without an event claim', () async {
       var placeOrderCalled = false;
-      final exchange = BingxFuturesExchangeService();
+      final exchange = _deterministicMarketExchange();
       final service = BingxFuturesExchangeExecutionUseCaseService(
         exchange: exchange,
         queue: BingxFuturesExecutionQueueService(
@@ -1851,6 +1851,27 @@ BingxFuturesOrderTrackingStore _trackingStore(Directory tempHome) {
     fileStore: CapsuleFileStore(
       dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
     ),
+  );
+}
+
+BingxFuturesExchangeService _deterministicMarketExchange() {
+  return BingxFuturesExchangeService(
+    requestSender: (request) async {
+      if (request.uri.path.endsWith('/quote/contracts')) {
+        return const BingxHttpResponse(
+          statusCode: 200,
+          body:
+              '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":2,"quantityPrecision":3,"pricePrecision":2}]}',
+        );
+      }
+      if (request.uri.path.endsWith('/quote/price')) {
+        return const BingxHttpResponse(
+          statusCode: 200,
+          body: '{"code":0,"msg":"ok","data":{"price":"100"}}',
+        );
+      }
+      return const BingxHttpResponse(statusCode: 404, body: '{}');
+    },
   );
 }
 
