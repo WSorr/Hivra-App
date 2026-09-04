@@ -26,9 +26,11 @@ Status date: 2026-09-04
   expired, invalidated, or already-reclaimed setup. Automated wiring validation
   passes; retest geometry remains a separate, unselected decision.
   Observation display remediation retains detected clusters on blocked entry
-  without populating order fields. Automated session tests cover blocked-to-ready
-  evidence and retained-effect recovery; they do not prove a deployed offline
-  strategy run. macOS Release observation smoke passed: blocked DOGE entry
+  without populating order fields. Automated session tests now derive blocked
+  and ready evidence from successive synthetic candles through the production
+  strategy, reach one simulated order, recover its lost receipt by GET, and
+  reject recomposition under the retained operation ID. They do not prove a
+  deployed offline strategy run. macOS Release observation smoke passed: blocked DOGE entry
   retains both liquidity sides with empty order fields; changing to BNB clears
   the previous snapshot and selecting its scan result shows only BNB clusters.
   Android smoke and deployed offline strategy acceptance remain unverified.
