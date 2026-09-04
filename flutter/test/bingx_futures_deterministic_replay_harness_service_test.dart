@@ -117,10 +117,6 @@ void main() {
         signingKey: signingKey,
         runnerKeyId: _runnerKeyId(publicKey),
       );
-      expect(
-        evidence.evidenceHashHex,
-        '4fc12ad3041b61d36986239d61337cdcb49b11ac8bbb21b5c32d702de1f764ac',
-      );
       final golden = Map<String, dynamic>.from(
         jsonDecode(
               File(
@@ -129,6 +125,7 @@ void main() {
             )
             as Map,
       );
+      expect(evidence.evidenceHashHex, golden['expected_evidence_hash_hex']);
       expect(evidence.semanticMap, golden['semantic_fields']);
       expect(evidence.semanticJson, golden['expected_semantic_json']);
       expect(utf8.decode(evidence.wireBytes), golden['expected_wire_utf8']);

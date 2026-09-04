@@ -1,10 +1,53 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/utils/bingx_futures_zone_evidence_formatter.dart';
 
 void main() {
+  test('blocked entry preserves both sides as observations, not order prices', () {
+    final decision = _decision(
+      canPrepareIntent: false,
+      anchorExecutable: false,
+      levels: [
+        for (final side in ['buyside', 'sellside'])
+          BingxDetectedLiquidityLevel(
+            side: side, levelClass: 'internal', centerPriceDecimal: '100',
+            zoneTopDecimal: '101', zoneBottomDecimal: '99', pivotCount: 3,
+            breached: side == 'sellside', anchorIndex: 8,
+            breachedIndex: side == 'sellside' ? 20 : null,
+          ),
+      ],
+    );
+    final text = formatBingxFuturesLiquidityObservation(decision);
+    expect(text, contains('Buyside 99–101 · 3 pivots · Untouched'));
+    expect(text, contains('Sellside 99–101 · 3 pivots · Swept'));
+    expect(text, contains('No confirmed executable setup'));
+    expect(text, contains('snapshot, not order prices'));
+    expect(decision.canPrepareIntent, isFalse);
+    expect(decision.zoneAnchorExecutable, isFalse);
+  });
+
+  test('missing observations are not reported as confirmed or monitoring', () {
+    expect(formatBingxFuturesLiquidityObservation(null), contains('Scan and select'));
+    final text = formatBingxFuturesLiquidityObservation(
+      _decision(canPrepareIntent: false, anchorExecutable: false),
+    );
+    expect(text, contains('No pivot clusters detected'));
+    expect(text, contains('requires an active authorized Runner session'));
+    expect(text, isNot(contains('Reclaim confirmed')));
+  });
+
+  test('confirmed reclaim does not claim authority or a placed order', () {
+    final text = formatBingxFuturesLiquidityObservation(_decision());
+    expect(text, contains('still requires risk and mandate checks'));
+    final blocked = formatBingxFuturesLiquidityObservation(
+      _decision(canPrepareIntent: false),
+    );
+    expect(blocked, contains('other entry checks block preparation'));
+  });
+
   group('formatBingxFuturesZoneEvidence', () {
     test('distinguishes an aged unswept HTF anchor from current price', () {
       final text = formatBingxFuturesZoneEvidence(
@@ -66,6 +109,9 @@ void main() {
 }
 
 BingxFuturesLiveDecisionResult _decision({
+  bool canPrepareIntent = true,
+  bool anchorExecutable = true,
+  List<BingxDetectedLiquidityLevel> levels = const [],
   String? source,
   String? eventAtUtc,
   String? observedAtUtc,
@@ -75,7 +121,8 @@ BingxFuturesLiveDecisionResult _decision({
   String? side = 'sell',
 }) {
   return BingxFuturesLiveDecisionResult(
-    canPrepareIntent: true,
+    canPrepareIntent: canPrepareIntent,
+    observedLiquidityLevels: levels,
     decision: BingxTvhDecisionKind.short,
     side: side,
     zoneSide: 'sellside',
@@ -94,7 +141,7 @@ BingxFuturesLiveDecisionResult _decision({
     trendGateBlocked: false,
     trendGateCode: 'ok',
     zoneAnchorSource: source,
-    zoneAnchorExecutable: true,
+    zoneAnchorExecutable: anchorExecutable,
     zoneAnchorLifecycle: 'fresh',
     liquidityEventAtUtc: eventAtUtc,
     latestClosedMicroBarAtUtc: observedAtUtc,

@@ -700,9 +700,16 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
               ),
               const SizedBox(height: 8),
               Text(
-                _displayedZoneDecision == null
-                    ? 'Pending liquidity zone — not current market price. Run Intent revalidates it.'
+                _zoneLowController.text.isEmpty ||
+                        _zoneHighController.text.isEmpty ||
+                        _displayedZoneDecision == null
+                    ? 'No prepared entry zone. Observed clusters are shown below.'
                     : formatBingxFuturesZoneEvidence(_displayedZoneDecision!),
+                style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                formatBingxFuturesLiquidityObservation(_displayedZoneDecision),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 10),

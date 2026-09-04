@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/bingx_futures_market_snapshot_models.dart';
+
 class BingxFuturesZoneDecisionInput {
   final String symbol;
   final num midPrice;
@@ -12,6 +14,7 @@ class BingxFuturesZoneDecisionInput {
   final List<num> microOpens;
   final List<num> microCloses;
   final List<String> microCloseTimesUtc;
+  final List<BingxDetectedLiquidityLevel> detectedLiquidityLevels;
   final List<num> macroHighs;
   final List<num> macroLows;
   final List<num> higherHighs;
@@ -44,6 +47,7 @@ class BingxFuturesZoneDecisionInput {
     this.microOpens = const <num>[],
     this.microCloses = const <num>[],
     this.microCloseTimesUtc = const <String>[],
+    this.detectedLiquidityLevels = const <BingxDetectedLiquidityLevel>[],
     required this.macroHighs,
     required this.macroLows,
     required this.higherHighs,
@@ -333,8 +337,7 @@ class BingxFuturesZoneDecisionService {
       lows: input.microLows,
       opens: input.microOpens,
       closes: input.microCloses,
-      olderHigh: olderHigh,
-      olderLow: olderLow,
+      clusters: input.detectedLiquidityLevels,
       eventStartIndex: microSplit,
     );
     final aligned =
@@ -513,7 +516,6 @@ class BingxFuturesZoneDecisionService {
         anchorHigh = externalSellRetest.price;
         usedExternalLiquidity = true;
         anchorSource = externalSellRetest.source;
-        anchorExecutable = true;
         anchorLifecycle = 'fresh';
         liquidityAnchorPrice = externalSellRetest.price;
         liquidityEventAtUtc = externalSellRetest.eventAtUtc;
@@ -553,7 +555,6 @@ class BingxFuturesZoneDecisionService {
         anchorLow = externalBuyRetest.price;
         usedExternalLiquidity = true;
         anchorSource = externalBuyRetest.source;
-        anchorExecutable = true;
         anchorLifecycle = 'fresh';
         liquidityAnchorPrice = externalBuyRetest.price;
         liquidityEventAtUtc = externalBuyRetest.eventAtUtc;
@@ -663,8 +664,40 @@ class BingxFuturesZoneDecisionService {
     required List<num> lows,
     required List<num> opens,
     required List<num> closes,
-    required num olderHigh,
-    required num olderLow,
+    required List<BingxDetectedLiquidityLevel> clusters,
+    required int eventStartIndex,
+  }) {
+    final candidates = <_MicroReclaimEvent>[];
+    for (final cluster in clusters) {
+      final event = _reclaimFromCluster(
+        side: side,
+        highs: highs,
+        lows: lows,
+        opens: opens,
+        closes: closes,
+        cluster: cluster,
+        eventStartIndex: eventStartIndex,
+      );
+      if (event != null) candidates.add(event);
+    }
+    candidates.sort(
+      (left, right) => right.reclaimIndex.compareTo(left.reclaimIndex),
+    );
+    if (candidates.isEmpty ||
+        (candidates.length > 1 &&
+            candidates[0].reclaimIndex == candidates[1].reclaimIndex)) {
+      return null;
+    }
+    return candidates.first;
+  }
+
+  _MicroReclaimEvent? _reclaimFromCluster({
+    required String side,
+    required List<num> highs,
+    required List<num> lows,
+    required List<num> opens,
+    required List<num> closes,
+    required BingxDetectedLiquidityLevel cluster,
     required int eventStartIndex,
   }) {
     if (highs.length != lows.length ||
@@ -676,17 +709,40 @@ class BingxFuturesZoneDecisionService {
       return null;
     }
 
-    final level = side == 'buy' ? olderLow : olderHigh;
+    final breach = cluster.breachedIndex;
+    final top = num.tryParse(cluster.zoneTopDecimal);
+    final bottom = num.tryParse(cluster.zoneBottomDecimal);
+    if (cluster.side != (side == 'buy' ? 'sellside' : 'buyside') ||
+        cluster.pivotCount < 3 ||
+        !cluster.breached ||
+        breach == null ||
+        breach < eventStartIndex ||
+        breach >= highs.length ||
+        cluster.anchorIndex < 0 ||
+        cluster.anchorIndex >= breach ||
+        top == null ||
+        bottom == null ||
+        !top.isFinite ||
+        !bottom.isFinite ||
+        bottom <= 0 ||
+        top <= bottom) {
+      return null;
+    }
+    final level = side == 'buy' ? bottom : top;
+    if (!(side == 'buy' ? lows[breach] < level : highs[breach] > level)) {
+      return null;
+    }
     int? sweepIndex;
     num? sweepExtreme;
     var retests = 0;
     _MicroReclaimEvent? latestConfirmed;
 
-    for (var index = eventStartIndex; index < highs.length; index += 1) {
+    for (var index = breach; index < highs.length; index += 1) {
       final swept = side == 'buy' ? lows[index] < level : highs[index] > level;
       if (swept) {
         final extreme = side == 'buy' ? lows[index] : highs[index];
-        if (sweepIndex == null || latestConfirmed != null) {
+        if (latestConfirmed != null) return null;
+        if (sweepIndex == null) {
           sweepIndex = index;
           sweepExtreme = extreme;
           retests = 0;
@@ -702,10 +758,7 @@ class BingxFuturesZoneDecisionService {
 
       final age = index - sweepIndex;
       if (age > _microReclaimMaxAgeBars) {
-        sweepIndex = null;
-        sweepExtreme = null;
-        retests = 0;
-        continue;
+        return null;
       }
 
       final crossedLevel =
@@ -714,10 +767,7 @@ class BingxFuturesZoneDecisionService {
               : closes[index] < level && closes[index - 1] >= level;
       if (crossedLevel) retests += 1;
       if (retests > _microReclaimMaxRetests) {
-        sweepIndex = null;
-        sweepExtreme = null;
-        retests = 0;
-        continue;
+        return null;
       }
 
       final atr = _atrAt(

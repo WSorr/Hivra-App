@@ -12,6 +12,32 @@ void main() {
   group('BingxFuturesLiveDecisionService', () {
     const service = BingxFuturesLiveDecisionService();
 
+    test('passes canonical detected clusters directly to the zone owner', () {
+      final snapshot = _buildInput(permuted: false);
+      final expected = const BingxFuturesFeatureExtractorService().extract(
+        const BingxFuturesMarketSnapshotService().build(snapshot),
+      ).liquidityLevels;
+      BingxFuturesZoneDecisionInput? captured;
+      final consumer = BingxFuturesLiveDecisionService(
+        zoneDecision: _StubZoneDecision(
+          side: 'buy', zoneSide: 'buyside', trend4h: 'flat', trend1d: 'flat',
+          needsFartherRetest: false, targetRetestPct: 0.01,
+          onInput: (input) => captured = input,
+        ),
+      );
+      consumer.decide(BingxFuturesLiveDecisionInput(
+        snapshotInput: snapshot, isConsensusSignable: true,
+      ));
+      List<Object> fields(List<BingxDetectedLiquidityLevel> levels) => levels.map(
+        (level) => [level.side, level.anchorIndex, level.pivotCount,
+          level.zoneTopDecimal, level.zoneBottomDecimal,
+          level.breached, level.breachedIndex],
+      ).toList();
+      expect(expected, isNotEmpty);
+      expect(captured, isNotNull);
+      expect(fields(captured!.detectedLiquidityLevels), fields(expected));
+    });
+
     test('blocks deterministic live long without opposite target', () {
       final input = BingxFuturesLiveDecisionInput(
         snapshotInput: _buildInput(permuted: false),
@@ -22,6 +48,11 @@ void main() {
       final second = service.decide(input);
 
       expect(first.canPrepareIntent, isFalse);
+      expect(first.observedLiquidityLevels, isNotEmpty);
+      expect(
+        () => first.observedLiquidityLevels.clear(),
+        throwsUnsupportedError,
+      );
       expect(first.decision, BingxTvhDecisionKind.long);
       expect(first.side, 'buy');
       expect(first.zoneSide, 'buyside');
@@ -52,6 +83,10 @@ void main() {
         );
 
         expect(public.canonicalJson, local.canonicalJson);
+        expect(
+          public.observedLiquidityLevels.map((level) => level.centerPriceDecimal),
+          local.observedLiquidityLevels.map((level) => level.centerPriceDecimal),
+        );
         expect(public.liveDecisionHashHex, local.liveDecisionHashHex);
         expect(public.zoneAnchorSource, local.zoneAnchorSource);
         expect(
@@ -1105,6 +1140,7 @@ class _StubRuleEngine extends BingxFuturesTvhRuleEngineService {
 }
 
 class _StubZoneDecision extends BingxFuturesZoneDecisionService {
+  final void Function(BingxFuturesZoneDecisionInput)? onInput;
   final String side;
   final String zoneSide;
   final String trend4h;
@@ -1120,6 +1156,7 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
   final num? externalBuyRetest;
 
   const _StubZoneDecision({
+    this.onInput,
     required this.side,
     required this.zoneSide,
     required this.trend4h,
@@ -1139,6 +1176,7 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
   BingxFuturesZoneDecisionResult decide({
     required BingxFuturesZoneDecisionInput input,
   }) {
+    onInput?.call(input);
     return BingxFuturesZoneDecisionResult(
       side: side,
       zoneSide: zoneSide,

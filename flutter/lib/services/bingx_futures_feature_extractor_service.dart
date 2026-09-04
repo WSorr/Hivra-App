@@ -10,30 +10,6 @@ enum BingxTrendDirection {
   neutral,
 }
 
-class BingxDetectedLiquidityLevel {
-  final String side; // buyside | sellside
-  final String levelClass; // external | internal
-  final String centerPriceDecimal;
-  final String zoneTopDecimal;
-  final String zoneBottomDecimal;
-  final int pivotCount;
-  final bool breached;
-  final int anchorIndex;
-  final int? breachedIndex;
-
-  const BingxDetectedLiquidityLevel({
-    required this.side,
-    required this.levelClass,
-    required this.centerPriceDecimal,
-    required this.zoneTopDecimal,
-    required this.zoneBottomDecimal,
-    required this.pivotCount,
-    required this.breached,
-    required this.anchorIndex,
-    required this.breachedIndex,
-  });
-}
-
 class BingxWhaleActivationEvent {
   final String activationSide; // buy | sell
   final String activationPriceDecimal;
@@ -134,9 +110,7 @@ class BingxFuturesFeatureExtractorService {
             ? BingxTrendDirection.bearish
             : BingxTrendDirection.neutral;
     final atr14 = _atr(candles5m, period: 14);
-    final atr10 = _atr(candles5m, period: 10);
-
-    final detectedLevels = _detectPivotClusterLevels(candles5m, atr10);
+    final detectedLevels = _detectPivotClusterLevels(candles5m);
     final tradeDelta = _tradeDelta(snapshot.normalizedSnapshot);
     final tradeImbalanceRatio =
         _tradeImbalanceRatio(snapshot.normalizedSnapshot);
@@ -226,9 +200,7 @@ class BingxFuturesFeatureExtractorService {
 
   List<BingxDetectedLiquidityLevel> _detectPivotClusterLevels(
     List<_CandleRow> candles5m,
-    double atr10,
   ) {
-    final band = atr10 / liqMar;
     final highPivots = <_Pivot>[];
     final lowPivots = <_Pivot>[];
     final buyLevels = <_MutableLevel>[];
@@ -237,6 +209,9 @@ class BingxFuturesFeatureExtractorService {
     for (var i = 0; i < candles5m.length; i++) {
       final p = i - 1;
       if (p < liqLen || i >= candles5m.length) continue;
+      final band = i < 10
+          ? 0.0
+          : _atr(candles5m, period: 10, endIndex: i) / liqMar;
       if (_isPivotHigh(candles5m, p, left: liqLen, right: 1)) {
         final pivot = _Pivot(index: p, price: candles5m[p].high);
         highPivots.insert(0, pivot);
@@ -248,7 +223,7 @@ class BingxFuturesFeatureExtractorService {
                   item.price <= pivot.price + band,
             )
             .toList();
-        if (cluster.length > 2) {
+        if (cluster.length > 2 && i >= 10) {
           final anchor =
               cluster.map((e) => e.index).reduce((a, b) => a < b ? a : b);
           final minP =
@@ -279,7 +254,7 @@ class BingxFuturesFeatureExtractorService {
                   item.price <= pivot.price + band,
             )
             .toList();
-        if (cluster.length > 2) {
+        if (cluster.length > 2 && i >= 10) {
           final anchor =
               cluster.map((e) => e.index).reduce((a, b) => a < b ? a : b);
           final minP =
@@ -582,12 +557,13 @@ class BingxFuturesFeatureExtractorService {
     }).toList();
   }
 
-  double _atr(List<_CandleRow> candles, {required int period}) {
-    if (candles.length <= period) {
+  double _atr(List<_CandleRow> candles, {required int period, int? endIndex}) {
+    final end = endIndex ?? candles.length - 1;
+    if (end < period || end >= candles.length) {
       throw FormatException('not enough candles for ATR$period');
     }
     final trueRanges = <double>[];
-    for (var i = 1; i < candles.length; i++) {
+    for (var i = end - period + 1; i <= end; i++) {
       final current = candles[i];
       final prevClose = candles[i - 1].close;
       final tr1 = current.high - current.low;
@@ -663,6 +639,7 @@ class BingxFuturesFeatureExtractorService {
         levels.where((item) => item.anchorIndex == anchor).toList();
     if (existing.isNotEmpty) {
       final level = existing.first;
+      if (level.breached) return;
       level.center = center;
       level.top = top;
       level.bottom = bottom;

@@ -24,6 +24,7 @@ class BingxFuturesLiveDecisionInput {
 
 class BingxFuturesLiveDecisionResult {
   final bool canPrepareIntent;
+  final List<BingxDetectedLiquidityLevel> observedLiquidityLevels;
   final BingxTvhDecisionKind decision;
   final String? side;
   final String? zoneSide;
@@ -55,6 +56,7 @@ class BingxFuturesLiveDecisionResult {
 
   const BingxFuturesLiveDecisionResult({
     required this.canPrepareIntent,
+    this.observedLiquidityLevels = const <BingxDetectedLiquidityLevel>[],
     required this.decision,
     required this.side,
     required this.zoneSide,

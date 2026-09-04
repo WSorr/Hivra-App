@@ -23,6 +23,72 @@ void main() {
       expect(featuresA.hasSellWhaleActivation, isFalse);
     });
 
+    test('later volatility cannot resize already formed clusters', () {
+      final prefix = _generate5mCandles(count: 80);
+      final before = featureService.extract(
+        snapshotService.build(
+          _buildInput(permuted: false, microCandles: prefix),
+        ),
+      );
+      final after = featureService.extract(
+        snapshotService.build(
+          _buildInput(
+            permuted: false,
+            microCandles: [
+              ...prefix,
+              _singleCandle(
+                '5m',
+                '2026-04-25T09:55:00Z',
+                '2026-04-25T10:00:00Z',
+                102,
+                500,
+                1,
+                102,
+              ),
+            ],
+          ),
+        ),
+      );
+      List<Object> geometry(BingxFuturesFeatureExtractionResult result) =>
+          result.liquidityLevels
+              .map(
+                (level) => [
+                  level.side,
+                  level.anchorIndex,
+                  level.centerPriceDecimal,
+                  level.zoneTopDecimal,
+                  level.zoneBottomDecimal,
+                  level.pivotCount,
+                ],
+              )
+              .toList();
+      expect(before.liquidityLevels, isNotEmpty);
+      expect(geometry(after), geometry(before));
+    });
+
+    test('later pivot cannot rewrite a breached cluster', () {
+      final candles = List<BingxFuturesCandle>.generate(46, (index) {
+        final start = DateTime.utc(2026, 4, 25, 6).add(Duration(minutes: index * 5));
+        final high = [8, 16, 24].contains(index) ? 101.0 :
+            index == 35 ? 110.0 : index == 44 ? 102.0 : 99.0;
+        return _singleCandle('5m', start.toIso8601String(),
+            start.add(const Duration(minutes: 5)).toIso8601String(),
+            97, high, 95, 97);
+      });
+      BingxDetectedLiquidityLevel cluster(int count) => featureService.extract(
+        snapshotService.build(_buildInput(permuted: false,
+          microCandles: candles.take(count).toList())),
+      ).liquidityLevels.singleWhere((level) => level.side == 'buyside' && level.anchorIndex == 8);
+      final before = cluster(36);
+      final after = cluster(46);
+      expect(before.breached, isTrue);
+      expect(after.breachedIndex, before.breachedIndex);
+      expect(after.centerPriceDecimal, before.centerPriceDecimal);
+      expect(after.zoneTopDecimal, before.zoneTopDecimal);
+      expect(after.zoneBottomDecimal, before.zoneBottomDecimal);
+      expect(after.pivotCount, before.pivotCount);
+    });
+
     test('uses notional imbalance independent of base-asset units', () {
       final btcLike = featureService.extract(
         snapshotService.build(_buildInput(permuted: false)),
@@ -90,10 +156,11 @@ BingxFuturesMarketSnapshotInput _buildInput({
   double tradeQuantityScale = 1,
   double sessionScale = 1,
   bool sessionCoverageComplete = true,
+  List<BingxFuturesCandle>? microCandles,
 }) {
   final candles = <BingxFuturesCandle>[
     ..._generate15mCandles(count: fifteenMinuteCount),
-    ..._generate5mCandles(count: 80),
+    ...microCandles ?? _generate5mCandles(count: 80),
     _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z', 102,
         103, 101, 102.2),
     _singleCandle(

@@ -252,6 +252,10 @@ pivot-cluster model:
    - `pivot_low = pivotlow(liqLen, 1)`
 2. Cluster band:
    - include pivots within `pivot_price ± (ATR10 / liqMar)`
+   - ATR10 uses only the ten true ranges ending at that pivot's confirmation
+     candle; no level is emitted until those ranges are available;
+   - replay MUST NOT apply the final snapshot ATR retroactively to earlier
+     clusters. Later volatility alone cannot resize their recorded geometry.
 3. Cluster acceptance:
    - level is valid only when `count > 2` pivots in cluster
 4. Level price:
@@ -267,6 +271,8 @@ pivot-cluster model:
    - sellside breached when `low < zone_bottom`
 8. Breached clusters become historical evidence only. They do not authorize a
    reverse signal by applying a fixed percentage offset.
+   Their geometry, pivot count, and first breach index remain unchanged when
+   later pivots join the same anchor.
 
 Default parameters for v1:
 
@@ -288,24 +294,39 @@ canonical normalized snapshot, derived liquidity, ATR, or zone decision.
 
 For the side selected by TVH:
 
-1. Start from the structure level established before the recent evaluation
-   window.
+1. Consume the existing feature extractor's detected cluster, with at least
+   three confirmed pivots, matching liquidity side, finite ordered bounds,
+   and a first breach inside the recent evaluation window. Window extrema
+   alone MUST NOT authorize entry. Buyside clusters feed short reclaim;
+   sellside clusters feed long reclaim.
 2. Record a sweep when a closed wick crosses that level. A deeper wick in the
    same active event updates its extreme without creating another event.
 3. Confirm reclaim only when a closed candle finishes back beyond the level in
    the intended direction and its directional body is at least `0.5 * ATR14`.
 4. Expire an unconfirmed sweep after 8 closed bars.
 5. Invalidate it after more than 2 failed close-back attempts.
-6. Once confirmed, keep one event anchored to the exact sweep extreme until a
-   later sweep starts a new event. Repeated evaluation of identical candles
-   MUST produce the same event and zone.
+6. Once confirmed, keep one event anchored to the exact sweep extreme. A later
+   sweep invalidates that cluster's setup rather than generating another entry
+   from consumed liquidity. Expired or invalidated evidence cannot restart from
+   the same cluster. Repeated evaluation of identical candles MUST produce the
+   same event and zone. Among valid clusters select the latest reclaim; tied
+   reclaim candle indices are ambiguous and MUST NOT authorize entry.
 
 The reducer has no persisted mutable market state. Restart, local execution,
 and shadow replay reconstruct the same lifecycle from the same canonical
 candle sequence. The zone owner derives a domain-separated stable liquidity
 event identity from symbol, side, executable anchor source/lifecycle, anchor
 price, and the closed-candle event timestamp. A deeper wick inside an
-unconfirmed sweep does not create another event; a later sweep does.
+unconfirmed sweep does not create another event. A new entry requires a new
+valid cluster setup, not reuse of the previously consumed cluster.
+
+The workspace MUST retain detected buyside/sellside clusters as observations
+when entry preparation is blocked. Displayed bounds and breach status come
+from the same feature result used by the decision; the UI MUST NOT reconstruct
+the cluster lifecycle or treat a visible cluster as execution authority.
+Prepared entry fields remain separate and empty when preparation is blocked.
+Offline observation requires an explicitly authorized, active Runner session;
+opening the local workspace or displaying a cluster does not activate one.
 
 The prepared execution context records the latest closed 5m bar used for the decision.
 Immediately before any exchange effect, the existing execution use case MUST
@@ -449,7 +470,8 @@ External HTF levels MUST have an explicit deterministic lifecycle:
   liquidity;
 - `consumed`: a confirmed pivot breached by a later candle.
 
-Only `fresh` HTF pivots may be used as pending-entry retest anchors.
+`fresh` HTF pivots are observation and opposite-target candidates only. They
+MUST NOT authorize pending entry without a confirmed directional sweep/reclaim.
 The `4h` lifecycle window MUST cover at least 80 days of closed candles so a
 level cannot appear fresh merely because an older sweep fell outside a short
 runtime lookback.
@@ -459,8 +481,8 @@ fresh again merely because price moved away from them. A trade after a sweep
 requires the separate current microstructure path
 (`sweep -> reclaim -> displacement`) and a new live decision.
 Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
-`internal_diagnostic`, but MUST NOT authorize a pending order. If neither a
-`fresh` HTF pivot nor a current confirmed micro sweep/reclaim exists, the live
+`internal_diagnostic`, but MUST NOT authorize a pending order. If no
+current confirmed micro sweep/reclaim exists, the live
 decision MUST emit `liquidity_anchor_unavailable`.
 
 The Trading UI MUST present executable HTF bounds as a **pending liquidity
@@ -517,7 +539,7 @@ available indicator:
 2. Maintain each pool lifecycle as `fresh`, `sweep_origin`,
    `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
 3. Use recent aggressive-volume imbalance to activate exactly one direction.
-4. Select an executable pool or a bounded sweep/reclaim event for that side.
+4. Require a bounded sweep/reclaim event for that side before preparing entry.
 5. Rank valid structural candidates with liquidation-proxy confluence.
 6. Apply hard freshness, funding, structural, risk, claim, and effect guards.
 7. Use trend, OI, session, and large-flow evidence as context for explanation
@@ -531,8 +553,8 @@ contract.
 ### 6.1 LONG TVH
 
 1. Recent aggressive-volume imbalance activates `buy`.
-2. An untouched confirmed structural low or a current sellside-liquidity
-   sweep/reclaim supplies the executable entry anchor.
+2. A current sellside-liquidity sweep and bullish closed-candle reclaim supply
+   the executable entry anchor; an untouched structural low does not.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
@@ -545,8 +567,8 @@ Entry anchor:
 ### 6.2 SHORT TVH
 
 1. Recent aggressive-volume imbalance activates `sell`.
-2. An untouched confirmed structural high or a current buyside-liquidity
-   sweep/reclaim supplies the executable entry anchor.
+2. A current buyside-liquidity sweep and bearish closed-candle reclaim supply
+   the executable entry anchor; an untouched structural high does not.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.

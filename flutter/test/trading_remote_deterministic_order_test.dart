@@ -19,6 +19,51 @@ import '../tool/trading_remote_exact_order.dart'
         runAuthorizedExactOrder;
 
 void main() {
+  test('blocked observation then ready cycle retains one effect across recovery', () async {
+    final waiting = await _fixture(sessionCycleIndex: 0, proposalReady: false);
+    final ready = await _fixture(sessionCycleIndex: 1);
+    addTearDown(waiting.dispose);
+    addTearDown(ready.dispose);
+    final requests = <BingxHttpRequest>[];
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      requests.add(request);
+      return _providerResponse(request);
+    }
+    final blocked = jsonDecode(await runOneDeterministicOrder(
+      options: waiting.options, runnerSeedBytes: waiting.runnerSeed,
+      executeExactOrder: runAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => waiting.now,
+    ));
+    expect(blocked['state'], 'blocked');
+    expect(blocked['reason_code'], 'market_proposal_blocked');
+    expect(requests.where((request) => request.method == 'POST'), isEmpty);
+
+    final nextOptions = <String, String>{
+      ...waiting.options,
+      'session-cycle-index': '1',
+      'market-evidence-file': ready.options['market-evidence-file']!,
+    };
+    final result = jsonDecode(await runOneDeterministicOrder(
+      options: nextOptions, runnerSeedBytes: waiting.runnerSeed,
+      executeExactOrder: runAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => waiting.now,
+    ));
+    expect(result['state'], 'succeeded');
+    final recovered = jsonDecode(await recoverOneDeterministicOrder(
+      options: nextOptions, runnerSeedBytes: waiting.runnerSeed,
+      reconcileExactOrder: reconcileAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => waiting.now,
+    ));
+    expect(recovered, result);
+    final replay = jsonDecode(await runOneDeterministicOrder(
+      options: nextOptions, runnerSeedBytes: waiting.runnerSeed,
+      executeExactOrder: runAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => waiting.now,
+    ));
+    expect(replay, result);
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+  });
+
   test('one signed deterministic cycle composes and executes once', () async {
     final fixture = await _fixture();
     addTearDown(fixture.dispose);
@@ -291,7 +336,7 @@ Future<
     Future<void> Function() dispose,
   })
 >
-_fixture({int? sessionCycleIndex, bool testOrder = true}) async {
+_fixture({int? sessionCycleIndex, bool testOrder = true, bool proposalReady = true}) async {
   final directory = await Directory.systemTemp.createTemp(
     'hivra-deterministic-cycle.',
   );
@@ -363,13 +408,16 @@ _fixture({int? sessionCycleIndex, bool testOrder = true}) async {
     'feature_hash_hex': '2' * 64,
     'tvh_decision_hash_hex': '3' * 64,
     'decision': 'long',
-    'can_prepare_intent': true,
+    'can_prepare_intent': proposalReady,
     'trend_bundle': <String, dynamic>{
       'trend_15m': 'bullish',
       'trend_4h': 'bull',
       'trend_1d': 'bull',
     },
-    'trend_gate': <String, dynamic>{'blocked': false, 'code': 'ok'},
+    'trend_gate': <String, dynamic>{
+      'blocked': !proposalReady,
+      'code': proposalReady ? 'ok' : 'liquidity_anchor_unavailable',
+    },
     'side': 'buy',
     'zone_evaluation_side': 'buy',
     'zone': <String, dynamic>{
@@ -382,8 +430,8 @@ _fixture({int? sessionCycleIndex, bool testOrder = true}) async {
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
       'anchor_source': 'micro_sweep_reclaim',
-      'anchor_executable': true,
-      'anchor_lifecycle': 'fresh',
+      'anchor_executable': proposalReady,
+      'anchor_lifecycle': proposalReady ? 'reclaimed' : 'unavailable',
       'liquidity_event_id': '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:50:00Z',
       'latest_closed_micro_bar_at_utc': '2026-08-22T11:55:00Z',
@@ -409,7 +457,7 @@ _fixture({int? sessionCycleIndex, bool testOrder = true}) async {
       decision: BingxTvhDecisionKind.long,
       topReasonCode: 'funding_guard',
       marketSymbol: 'BTC-USDT',
-      marketProposalStatus: 'READY',
+      marketProposalStatus: proposalReady ? 'READY' : 'BLOCKED',
       marketProposalJson: proposalJson,
     ),
     runnerBuildId: policy['runner_build_id'] as String,

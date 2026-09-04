@@ -1,5 +1,34 @@
 import '../models/bingx_futures_live_decision_models.dart';
 
+String formatBingxFuturesLiquidityObservation(
+  BingxFuturesLiveDecisionResult? decision,
+) {
+  if (decision == null) {
+    return 'Observed liquidity (5m)\nScan and select a symbol to inspect its clusters.';
+  }
+  final lines = <String>['Observed liquidity (5m) — snapshot, not order prices'];
+  if (decision.observedLiquidityLevels.isEmpty) {
+    lines.add('No pivot clusters detected in this snapshot.');
+  }
+  for (final level in decision.observedLiquidityLevels) {
+    final side = level.side == 'buyside' ? 'Buyside' : 'Sellside';
+    final state = level.breached ? 'Swept' : 'Untouched';
+    lines.add(
+      '$side ${level.zoneBottomDecimal}–${level.zoneTopDecimal}'
+      ' · ${level.pivotCount} pivots · $state',
+    );
+  }
+  lines.add(
+    decision.zoneAnchorExecutable
+        ? (decision.canPrepareIntent
+            ? 'Reclaim confirmed. Order preparation still requires risk and mandate checks.'
+            : 'Reclaim confirmed; other entry checks block preparation.')
+        : 'No confirmed executable setup. A swept cluster alone does not authorize entry.',
+  );
+  lines.add('Offline monitoring requires an active authorized Runner session.');
+  return lines.join('\n');
+}
+
 String formatBingxFuturesZoneEvidence(BingxFuturesLiveDecisionResult decision) {
   final parts = <String>['Pending liquidity zone — not current market price'];
   final source = _formatAnchorSource(decision.zoneAnchorSource);

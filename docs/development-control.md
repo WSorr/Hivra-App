@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-08-31
+Status date: 2026-09-04
 
 ## Current State
 
@@ -14,8 +14,24 @@ Status date: 2026-08-31
 - Trading Remote Runner acceptance remains complete at `b88a886`.
 - Hivra 2.0 remains design-only. No 2.0 runtime or UI implementation is
   authorized.
-- Current selected runtime unit: none. Manifest-driven activation and Chat,
-  Moltbook, and Trading capability ownership are complete.
+- Current selected runtime unit: Trading reclaim-only entry and causal cluster evidence.
+  Untouched HTF pivots remain observations/targets, not executable entry anchors.
+  The existing feature detector now uses confirmation-time ATR rather than
+  final-snapshot ATR for historical clusters. Automated validation passes.
+  Existing-order revalidation on the operator's experimental subaccount is
+  authorized for smoke; new orders, VPS changes and release remain outside
+  this unit. Revalidation may cancel anchors rejected by the stricter policy.
+  The existing sweep/reclaim reducer now consumes detected cluster evidence;
+  window extrema cannot authorize entry. Consumed clusters cannot restart an
+  expired, invalidated, or already-reclaimed setup. Automated wiring validation
+  passes; retest geometry remains a separate, unselected decision.
+  Observation display remediation retains detected clusters on blocked entry
+  without populating order fields. Automated session tests cover blocked-to-ready
+  evidence and retained-effect recovery; they do not prove a deployed offline
+  strategy run. macOS Release observation smoke passed: blocked DOGE entry
+  retains both liquidity sides with empty order fields; changing to BNB clears
+  the previous snapshot and selecting its scan result shows only BNB clusters.
+  Android smoke and deployed offline strategy acceptance remain unverified.
 
 ## Product Direction
 
@@ -53,8 +69,8 @@ Unavailable equity, realized PnL, or position evidence remains absent and
 blocks both test and live execution before the risk governor. The
 former peer-selected intent route, Chat signal inbox, and Trading-side Pair
 Consensus dependencies are removed. The thin App Shell navigation boundary is
-closed without duplicating capability UI or runtime ownership. No next runtime
-unit is selected. Secure seed access failures remain distinct from a missing
+closed without duplicating capability UI or runtime ownership. No runtime unit
+beyond the selected Trading work is authorized. Secure seed access failures remain distinct from a missing
 seed and cannot open the recovery path; irreversible Capsule deletion verifies
 the active native seed, Capsule-scoped secure seed, and known legacy seed
 locations before removing local history. A plugin ABI change, universal agent
