@@ -525,6 +525,18 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 'Estimated order quantity: ${_quantityController.text}',
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
+              OutlinedButton.icon(
+                onPressed:
+                    _reviewingExposure || !_tradingControlLoaded
+                        ? null
+                        : () => _reviewExposure(),
+                icon: const Icon(Icons.account_balance_wallet_outlined),
+                label: Text(
+                  _reviewingExposure
+                      ? 'Reading exchange settings…'
+                      : 'Estimate margin and risk',
+                ),
+              ),
               SwitchListTile.adaptive(
                 value: _droneEnabled,
                 onChanged:
@@ -771,7 +783,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                           ? Icons.pause_circle_outline_rounded
                           : Icons.play_circle_outline_rounded,
                     ),
-                    label: Text(_droneEnabled ? 'Emergency Pause' : 'Resume'),
+                    label: Text(_droneEnabled ? 'Pause local drone' : 'Resume'),
                   ),
                   OutlinedButton.icon(
                     onPressed:

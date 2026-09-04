@@ -6,6 +6,109 @@ import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_order_sizing_service.dart';
 
 void main() {
+  test(
+    'exposure uses side leverage and free margin, never wallet equity',
+    () async {
+      final requests = <String>[];
+      var available = '10';
+      var long = '5';
+      var mode = 'ISOLATED';
+      final owner = BingxFuturesOrderSizingService(
+        exchange: BingxFuturesExchangeService(
+          requestSender: (request) async {
+            expect(request.method, 'GET');
+            requests.add(request.uri.path);
+            final data =
+                request.uri.path.endsWith('/leverage')
+                    ? '{"longLeverage":"$long","shortLeverage":"2"}'
+                    : request.uri.path.endsWith('/marginType')
+                    ? '{"marginType":"$mode"}'
+                    : '[{"asset":"USDT","equity":"1000","availableMargin":"$available"}]';
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"data":$data}',
+            );
+          },
+        ),
+      );
+      Future<String> read({
+        String side = 'buy',
+        num cap = 8,
+        num selectedStop = 5,
+        String? exactStop,
+      }) => owner.describeExposure(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'test',
+          apiSecret: 'test',
+        ),
+        symbol: 'DOGE-USDT',
+        maximumNotionalQuote: cap,
+        stopLossPercent: selectedStop,
+        intent: BingxFuturesIntentPayload(
+          clientOrderId: 'test',
+          symbol: 'DOGE-USDT',
+          side: side,
+          orderType: 'limit',
+          quantityDecimal: '80',
+          limitPriceDecimal: '0.1',
+          timeInForce: 'GTC',
+          entryMode: 'zone_pending',
+          triggerPriceDecimal: '0.1',
+          stopLossDecimal: exactStop ?? (side == 'buy' ? '0.095' : '0.105'),
+          takeProfitDecimal: null,
+          intentHashHex: null,
+        ),
+      );
+      final buy = await read();
+      expect(buy, contains('1.6000 USDT (16.00%'));
+      expect(buy, contains('0.4000 USDT before costs'));
+      expect(buy, isNot(contains('Short:')));
+      expect(buy, contains('nominal leverage buffer'));
+      expect(await read(side: 'sell'), contains('4.0000 USDT (40.00%'));
+      expect(requests.toSet(), hasLength(3));
+      await expectLater(read(cap: 7), throwsStateError);
+      available = '0';
+      await expectLater(read(), throwsStateError);
+      available = 'NaN';
+      await expectLater(read(), throwsStateError);
+      available = '';
+      await expectLater(read(), throwsStateError);
+      available = '10';
+      long = '0';
+      await expectLater(read(), throwsStateError);
+      long = '5';
+      mode = 'UNKNOWN';
+      await expectLater(read(), throwsStateError);
+      mode = 'ISOLATED';
+      long = '60';
+      await expectLater(read(selectedStop: 0.1), throwsStateError);
+      expect(
+        await read(selectedStop: 5, exactStop: '0.0995'),
+        contains('0.0400 USDT before costs'),
+      );
+      await expectLater(
+        read(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('order cannot be approved'),
+          ),
+        ),
+      );
+      final capOnly = await owner.describeExposure(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'test',
+          apiSecret: 'test',
+        ),
+        symbol: 'DOGE-USDT',
+        maximumNotionalQuote: 8,
+        stopLossPercent: 5,
+      );
+      expect(capOnly, contains('UNSAFE LONG'));
+    },
+  );
+
   group('BingxFuturesOrderSizingService', () {
     final service = BingxFuturesOrderSizingService(
       exchange: BingxFuturesExchangeService(),

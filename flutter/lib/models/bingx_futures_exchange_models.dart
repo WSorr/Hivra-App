@@ -652,6 +652,7 @@ class BingxFuturesUserBalanceResult {
   final String responseBody;
   final String? accountEquityQuoteDecimal;
   final String? realizedPnlQuoteDecimal;
+  final String? availableMarginQuoteDecimal;
 
   const BingxFuturesUserBalanceResult({
     required this.isSuccess,
@@ -663,6 +664,7 @@ class BingxFuturesUserBalanceResult {
     required this.responseBody,
     required this.accountEquityQuoteDecimal,
     required this.realizedPnlQuoteDecimal,
+    this.availableMarginQuoteDecimal,
   });
 }
 

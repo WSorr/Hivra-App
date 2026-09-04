@@ -191,6 +191,8 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
               'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
               'Maximum checks: $maxCycles\n'
               'Maximum exchange effects: ${mandate.maxEffects}\n'
+              'Authorized reads: balance, positions, realized PnL, and '
+              '${mandate.symbol} leverage and margin mode.\n'
               'Expires: ${mandate.expiresAtUtc}\n\n'
               'The VPS may evaluate only this signed strategy and mandate. '
               'Every exchange attempt remains bounded by the existing effect journal.',
@@ -700,6 +702,97 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   }
 }
 
+String tradingRemoteRunnerStatusLabel(String raw) {
+  const unknown = 'Runner status unknown. Refresh to retry.';
+  if (raw.trim().isEmpty || raw.length > 4096) return unknown;
+  final fields = <String, String>{};
+  for (final token in raw.trim().split(RegExp(r'\s+'))) {
+    final separator = token.indexOf('=');
+    if (separator <= 0) return unknown;
+    final key = token.substring(0, separator);
+    if (fields.containsKey(key)) return unknown;
+    fields[key] = token.substring(separator + 1);
+  }
+  final process = switch (fields['active']) {
+    'active' => 'Runner running',
+    'inactive' => 'Runner paused',
+    'failed' => 'Runner failed',
+    _ => null,
+  };
+  if (process == null) return unknown;
+  final startup = switch (fields['enabled']) {
+    'enabled' => 'WARNING: autostart enabled — a VPS reboot may start the Runner.',
+    'enabled-runtime' => 'WARNING: runtime startup activation is enabled.',
+    'linked' || 'linked-runtime' || 'disabled' => 'Autostart: not enabled.',
+    'masked' || 'masked-runtime' => 'Startup blocked: service masked.',
+    _ => 'Autostart status unknown — pause persistence is not verified.',
+  };
+  final state = fields['session_state'];
+  if (state == null || state == 'unavailable') {
+    return '$process\n$startup\nSession details unavailable on this Runner.';
+  }
+  if (!{'active', 'completed', 'stopped', 'expired'}.contains(state)) {
+    return unknown;
+  }
+  final cycles = int.tryParse(fields['cycles'] ?? '');
+  final effects = int.tryParse(fields['effects'] ?? '');
+  if (cycles == null ||
+      effects == null ||
+      cycles < 0 ||
+      cycles > 288 ||
+      effects < 0 ||
+      effects > cycles) {
+    return unknown;
+  }
+  final outcome = fields['last_outcome'];
+  String result;
+  if (outcome == 'none' && cycles == 0) {
+    result = 'No completed check yet';
+  } else if (cycles > 0 &&
+      outcome != null &&
+      RegExp(r'^blocked:[a-z0-9_]{1,96}$').hasMatch(outcome)) {
+    result = 'No order: ${outcome.substring(8).replaceAll('_', ' ')}';
+  } else if (cycles > 0 &&
+      effects > 0 &&
+      outcome != null &&
+      RegExp(
+        r'^effect:(succeeded|unresolved|terminal_failure):test=(true|false)$',
+      ).hasMatch(outcome)) {
+    final status = outcome.split(':')[1];
+    result = switch (status) {
+      'succeeded' =>
+        outcome.endsWith('true')
+            ? 'Test request confirmed — not a live order'
+            : 'Provider receipt confirmed',
+      'unresolved' => 'Outcome unresolved — reconciliation required',
+      _ => 'Provider execution failed',
+    };
+  } else {
+    return unknown;
+  }
+  final last = fields['last_scheduled_check'];
+  final next = fields['next_check'];
+  bool validTime(String? value) =>
+      value != null &&
+      RegExp(r'^\d{4}-\d{2}-\d{2}T.*(?:Z|\+00:00)$').hasMatch(value) &&
+      DateTime.tryParse(value) != null;
+  if ((cycles == 0 ? last != 'none' : !validTime(last)) ||
+      (state == 'active' ? !validTime(next) : next != 'none')) {
+    return unknown;
+  }
+  return [
+    '$process · Session $state',
+    startup,
+    'Checks: $cycles · Exchange attempts: $effects',
+    'Last retained result: $result',
+    if (cycles > 0) 'Last completed check slot: $last',
+    if (state == 'active' && fields['active'] == 'active')
+      'Next scheduled check: $next (not guaranteed execution)',
+    if (state == 'active' && fields['active'] != 'active')
+      'No checks run while the Runner is paused or failed.',
+  ].join('\n');
+}
+
 class _RemoteRunnerProfileTile extends StatefulWidget {
   final BingxFuturesRemoteRunnerProfile profile;
   final Future<String> Function() loadStatus;
@@ -771,15 +864,11 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                     snapshot.connectionState == ConnectionState.waiting
                         ? 'Checking status…'
                         : snapshot.hasError
-                        ? 'Error: ${snapshot.error}'
-                        : snapshot.data?.trim().isNotEmpty == true
-                        ? snapshot.data!.trim()
-                        : 'Ready';
-                return Text(
-                  label,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                );
+                        ? 'Runner status unavailable. Refresh to retry.'
+                        : _removed
+                        ? 'Remote Runner removed'
+                        : tradingRemoteRunnerStatusLabel(snapshot.data ?? '');
+                return Text(label);
               },
             ),
             if (_actionError != null) ...[

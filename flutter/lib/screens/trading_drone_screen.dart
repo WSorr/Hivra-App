@@ -258,6 +258,19 @@ String? tradingReconciliationResumeSymbol(
 }
 
 @visibleForTesting
+bool restoreTradingMandateSelection({
+  required BingxFuturesTradingMandate? mandate,
+  required DateTime nowUtc,
+  required TextEditingController symbol,
+  required TextEditingController maximumNotional,
+}) {
+  if (mandate == null || !mandate.isActiveAt(nowUtc)) return false;
+  symbol.text = mandate.symbol;
+  maximumNotional.text = mandate.maxOrderNotionalQuoteDecimal;
+  return true;
+}
+
+@visibleForTesting
 bool tradingMandateMaxNotionalMatches({
   required BingxFuturesTradingMandate mandate,
   required String selectedMaxNotional,
@@ -437,6 +450,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _signalRankExpanded = true;
   bool _cancelingOrder = false;
   bool _fittingMaxNotional = false;
+  bool _reviewingExposure = false;
   bool _useTestOrderEndpoint = false;
   bool _droneEnabled = false;
   BingxFuturesTradingMandate? _tradingMandate;
@@ -919,8 +933,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         ..addAll(state.managedOrderProvenance);
       _droneEnabled = state.droneEnabled == true;
       _tradingMandate = state.tradingMandate;
-      final mandateActive =
-          _tradingMandate?.isActiveAt(DateTime.now().toUtc()) == true;
+      final mandateActive = restoreTradingMandateSelection(
+        mandate: _tradingMandate,
+        nowUtc: DateTime.now().toUtc(),
+        symbol: _symbolController,
+        maximumNotional: _maxNotionalUsdtController,
+      );
       if (mandateActive) {
         _maxEffects = tradingRestoredEffectBudget(_tradingMandate!);
         _useTestOrderEndpoint = tradingUsesTestEndpointAfterRestore(
@@ -942,7 +960,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _takeProfitRiskReward = restoredRiskReward;
       }
       final resumeSymbol = tradingReconciliationResumeSymbol(state);
-      if (resumeSymbol != null) {
+      if (!mandateActive && resumeSymbol != null) {
         _symbolController.text = resumeSymbol;
       }
       final resumed = await _resumeManagedOrderReconciliation(

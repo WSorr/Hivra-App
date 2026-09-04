@@ -185,7 +185,12 @@ Future<String> runOneDeterministicOrder({
     fileStore: fileStore,
   );
   final riskObservedAt = now;
+  if (jsonEncode(admission.strategyPolicy?['account_read_scope']) !=
+      jsonEncode(BingxFuturesRemoteMandateAdmission.exposureReadScope)) {
+    return _blocked(cycleOperationId, 'exposure_read_authority_missing');
+  }
   final risk = await const BingxFuturesExchangeRiskInputService().read(
+    exposureSymbol: admission.mandate.symbol,
     exchangeService: exchange,
     riskHistoryService: riskHistory,
     credentials: credentials,

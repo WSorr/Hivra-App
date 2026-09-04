@@ -401,7 +401,7 @@ except ValueError:
     raise SystemExit("deterministic session state bounds are invalid")
 if not 1 <= max_cycles <= 288 or not 1 <= max_effects <= 256 or not 60 <= interval <= 3600:
     raise SystemExit("deterministic session state bounds are invalid")
-if mode not in ("cycle", "activate"):
+if mode not in ("cycle", "activate", "inspect"):
     raise SystemExit("deterministic session state mode is invalid")
 
 def instant(raw):
@@ -492,6 +492,17 @@ else:
 if value["state"] == "completed" and index != max_cycles:
     raise SystemExit("deterministic session completed before its cycle bound")
 now = datetime.datetime.now(datetime.timezone.utc)
+if mode == "inspect":
+    state = value["state"]
+    if state == "active" and now >= expires:
+        state = "expired"
+    next_check = issued + datetime.timedelta(seconds=index * interval)
+    last_check = issued + datetime.timedelta(seconds=(index - 1) * interval)
+    print(f"session_state={state} cycles={index} effects={value['consumed_effects']} "
+          f"next_check={next_check.isoformat() if state == 'active' else 'none'} "
+          f"last_scheduled_check={last_check.isoformat() if index else 'none'} "
+          f"last_cycle={last or 'none'}")
+    raise SystemExit(0)
 if value["state"] == "active" and (
     now >= expires or value["consumed_effects"] >= max_effects
 ):
@@ -1955,9 +1966,14 @@ else:
         "runner_build_id", "plugin_id", "plugin_version",
         "package_digest_hex", "host_abi", "stop_loss_percent",
         "minimum_risk_reward",
+        *(["account_read_scope"] if isinstance(policy, dict) and "account_read_scope" in policy else []),
     ]
     if not isinstance(policy, dict) or list(policy) != expected_policy:
         raise SystemExit("deterministic strategy policy is not canonical")
+    if "account_read_scope" in policy and policy["account_read_scope"] != [
+        "balance", "positions", "realized_pnl", "symbol_leverage", "symbol_margin_type"
+    ]:
+        raise SystemExit("deterministic account-read scope mismatch")
     policy_text = re.compile(r"[A-Za-z0-9._:-]{1,128}")
     for key in ("runner_build_id", "plugin_id", "plugin_version", "host_abi"):
         if not isinstance(policy[key], str) or policy_text.fullmatch(policy[key]) is None:
@@ -2938,6 +2954,44 @@ prepared_session_service_status() {
   runner_key="$(read_installed_runner_key_id)"
   printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
     "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
+  local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+  if [ ! -e "$mandate" ] && [ ! -L "$mandate" ]; then
+    echo 'session_state=unavailable'
+    return
+  fi
+  local details
+  if details="$(
+  local work summary last_cycle outcome
+  work="$(mktemp -d /run/hivra-trading-session-status.XXXXXX)" || exit 1
+  trap "rm -rf '$work'" EXIT INT TERM
+  mkdir "$work/verified" || exit 1
+  verify_remote_mandate_artifact "$mandate" "$runner_key" "$work/verified" || exit 1
+  [ "$(cat "$work/verified/operation-kind")" = "bounded_deterministic_session" ] ||
+    die "session status requires bounded session authority"
+  summary="$(prepare_deterministic_session_cycle \
+    "$STATE_DIRECTORY/deterministic-session.v1.json" \
+    "$(cat "$work/verified/operation-id")" \
+    "$(cat "$work/verified/session-max-cycles")" \
+    "$(cat "$work/verified/mandate-max-effects")" \
+    "$(cat "$work/verified/session-interval-seconds")" \
+    "$(cat "$work/verified/session-starts-at")" \
+    "$(cat "$work/verified/expires-at")" inspect)" ||
+    die "session status could not validate retained state"
+  last_cycle="${summary##*last_cycle=}"
+  outcome="none"
+  if [ "$last_cycle" != none ]; then
+    local result="$STATE_DIRECTORY/deterministic-results/$last_cycle.json"
+    [ -f "$result" ] && [ ! -L "$result" ] ||
+      die "session status lacks the retained cycle result"
+    outcome="$(validate_deterministic_cycle_outcome "$result" "$last_cycle")" ||
+      die "session status rejected the retained cycle result"
+  fi
+  printf '%s last_outcome=%s\n' "${summary% last_cycle=*}" "$outcome"
+  )"; then
+    printf '%s\n' "$details"
+  else
+    echo 'session_state=unavailable'
+  fi
 }
 
 export_completed_session_effects() {
@@ -4823,6 +4877,70 @@ PY
     die "self-test replayed an already committed deterministic session cycle"
   fi
   session_cycle_1="$(derive_deterministic_session_cycle_operation_id "$session_id" 1)"
+  local inspection_before inspection
+  inspection_before="$(sha256_file "$session_state")"
+  inspection="$(prepare_deterministic_session_cycle \
+    "$session_state" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2000-01-02T00:00:00.000Z" inspect)"
+  [[ "$inspection" == session_state=expired\ cycles=1\ effects=0\ next_check=none* ]] ||
+    die "self-test did not inspect expired session evidence"
+  [ "$(sha256_file "$session_state")" = "$inspection_before" ] ||
+    die "self-test status inspection mutated retained state"
+  if prepare_deterministic_session_cycle \
+    "$session_state" "$(printf 'foreign-session' | sha256_stdin)" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" inspect \
+    >/dev/null 2>&1; then
+    die "self-test inspected a foreign session"
+  fi
+  if prepare_deterministic_session_cycle \
+    "$root/absent-status.json" "$session_id" 4 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" inspect \
+    >/dev/null 2>&1; then
+    die "self-test status inspection created session state"
+  fi
+  [ ! -e "$root/absent-status.json" ] || die "status wrote missing state"
+  (
+    STATE_DIRECTORY="$root/status-view"
+    mkdir -p "$STATE_DIRECTORY/mandates" "$STATE_DIRECTORY/deterministic-results"
+    cp "$session_state" "$STATE_DIRECTORY/deterministic-session.v1.json"
+    printf '{}\n' > "$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
+    printf '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","operation_id":"%s","state":"blocked","reason_code":"market_proposal_blocked","effect":false}\n' \
+      "$session_cycle_0" > "$STATE_DIRECTORY/deterministic-results/$session_cycle_0.json"
+    require_exact_installed_bundle() { :; }
+    read_installed_runner_key_id() { printf '%s\n' "$session_id"; }
+    systemctl() {
+      case "$*" in
+        *ActiveState*) echo active ;;
+        is-enabled*) echo enabled ;;
+        *) return 1 ;;
+      esac
+    }
+    mktemp() { command mktemp -d "$root/status.XXXXXX"; }
+    verify_remote_mandate_artifact() {
+      printf '%s' bounded_deterministic_session > "$3/operation-kind"
+      printf '%s' "$session_id" > "$3/operation-id"
+      printf '4' > "$3/session-max-cycles"
+      printf '1' > "$3/mandate-max-effects"
+      printf '60' > "$3/session-interval-seconds"
+      printf '2000-01-01T00:00:00.000Z' > "$3/session-starts-at"
+      printf '2000-01-02T00:00:00.000Z' > "$3/expires-at"
+    }
+    local status_digest status_output
+    status_digest="$(tree_digest "$STATE_DIRECTORY")"
+    status_output="$(prepared_session_service_status "$root")"
+    [[ "$status_output" == *session_state=expired*last_outcome=blocked:market_proposal_blocked* ]] ||
+      die "self-test lost retained status evidence after expiry"
+    [ "$(tree_digest "$STATE_DIRECTORY")" = "$status_digest" ] ||
+      die "self-test status wrote operational state"
+    printf '{}\n' > "$STATE_DIRECTORY/deterministic-results/$session_cycle_0.json"
+    status_output="$(prepared_session_service_status "$root" 2>/dev/null)"
+    [[ "$status_output" == *runner_key_id=*session_state=unavailable* ]] ||
+      die "self-test malformed status blocked identity or reported success"
+    verify_remote_mandate_artifact() { return 1; }
+    status_output="$(prepared_session_service_status "$root" 2>/dev/null)"
+    [[ "$status_output" == *session_state=unavailable* ]] ||
+      die "self-test status accepted unverified authority"
+  )
   [ "$(prepare_deterministic_session_cycle \
     "$session_state" "$session_id" 4 1 60 \
     "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
@@ -5385,6 +5503,7 @@ strategy = {
     "host_abi": "wasm32-wasi-preview1",
     "stop_loss_percent": 5.0,
     "minimum_risk_reward": 2.0,
+    "account_read_scope": ["balance", "positions", "realized_pnl", "symbol_leverage", "symbol_margin_type"],
 }
 session = {
     "starts_at_utc": starts,
@@ -5447,6 +5566,30 @@ PY
     die "self-test lost deterministic session operation kind"
   [ "$(cat "$mandate_test/session-verified/session-max-cycles")" = 12 ] ||
     die "self-test lost deterministic session cycle bound"
+  local scope_mutation
+  for scope_mutation in removed widened reordered; do
+    python3 - "$mandate_test" "$scope_mutation" <<'PY'
+import json
+import pathlib
+import sys
+root = pathlib.Path(sys.argv[1])
+value = json.loads((root / "session-admission.json").read_text())
+policy = value["strategy_policy"]
+if sys.argv[2] == "removed":
+    del policy["account_read_scope"]
+elif sys.argv[2] == "widened":
+    policy["account_read_scope"].append("withdraw")
+else:
+    policy["account_read_scope"].reverse()
+(root / "scope-mutated.json").write_text(json.dumps(value, separators=(",", ":")))
+PY
+    mkdir "$mandate_test/scope-$scope_mutation-verified"
+    if (verify_remote_mandate_artifact \
+      "$mandate_test/scope-mutated.json" "$expected_runner" \
+      "$mandate_test/scope-$scope_mutation-verified") >/dev/null 2>&1; then
+      die "self-test accepted mutated exposure read scope"
+    fi
+  done
   cp "$mandate_test/session-admission.json" "$mandate_test/session-mutated.json"
   sed -i.bak 's/"max_cycles":12/"max_cycles":13/' \
     "$mandate_test/session-mutated.json"

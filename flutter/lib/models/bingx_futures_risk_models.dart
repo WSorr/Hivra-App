@@ -21,6 +21,9 @@ class BingxFuturesRiskPolicy {
 }
 
 class BingxFuturesRiskGovernorInput {
+  final int? openingLeverage;
+  final String? marginType;
+  final String? availableMarginQuoteDecimal;
   final String symbol;
   final String quantityDecimal;
   final String entryPriceDecimal;
@@ -36,6 +39,9 @@ class BingxFuturesRiskGovernorInput {
   final String? exchangeReferencePriceDecimal;
 
   const BingxFuturesRiskGovernorInput({
+    this.openingLeverage,
+    this.marginType,
+    this.availableMarginQuoteDecimal,
     required this.symbol,
     required this.quantityDecimal,
     required this.entryPriceDecimal,

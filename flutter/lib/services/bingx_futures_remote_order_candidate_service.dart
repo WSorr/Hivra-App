@@ -241,6 +241,14 @@ class BingxFuturesRemoteOrderCandidateService {
     }
     final risk = _risk.evaluate(
       input: BingxFuturesRiskGovernorInput(
+        openingLeverage:
+            accountRisk.exposureSymbol == symbol
+                ? side == 'buy'
+                    ? accountRisk.longLeverage
+                    : accountRisk.shortLeverage
+                : null,
+        marginType: accountRisk.marginType,
+        availableMarginQuoteDecimal: accountRisk.availableMarginQuoteDecimal,
         symbol: symbol,
         quantityDecimal: sizing.quantityDecimal!,
         entryPriceDecimal: _decimal(entry),

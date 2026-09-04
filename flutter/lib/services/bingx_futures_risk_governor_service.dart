@@ -7,6 +7,46 @@ import '../models/bingx_futures_risk_models.dart';
 class BingxFuturesRiskGovernorService {
   const BingxFuturesRiskGovernorService();
 
+  static String exposureMessage(String code) => switch (code) {
+    'risk_stop_outside_leverage_buffer' =>
+      'The stop loss exceeds the nominal margin buffer at the exchange leverage. '
+      'Review leverage and the stop before preparing another order.',
+    'risk_available_margin_insufficient' =>
+      'Available exchange margin does not cover the estimated initial margin. '
+      'Review the position size and free funds.',
+    _ => 'Exchange leverage, margin mode or available funds could not be verified. '
+      'Refresh account data before preparing another order.',
+  };
+
+  static String? exposureBlocker({
+    required num notional,
+    required num lossAtStop,
+    required int? openingLeverage,
+    required String? marginType,
+    required String? availableMarginQuoteDecimal,
+  }) {
+    final available = num.tryParse(availableMarginQuoteDecimal ?? '');
+    if (openingLeverage == null ||
+        openingLeverage <= 0 ||
+        !{'ISOLATED', 'CROSSED'}.contains(marginType) ||
+        available == null ||
+        !available.isFinite ||
+        available < 0 ||
+        !notional.isFinite ||
+        notional <= 0 ||
+        !lossAtStop.isFinite ||
+        lossAtStop <= 0) {
+      return 'risk_exposure_unknown';
+    }
+    if (lossAtStop >= notional / openingLeverage) {
+      return 'risk_stop_outside_leverage_buffer';
+    }
+    if (notional / openingLeverage >= available) {
+      return 'risk_available_margin_insufficient';
+    }
+    return null;
+  }
+
   BingxFuturesRiskDecision evaluate({
     required BingxFuturesRiskGovernorInput input,
     required BingxFuturesRiskPolicy policy,
@@ -54,8 +94,9 @@ class BingxFuturesRiskGovernorService {
         input.lastLossAtUtc != null &&
         input.lastLossAtUtc!.trim().isNotEmpty) {
       final lastLossAt = _parseUtc(input.lastLossAtUtc!, field: 'last_loss_at');
-      final cooldownEnds =
-          lastLossAt.add(Duration(minutes: policy.cooldownMinutes));
+      final cooldownEnds = lastLossAt.add(
+        Duration(minutes: policy.cooldownMinutes),
+      );
       if (now.isBefore(cooldownEnds)) {
         return _decision(
           input: input,
@@ -98,12 +139,13 @@ class BingxFuturesRiskGovernorService {
       input.entryPriceDecimal,
       field: 'entry_price_decimal',
     );
-    final referencePrice = input.exchangeReferencePriceDecimal == null
-        ? entryPrice
-        : _parsePositiveDecimal(
-            input.exchangeReferencePriceDecimal!,
-            field: 'exchange_reference_price_decimal',
-          );
+    final referencePrice =
+        input.exchangeReferencePriceDecimal == null
+            ? entryPrice
+            : _parsePositiveDecimal(
+              input.exchangeReferencePriceDecimal!,
+              field: 'exchange_reference_price_decimal',
+            );
     final minimumQuantity = _parseOptionalNonNegativeDecimal(
       input.exchangeMinimumQuantityDecimal,
       field: 'exchange_minimum_quantity_decimal',
@@ -159,6 +201,24 @@ class BingxFuturesRiskGovernorService {
     final maxRiskQuote =
         equity * (policy.maxRiskPerTradePercent / 100.0).clamp(0.0, 1000000.0);
     final tradeRiskQuote = quantity * priceDistance;
+    final exposure = exposureBlocker(
+      notional: quantity * entryPrice,
+      lossAtStop: tradeRiskQuote,
+      openingLeverage: input.openingLeverage,
+      marginType: input.marginType,
+      availableMarginQuoteDecimal: input.availableMarginQuoteDecimal,
+    );
+    if (exposure != null) {
+      return _decision(
+        input: input,
+        policy: policy,
+        status: BingxFuturesRiskDecisionStatus.blocked,
+        reasonCode: exposure,
+        reasonMessage: exposureMessage(exposure),
+        orderNotional: orderNotional,
+        tradeRiskQuote: tradeRiskQuote,
+      );
+    }
     final maxAllowedQuantity = maxRiskQuote / priceDistance;
     if (tradeRiskQuote > maxRiskQuote) {
       return _decision(
@@ -211,23 +271,32 @@ class BingxFuturesRiskGovernorService {
       'status': status.name,
       'reason_code': reasonCode,
       'policy': <String, dynamic>{
-        'max_risk_per_trade_percent':
-            _fmtDecimal(policy.maxRiskPerTradePercent, scale: 8),
-        'max_daily_loss_percent':
-            _fmtDecimal(policy.maxDailyLossPercent, scale: 8),
+        'max_risk_per_trade_percent': _fmtDecimal(
+          policy.maxRiskPerTradePercent,
+          scale: 8,
+        ),
+        'max_daily_loss_percent': _fmtDecimal(
+          policy.maxDailyLossPercent,
+          scale: 8,
+        ),
         'max_concurrent_positions': policy.maxConcurrentPositions,
         'cooldown_after_loss_streak': policy.cooldownAfterLossStreak,
         'cooldown_minutes': policy.cooldownMinutes,
       },
       'metrics': <String, dynamic>{
+        'opening_leverage': input.openingLeverage,
+        'margin_type': input.marginType,
+        'available_margin_quote_decimal': input.availableMarginQuoteDecimal,
         'exchange_minimum_quantity_decimal':
             input.exchangeMinimumQuantityDecimal?.trim() ?? '',
         'exchange_minimum_notional_quote_decimal':
             input.exchangeMinimumNotionalQuoteDecimal?.trim() ?? '',
         'exchange_reference_price_decimal':
             input.exchangeReferencePriceDecimal?.trim() ?? '',
-        'max_allowed_quantity_decimal':
-            _fmtDecimal(maxAllowedQuantity, scale: 8),
+        'max_allowed_quantity_decimal': _fmtDecimal(
+          maxAllowedQuantity,
+          scale: 8,
+        ),
         'trade_risk_quote_decimal': _fmtDecimal(tradeRiskQuote, scale: 8),
         'trade_risk_limit_quote_decimal': _fmtDecimal(tradeRiskLimit, scale: 8),
         'daily_loss_quote_decimal': _fmtDecimal(dailyLoss, scale: 8),

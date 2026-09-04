@@ -3,6 +3,23 @@ import 'package:hivra_app/models/bingx_futures_risk_models.dart';
 import 'package:hivra_app/services/bingx_futures_risk_governor_service.dart';
 
 void main() {
+  test('exposure admission rejects unknowns and nominal boundary equality', () {
+    String? check({int? leverage = 2, String? margin = 'ISOLATED',
+      String? available = '100', num loss = 0.5}) =>
+        BingxFuturesRiskGovernorService.exposureBlocker(
+          notional: 10, lossAtStop: loss, openingLeverage: leverage,
+          marginType: margin, availableMarginQuoteDecimal: available,
+        );
+    expect(check(), isNull);
+    expect(check(leverage: 60), 'risk_stop_outside_leverage_buffer');
+    expect(check(loss: 5), 'risk_stop_outside_leverage_buffer');
+    expect(check(available: '5'), 'risk_available_margin_insufficient');
+    expect(check(leverage: null), 'risk_exposure_unknown');
+    expect(check(margin: 'unknown'), 'risk_exposure_unknown');
+    expect(check(available: null), 'risk_exposure_unknown');
+    expect(check(available: 'NaN'), 'risk_exposure_unknown');
+  });
+
   group('BingxFuturesRiskGovernorService', () {
     const service = BingxFuturesRiskGovernorService();
     const policy = BingxFuturesRiskPolicy(
@@ -165,6 +182,9 @@ BingxFuturesRiskGovernorInput _input({
 }) {
   return BingxFuturesRiskGovernorInput(
     symbol: symbol,
+    openingLeverage: 10,
+    marginType: 'ISOLATED',
+    availableMarginQuoteDecimal: '1000000',
     quantityDecimal: quantityDecimal,
     entryPriceDecimal: entryPriceDecimal,
     stopLossDecimal: stopLossDecimal,

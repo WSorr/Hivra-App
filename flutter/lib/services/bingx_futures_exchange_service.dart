@@ -929,6 +929,9 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       responseBody: response.body,
       accountEquityQuoteDecimal: equity,
       realizedPnlQuoteDecimal: realizedPnl,
+      availableMarginQuoteDecimal: _readStringField(row, const [
+        'availableMargin',
+      ]),
     );
   }
 

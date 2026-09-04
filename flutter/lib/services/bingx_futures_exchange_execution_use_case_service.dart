@@ -912,6 +912,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
 
     final nowUtc = DateTime.now().toUtc();
     final exchangeRiskInput = await _riskInput.read(
+      exposureSymbol: payload.symbol,
       exchangeService: _exchange,
       riskHistoryService: _riskHistory,
       credentials: credentials,
@@ -941,6 +942,13 @@ class BingxFuturesExchangeExecutionUseCaseService {
     }
     final decision = _riskGovernor.evaluate(
       input: BingxFuturesRiskGovernorInput(
+        openingLeverage:
+            payload.side == 'buy'
+                ? exchangeRiskInput.longLeverage
+                : exchangeRiskInput.shortLeverage,
+        marginType: exchangeRiskInput.marginType,
+        availableMarginQuoteDecimal:
+            exchangeRiskInput.availableMarginQuoteDecimal,
         symbol: payload.symbol,
         quantityDecimal: payload.quantityDecimal,
         entryPriceDecimal: entryPriceDecimal,
