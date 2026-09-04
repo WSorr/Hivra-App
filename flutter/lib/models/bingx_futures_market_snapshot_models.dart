@@ -1,3 +1,27 @@
+class BingxDetectedLiquidityLevel {
+  final String side;
+  final String levelClass;
+  final String centerPriceDecimal;
+  final String zoneTopDecimal;
+  final String zoneBottomDecimal;
+  final int pivotCount;
+  final bool breached;
+  final int anchorIndex;
+  final int? breachedIndex;
+
+  const BingxDetectedLiquidityLevel({
+    required this.side,
+    required this.levelClass,
+    required this.centerPriceDecimal,
+    required this.zoneTopDecimal,
+    required this.zoneBottomDecimal,
+    required this.pivotCount,
+    required this.breached,
+    required this.anchorIndex,
+    required this.breachedIndex,
+  });
+}
+
 class BingxFuturesInstrumentMeta {
   final String symbol;
   final String baseAsset;

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/bingx_futures_zone_decision_service.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 
 void main() {
   group('BingxFuturesZoneDecisionService', () {
@@ -163,7 +164,7 @@ void main() {
       expect(withoutProxy.externalBuyRetest, 100);
       expect(withProxy.externalBuyRetest, 102);
       expect(withProxy.anchorSource, '4h_fresh_low');
-      expect(withProxy.anchorExecutable, isTrue);
+      expect(withProxy.anchorExecutable, isFalse);
     });
 
     test('locks zone calculation to upstream TVH side', () {
@@ -477,8 +478,80 @@ void main() {
 
       expect(result.externalBuyRetest, 100);
       expect(result.anchorSource, '4h_fresh_low');
-      expect(result.anchorExecutable, isTrue);
+      expect(result.anchorExecutable, isFalse);
       expect(result.anchorLifecycle, 'fresh');
+    });
+
+    test('untouched high cannot authorize short entry', () {
+      final base = _inputForSweepUp();
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: 130,
+          fallbackSide: 'sell',
+          requiredSide: 'sell',
+          microHighs: base.microLows.map<num>((price) => 240 - price).toList(),
+          microLows: base.microHighs.map<num>((price) => 240 - price).toList(),
+          macroHighs: base.macroLows.map<num>((price) => 240 - price).toList(),
+          macroLows: base.macroHighs.map<num>((price) => 240 - price).toList(),
+          higherHighs:
+              [
+                105,
+                104,
+                100,
+                103,
+                106,
+                105,
+                104,
+                102,
+                105,
+                104,
+                103,
+                104,
+              ].map<num>((price) => 240 - price).toList(),
+          higherLows:
+              [
+                120,
+                119,
+                118,
+                119,
+                120,
+                119,
+                118,
+                119,
+                120,
+                119,
+                118,
+                119,
+              ].map<num>((price) => 240 - price).toList(),
+          higherCloses:
+              [
+                112,
+                110,
+                104,
+                108,
+                114,
+                111,
+                109,
+                106,
+                113,
+                108,
+                107,
+                109,
+              ].map<num>((price) => 240 - price).toList(),
+          dailyHighs: const [],
+          dailyLows: const [],
+          dailyCloses: const [],
+          weeklyHighs: const [],
+          weeklyLows: const [],
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+      expect(result.externalSellRetest, 140);
+      expect(result.anchorSource, '4h_fresh_high');
+      expect(result.anchorLifecycle, 'fresh');
+      expect(result.anchorExecutable, isFalse);
     });
 
     test('internal diagnostic low cannot authorize pending entry', () {
@@ -512,6 +585,57 @@ void main() {
       expect(result.anchorLifecycle, 'unavailable');
     });
 
+    test('window extrema without cluster evidence cannot authorize entry', () {
+      for (final side in ['buy', 'sell']) {
+        final result = service.decide(
+          input: _microReclaimInput(side: side, clusters: const []),
+        );
+        expect(result.anchorExecutable, isFalse);
+        expect(result.liquidityEventId, isNull);
+      }
+    });
+
+    test('rejects invalid and ambiguous cluster evidence', () {
+      for (final cluster in [
+        _cluster(side: 'buyside'),
+        _cluster(pivotCount: 2),
+        _cluster(breached: false),
+        _cluster(breach: 19),
+        _cluster(breach: 30),
+        _cluster(bottom: 'NaN'),
+        _cluster(bottom: '101'),
+      ]) {
+        expect(
+          service
+              .decide(
+                input: _microReclaimInput(side: 'buy', clusters: [cluster]),
+              )
+              .anchorExecutable,
+          isFalse,
+        );
+      }
+      expect(
+        service
+            .decide(
+              input: _microReclaimInput(
+                side: 'buy',
+                clusters: [_cluster(), _cluster()],
+              ),
+            )
+            .anchorExecutable,
+        isFalse,
+      );
+    });
+
+    test('consumed cluster cannot start another event after reclaim', () {
+      expect(
+        service
+            .decide(input: _microReclaimInput(side: 'buy', reswept: true))
+            .anchorExecutable,
+        isFalse,
+      );
+    });
+
     test('current sweep reclaim is an executable new event', () {
       final result = service.decide(input: _microReclaimInput(side: 'buy'));
 
@@ -519,6 +643,30 @@ void main() {
       expect(result.anchorExecutable, isTrue);
       expect(result.anchorLifecycle, 'reclaimed');
       expect(result.zoneLow, greaterThanOrEqualTo(88));
+    });
+
+    test('successive closed snapshots wait for reclaim and replay the same event', () {
+      final untouched = service.decide(input: _microReclaimInput(
+        side: 'buy', visibleBars: 20, delayedReclaim: true,
+        clusters: [_cluster(breached: false)],
+      ));
+      final swept = service.decide(input: _microReclaimInput(
+        side: 'buy', visibleBars: 21, delayedReclaim: true,
+      ));
+      final confirmedInput = _microReclaimInput(
+        side: 'buy', visibleBars: 22, delayedReclaim: true,
+      );
+      final confirmed = service.decide(input: confirmedInput);
+      final recovered = const BingxFuturesZoneDecisionService().decide(
+        input: confirmedInput,
+      );
+      expect(untouched.anchorExecutable, isFalse);
+      expect(swept.anchorExecutable, isFalse);
+      expect(confirmed.anchorExecutable, isTrue);
+      expect(confirmed.anchorLifecycle, 'reclaimed');
+      expect(recovered.liquidityEventId, confirmed.liquidityEventId);
+      expect(recovered.zoneLow, confirmed.zoneLow);
+      expect(recovered.zoneHigh, confirmed.zoneHigh);
     });
 
     test('closed liquidity event zone ignores live quote drift', () {
@@ -567,12 +715,35 @@ void main() {
   });
 }
 
+BingxDetectedLiquidityLevel _cluster({
+  String side = 'sellside',
+  int pivotCount = 3,
+  bool breached = true,
+  int breach = 20,
+  String bottom = '90',
+  String top = '92',
+}) => BingxDetectedLiquidityLevel(
+  side: side,
+  levelClass: 'internal',
+  centerPriceDecimal: '91',
+  zoneTopDecimal: top,
+  zoneBottomDecimal: bottom,
+  pivotCount: pivotCount,
+  breached: breached,
+  anchorIndex: 7,
+  breachedIndex: breach,
+);
+
 BingxFuturesZoneDecisionInput _microReclaimInput({
   required String side,
   num midPrice = 96,
   bool weakBody = false,
   bool expired = false,
   bool excessiveRetests = false,
+  bool reswept = false,
+  List<BingxDetectedLiquidityLevel>? clusters,
+  int visibleBars = 30,
+  bool delayedReclaim = false,
 }) {
   final highs = List<num>.filled(30, 96);
   final lows = List<num>.filled(30, 94);
@@ -618,17 +789,32 @@ BingxFuturesZoneDecisionInput _microReclaimInput({
     }
   }
 
+  if (reswept) lows[25] = 87;
+  if (delayedReclaim) {
+    opens[20] = 91;
+    closes[20] = 89;
+    lows[21] = 89;
+    opens[21] = 89;
+    closes[21] = 93;
+  }
   return BingxFuturesZoneDecisionInput(
     symbol: 'DOGE-USDT',
+    detectedLiquidityLevels:
+        clusters ??
+        [
+          side == 'buy'
+              ? _cluster()
+              : _cluster(side: 'buyside', bottom: '98', top: '100'),
+        ],
     midPrice: midPrice,
     fallbackSide: side,
     requiredSide: side,
-    microHighs: highs,
-    microLows: lows,
-    microOpens: opens,
-    microCloses: closes,
+    microHighs: highs.take(visibleBars).toList(),
+    microLows: lows.take(visibleBars).toList(),
+    microOpens: opens.take(visibleBars).toList(),
+    microCloses: closes.take(visibleBars).toList(),
     microCloseTimesUtc: List<String>.generate(
-      highs.length,
+      visibleBars,
       (index) =>
           DateTime.utc(
             2026,

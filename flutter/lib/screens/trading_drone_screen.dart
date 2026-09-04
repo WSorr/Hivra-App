@@ -1352,7 +1352,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           _stopLossController.text = cycle.stopLossDecimal ?? '';
           _takeProfitController.text = cycle.takeProfitDecimal ?? '';
         } else {
-          _displayedZoneDecision = null;
+          _displayedZoneDecision = decision;
           _lastPreparedLiveDecision = null;
           _zoneLowController.clear();
           _zoneHighController.clear();

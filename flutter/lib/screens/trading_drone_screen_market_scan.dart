@@ -440,9 +440,13 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         _side = entry.side!;
         _zoneSide = tradingZoneSideForOrderSide(entry.side!);
       }
-      if (entry.zoneLowDecimal != null && entry.zoneHighDecimal != null) {
+      if (decision?.canPrepareIntent == true &&
+          entry.zoneLowDecimal != null && entry.zoneHighDecimal != null) {
         _zoneLowController.text = entry.zoneLowDecimal!;
         _zoneHighController.text = entry.zoneHighDecimal!;
+      } else {
+        _zoneLowController.clear();
+        _zoneHighController.clear();
       }
       _signalRankExpanded = false;
     });

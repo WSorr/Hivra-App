@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
@@ -19,6 +20,118 @@ import '../tool/trading_remote_exact_order.dart'
         runAuthorizedExactOrder;
 
 void main() {
+  test('closed-candle reclaim reaches one remote effect and survives recovery', () async {
+    const strategy = BingxFuturesDeterministicReplayHarnessService();
+    final before = strategy.runPublicLiveMarket(
+      fixtureId: 'live:BTC-USDT', snapshotInput: _reclaimSnapshot(confirmed: false),
+    );
+    final after = strategy.runPublicLiveMarket(
+      fixtureId: 'live:BTC-USDT', snapshotInput: _reclaimSnapshot(confirmed: true),
+    );
+    expect(before.marketProposalStatus, 'BLOCKED', reason: before.marketProposalJson);
+    expect(after.marketProposalStatus, 'READY', reason: after.marketProposalJson);
+    final waiting = await _fixture(sessionCycleIndex: 0, publicRun: before, testOrder: false);
+    final previousEvidence = strategy.parseShadowEvidence(
+      await File(waiting.options['market-evidence-file']!).readAsBytes(),
+    );
+    final readyAt = waiting.now.add(const Duration(minutes: 5));
+    final ready = await _fixture(
+      sessionCycleIndex: 1, publicRun: after, evidenceAtUtc: readyAt, testOrder: false,
+      evidenceSequence: 2, previousEvidenceHash: previousEvidence.evidenceHashHex,
+    );
+    addTearDown(waiting.dispose);
+    addTearDown(ready.dispose);
+    final requests = <BingxHttpRequest>[];
+    Map<String, String>? acceptedOrder;
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      requests.add(request);
+      if (request.method == 'POST') {
+        expect(acceptedOrder, isNull, reason: 'a second effect reached the provider');
+        expect(request.uri.path, '/openApi/swap/v2/trade/order');
+        acceptedOrder = Uri.splitQueryString(request.body);
+        throw TimeoutException('receipt lost after provider accepted the order');
+      }
+      if (request.uri.path == '/openApi/swap/v2/trade/order') {
+        final order = acceptedOrder!;
+        expect(request.method, 'GET');
+        expect(request.uri.queryParameters['clientOrderId'], order['clientOrderId']);
+        return BingxHttpResponse(statusCode: 200, body: jsonEncode({
+          'code': 0,
+          'data': {'order': {
+            'orderId': 'accepted-reclaim-order',
+            'clientOrderId': order['clientOrderId'],
+            'symbol': order['symbol'], 'side': order['side'],
+            'positionSide': order['positionSide'], 'type': order['type'],
+            'status': 'NEW', 'price': order['price'], 'stopPrice': order['stopPrice'],
+            'origQty': order['quantity'], 'executedQty': '0',
+            'time': readyAt.millisecondsSinceEpoch,
+          }},
+        }));
+      }
+      return _providerResponse(request);
+    }
+    final blocked = jsonDecode(await runOneDeterministicOrder(
+      options: waiting.options, runnerSeedBytes: waiting.runnerSeed,
+      executeExactOrder: runAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => waiting.now,
+    ));
+    expect(blocked['state'], 'blocked');
+    expect(blocked['reason_code'], 'market_proposal_blocked');
+    expect(requests.where((request) => request.method == 'POST'), isEmpty);
+
+    final nextOptions = <String, String>{
+      ...waiting.options,
+      'session-cycle-index': '1',
+      'market-evidence-file': ready.options['market-evidence-file']!,
+      'last-accepted-sequence': '1',
+      'last-accepted-evidence-hash': previousEvidence.evidenceHashHex,
+    };
+    final result = jsonDecode(await runOneDeterministicOrder(
+      options: nextOptions, runnerSeedBytes: waiting.runnerSeed,
+      executeExactOrder: runAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => readyAt,
+    ));
+    expect(result['state'], 'unresolved', reason: '$result');
+    final order = acceptedOrder!;
+    expect(order['symbol'], 'BTC-USDT');
+    expect(order['side'], 'BUY');
+    expect(order['type'], 'TRIGGER_LIMIT');
+    expect(num.parse(order['quantity']!) * num.parse(order['price']!), lessThanOrEqualTo(10));
+    expect(order['stopLoss'], isNotNull);
+    expect(order['takeProfit'], isNotNull);
+    final requestsBeforeRecovery = requests.length;
+    final recovered = jsonDecode(await recoverOneDeterministicOrder(
+      options: nextOptions, runnerSeedBytes: waiting.runnerSeed,
+      reconcileExactOrder: reconcileAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => readyAt.add(const Duration(seconds: 30)),
+    ));
+    expect(recovered['state'], 'succeeded', reason: '$recovered');
+    expect(recovered['operation_id'], result['operation_id']);
+    expect(recovered['provider_reference_id'], 'accepted-reclaim-order');
+    expect(recovered['receipt_evidence_hash_hex'], matches(RegExp(r'^[0-9a-f]{64}$')));
+    expect(requests.skip(requestsBeforeRecovery).map((request) => request.method), ['GET']);
+    final requestsAfterRecovery = requests.length;
+    final replay = jsonDecode(await recoverOneDeterministicOrder(
+      options: nextOptions, runnerSeedBytes: waiting.runnerSeed,
+      reconcileExactOrder: reconcileAuthorizedExactOrder, requestSender: sender,
+      nowUtc: () => readyAt.add(const Duration(seconds: 30)),
+    ));
+    expect(replay, recovered);
+    expect(requests.length, requestsAfterRecovery);
+    await expectLater(
+      runOneDeterministicOrder(
+        options: nextOptions, runnerSeedBytes: waiting.runnerSeed,
+        executeExactOrder: runAuthorizedExactOrder, requestSender: sender,
+        nowUtc: () => readyAt.add(const Duration(seconds: 30)),
+      ),
+      throwsA(isA<StateError>().having(
+        (error) => error.message, 'message',
+        'External effect operation id is already bound to another effect',
+      )),
+    );
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+  });
+
   test('one signed deterministic cycle composes and executes once', () async {
     final fixture = await _fixture();
     addTearDown(fixture.dispose);
@@ -264,6 +377,75 @@ void main() {
   );
 }
 
+BingxFuturesMarketSnapshotInput _reclaimSnapshot({required bool confirmed}) {
+  final start = DateTime.utc(2026, 8, 22, 9, 15);
+  BingxFuturesCandle candle(String timeframe, DateTime closeAt,
+      int minutes, num open, num high, num low, num close) => BingxFuturesCandle(
+    timeframe: timeframe,
+    openTimeUtc: closeAt.subtract(Duration(minutes: minutes)).toIso8601String(),
+    closeTimeUtc: closeAt.toIso8601String(),
+    openDecimal: '$open', highDecimal: '$high', lowDecimal: '$low',
+    closeDecimal: '$close', volumeBaseDecimal: '100',
+    volumeQuoteDecimal: '10000', isClosed: true,
+  );
+  final observedAt = DateTime.utc(2026, 8, 22, 12, confirmed ? 5 : 0);
+  return BingxFuturesMarketSnapshotInput(
+    instrument: const BingxFuturesInstrumentMeta(
+      symbol: 'BTC-USDT', baseAsset: 'BTC', quoteAsset: 'USDT',
+      tickSizeDecimal: '0.01', qtyStepDecimal: '0.001', minQtyDecimal: '0.001',
+      maxLeverageDecimal: '10',
+    ),
+    prices: const BingxFuturesPriceSnapshot(
+      lastTradePriceDecimal: '100', markPriceDecimal: '100', indexPriceDecimal: '100',
+    ),
+    candles: [
+      for (var index = 0; index < (confirmed ? 34 : 33); index++)
+        candle('5m', start.add(Duration(minutes: (index + 1) * 5)), 5,
+          index == 33 ? 96 : 101, 102,
+          index == 32 ? 95 : index == 33 ? 96 : [8, 16, 24].contains(index) ? 98 : 100,
+          index == 32 ? 96 : index == 33 ? 100 : 101),
+      for (var index = 0; index < 220; index++)
+        candle('15m', start.subtract(Duration(minutes: (220 - index) * 15)),
+          15, 100, 102, 98, 100),
+      for (var index = 0; index < 24; index++)
+        candle('1h', start.subtract(Duration(hours: 24 - index)), 60,
+          100, 104, 96, 100),
+      for (var index = 0; index < 7; index++)
+        candle('4h', start.subtract(Duration(hours: (7 - index) * 4)),
+          240, 100, index == 3 ? 112 : 105, 98, 100),
+      candle('1m', start, 1, 100, 102, 98, 100),
+      candle('1d', DateTime.utc(2026, 8, 22), 1440, 100, 112, 98, 100),
+      candle('1w', DateTime.utc(2026, 8, 17), 10080, 100, 112, 98, 100),
+    ],
+    trades: [BingxFuturesTrade(
+      tradeId: 'observed-buy', timestampUtc: observedAt.toIso8601String(),
+      side: 'buy', priceDecimal: '100', quantityDecimal: '1',
+    )],
+    openInterest: [BingxFuturesOpenInterestPoint(
+      timestampUtc: observedAt.toIso8601String(), openInterestDecimal: '1000',
+    )],
+    funding: BingxFuturesFundingSnapshot(
+      timestampUtc: observedAt.toIso8601String(), fundingRateDecimal: '0',
+      nextFundingAtUtc: DateTime.utc(2026, 8, 22, 16).toIso8601String(),
+    ),
+    liquidityLevels: const [
+      BingxFuturesLiquidityLevel(
+        kind: 'external', side: 'buyside', timeframe: '4h', priceDecimal: '112',
+      ),
+      BingxFuturesLiquidityLevel(
+        kind: 'internal', side: 'sellside', timeframe: '5m', priceDecimal: '98',
+      ),
+    ],
+    sessionVolumes: [
+      for (final session in ['asia', 'london', 'newyork'])
+        BingxFuturesSessionVolumePoint(
+          session: session, bucketStartUtc: DateTime.utc(2026, 8, 22).toIso8601String(),
+          volumeDecimal: '100', deltaDecimal: '10',
+        ),
+    ],
+  );
+}
+
 BingxHttpResponse _providerResponse(BingxHttpRequest request) {
   final body = switch (request.uri.path) {
     '/openApi/swap/v3/user/balance' =>
@@ -291,7 +473,14 @@ Future<
     Future<void> Function() dispose,
   })
 >
-_fixture({int? sessionCycleIndex, bool testOrder = true}) async {
+_fixture({
+  int? sessionCycleIndex,
+  bool testOrder = true,
+  BingxFuturesReplayRunResult? publicRun,
+  DateTime? evidenceAtUtc,
+  int evidenceSequence = 1,
+  String previousEvidenceHash = _zeroHash,
+}) async {
   final directory = await Directory.systemTemp.createTemp(
     'hivra-deterministic-cycle.',
   );
@@ -383,7 +572,7 @@ _fixture({int? sessionCycleIndex, bool testOrder = true}) async {
       'needs_farther_retest': false,
       'anchor_source': 'micro_sweep_reclaim',
       'anchor_executable': true,
-      'anchor_lifecycle': 'fresh',
+      'anchor_lifecycle': 'reclaimed',
       'liquidity_event_id': '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:50:00Z',
       'latest_closed_micro_bar_at_utc': '2026-08-22T11:55:00Z',
@@ -401,7 +590,7 @@ _fixture({int? sessionCycleIndex, bool testOrder = true}) async {
   final proposalJson = jsonEncode(proposal);
   const harness = BingxFuturesDeterministicReplayHarnessService();
   final unsignedEvidence = harness.buildShadowEvidence(
-    publicRun: BingxFuturesReplayRunResult(
+    publicRun: publicRun ?? BingxFuturesReplayRunResult(
       fixtureId: 'live:BTC-USDT',
       marketSnapshotHashHex: '1' * 64,
       featureHashHex: '2' * 64,
@@ -417,11 +606,11 @@ _fixture({int? sessionCycleIndex, bool testOrder = true}) async {
     pluginVersion: policy['plugin_version'] as String,
     packageDigestHex: policy['package_digest_hex'] as String,
     hostAbi: policy['host_abi'] as String,
-    observedAtEpochMs: now.millisecondsSinceEpoch,
+    observedAtEpochMs: (evidenceAtUtc ?? now).millisecondsSinceEpoch,
     validUntilEpochMs:
-        now.add(const Duration(minutes: 1)).millisecondsSinceEpoch,
-    sequence: 1,
-    previousEvidenceHashHex: _zeroHash,
+        (evidenceAtUtc ?? now).add(const Duration(minutes: 1)).millisecondsSinceEpoch,
+    sequence: evidenceSequence,
+    previousEvidenceHashHex: previousEvidenceHash,
     runnerKeyId: runnerKeyId,
     contractVersion: 'trading-shadow-evidence-v2',
   );

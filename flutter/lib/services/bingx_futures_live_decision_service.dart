@@ -104,6 +104,7 @@ class BingxFuturesLiveDecisionService {
           microLows: _readLows(input.snapshotInput.candles, '5m'),
           microOpens: _readOpens(input.snapshotInput.candles, '5m'),
           microCloses: _readCloses(input.snapshotInput.candles, '5m'),
+          detectedLiquidityLevels: features.liquidityLevels,
           microCloseTimesUtc: _readCloseTimes(
             input.snapshotInput.candles,
             '5m',
@@ -188,6 +189,7 @@ class BingxFuturesLiveDecisionService {
     ];
     return _buildResult(
       snapshot: snapshot,
+      observedLiquidityLevels: features.liquidityLevels,
       tvhDecision: tvhDecision,
       side: decisionSide,
       zoneEvaluationSide: zoneEvaluationSide,
@@ -205,6 +207,7 @@ class BingxFuturesLiveDecisionService {
 
   BingxFuturesLiveDecisionResult _buildResult({
     required BingxFuturesMarketSnapshotDigest snapshot,
+    required List<BingxDetectedLiquidityLevel> observedLiquidityLevels,
     required BingxTvhDecisionResult tvhDecision,
     required String? side,
     required String? zoneEvaluationSide,
@@ -325,6 +328,7 @@ class BingxFuturesLiveDecisionService {
     });
     final liveHash = sha256.convert(utf8.encode(canonical)).toString();
     return BingxFuturesLiveDecisionResult(
+      observedLiquidityLevels: List.unmodifiable(observedLiquidityLevels),
       canPrepareIntent: canPrepareIntent,
       decision: tvhDecision.decision,
       side: side,
