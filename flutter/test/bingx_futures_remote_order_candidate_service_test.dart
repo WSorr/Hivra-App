@@ -100,6 +100,7 @@ void main() {
         'host_abi': 'wasm32-wasi-preview1',
         'stop_loss_percent': 5.0,
         'minimum_risk_reward': 2.0,
+        'account_read_scope': BingxFuturesRemoteMandateAdmission.exposureReadScope,
       });
       final admission =
           BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
@@ -126,6 +127,19 @@ void main() {
             }) => true,
       );
       expect(reparsed?.canonicalJson, admission.canonicalJson);
+      for (final replacement in [null, ['balance'], [...BingxFuturesRemoteMandateAdmission.exposureReadScope, 'withdraw']]) {
+        final scopeMutation = jsonDecode(admission.canonicalJson);
+        if (replacement == null) {
+          scopeMutation['strategy_policy'].remove('account_read_scope');
+        } else {
+          scopeMutation['strategy_policy']['account_read_scope'] = replacement;
+        }
+        expect(BingxFuturesRemoteMandateAdmission.parseAndVerify(
+          untrustedWireBytes: utf8.encode(jsonEncode(scopeMutation)),
+          verifySignature: ({required messageHashHex, required participantIdHex,
+            required signatureHex}) => true,
+        ), isNull);
+      }
 
       final mutated = jsonDecode(admission.canonicalJson);
       mutated['strategy_policy']['minimum_risk_reward'] = 1;
@@ -557,6 +571,11 @@ class _CandidateFixture {
 }
 
 const _completeRisk = BingxFuturesExchangeRiskInput(
+  exposureSymbol: 'BTC-USDT',
+  longLeverage: 2,
+  shortLeverage: 2,
+  marginType: 'ISOLATED',
+  availableMarginQuoteDecimal: '1000',
   accountEquityQuoteDecimal: '1000',
   realizedDailyPnlQuoteDecimal: '0',
   concurrentPositions: 0,

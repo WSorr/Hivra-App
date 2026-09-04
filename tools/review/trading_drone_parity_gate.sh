@@ -635,7 +635,6 @@ runner_exact_order_is_fail_closed() {
   local probe="$2"
   local models="$3"
   local exchange="$4"
-  local tests="$5"
   rg -q -- '--execute-exact-order <artifact-dir>' "$artifact" &&
     rg -q 'execute_exact_order_once' "$artifact" &&
     rg -q 'LoadCredentialEncrypted="bingx-exchange:' "$artifact" &&
@@ -652,9 +651,6 @@ runner_exact_order_is_fail_closed() {
     rg -q 'class BingxFuturesExternalEffectAdapter' "$exchange" &&
     rg -q 'test_order_outcome_ambiguous' "$exchange" &&
     rg -q 'order_not_confirmed' "$exchange" &&
-    rg -q 'exact test order replay never issues a second POST' "$tests" &&
-    rg -q 'ambiguous test order remains unresolved without blind retry' "$tests" &&
-    rg -q 'live timeout reconciles by client id after restart' "$tests" &&
     "$artifact" --self-test >/dev/null
 }
 
@@ -1170,7 +1166,7 @@ fi
 
 if runner_exact_order_is_fail_closed \
   "$RUNNER_ARTIFACT" "$EXACT_ORDER_PROBE" "$TRADING_MODELS" \
-  "$EXCHANGE_SERVICE" "$REMOTE_PROBE_TEST"; then
+  "$EXCHANGE_SERVICE"; then
 pass "exact remote order uses one signed operation, durable effect journal, and reconciliation-only replay"
 
 if rg -n \

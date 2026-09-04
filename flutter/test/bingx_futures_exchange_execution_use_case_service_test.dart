@@ -775,8 +775,16 @@ void main() {
           if (request.uri.path.endsWith('/user/balance')) {
             return const BingxHttpResponse(
               statusCode: 200,
-              body: '{"code":0,"msg":"ok","data":{"balance":{"equity":"100"}}}',
+              body: '{"code":0,"msg":"ok","data":{"balance":{"equity":"100","availableMargin":"100"}}}',
             );
+          }
+          if (request.uri.path.endsWith('/trade/leverage')) {
+            return const BingxHttpResponse(statusCode: 200,
+              body: '{"code":0,"data":{"longLeverage":2,"shortLeverage":2}}');
+          }
+          if (request.uri.path.endsWith('/trade/marginType')) {
+            return const BingxHttpResponse(statusCode: 200,
+              body: '{"code":0,"data":{"marginType":"ISOLATED"}}');
           }
           if (request.uri.path.endsWith('/user/positions')) {
             return const BingxHttpResponse(
@@ -2009,8 +2017,14 @@ class _CompleteRiskInputService extends BingxFuturesExchangeRiskInputService {
     required BingxFuturesRiskHistoryService riskHistoryService,
     required BingxFuturesApiCredentials credentials,
     required DateTime nowUtc,
+    String? exposureSymbol,
   }) async {
-    return const BingxFuturesExchangeRiskInput(
+    return BingxFuturesExchangeRiskInput(
+      exposureSymbol: exposureSymbol,
+      longLeverage: 2,
+      shortLeverage: 2,
+      marginType: 'ISOLATED',
+      availableMarginQuoteDecimal: '10000',
       accountEquityQuoteDecimal: '1000',
       realizedDailyPnlQuoteDecimal: '0',
       concurrentPositions: 0,

@@ -340,6 +340,13 @@ class BingxFuturesRemoteMandateAdmission {
   static const String deterministicSessionContractVersion =
       'trading-remote-mandate-admission-v5';
   static const String signatureSuite = 'ed25519-v1';
+  static const List<String> exposureReadScope = [
+    'balance',
+    'positions',
+    'realized_pnl',
+    'symbol_leverage',
+    'symbol_margin_type',
+  ];
   static const String operationKind = 'account_read';
   static const String exactOrderOperationKind = 'one_exact_order';
   static const String deterministicOrderOperationKind =
@@ -522,6 +529,7 @@ class BingxFuturesRemoteMandateAdmission {
     'host_abi': deterministicHostAbi,
     'stop_loss_percent': stopLossPercent,
     'minimum_risk_reward': minimumRiskReward,
+    'account_read_scope': exposureReadScope,
   };
 
   static BingxFuturesRemoteMandateAdmission? parseAndVerify({
@@ -904,8 +912,16 @@ class BingxFuturesRemoteMandateAdmission {
       'stop_loss_percent',
       'minimum_risk_reward',
     };
-    if (value.keys.toSet().difference(keys).isNotEmpty ||
+    if (value.keys.toSet().difference({
+          ...keys,
+          'account_read_scope',
+        }).isNotEmpty ||
         keys.difference(value.keys.toSet()).isNotEmpty) {
+      return null;
+    }
+    if (value.containsKey('account_read_scope') &&
+        jsonEncode(value['account_read_scope']) !=
+            jsonEncode(exposureReadScope)) {
       return null;
     }
     final buildId = value['runner_build_id']?.toString().trim() ?? '';
@@ -942,6 +958,8 @@ class BingxFuturesRemoteMandateAdmission {
       'host_abi': hostAbi,
       'stop_loss_percent': stopLoss,
       'minimum_risk_reward': minimumRiskReward,
+      if (value.containsKey('account_read_scope'))
+        'account_read_scope': exposureReadScope,
     };
   }
 

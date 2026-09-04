@@ -1057,6 +1057,42 @@ first-cycle start and deadline before the Capsule signs. Missing that reviewed
 deadline remains terminal and requires a fresh session; the Runner never shifts
 the signed cadence to accommodate a slow transfer or activation.
 
+Local exposure review uses the existing sizing owner and exchange adapter to
+read side-specific leverage, margin mode, and USDT `availableMargin`; equity is
+not a substitute for free margin. It presents either an explicitly labelled
+position-cap estimate or the prepared intent's quantity/limit-price notional
+and SL distance. Estimated initial margin and its share of available margin
+exclude fees, funding and slippage; neither collateral nor SL is a guaranteed
+loss limit. Unknown inputs cannot authorize the local review. Confirmation
+does not bypass the canonical execution owner's mandate/risk/freshness checks.
+This snapshot is not a reservation of margin and never authorizes changing
+exchange leverage. The canonical risk governor owns the admission rule; both
+local execution and remote candidate admission consume verified exposure inputs.
+An exact local review derives SL distance from the prepared entry and stop
+prices, independent of the editable percentage, and rejects it at or beyond `100 / leverage`
+before maintenance margin and costs; the ratio is only a conservative nominal
+buffer, never a liquidation-price estimate. Cap-only estimates label this
+condition without pretending an order exists. New deterministic authorities
+commit to `account_read_scope`: balance, positions, realized PnL, and the mandated
+symbol's leverage and margin type. Scope removal, mutation, or expansion invalidates
+the commitment. Historical authorities remain parseable for retained evidence,
+but absent scope blocks new execution without provider requests. Legacy exact-only
+authority likewise cannot initiate delivery; reconciliation remains available.
+The existing remote effect owner rereads exposure before first delivery, not
+on completed replay or reconciliation. Unknown evidence, nominal SL loss at or
+above initial margin, and insufficient available margin fail closed. This is
+not a liquidation-price model: maintenance margin, fees and market movement can
+still make a nominally admitted order unsafe. The deployed Runner stays paused
+until a separately approved deployment and newly signed authority are verified.
+
+The existing restricted status operation reports service availability separately
+from the signed session's retained counters and cycle result. Inspection verifies
+the session and result binding, including after expiry, without advancing state
+or requesting provider data. Check times are scheduled slots, not proof of exact
+execution time. A missing result, invalid state, or failed connection is unknown,
+never `Ready` or successful execution. Older bundles may report service state
+without session details; the client must state that limitation explicitly.
+
 The exact Runner bundle also contains one persistent systemd session service.
 It invokes that same scheduler owner from the hash-verified installed bundle;
 it does not implement another cycle, decision, reconciliation, or effect path.

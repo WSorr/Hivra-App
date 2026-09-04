@@ -1,10 +1,96 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:hivra_app/models/bingx_futures_signal_rank_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
+  test('paused process does not imply disabled startup', () {
+    for (final details in ['', ' session_state=active cycles=0 effects=0 '
+      'last_scheduled_check=none next_check=2026-09-05T02:00:00Z last_outcome=none']) {
+      final enabled = tradingRemoteRunnerStatusLabel('active=inactive enabled=enabled$details');
+      expect(enabled, contains('Runner paused'));
+      expect(enabled, contains('WARNING: autostart enabled'));
+      expect(enabled, isNot(contains('Autostart: not enabled')));
+      for (final state in ['linked', 'disabled']) {
+        expect(tradingRemoteRunnerStatusLabel('active=inactive enabled=$state$details'),
+          contains('Autostart: not enabled'));
+      }
+      for (final value in ['', ' enabled=unexpected']) {
+        expect(tradingRemoteRunnerStatusLabel('active=inactive$value$details'),
+          contains('pause persistence is not verified'));
+      }
+    }
+    expect(tradingRemoteRunnerStatusLabel('active=inactive enabled=enabled enabled=disabled'),
+      contains('Runner status unknown'));
+  });
+  test('remote status reports retained outcomes, not process success', () {
+    const wire =
+        'active=active enabled=linked session_state=active cycles=1 effects=0 '
+        'last_scheduled_check=2026-09-04T16:50:00+00:00 '
+        'next_check=2026-09-04T16:55:00+00:00 '
+        'last_outcome=blocked:market_proposal_blocked';
+    expect(tradingRemoteRunnerStatusLabel(wire), contains('Checks: 1'));
+    expect(tradingRemoteRunnerStatusLabel(wire), contains('No order:'));
+    expect(tradingRemoteRunnerStatusLabel(wire), contains('Next scheduled'));
+    expect(
+      tradingRemoteRunnerStatusLabel(
+        wire.replaceFirst('active=active', 'active=inactive'),
+      ),
+      isNot(contains('Next scheduled')),
+    );
+    for (final invalid in [
+      '',
+      'Ready',
+      '$wire active=active',
+      wire.replaceFirst('cycles=1', 'cycles=-1'),
+      wire.replaceFirst('effects=0', 'effects=2'),
+      wire.replaceFirst('2026-09-04T16:55:00+00:00', 'invalid'),
+      wire.replaceFirst('blocked:market_proposal_blocked', 'executed'),
+    ]) {
+      expect(tradingRemoteRunnerStatusLabel(invalid), contains('unknown'));
+    }
+    expect(
+      tradingRemoteRunnerStatusLabel('active=active'),
+      contains('details unavailable'),
+    );
+    final terminal = wire
+        .replaceFirst('session_state=active', 'session_state=stopped')
+        .replaceFirst('effects=0', 'effects=1')
+        .replaceFirst(
+          'next_check=2026-09-04T16:55:00+00:00',
+          'next_check=none',
+        );
+    expect(
+      tradingRemoteRunnerStatusLabel(
+        terminal.replaceFirst(
+          'blocked:market_proposal_blocked',
+          'effect:unresolved:test=false',
+        ),
+      ),
+      contains('reconciliation required'),
+    );
+    expect(
+      tradingRemoteRunnerStatusLabel(
+        terminal.replaceFirst(
+          'blocked:market_proposal_blocked',
+          'effect:succeeded:test=true',
+        ),
+      ),
+      contains('not a live order'),
+    );
+    expect(
+      tradingRemoteRunnerStatusLabel(
+        terminal.replaceFirst(
+          'blocked:market_proposal_blocked',
+          'effect:succeeded:test=false',
+        ),
+      ),
+      contains('Provider receipt confirmed'),
+    );
+  });
+
   test('defaults to live and restores test only from an active mandate', () {
     final now = DateTime.utc(2026, 8, 22, 10);
     final live = BingxFuturesTradingMandate.issue(
@@ -22,6 +108,33 @@ void main() {
       cooldownMinutes: 60,
       maxEffects: 1,
     );
+
+    final selectedSymbol = TextEditingController(text: 'DOGE-USDT');
+    final selectedNotional = TextEditingController(text: '100');
+    addTearDown(selectedSymbol.dispose);
+    addTearDown(selectedNotional.dispose);
+    expect(
+      restoreTradingMandateSelection(
+        mandate: live,
+        nowUtc: now,
+        symbol: selectedSymbol,
+        maximumNotional: selectedNotional,
+      ),
+      isTrue,
+    );
+    expect(selectedSymbol.text, 'BTC-USDT');
+    expect(selectedNotional.text, live.maxOrderNotionalQuoteDecimal);
+    selectedNotional.text = '7';
+    expect(
+      restoreTradingMandateSelection(
+        mandate: live,
+        nowUtc: now.add(const Duration(days: 1)),
+        symbol: selectedSymbol,
+        maximumNotional: selectedNotional,
+      ),
+      isFalse,
+    );
+    expect(selectedNotional.text, '7');
 
     expect(
       tradingUsesTestEndpointAfterRestore(mandate: live, nowUtc: now),

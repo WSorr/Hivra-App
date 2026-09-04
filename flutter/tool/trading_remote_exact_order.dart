@@ -8,6 +8,9 @@ import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
+import 'package:hivra_app/services/bingx_futures_exchange_risk_input_service.dart';
+import 'package:hivra_app/services/bingx_futures_risk_history_service.dart';
+import 'package:hivra_app/services/bingx_futures_risk_governor_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/external_effect_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
@@ -325,6 +328,44 @@ Future<String> runAuthorizedExactOrder({
   }
   if (existing == null && !admission.mandate.isActiveAt(now().toUtc())) {
     throw const FormatException('exact order authority is not active');
+  }
+  if (existing == null ||
+      {ExternalEffectState.prepared, ExternalEffectState.approved,
+       ExternalEffectState.queued}.contains(existing.state)) {
+    if (jsonEncode(admission.strategyPolicy?['account_read_scope']) !=
+        jsonEncode(BingxFuturesRemoteMandateAdmission.exposureReadScope)) {
+      throw const FormatException('exposure_read_authority_missing');
+    }
+    if (!admission.mandate.isActiveAt(now().toUtc())) {
+      throw const FormatException('exact order authority expired before exposure');
+    }
+    final exposure = await const BingxFuturesExchangeRiskInputService().read(
+      exchangeService: BingxFuturesExchangeService(
+        requestSender: requestSender, clockMs: clockMs,
+      ),
+      riskHistoryService: BingxFuturesRiskHistoryService(
+        readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: stateHome),
+        ),
+      ),
+      credentials: credentials,
+      nowUtc: now().toUtc(),
+      exposureSymbol: admission.mandate.symbol,
+    );
+    final payload = BingxFuturesIntentPayload.fromPluginResult(normalizedOrder);
+    final quantity = num.parse(payload.quantityDecimal);
+    final entry = num.parse(payload.limitPriceDecimal!);
+    final stop = num.tryParse(payload.stopLossDecimal ?? '');
+    final blocker = BingxFuturesRiskGovernorService.exposureBlocker(
+      notional: quantity * entry,
+      lossAtStop: stop == null ? double.nan : quantity * (entry - stop).abs(),
+      openingLeverage: payload.side == 'buy'
+          ? exposure.longLeverage : exposure.shortLeverage,
+      marginType: exposure.marginType,
+      availableMarginQuoteDecimal: exposure.availableMarginQuoteDecimal,
+    );
+    if (blocker != null) throw FormatException(blocker);
   }
   var operation = await effects.prepare(
     operationId: effectOperationId,

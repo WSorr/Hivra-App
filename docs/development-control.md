@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-04
+Status date: 2026-09-05
 
 ## Current State
 
@@ -14,7 +14,7 @@ Status date: 2026-09-04
 - Trading Remote Runner acceptance remains complete at `b88a886`.
 - Hivra 2.0 remains design-only. No 2.0 runtime or UI implementation is
   authorized.
-- Current selected runtime unit: Trading reclaim-only entry and causal cluster evidence.
+- Trading reclaim-only entry and causal cluster evidence are merged.
   Untouched HTF pivots remain observations/targets, not executable entry anchors.
   The existing feature detector now uses confirmation-time ATR rather than
   final-snapshot ATR for historical clusters. Automated validation passes.
@@ -34,6 +34,38 @@ Status date: 2026-09-04
   retains both liquidity sides with empty order fields; changing to BNB clears
   the previous snapshot and selecting its scan result shows only BNB clusters.
   Android smoke and deployed offline strategy acceptance remain unverified.
+- Current selected runtime unit: readable Trading Remote Runner status through
+  the existing restricted status operation. Session counters, scheduled checks,
+  and retained cycle outcomes are read-only operational evidence, not execution
+  authority. The updated strategy's bounded offline session is paused after
+  exposure smoke; live effect acceptance remains unverified. Deployment and
+  reactivation require separate approval after the leverage finding is closed.
+- The same pending product batch adds a local margin/risk estimate and an exact
+  intent review before manual execution. Active mandate symbol/notional restore
+  together after restart. Exchange leverage and free margin are read, never
+  changed. The pending batch now binds symbol leverage/margin reads into signed
+  deterministic authority and enforces the shared risk rule before delivery.
+- Packaged smoke observed `60x` isolated leverage with a selected `5%` stop.
+  Local exact-order review now rejects a stop outside the nominal leverage
+  price buffer and labels cap-only estimates as unsafe. The running remote
+  session was paused with zero effects observed in that earlier smoke. Runner enforcement
+  in the installed build remains blocked. Pending source changes seal new
+  execution with legacy authority lacking exposure read scope, preserving
+  retained evidence/reconciliation. Deployment, new authority, and packaged
+  acceptance are not yet confirmed; the current mandate cannot imply new scope.
+- macOS read-only smoke on 2026-09-05 confirms restored DOGE/8 USDT selection,
+  side-specific leverage, available margin, and unsafe SL warnings. No order was
+  submitted. The installed Runner reports paused without session-detail support.
+  SSH initially reported `inactive/dead` with `UnitFileState=enabled`.
+  Operator-approved startup disablement now leaves the unit `inactive/dead`,
+  `linked`, with no boot dependency links. Unit registration is retained for
+  status/control; no session was started. Remote enforcement and Android
+  acceptance remain unverified.
+
+- Smoke follow-up in the same pending batch separates process pause from
+  startup enablement in the existing status label. Enabled startup is warned
+  explicitly; absent evidence cannot imply a restart-safe pause. This UI-only
+  follow-up has not yet received a new packaged smoke.
 
 ## Product Direction
 

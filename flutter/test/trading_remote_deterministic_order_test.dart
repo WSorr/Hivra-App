@@ -20,6 +20,56 @@ import '../tool/trading_remote_exact_order.dart'
         runAuthorizedExactOrder;
 
 void main() {
+  for (final scenario in ['legacy', 'leverage', 'margin', 'missing', 'changed']) {
+    test('exposure $scenario blocks without an order', () async {
+      final fixture = await _fixture(includeExposureScope: scenario != 'legacy');
+      addTearDown(fixture.dispose);
+      var requests = 0;
+      var posts = 0;
+      var leverageReads = 0;
+      Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+        requests++;
+        if (request.method == 'POST') posts++;
+        if (request.uri.path.endsWith('/leverage')) {
+          leverageReads++;
+          if (scenario == 'leverage' || (scenario == 'changed' && leverageReads > 1)) {
+            return const BingxHttpResponse(statusCode: 200,
+              body: '{"code":0,"data":{"longLeverage":60,"shortLeverage":2}}');
+          }
+        }
+        if (request.uri.path.endsWith('/balance') &&
+            (scenario == 'margin' || scenario == 'missing')) {
+          return BingxHttpResponse(statusCode: 200, body: jsonEncode({
+            'code': 0, 'data': [{'asset': 'USDT', 'equity': '1000',
+              if (scenario == 'margin') 'availableMargin': '0.01'}],
+          }));
+        }
+        return _providerResponse(request);
+      }
+      final result = runOneDeterministicOrder(
+        options: fixture.options, runnerSeedBytes: fixture.runnerSeed,
+        nowUtc: () => fixture.now, requestSender: sender,
+        executeExactOrder: runAuthorizedExactOrder,
+      );
+      if (scenario == 'changed') {
+        await expectLater(result, throwsA(isA<FormatException>().having(
+          (error) => error.message, 'reason', 'risk_stop_outside_leverage_buffer')));
+        expect(leverageReads, 2);
+      } else {
+        final value = jsonDecode(await result);
+        expect(value['state'], 'blocked');
+        expect(value['reason_code'], {
+          'legacy': 'exposure_read_authority_missing',
+          'leverage': 'risk_stop_outside_leverage_buffer',
+          'margin': 'risk_available_margin_insufficient',
+          'missing': 'risk_exposure_unknown',
+        }[scenario]);
+      }
+      expect(posts, 0);
+      if (scenario == 'legacy') expect(requests, 0);
+    });
+  }
+
   test('closed-candle reclaim reaches one remote effect and survives recovery', () async {
     const strategy = BingxFuturesDeterministicReplayHarnessService();
     final before = strategy.runPublicLiveMarket(
@@ -449,7 +499,11 @@ BingxFuturesMarketSnapshotInput _reclaimSnapshot({required bool confirmed}) {
 BingxHttpResponse _providerResponse(BingxHttpRequest request) {
   final body = switch (request.uri.path) {
     '/openApi/swap/v3/user/balance' =>
-      '{"code":0,"data":[{"asset":"USDT","equity":"1000"}]}',
+      '{"code":0,"data":[{"asset":"USDT","equity":"1000","availableMargin":"1000"}]}',
+    '/openApi/swap/v2/trade/leverage' =>
+      '{"code":0,"data":{"longLeverage":2,"shortLeverage":2}}',
+    '/openApi/swap/v2/trade/marginType' =>
+      '{"code":0,"data":{"marginType":"ISOLATED"}}',
     '/openApi/swap/v2/user/positions' => '{"code":0,"data":[]}',
     '/openApi/swap/v2/user/income' => '{"code":0,"data":[]}',
     '/openApi/swap/v2/quote/contracts' =>
@@ -476,6 +530,7 @@ Future<
 _fixture({
   int? sessionCycleIndex,
   bool testOrder = true,
+  bool includeExposureScope = true,
   BingxFuturesReplayRunResult? publicRun,
   DateTime? evidenceAtUtc,
   int evidenceSequence = 1,
@@ -518,6 +573,8 @@ _fixture({
     'host_abi': 'dart-headless-v1',
     'stop_loss_percent': 5,
     'minimum_risk_reward': 2,
+    if (includeExposureScope)
+      'account_read_scope': BingxFuturesRemoteMandateAdmission.exposureReadScope,
   };
   BingxFuturesRemoteMandateAdmission issue(String? Function(String) signer) =>
       sessionCycleIndex == null

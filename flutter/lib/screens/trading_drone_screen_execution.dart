@@ -1,6 +1,81 @@
 part of 'trading_drone_screen.dart';
 
 extension _TradingDroneExecution on _TradingDroneScreenState {
+  Future<bool> _reviewExposure({
+    BingxFuturesIntentPayload? intent,
+    BingxFuturesApiCredentials? executionCredentials,
+  }) async {
+    if (_reviewingExposure) return false;
+    final symbol = _symbolController.text.trim().toUpperCase();
+    final notionalText = _maxNotionalUsdtController.text;
+    final stopPercent = _stopLossPercent;
+    final testOrder = _useTestOrderEndpoint;
+    final response = _lastIntentResponse;
+    final capsule = _module.orderTrackingStore.activeCapsuleRootHex;
+    bool unchanged() =>
+        mounted &&
+        _module.orderTrackingStore.activeCapsuleRootHex == capsule &&
+        _symbolController.text.trim().toUpperCase() == symbol &&
+        _maxNotionalUsdtController.text == notionalText &&
+        _stopLossPercent == stopPercent &&
+        _useTestOrderEndpoint == testOrder &&
+        (intent == null || identical(response, _lastIntentResponse));
+    _updateState(() => _reviewingExposure = true);
+    try {
+      final credentials =
+          executionCredentials ?? await _ensureCredentialsLoaded();
+      if (credentials == null || !unchanged()) return false;
+      final description = await _module.orderSizing.describeExposure(
+        credentials: credentials,
+        symbol: symbol,
+        maximumNotionalQuote: num.tryParse(notionalText) ?? 0,
+        stopLossPercent: stopPercent,
+        intent: intent,
+      );
+      if (!mounted || !unchanged()) return false;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Text(
+                intent == null
+                    ? 'Margin and risk estimate'
+                    : testOrder
+                    ? 'Review test request'
+                    : 'Review live order',
+              ),
+              content: SingleChildScrollView(child: Text(description)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text(intent == null ? 'Close' : 'Cancel'),
+                ),
+                if (intent != null)
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(
+                      testOrder ? 'Validate test request' : 'Submit live order',
+                    ),
+                  ),
+              ],
+            ),
+      );
+      return confirmed == true && unchanged();
+    } catch (error) {
+      if (mounted) {
+        await _showSnack(
+          error is StateError || error is FormatException
+              ? error.toString()
+              : 'Exchange cost information unavailable. No order submitted.',
+          seconds: 6,
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) _updateState(() => _reviewingExposure = false);
+    }
+  }
+
   Future<void> _executeLastIntent() async {
     await _module.uiLog.log(
       'bingx.exchange.execute.tap',
@@ -45,6 +120,12 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       _executing = true;
     });
     try {
+      if (!await _reviewExposure(
+        intent: BingxFuturesIntentPayload.fromPluginResult(result),
+        executionCredentials: credentials,
+      )) {
+        return;
+      }
       final useCaseResult = await _module.executionUseCase.execute(
         screen: 'trading_drone',
         rawIntentResult: result,

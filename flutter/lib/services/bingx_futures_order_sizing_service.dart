@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../models/bingx_futures_exchange_models.dart';
 import '../models/bingx_futures_order_sizing_models.dart';
 import 'bingx_futures_exchange_service.dart';
+import 'bingx_futures_risk_governor_service.dart';
 
 class BingxFuturesOrderSizingService {
   final BingxFuturesExchangeService _exchange;
@@ -10,6 +11,133 @@ class BingxFuturesOrderSizingService {
   const BingxFuturesOrderSizingService({
     required BingxFuturesExchangeService exchange,
   }) : _exchange = exchange;
+
+  Future<String> describeExposure({
+    required BingxFuturesApiCredentials credentials,
+    required String symbol,
+    required num maximumNotionalQuote,
+    required num stopLossPercent,
+    BingxFuturesIntentPayload? intent,
+  }) async {
+    final normalizedSymbol = symbol.trim().toUpperCase();
+    if (normalizedSymbol.isEmpty ||
+        !maximumNotionalQuote.isFinite ||
+        maximumNotionalQuote <= 0 ||
+        !stopLossPercent.isFinite ||
+        stopLossPercent <= 0 ||
+        stopLossPercent >= 100 ||
+        (intent != null && intent.symbol != normalizedSymbol)) {
+      throw const FormatException(
+        'Invalid exposure inputs. Prepare a fresh request.',
+      );
+    }
+    final values = await Future.wait<Object>([
+      _exchange.getUserBalance(credentials: credentials),
+      _exchange.getLeverage(credentials: credentials, symbol: normalizedSymbol),
+      _exchange.getMarginType(
+        credentials: credentials,
+        symbol: normalizedSymbol,
+      ),
+    ]);
+    final balance = values[0] as BingxFuturesUserBalanceResult;
+    final leverage = values[1] as BingxFuturesLeverageReadResult;
+    final margin = values[2] as BingxFuturesMarginTypeReadResult;
+    final available = num.tryParse(balance.availableMarginQuoteDecimal ?? '');
+    final mode = margin.marginType;
+    final long = leverage.longLeverage;
+    final short = leverage.shortLeverage;
+    if (!balance.isSuccess ||
+        !leverage.isSuccess ||
+        !margin.isSuccess ||
+        available == null ||
+        !available.isFinite ||
+        available < 0 ||
+        !{'ISOLATED', 'CROSSED'}.contains(mode) ||
+        long == null ||
+        short == null ||
+        long <= 0 ||
+        short <= 0) {
+      throw StateError(
+        'Exchange leverage, margin mode or available margin is unknown. '
+        'No estimate or approval is available.',
+      );
+    }
+    num notional = maximumNotionalQuote;
+    num loss = notional * stopLossPercent / 100;
+    if (intent != null) {
+      final quantity = num.tryParse(intent.quantityDecimal);
+      final price = num.tryParse(intent.limitPriceDecimal ?? '');
+      final stop = num.tryParse(intent.stopLossDecimal ?? '');
+      if (quantity == null ||
+          price == null ||
+          stop == null ||
+          !quantity.isFinite ||
+          !price.isFinite ||
+          !stop.isFinite ||
+          quantity <= 0 ||
+          price <= 0 ||
+          stop <= 0 ||
+          !{'buy', 'sell'}.contains(intent.side) ||
+          (intent.side == 'buy' ? stop >= price : stop <= price)) {
+        throw StateError('A priced intent with a valid stop loss is required.');
+      }
+      notional = quantity * price;
+      loss = quantity * (price - stop).abs();
+      if (!notional.isFinite ||
+          !loss.isFinite ||
+          notional > maximumNotionalQuote) {
+        throw StateError(
+          'Prepared position exceeds the selected notional cap.',
+        );
+      }
+    }
+    String collateral(String side, int factor) {
+      final estimate = notional / factor;
+      final share =
+          available > 0
+              ? '${(estimate / available * 100).toStringAsFixed(2)}% of available margin'
+              : 'no available margin';
+      return '$side: ${factor}x · estimated initial margin '
+          '${estimate.toStringAsFixed(4)} USDT ($share)';
+    }
+
+    final selectedLeverage = intent?.side == 'buy' ? long : short;
+    if (intent != null) {
+      final blocker = BingxFuturesRiskGovernorService.exposureBlocker(
+        notional: notional,
+        lossAtStop: loss,
+        openingLeverage: selectedLeverage,
+        marginType: mode,
+        availableMarginQuoteDecimal: balance.availableMarginQuoteDecimal,
+      );
+      if (blocker != null) {
+        throw StateError('The order cannot be approved. '
+          '${BingxFuturesRiskGovernorService.exposureMessage(blocker)}');
+      }
+    }
+    return [
+      '$normalizedSymbol · ${intent == null ? "Position-cap estimate, not an order" : "Prepared ${intent.side.toUpperCase()} order"}',
+      'Position notional: ${notional.toStringAsFixed(4)} USDT (not your deposit)',
+      if (intent != null) 'Quantity: ${intent.quantityDecimal}',
+      'Exchange margin mode: $mode',
+      'Available margin: ${available.toStringAsFixed(4)} USDT',
+      if (intent == null || intent.side == 'buy') collateral('Long', long),
+      if (intent == null || intent.side == 'sell') collateral('Short', short),
+      if (intent == null && stopLossPercent >= 100 / long)
+        'UNSAFE LONG: selected SL is outside the nominal '
+            '${(100 / long).toStringAsFixed(2)}% leverage buffer.',
+      if (intent == null && stopLossPercent >= 100 / short)
+        'UNSAFE SHORT: selected SL is outside the nominal '
+            '${(100 / short).toStringAsFixed(2)}% leverage buffer.',
+      'Estimated loss at SL: ${loss.toStringAsFixed(4)} USDT before costs',
+      'Fees, funding and slippage are not included. A stop loss is not a '
+          'guaranteed loss limit. Cross margin can expose other account funds.',
+      'The nominal leverage buffer is not a liquidation-price estimate. Actual '
+          'liquidation can occur earlier. Snapshot only: exchange settings and '
+          'available funds may change before fill. '
+          'No leverage or margin setting has been changed.',
+    ].join('\n\n');
+  }
 
   Future<
     ({

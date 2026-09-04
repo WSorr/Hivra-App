@@ -3,6 +3,11 @@ import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 
 class BingxFuturesExchangeRiskInput {
+  final String? exposureSymbol;
+  final int? longLeverage;
+  final int? shortLeverage;
+  final String? marginType;
+  final String? availableMarginQuoteDecimal;
   final String? accountEquityQuoteDecimal;
   final String? realizedDailyPnlQuoteDecimal;
   final int? concurrentPositions;
@@ -16,6 +21,11 @@ class BingxFuturesExchangeRiskInput {
   final String? pnlUnavailableMessage;
 
   const BingxFuturesExchangeRiskInput({
+    this.exposureSymbol,
+    this.longLeverage,
+    this.shortLeverage,
+    this.marginType,
+    this.availableMarginQuoteDecimal,
     required this.accountEquityQuoteDecimal,
     required this.realizedDailyPnlQuoteDecimal,
     required this.concurrentPositions,
@@ -71,6 +81,7 @@ class BingxFuturesExchangeRiskInputService {
     required BingxFuturesRiskHistoryService riskHistoryService,
     required BingxFuturesApiCredentials credentials,
     required DateTime nowUtc,
+    String? exposureSymbol,
   }) async {
     final balanceFuture = exchangeService.getUserBalance(
       credentials: credentials,
@@ -86,6 +97,20 @@ class BingxFuturesExchangeRiskInputService {
     final balance = await balanceFuture;
     final positions = await positionsFuture;
     final riskHistory = await riskHistoryFuture;
+    final leverage =
+        exposureSymbol == null
+            ? null
+            : await exchangeService.getLeverage(
+              credentials: credentials,
+              symbol: exposureSymbol,
+            );
+    final margin =
+        exposureSymbol == null
+            ? null
+            : await exchangeService.getMarginType(
+              credentials: credentials,
+              symbol: exposureSymbol,
+            );
 
     final parsedEquity = _parseFinite(balance.accountEquityQuoteDecimal);
     final hasPositiveEquity = parsedEquity != null && parsedEquity > 0;
@@ -96,6 +121,13 @@ class BingxFuturesExchangeRiskInputService {
     final positionsUnavailable = !positions.isSuccess;
 
     return BingxFuturesExchangeRiskInput(
+      exposureSymbol: exposureSymbol?.trim().toUpperCase(),
+      longLeverage: leverage?.isSuccess == true ? leverage!.longLeverage : null,
+      shortLeverage:
+          leverage?.isSuccess == true ? leverage!.shortLeverage : null,
+      marginType: margin?.isSuccess == true ? margin!.marginType : null,
+      availableMarginQuoteDecimal:
+          balance.isSuccess ? balance.availableMarginQuoteDecimal : null,
       accountEquityQuoteDecimal:
           balanceUnavailable ? null : parsedEquity.toStringAsFixed(8),
       realizedDailyPnlQuoteDecimal:
