@@ -45,6 +45,7 @@ pub struct InvitationRecord {
     pub sent_at: Timestamp,
     pub responded_at: Option<Timestamp>,
     pub responded_signer: Option<PubKey>,
+    pub has_local_terminal: bool,
     pub status: InvitationStatus,
 }
 
@@ -70,6 +71,7 @@ pub struct InvitationCurrentItemV1 {
     pub status: &'static str,
     pub sent_at: u64,
     pub responded_at: Option<u64>,
+    pub has_local_terminal: bool,
     pub rejection_reason: Option<&'static str>,
 }
 
@@ -160,6 +162,7 @@ pub fn invitation_current_view_v1(ledger: &Ledger) -> InvitationCurrentViewV1 {
                 status,
                 sent_at: record.sent_at.as_u64(),
                 responded_at: record.responded_at.map(|timestamp| timestamp.as_u64()),
+                has_local_terminal: record.has_local_terminal,
                 rejection_reason,
             }
         })
@@ -260,6 +263,7 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                     sent_at: event.timestamp(),
                     responded_at: None,
                     responded_signer: None,
+                    has_local_terminal: false,
                     status: InvitationStatus::Pending,
                 });
             }
@@ -282,6 +286,17 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                     && !valid_expiry_signer(ledger, record, event.signer())
                 {
                     continue;
+                }
+                if event.signer() == ledger.owner()
+                    && ((record.direction == InvitationDirection::Incoming
+                        && matches!(
+                            terminal,
+                            InvitationStatus::Accepted { .. } | InvitationStatus::Rejected { .. }
+                        ))
+                        || (record.direction == InvitationDirection::Outgoing
+                            && terminal == InvitationStatus::Expired))
+                {
+                    record.has_local_terminal = true;
                 }
                 if record.status == InvitationStatus::Pending {
                     record.status = terminal;
@@ -569,6 +584,9 @@ mod tests {
             invitation_status(&ledger, invitation_id),
             InvitationStatus::Expired
         );
+        let view = invitation_current_view_v1(&ledger);
+        assert!(view.invitations[0].has_local_terminal);
+        assert_eq!(view.invitations[0].starter_kind, None);
     }
 
     #[test]
@@ -792,6 +810,7 @@ mod tests {
         assert_eq!(item.rejection_reason, Some("empty_slot"));
         assert_eq!(item.sent_at, 100);
         assert_eq!(item.responded_at, Some(110));
+        assert!(item.has_local_terminal);
     }
 
     #[test]

@@ -228,6 +228,8 @@ abstract class InvitationActionsRuntime {
     String? capsuleStateJson,
   });
 
+  String? projectInvitationCurrentViewV1(String ledgerJson);
+
   int expireInvitationCode(Uint8List invitationId);
 
   Future<bool> persistLedgerSnapshot();
@@ -274,6 +276,11 @@ class HivraInvitationActionsRuntime implements InvitationActionsRuntime {
       ledgerJson,
       capsuleStateJson: capsuleStateJson,
     );
+  }
+
+  @override
+  String? projectInvitationCurrentViewV1(String ledgerJson) {
+    return _hivra.projectInvitationCurrentViewV1(ledgerJson);
   }
 
   @override

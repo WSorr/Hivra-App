@@ -2522,6 +2522,9 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
   }) async {}
 
   @override
+  String? projectInvitationCurrentViewV1(String ledgerJson) => null;
+
+  @override
   Future<String?> resolveActiveCapsuleHex() async => null;
 }
 

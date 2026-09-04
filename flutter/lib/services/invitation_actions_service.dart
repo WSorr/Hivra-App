@@ -8,7 +8,7 @@ import 'capsule_delivery_lifecycle_service.dart';
 import 'capsule_ffi_worker_queue.dart';
 import 'delivery_outbox_store.dart';
 import 'delivery_transport_contract.dart';
-import 'ledger_view_support.dart';
+import 'invitation_projection_service.dart';
 import 'ui_event_log_service.dart';
 
 // Keep invitation actions responsive under unstable transport.
@@ -43,7 +43,11 @@ class InvitationWorkerResult {
 
 typedef CapsuleWorkerQueue = CapsuleFfiWorkerQueue;
 typedef InvitationWorkerResultObserver =
-    FutureOr<void> Function(Map<String, Object?> result, String capsuleHex);
+    FutureOr<void> Function(
+      Map<String, Object?> result,
+      String capsuleHex,
+      Map<String, Object?> bootstrap,
+    );
 
 class InvitationActionsService {
   static final CapsuleFfiWorkerQueue _sharedWorkerQueue =
@@ -54,6 +58,7 @@ class InvitationActionsService {
   final CapsuleDeliveryLifecycleService _deliveryLifecycle;
   final CapsuleFfiWorkerQueue _workerQueue;
   final Future<Uint8List?> Function()? _readOwnCardSignature;
+  late final InvitationProjectionService _invitationProjection;
   Future<void> _operationChain = Future<void>.value();
 
   InvitationActionsService({
@@ -68,7 +73,11 @@ class InvitationActionsService {
              retryRunner: _unconfiguredRetryRunner,
            ),
        _workerQueue = workerQueue ?? _sharedWorkerQueue,
-       _readOwnCardSignature = readOwnCardSignature;
+       _readOwnCardSignature = readOwnCardSignature {
+    _invitationProjection = InvitationProjectionService(
+      _runtime.projectInvitationCurrentViewV1,
+    );
+  }
 
   static Future<CapsuleDeliveryCycleResult> _unconfiguredRetryRunner(
     String capsuleHex,
@@ -197,7 +206,7 @@ class InvitationActionsService {
       // A Dart timeout does not cancel a compute worker. Record the durable
       // relay obligation here so a late local ledger append cannot be left
       // without its outbox item.
-      await afterWorkerResult?.call(result, actualCapsuleHex);
+      await afterWorkerResult?.call(result, actualCapsuleHex, bootstrap);
       return result;
     });
   }
@@ -217,14 +226,20 @@ class InvitationActionsService {
   Future<void> _enqueueInvitationOfferRetry({
     required String capsuleHex,
     required int resultCode,
-    required String? ledgerJson,
+    required String? beforeLedgerJson,
+    required String? afterLedgerJson,
   }) async {
-    if (resultCode != 0 || ledgerJson == null || ledgerJson.isEmpty) return;
+    if (resultCode != 0 || afterLedgerJson == null || afterLedgerJson.isEmpty) {
+      return;
+    }
     await _deliveryLifecycle.enqueue(
       capsuleHex: capsuleHex,
       kind: DeliveryOutboxKind.invitationSent,
       reason: DeliveryOutboxReason.sendInvitationRetry,
-      deliveryReference: _latestInvitationSentReference(ledgerJson),
+      deliveryReference: _newOutgoingInvitationReference(
+        beforeLedgerJson: beforeLedgerJson,
+        afterLedgerJson: afterLedgerJson,
+      ),
     );
   }
 
@@ -239,24 +254,12 @@ class InvitationActionsService {
       return;
     }
 
-    final root = const LedgerViewSupport().exportLedgerRoot(ledgerJson);
-    if (root == null) return;
-    for (final raw in const LedgerViewSupport().events(root)) {
-      if (raw is! Map) continue;
-      final event = Map<String, dynamic>.from(raw);
-      final kind = const LedgerViewSupport().kindCode(event['kind']);
-      if (kind != 2 && kind != 3 && kind != 4) continue;
-
-      final signer = const LedgerViewSupport().payloadBytes(event['signer']);
-      if (signer.length != 32 || _hex32(signer) != capsuleHex) continue;
-      final payload = const LedgerViewSupport().payloadBytes(event['payload']);
-      if (payload.length < 32) continue;
-
+    for (final reference in _localTerminalDeliveryReferences(ledgerJson)) {
       await _deliveryLifecycle.ensureEnqueued(
         capsuleHex: capsuleHex,
         kind: DeliveryOutboxKind.invitationTerminal,
         reason: DeliveryOutboxReason.invitationTerminalRetry,
-        deliveryReference: _hex32(Uint8List.sublistView(payload, 0, 32)),
+        deliveryReference: reference,
       );
     }
   }
@@ -396,11 +399,12 @@ class InvitationActionsService {
                       'senderCardSignature': senderCardSignature,
                   },
                 ),
-        afterWorkerResult: (result, workerCapsuleHex) {
+        afterWorkerResult: (result, workerCapsuleHex, workerBootstrap) {
           return _enqueueInvitationOfferRetry(
             capsuleHex: workerCapsuleHex,
             resultCode: (result['result'] as int?) ?? -1,
-            ledgerJson: result['ledgerJson'] as String?,
+            beforeLedgerJson: workerBootstrap['ledgerJson'] as String?,
+            afterLedgerJson: result['ledgerJson'] as String?,
           );
         },
       );
@@ -425,29 +429,70 @@ class InvitationActionsService {
     });
   }
 
-  String? _latestInvitationSentReference(String ledgerJson) {
-    try {
-      final root = const LedgerViewSupport().exportLedgerRoot(ledgerJson);
-      if (root == null) return null;
-      final events = const LedgerViewSupport().events(root);
-      for (final raw in events.reversed) {
-        if (raw is! Map) continue;
-        final event = Map<String, dynamic>.from(raw);
-        if (const LedgerViewSupport().kindCode(event['kind']) != 1) continue;
-        final payload = const LedgerViewSupport().payloadBytes(
-          event['payload'],
-        );
-        if (payload.length < 32) return null;
-        return payload
-            .take(32)
-            .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-            .join();
-      }
-    } catch (_) {
-      return null;
-    }
-    return null;
+  String? _newOutgoingInvitationReference({
+    required String? beforeLedgerJson,
+    required String afterLedgerJson,
+  }) {
+    final before = _invitationProjection.loadDeliveryInvitations(
+      beforeLedgerJson,
+    );
+    final after = _invitationProjection.loadDeliveryInvitations(
+      afterLedgerJson,
+    );
+    if (before == null || after == null) return null;
+    final beforeIds =
+        before
+            .map(
+              (invitation) => _invitationReference(invitation['invitation_id']),
+            )
+            .toSet();
+    final added =
+        after
+            .where(
+              (invitation) =>
+                  invitation['direction'] == 'outgoing' &&
+                  invitation['status'] == 'pending' &&
+                  !beforeIds.contains(
+                    _invitationReference(invitation['invitation_id']),
+                  ),
+            )
+            .map(
+              (invitation) => _invitationReference(invitation['invitation_id']),
+            )
+            .whereType<String>()
+            .toSet();
+    return added.length == 1 ? added.single : null;
   }
+
+  List<String> _localTerminalDeliveryReferences(String ledgerJson) {
+    final invitations = _invitationProjection.loadDeliveryInvitations(
+      ledgerJson,
+    );
+    if (invitations == null) return const <String>[];
+    return invitations
+        .where((invitation) => invitation['has_local_terminal'] == true)
+        .map((invitation) => _invitationReference(invitation['invitation_id']))
+        .whereType<String>()
+        .toSet()
+        .toList(growable: false);
+  }
+
+  String? _invitationReference(Object? raw) =>
+      raw is List<int>
+          ? _hex32(Uint8List.fromList(raw))
+          : raw is List &&
+              raw.every((byte) => byte is int && byte >= 0 && byte <= 255)
+          ? _hex32(Uint8List.fromList(raw.cast<int>()))
+          : null;
+
+  @visibleForTesting
+  String? newOutgoingInvitationReferenceForTest({
+    required String? beforeLedgerJson,
+    required String afterLedgerJson,
+  }) => _newOutgoingInvitationReference(
+    beforeLedgerJson: beforeLedgerJson,
+    afterLedgerJson: afterLedgerJson,
+  );
 
   Future<InvitationWorkerResult> fetchInvitations({String? capsuleHex}) async {
     return _serialize(() async {
@@ -564,7 +609,7 @@ class InvitationActionsService {
                     'fromPubkey': fromPubkey,
                   },
                 ),
-        afterWorkerResult: (result, workerCapsuleHex) async {
+        afterWorkerResult: (result, workerCapsuleHex, _) async {
           if ((result['result'] as int?) != 0 ||
               result['ledgerJson'] is! String) {
             return;
@@ -618,7 +663,7 @@ class InvitationActionsService {
                     'reason': reason,
                   },
                 ),
-        afterWorkerResult: (result, workerCapsuleHex) async {
+        afterWorkerResult: (result, workerCapsuleHex, _) async {
           if ((result['result'] as int?) != 0 ||
               result['ledgerJson'] is! String) {
             return;
@@ -669,7 +714,7 @@ class InvitationActionsService {
                   },
                 ),
         shouldApplyLedger: (result) => result['ledgerJson'] is String,
-        afterWorkerResult: (result, workerCapsuleHex) async {
+        afterWorkerResult: (result, workerCapsuleHex, _) async {
           if ((result['result'] as int?) != 0 ||
               result['ledgerJson'] is! String) {
             return;
