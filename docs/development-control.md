@@ -102,7 +102,9 @@ consensus guard before the existing delivery owner can send or acknowledge
 anything. Chat and consensus attestation resolve invitation root-to-transport
 identity through the canonical invitation projection. Starter labels consume
 the version-matched Core Capsule projection rather than replaying
-`StarterCreated` events in Flutter.
+`StarterCreated` events in Flutter. The local invitation remediation derives exact
+offer and terminal references from that same versioned invitation projection;
+the Capsule-scoped outbox remains the sole relay-retry owner.
 
 Moltbook owns its observation, AI proposal, publication, receipt,
 reconciliation, and restart lifecycle in one capability module. New Moltbook

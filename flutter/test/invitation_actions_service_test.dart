@@ -99,49 +99,215 @@ void main() {
       },
     );
 
+    test('restores only locally owned terminal delivery obligations', () async {
+      const activeCapsule =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const ledgerJson = '{"events":[]}';
+      final acceptedIncoming = List<int>.filled(32, 17);
+      final rejectedIncoming = List<int>.filled(32, 34);
+      final expiredOutgoing = List<int>.filled(32, 51);
+      final lifecycle = _RecordingDeliveryLifecycle();
+      final service = InvitationActionsService(
+        runtime: _FakeInvitationActionsRuntime(
+          activeCapsuleHex: activeCapsule,
+          invitationViews: <String, String>{
+            ledgerJson: _invitationView(<Map<String, Object?>>[
+              _invitationRow(
+                id: acceptedIncoming,
+                direction: 'incoming',
+                status: 'accepted',
+              ),
+              _invitationRow(
+                id: rejectedIncoming,
+                direction: 'incoming',
+                status: 'rejected',
+              ),
+              _invitationRow(
+                id: expiredOutgoing,
+                direction: 'outgoing',
+                status: 'expired',
+              ),
+              _invitationRow(
+                id: List<int>.filled(32, 68),
+                direction: 'outgoing',
+                status: 'accepted',
+                respondedByLocal: false,
+              ),
+              _invitationRow(
+                id: List<int>.filled(32, 85),
+                direction: 'incoming',
+                status: 'expired',
+                respondedByLocal: false,
+              ),
+            ]),
+          },
+        ),
+        deliveryLifecycle: lifecycle,
+      );
+
+      await service.reconcileTerminalOutboxForTest(<String, Object?>{
+        'activeCapsuleHex': activeCapsule,
+        'ledgerJson': ledgerJson,
+      });
+
+      expect(lifecycle.references, <String>[
+        List<String>.filled(32, '11').join(),
+        List<String>.filled(32, '22').join(),
+        List<String>.filled(32, '33').join(),
+      ]);
+    });
+
     test(
-      'restores only locally signed terminal delivery obligations',
+      'recovers local terminal after remote revoke without UI kind',
       () async {
-        const activeCapsule =
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
         final lifecycle = _RecordingDeliveryLifecycle();
+        final row = _invitationRow(
+          id: List<int>.filled(32, 17),
+          direction: 'incoming',
+          status: 'expired',
+        )..['starter_kind'] = null;
         final service = InvitationActionsService(
           runtime: _FakeInvitationActionsRuntime(
-            activeCapsuleHex: activeCapsule,
+            activeCapsuleHex: List<String>.filled(32, 'aa').join(),
+            invitationViews: {
+              '{}': _invitationView([row]),
+            },
           ),
           deliveryLifecycle: lifecycle,
         );
-        final invitationId = List<int>.filled(32, 17);
-        final localSigner = List<int>.filled(32, 170);
-        final remoteSigner = List<int>.filled(32, 187);
-        final ledgerJson = jsonEncode(<String, Object?>{
-          'events': <Object?>[
-            <String, Object?>{
-              'kind': 'InvitationAccepted',
-              'signer': localSigner,
-              'payload': <int>[...invitationId, ...List<int>.filled(64, 0)],
-            },
-            <String, Object?>{
-              'kind': 'InvitationRejected',
-              'signer': remoteSigner,
-              'payload': <int>[
-                ...List<int>.filled(32, 34),
-                ...List<int>.filled(65, 0),
-              ],
-            },
-          ],
+        await service.reconcileTerminalOutboxForTest({
+          'activeCapsuleHex': List<String>.filled(32, 'aa').join(),
+          'ledgerJson': '{}',
         });
-
-        await service.reconcileTerminalOutboxForTest(<String, Object?>{
-          'activeCapsuleHex': activeCapsule,
-          'ledgerJson': ledgerJson,
-        });
-
-        expect(lifecycle.references, <String>[
-          List<String>.filled(32, '11').join(),
-        ]);
+        expect(lifecycle.references, [List<String>.filled(32, '11').join()]);
       },
     );
+
+    test('binds a new offer to the one added canonical invitation', () {
+      const beforeLedger = '{"ledger":"before"}';
+      const afterLedger = '{"ledger":"after"}';
+      final existingId = List<int>.filled(32, 17);
+      final addedId = List<int>.filled(32, 34);
+      final service = InvitationActionsService(
+        runtime: _FakeInvitationActionsRuntime(
+          activeCapsuleHex:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          invitationViews: <String, String>{
+            beforeLedger: _invitationView(<Map<String, Object?>>[
+              _invitationRow(
+                id: existingId,
+                direction: 'outgoing',
+                status: 'pending',
+              ),
+            ]),
+            afterLedger: _invitationView(<Map<String, Object?>>[
+              _invitationRow(
+                id: existingId,
+                direction: 'outgoing',
+                status: 'pending',
+              ),
+              _invitationRow(
+                id: addedId,
+                direction: 'outgoing',
+                status: 'pending',
+              ),
+            ]),
+          },
+        ),
+      );
+
+      expect(
+        service.newOutgoingInvitationReferenceForTest(
+          beforeLedgerJson: beforeLedger,
+          afterLedgerJson: afterLedger,
+        ),
+        List<String>.filled(32, '22').join(),
+      );
+    });
+
+    test('invalid before projection cannot make an existing offer new', () {
+      const beforeLedger = '{"ledger":"before"}';
+      const afterLedger = '{"ledger":"after"}';
+      final existing = _invitationRow(
+        id: List<int>.filled(32, 17),
+        direction: 'outgoing',
+        status: 'pending',
+      );
+      final invalidViews = <String?>[
+        null,
+        '{broken',
+        '{"schema":"wrong","version":1}',
+        _invitationView(<Map<String, Object?>>[
+          <String, Object?>{...existing, 'invitation_id': null},
+        ]),
+        _invitationView(<Map<String, Object?>>[
+          <String, Object?>{...existing, 'has_local_terminal': null},
+        ]),
+        _invitationView(<Map<String, Object?>>[existing, existing]),
+      ];
+      for (final invalidView in invalidViews) {
+        final service = InvitationActionsService(
+          runtime: _FakeInvitationActionsRuntime(
+            activeCapsuleHex: List<String>.filled(32, 'aa').join(),
+            invitationViews: <String, String>{
+              if (invalidView != null) beforeLedger: invalidView,
+              afterLedger: _invitationView(<Map<String, Object?>>[existing]),
+            },
+          ),
+        );
+        expect(
+          service.newOutgoingInvitationReferenceForTest(
+            beforeLedgerJson: beforeLedger,
+            afterLedgerJson: afterLedger,
+          ),
+          isNull,
+          reason: 'Invalid before evidence must not become an empty set',
+        );
+      }
+    });
+
+    test('rejects ambiguous or malformed canonical offer projection', () {
+      const beforeLedger = '{"ledger":"before"}';
+      const ambiguousLedger = '{"ledger":"ambiguous"}';
+      const malformedLedger = '{"ledger":"malformed"}';
+      final service = InvitationActionsService(
+        runtime: _FakeInvitationActionsRuntime(
+          activeCapsuleHex:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          invitationViews: <String, String>{
+            beforeLedger: _invitationView(const <Map<String, Object?>>[]),
+            ambiguousLedger: _invitationView(<Map<String, Object?>>[
+              _invitationRow(
+                id: List<int>.filled(32, 17),
+                direction: 'outgoing',
+                status: 'pending',
+              ),
+              _invitationRow(
+                id: List<int>.filled(32, 34),
+                direction: 'outgoing',
+                status: 'pending',
+              ),
+            ]),
+            malformedLedger: '{"schema":"wrong","version":1}',
+          },
+        ),
+      );
+
+      expect(
+        service.newOutgoingInvitationReferenceForTest(
+          beforeLedgerJson: beforeLedger,
+          afterLedgerJson: ambiguousLedger,
+        ),
+        isNull,
+      );
+      expect(
+        service.newOutgoingInvitationReferenceForTest(
+          beforeLedgerJson: beforeLedger,
+          afterLedgerJson: malformedLedger,
+        ),
+        isNull,
+      );
+    });
   });
 
   group('CapsuleWorkerQueue', () {
@@ -219,6 +385,39 @@ void main() {
   });
 }
 
+String _invitationView(List<Map<String, Object?>> invitations) {
+  return jsonEncode(<String, Object?>{
+    'schema': 'hivra.invitation_current_view',
+    'version': 1,
+    'ledger_version': invitations.length,
+    'invitations': invitations,
+  });
+}
+
+Map<String, Object?> _invitationRow({
+  required List<int> id,
+  required String direction,
+  required String status,
+  bool respondedByLocal = true,
+}) {
+  return <String, Object?>{
+    'invitation_id': id,
+    'starter_id': List<int>.filled(32, 1),
+    'direction': direction,
+    'from_pubkey': List<int>.filled(32, 2),
+    'from_root_pubkey': null,
+    'from_card_signature': null,
+    'to_pubkey': direction == 'outgoing' ? List<int>.filled(32, 3) : null,
+    'starter_kind': 0,
+    'starter_slot': direction == 'outgoing' ? 0 : null,
+    'status': status,
+    'sent_at': 1,
+    'responded_at': status == 'pending' ? null : 2,
+    'has_local_terminal': status != 'pending' && respondedByLocal,
+    'rejection_reason': status == 'rejected' ? 'other' : null,
+  };
+}
+
 class _RecordingDeliveryLifecycle extends CapsuleDeliveryLifecycleService {
   final List<String> references = <String>[];
 
@@ -244,10 +443,12 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
   _FakeInvitationActionsRuntime({
     required this.activeCapsuleHex,
     this.workerBootstrap,
+    this.invitationViews = const <String, String>{},
   });
 
   final String? activeCapsuleHex;
   final Map<String, Object?>? workerBootstrap;
+  final Map<String, String> invitationViews;
   final Map<String, String> persistedLedgers = <String, String>{};
   final Map<String, String> persistedStates = <String, String>{};
   final List<String> appliedLedgers = <String>[];
@@ -287,6 +488,11 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
     if (capsuleStateJson != null) {
       persistedStates[pubKeyHex] = capsuleStateJson;
     }
+  }
+
+  @override
+  String? projectInvitationCurrentViewV1(String ledgerJson) {
+    return invitationViews[ledgerJson];
   }
 
   @override

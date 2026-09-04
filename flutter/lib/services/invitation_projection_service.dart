@@ -13,26 +13,62 @@ class InvitationProjectionService {
 
   const InvitationProjectionService(this._projectCurrentView);
 
-  List<Invitation> loadInvitations(Map<String, dynamic> ledgerRoot) {
-    final projected = _projectCurrentView(jsonEncode(ledgerRoot));
+  List<dynamic>? _projectRows(String ledgerJson) {
+    final projected = _projectCurrentView(ledgerJson);
     if (projected == null || projected.trim().isEmpty) {
-      return <Invitation>[];
+      return null;
     }
 
     final dynamic decoded;
     try {
       decoded = jsonDecode(projected);
     } on FormatException {
-      return <Invitation>[];
+      return null;
     }
     if (decoded is! Map<String, dynamic> ||
         decoded['schema'] != 'hivra.invitation_current_view' ||
         decoded['version'] != 1) {
-      return <Invitation>[];
+      return null;
     }
     final rows = decoded['invitations'];
-    if (rows is! List) return <Invitation>[];
+    if (rows is! List) return null;
 
+    return rows;
+  }
+
+  List<Map<String, dynamic>>? loadDeliveryInvitations(String? ledgerJson) {
+    if (ledgerJson == null || ledgerJson.trim().isEmpty) return null;
+    try {
+      final rows = _projectRows(ledgerJson);
+      if (rows == null) return null;
+      final result = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      for (final raw in rows) {
+        if (raw is! Map<String, dynamic>) return null;
+        final id = _bytes(raw['invitation_id'], 32);
+        if (id == null ||
+            !seen.add(base64.encode(id)) ||
+            !const ['incoming', 'outgoing'].contains(raw['direction']) ||
+            !const [
+              'pending',
+              'accepted',
+              'rejected',
+              'expired',
+            ].contains(raw['status']) ||
+            raw['has_local_terminal'] is! bool) {
+          return null;
+        }
+        result.add(raw);
+      }
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<Invitation> loadInvitations(Map<String, dynamic> ledgerRoot) {
+    final rows = _projectRows(jsonEncode(ledgerRoot));
+    if (rows == null) return <Invitation>[];
     final invitations = <Invitation>[];
     for (final raw in rows) {
       if (raw is! Map) continue;
@@ -96,7 +132,7 @@ class InvitationProjectionService {
     if (raw is! List || raw.length != length) return null;
     final result = <int>[];
     for (final value in raw) {
-      if (value is! num || value < 0 || value > 255) return null;
+      if (value is! int || value < 0 || value > 255) return null;
       result.add(value.toInt());
     }
     return result;

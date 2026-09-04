@@ -1528,6 +1528,9 @@ class _NoopInvitationActionsRuntime implements InvitationActionsRuntime {
   }) async {}
 
   @override
+  String? projectInvitationCurrentViewV1(String ledgerJson) => null;
+
+  @override
   Future<bool> persistLedgerSnapshot() async => true;
 
   @override
