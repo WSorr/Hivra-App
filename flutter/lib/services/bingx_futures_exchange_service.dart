@@ -13,6 +13,7 @@ typedef BingxHttpRequestSender =
 
 class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   static const Duration _httpTimeout = Duration(seconds: 12);
+  static const int _maximumConnectionsPerHost = 8;
   static final HttpClient _defaultHttpClient = _createDefaultHttpClient();
   static const String _defaultBaseUrl = 'https://open-api.bingx.com';
   static const String _publicPricePath = '/openApi/swap/v2/quote/price';
@@ -2229,7 +2230,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     final client = HttpClient();
     client.connectionTimeout = _httpTimeout;
     client.idleTimeout = const Duration(seconds: 30);
-    client.maxConnectionsPerHost = 1;
+    client.maxConnectionsPerHost = _maximumConnectionsPerHost;
     return client;
   }
 

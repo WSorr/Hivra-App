@@ -976,6 +976,10 @@ restart between those writes reconciles the exact result without repeating the
 provider call. Blocked evaluations consume a cycle but not an effect. Any
 provider attempt consumes an effect; unresolved or terminal failure stops the
 session. Reaching the signed cycle, effect, or expiry bound is terminal.
+Session deployment and activation do not require a currently executable zone.
+The Runner remains active across bounded blocked cycles and waits for a later
+fresh zone; only a cycle that passes the canonical market, freshness,
+account-risk, and mandate checks may reach the existing effect owner.
 
 Interrupted delivery has one separate recovery-only entry point. It requires
 the retained signed session, exact runner identity, existing session journal,

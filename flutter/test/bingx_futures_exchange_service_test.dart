@@ -81,6 +81,52 @@ void main() {
       expect(remotePorts.toSet(), hasLength(1));
     });
 
+    test(
+      'a stalled request does not starve an independent request',
+      () async {
+        final firstRequestSeen = Completer<void>();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        var requests = 0;
+        server.listen((request) async {
+          requests += 1;
+          if (requests == 1) {
+            firstRequestSeen.complete();
+            try {
+              await request.response.done;
+            } on HttpException {
+              return;
+            }
+            return;
+          }
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            '{"code":0,"msg":"ok","data":{"price":"100.5",'
+            '"time":1710000399000}}',
+          );
+          await request.response.close();
+        });
+        addTearDown(() => server.close(force: true));
+
+        final service = BingxFuturesExchangeService(
+          baseUrl:
+              'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        );
+        final stalled = service.getPublicPrice(symbol: 'BTC-USDT');
+        await firstRequestSeen.future;
+
+        final elapsed = Stopwatch()..start();
+        final independent = await service
+            .getPublicPrice(symbol: 'ETH-USDT')
+            .timeout(const Duration(seconds: 3));
+
+        expect(independent.isSuccess, isTrue);
+        expect(elapsed.elapsed, lessThan(const Duration(seconds: 3)));
+        await expectLater(stalled, throwsA(isA<TimeoutException>()));
+        expect(requests, 2);
+      },
+      timeout: const Timeout(Duration(seconds: 20)),
+    );
+
     test('rejects credentials with non-header-safe characters', () {
       expect(
         () =>
