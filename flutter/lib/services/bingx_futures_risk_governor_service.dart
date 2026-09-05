@@ -7,15 +7,31 @@ import '../models/bingx_futures_risk_models.dart';
 class BingxFuturesRiskGovernorService {
   const BingxFuturesRiskGovernorService();
 
+  double? nominalStopLossLimitPercent({
+    required int? longLeverage,
+    required int? shortLeverage,
+  }) {
+    if (longLeverage == null ||
+        shortLeverage == null ||
+        longLeverage <= 0 ||
+        shortLeverage <= 0) {
+      return null;
+    }
+    final highestLeverage =
+        longLeverage > shortLeverage ? longLeverage : shortLeverage;
+    return 100 / highestLeverage;
+  }
+
   static String exposureMessage(String code) => switch (code) {
     'risk_stop_outside_leverage_buffer' =>
       'The stop loss exceeds the nominal margin buffer at the exchange leverage. '
-      'Review leverage and the stop before preparing another order.',
+          'Review leverage and the stop before preparing another order.',
     'risk_available_margin_insufficient' =>
       'Available exchange margin does not cover the estimated initial margin. '
-      'Review the position size and free funds.',
-    _ => 'Exchange leverage, margin mode or available funds could not be verified. '
-      'Refresh account data before preparing another order.',
+          'Review the position size and free funds.',
+    _ =>
+      'Exchange leverage, margin mode or available funds could not be verified. '
+          'Refresh account data before preparing another order.',
   };
 
   static String? exposureBlocker({

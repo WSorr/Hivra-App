@@ -1,5 +1,27 @@
 part of 'trading_drone_screen.dart';
 
+@visibleForTesting
+String? tradingRemoteSessionStopLossNotice({
+  required double stopLossPercent,
+  required bool leverageVerified,
+  required int? longLeverage,
+  required int? shortLeverage,
+  required double? nominalStopLossLimitPercent,
+}) {
+  if (!leverageVerified || nominalStopLossLimitPercent == null) {
+    return 'BingX leverage could not be verified. Refresh account access before authorizing the VPS session.';
+  }
+  if (!stopLossPercent.isFinite ||
+      stopLossPercent <= 0 ||
+      stopLossPercent >= nominalStopLossLimitPercent) {
+    return 'SL ${stopLossPercent.toStringAsFixed(1)}% is incompatible with '
+        'BingX leverage (long ${longLeverage}x, '
+        'short ${shortLeverage}x). Choose SL below '
+        '${nominalStopLossLimitPercent.toStringAsFixed(2)}% or reduce exchange leverage.';
+  }
+  return null;
+}
+
 extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   Future<bool> _restoreRemoteCompletedEffects() async {
     try {
@@ -154,6 +176,33 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       await _showSnack('Save BingX Futures credentials first.');
       return;
     }
+    final leverage = await _module.exchangeService.getLeverage(
+      credentials: credentials,
+      symbol: mandate.symbol,
+    );
+    final nominalStopLossLimitPercent = _module.riskGovernor
+        .nominalStopLossLimitPercent(
+          longLeverage: leverage.longLeverage,
+          shortLeverage: leverage.shortLeverage,
+        );
+    final leverageNotice = tradingRemoteSessionStopLossNotice(
+      stopLossPercent: _stopLossPercent,
+      leverageVerified: leverage.isSuccess,
+      longLeverage: leverage.longLeverage,
+      shortLeverage: leverage.shortLeverage,
+      nominalStopLossLimitPercent: nominalStopLossLimitPercent,
+    );
+    if (leverageNotice != null) {
+      await _module.uiLog.log(
+        'bingx.remote_session.leverage_blocked',
+        'symbol=${mandate.symbol} '
+            'sl_pct=${_stopLossPercent.toStringAsFixed(2)} '
+            'long_leverage=${leverage.longLeverage ?? "-"} '
+            'short_leverage=${leverage.shortLeverage ?? "-"} effect=false',
+      );
+      await _showSnack(leverageNotice, seconds: 6);
+      return;
+    }
     final accountBindingHashHex = _module.accountBindingHashHex(credentials);
     final runner = await _selectRemoteRunner(
       mandate,
@@ -191,6 +240,9 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
               'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
               'Maximum checks: $maxCycles\n'
               'Maximum exchange effects: ${mandate.maxEffects}\n'
+              'Exchange leverage: long ${leverage.longLeverage}x, '
+              'short ${leverage.shortLeverage}x\n'
+              'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}%\n'
               'Authorized reads: balance, positions, realized PnL, and '
               '${mandate.symbol} leverage and margin mode.\n'
               'Expires: ${mandate.expiresAtUtc}\n\n'
@@ -721,7 +773,8 @@ String tradingRemoteRunnerStatusLabel(String raw) {
   };
   if (process == null) return unknown;
   final startup = switch (fields['enabled']) {
-    'enabled' => 'WARNING: autostart enabled — a VPS reboot may start the Runner.',
+    'enabled' =>
+      'WARNING: autostart enabled — a VPS reboot may start the Runner.',
     'enabled-runtime' => 'WARNING: runtime startup activation is enabled.',
     'linked' || 'linked-runtime' || 'disabled' => 'Autostart: not enabled.',
     'masked' || 'masked-runtime' => 'Startup blocked: service masked.',

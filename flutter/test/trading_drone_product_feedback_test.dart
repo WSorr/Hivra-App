@@ -7,69 +7,113 @@ import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
-  test('reconciliation feedback is scoped and distinguishes tests from effects', () {
-    final state = BingxFuturesOrderTrackingState(
-      trackedSymbol: null,
-      trackedOrderId: null,
-      managedOrderIds: const [],
-      managedOrderSymbols: const {},
-      stopLossPercent: null,
-      takeProfitRiskReward: null,
-      liquidityEventEffectClaims: {
-        for (final testOrder in [false, true])
-          '$testOrder': BingxLiquidityEventEffectClaim(
-            liquidityEventId: '$testOrder',
-            clientOrderId: testOrder ? 'test-client' : 'live-client',
-            orderId: null,
-            symbol: 'DOGE-USDT',
-            side: 'buy',
-            testOrder: testOrder,
-            status: BingxLiquidityEventEffectClaimStatus.confirmed,
-            lifecycleDiagnostic: 'provider_status_unknown:FAILED',
-            recordedAtUtc: '2026-09-05T00:00:00Z',
-          ),
-      },
+  test('remote session rejects an SL outside current leverage buffer', () {
+    expect(
+      tradingRemoteSessionStopLossNotice(
+        stopLossPercent: 5,
+        leverageVerified: true,
+        longLeverage: 20,
+        shortLeverage: 20,
+        nominalStopLossLimitPercent: 5,
+      ),
+      contains('Choose SL below 5.00%'),
     );
-    final result = BingxFuturesManagedOrderReconciliationResult(
-      status: BingxFuturesManagedOrderReconciliationStatus.reconciled,
-      capsuleRootHex: 'capsule-a',
-      state: state,
-      activeCount: 0,
-      terminalCount: 7,
-      unresolvedCount: 1,
-      diagnostics: const [],
+    expect(
+      tradingRemoteSessionStopLossNotice(
+        stopLossPercent: 4,
+        leverageVerified: true,
+        longLeverage: 20,
+        shortLeverage: 20,
+        nominalStopLossLimitPercent: 5,
+      ),
+      isNull,
     );
-    final notice = tradingReconciliationNotice(result, 'capsule-a')!;
-    expect(notice, contains('Completed 7 · Needs review 1'));
-    expect(notice, contains('not necessarily filled'));
-    expect(notice, contains('DOGE-USDT · live-client'));
-    expect(notice, contains('BingX reports FAILED; final outcome unverified'));
-    expect(notice, contains('Do not recreate'));
-    expect(notice, contains('Test records are retained separately'));
-    expect(notice, isNot(contains('test-client')));
-    expect(tradingReconciliationNotice(result, 'capsule-b'), isNull);
-    expect(tradingReconciliationNotice(result, null), isNull);
-    expect(tradingReconciliationNotice(null, 'capsule-a'), isNull);
   });
 
+  test(
+    'reconciliation feedback is scoped and distinguishes tests from effects',
+    () {
+      final state = BingxFuturesOrderTrackingState(
+        trackedSymbol: null,
+        trackedOrderId: null,
+        managedOrderIds: const [],
+        managedOrderSymbols: const {},
+        stopLossPercent: null,
+        takeProfitRiskReward: null,
+        liquidityEventEffectClaims: {
+          for (final testOrder in [false, true])
+            '$testOrder': BingxLiquidityEventEffectClaim(
+              liquidityEventId: '$testOrder',
+              clientOrderId: testOrder ? 'test-client' : 'live-client',
+              orderId: null,
+              symbol: 'DOGE-USDT',
+              side: 'buy',
+              testOrder: testOrder,
+              status: BingxLiquidityEventEffectClaimStatus.confirmed,
+              lifecycleDiagnostic: 'provider_status_unknown:FAILED',
+              recordedAtUtc: '2026-09-05T00:00:00Z',
+            ),
+        },
+      );
+      final result = BingxFuturesManagedOrderReconciliationResult(
+        status: BingxFuturesManagedOrderReconciliationStatus.reconciled,
+        capsuleRootHex: 'capsule-a',
+        state: state,
+        activeCount: 0,
+        terminalCount: 7,
+        unresolvedCount: 1,
+        diagnostics: const [],
+      );
+      final notice = tradingReconciliationNotice(result, 'capsule-a')!;
+      expect(notice, contains('Completed 7 · Needs review 1'));
+      expect(notice, contains('not necessarily filled'));
+      expect(notice, contains('DOGE-USDT · live-client'));
+      expect(
+        notice,
+        contains('BingX reports FAILED; final outcome unverified'),
+      );
+      expect(notice, contains('Do not recreate'));
+      expect(notice, contains('Test records are retained separately'));
+      expect(notice, isNot(contains('test-client')));
+      expect(tradingReconciliationNotice(result, 'capsule-b'), isNull);
+      expect(tradingReconciliationNotice(result, null), isNull);
+      expect(tradingReconciliationNotice(null, 'capsule-a'), isNull);
+    },
+  );
+
   test('paused process does not imply disabled startup', () {
-    for (final details in ['', ' session_state=active cycles=0 effects=0 '
-      'last_scheduled_check=none next_check=2026-09-05T02:00:00Z last_outcome=none']) {
-      final enabled = tradingRemoteRunnerStatusLabel('active=inactive enabled=enabled$details');
+    for (final details in [
+      '',
+      ' session_state=active cycles=0 effects=0 '
+          'last_scheduled_check=none next_check=2026-09-05T02:00:00Z last_outcome=none',
+    ]) {
+      final enabled = tradingRemoteRunnerStatusLabel(
+        'active=inactive enabled=enabled$details',
+      );
       expect(enabled, contains('Runner paused'));
       expect(enabled, contains('WARNING: autostart enabled'));
       expect(enabled, isNot(contains('Autostart: not enabled')));
       for (final state in ['linked', 'disabled']) {
-        expect(tradingRemoteRunnerStatusLabel('active=inactive enabled=$state$details'),
-          contains('Autostart: not enabled'));
+        expect(
+          tradingRemoteRunnerStatusLabel(
+            'active=inactive enabled=$state$details',
+          ),
+          contains('Autostart: not enabled'),
+        );
       }
       for (final value in ['', ' enabled=unexpected']) {
-        expect(tradingRemoteRunnerStatusLabel('active=inactive$value$details'),
-          contains('pause persistence is not verified'));
+        expect(
+          tradingRemoteRunnerStatusLabel('active=inactive$value$details'),
+          contains('pause persistence is not verified'),
+        );
       }
     }
-    expect(tradingRemoteRunnerStatusLabel('active=inactive enabled=enabled enabled=disabled'),
-      contains('Runner status unknown'));
+    expect(
+      tradingRemoteRunnerStatusLabel(
+        'active=inactive enabled=enabled enabled=disabled',
+      ),
+      contains('Runner status unknown'),
+    );
   });
   test('remote status reports retained outcomes, not process success', () {
     const wire =

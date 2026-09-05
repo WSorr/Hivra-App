@@ -33,8 +33,10 @@ String? tradingReconciliationNotice(
   BingxFuturesManagedOrderReconciliationResult? result,
   String? activeCapsuleRootHex,
 ) {
-  if (result == null || activeCapsuleRootHex == null ||
-      result.capsuleRootHex != activeCapsuleRootHex || result.state == null) {
+  if (result == null ||
+      activeCapsuleRootHex == null ||
+      result.capsuleRootHex != activeCapsuleRootHex ||
+      result.state == null) {
     return null;
   }
   final state = result.state!;
@@ -45,13 +47,18 @@ String? tradingReconciliationNotice(
     }
     return diagnostic ?? 'Evidence unavailable';
   }
+
   final unresolved = <String, String>{
     for (final record in state.managedOrderProvenance.values)
-      if (!record.testOrder && record.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
-        record.orderId: '${record.symbol} · ${record.orderId} · ${reason(record.lifecycleDiagnostic)}',
+      if (!record.testOrder &&
+          record.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+        record.orderId:
+            '${record.symbol} · ${record.orderId} · ${reason(record.lifecycleDiagnostic)}',
     for (final claim in state.liquidityEventEffectClaims.values)
-      if (!claim.testOrder && claim.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
-        claim.orderId ?? claim.clientOrderId: '${claim.symbol} · ${claim.orderId ?? claim.clientOrderId} · ${reason(claim.lifecycleDiagnostic)}',
+      if (!claim.testOrder &&
+          claim.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+        claim.orderId ?? claim.clientOrderId:
+            '${claim.symbol} · ${claim.orderId ?? claim.clientOrderId} · ${reason(claim.lifecycleDiagnostic)}',
   };
   return <String>[
     'Last reconciliation · Active ${result.activeCount} · Completed ${result.terminalCount} · Needs review ${result.unresolvedCount}',
@@ -429,6 +436,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const double _zoneFarBps = 35.0;
   static const double _defaultStopLossPercent = 10.0;
   static const List<double> _stopLossPercentOptions = <double>[
+    1.0,
+    2.0,
+    3.0,
+    4.0,
     5.0,
     7.0,
     10.0,

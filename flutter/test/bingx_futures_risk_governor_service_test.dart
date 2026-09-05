@@ -3,13 +3,34 @@ import 'package:hivra_app/models/bingx_futures_risk_models.dart';
 import 'package:hivra_app/services/bingx_futures_risk_governor_service.dart';
 
 void main() {
+  test('remote stop limit uses the tighter directional leverage buffer', () {
+    const service = BingxFuturesRiskGovernorService();
+    expect(
+      service.nominalStopLossLimitPercent(longLeverage: 20, shortLeverage: 25),
+      4,
+    );
+    expect(
+      service.nominalStopLossLimitPercent(
+        longLeverage: null,
+        shortLeverage: 20,
+      ),
+      isNull,
+    );
+  });
+
   test('exposure admission rejects unknowns and nominal boundary equality', () {
-    String? check({int? leverage = 2, String? margin = 'ISOLATED',
-      String? available = '100', num loss = 0.5}) =>
-        BingxFuturesRiskGovernorService.exposureBlocker(
-          notional: 10, lossAtStop: loss, openingLeverage: leverage,
-          marginType: margin, availableMarginQuoteDecimal: available,
-        );
+    String? check({
+      int? leverage = 2,
+      String? margin = 'ISOLATED',
+      String? available = '100',
+      num loss = 0.5,
+    }) => BingxFuturesRiskGovernorService.exposureBlocker(
+      notional: 10,
+      lossAtStop: loss,
+      openingLeverage: leverage,
+      marginType: margin,
+      availableMarginQuoteDecimal: available,
+    );
     expect(check(), isNull);
     expect(check(leverage: 60), 'risk_stop_outside_leverage_buffer');
     expect(check(loss: 5), 'risk_stop_outside_leverage_buffer');
@@ -33,10 +54,7 @@ void main() {
     );
 
     test('allows request when all gates pass', () {
-      final decision = service.evaluate(
-        input: _input(),
-        policy: policy,
-      );
+      final decision = service.evaluate(input: _input(), policy: policy);
 
       expect(decision.status, BingxFuturesRiskDecisionStatus.allowed);
       expect(decision.reasonCode, 'risk_allowed');
@@ -148,14 +166,8 @@ void main() {
     });
 
     test('is deterministic for identical inputs', () {
-      final first = service.evaluate(
-        input: _input(),
-        policy: policy,
-      );
-      final second = service.evaluate(
-        input: _input(),
-        policy: policy,
-      );
+      final first = service.evaluate(input: _input(), policy: policy);
+      final second = service.evaluate(input: _input(), policy: policy);
 
       expect(first.status, second.status);
       expect(first.reasonCode, second.reasonCode);
