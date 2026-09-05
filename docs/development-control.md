@@ -4,13 +4,14 @@ Status date: 2026-09-05
 
 ## Current State
 
-- Current bounded follow-up: managed-order reconciliation excludes retained
-  test evidence from live lifecycle counts. Observed provider `FAILED` remains
-  unresolved pending endpoint-specific terminal evidence; no new order,
-  cancellation, VPS activation, or release is authorized by this follow-up.
-  The existing order workspace now presents Capsule-scoped reconciliation
-  evidence and distinguishes terminal outcomes from fills. Packaged acceptance
-  of this follow-up remains pending.
+- Managed-order reconciliation feedback is merged at `573c5fd`; macOS packaged
+  smoke passed on `8179c7c`. Test records are excluded from live counts; two
+  observed `FAILED` outcomes remain unresolved. Android acceptance is unverified.
+- Current bounded follow-up: one total BingX HTTP deadline with request/body
+  cleanup and timeout/restart regression evidence, plus retained-session
+  admission independent of next-cycle eligibility. Active-session replacement
+  remains refused. Full Trading acceptance is pending. Password entry, trading
+  effects, VPS activation and release remain outside this unit.
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
   artifacts have manual signoff.

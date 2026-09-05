@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,52 @@ import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 
 void main() {
   group('BingxFuturesExchangeService', () {
+    for (final stallHeaders in [true, false]) {
+      test(
+        'total HTTP deadline releases connection (headers=$stallHeaders)',
+        () async {
+          final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+          var requests = 0;
+          server.listen((request) async {
+            requests += 1;
+            try {
+              if (requests == 1) {
+                if (stallHeaders) return;
+                await Future<void>.delayed(const Duration(seconds: 7));
+                request.response.write('{"code":0,');
+                await request.response.flush();
+                await Future<void>.delayed(const Duration(seconds: 7));
+                request.response.write('"data":{"price":"100.5"}}');
+              } else {
+                request.response.write('{"code":0,"data":{"price":"100.5"}}');
+              }
+              await request.response.close();
+            } on HttpException {
+              return;
+            } on SocketException {
+              return;
+            }
+          });
+          addTearDown(() => server.close(force: true));
+          final service = BingxFuturesExchangeService(
+            baseUrl: 'http://${server.address.address}:${server.port}',
+          );
+          final elapsed = Stopwatch()..start();
+          await expectLater(
+            service.getPublicPrice(symbol: 'BTC-USDT'),
+            throwsA(isA<TimeoutException>()),
+          );
+          expect(elapsed.elapsed, lessThan(const Duration(seconds: 14)));
+          final recovered = await service
+              .getPublicPrice(symbol: 'BTC-USDT')
+              .timeout(const Duration(seconds: 3));
+          expect(recovered.isSuccess, isTrue);
+          expect(requests, 2);
+        },
+        timeout: const Timeout(Duration(seconds: 40)),
+      );
+    }
+
     test('reuses one bounded default HTTP session per provider host', () async {
       final remotePorts = <int>[];
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -33,6 +80,52 @@ void main() {
       expect(remotePorts, hasLength(2));
       expect(remotePorts.toSet(), hasLength(1));
     });
+
+    test(
+      'a stalled request does not starve an independent request',
+      () async {
+        final firstRequestSeen = Completer<void>();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        var requests = 0;
+        server.listen((request) async {
+          requests += 1;
+          if (requests == 1) {
+            firstRequestSeen.complete();
+            try {
+              await request.response.done;
+            } on HttpException {
+              return;
+            }
+            return;
+          }
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            '{"code":0,"msg":"ok","data":{"price":"100.5",'
+            '"time":1710000399000}}',
+          );
+          await request.response.close();
+        });
+        addTearDown(() => server.close(force: true));
+
+        final service = BingxFuturesExchangeService(
+          baseUrl:
+              'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        );
+        final stalled = service.getPublicPrice(symbol: 'BTC-USDT');
+        await firstRequestSeen.future;
+
+        final elapsed = Stopwatch()..start();
+        final independent = await service
+            .getPublicPrice(symbol: 'ETH-USDT')
+            .timeout(const Duration(seconds: 3));
+
+        expect(independent.isSuccess, isTrue);
+        expect(elapsed.elapsed, lessThan(const Duration(seconds: 3)));
+        await expectLater(stalled, throwsA(isA<TimeoutException>()));
+        expect(requests, 2);
+      },
+      timeout: const Timeout(Duration(seconds: 20)),
+    );
 
     test('rejects credentials with non-header-safe characters', () {
       expect(

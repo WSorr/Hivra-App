@@ -345,6 +345,12 @@ order authority or exchange path.
 After restart or reconnect, managed-order reconciliation MUST remain read-only
 and Capsule-scoped. The existing exchange execution use case owns the decision:
 
+The default BingX HTTP sender uses one 12-second deadline for connection,
+response headers and the complete body together. Expiry aborts an unfinished
+request or cancels body consumption, without closing unrelated pooled requests.
+A late connection must not send an expired request. This network deadline does
+not include credential unlock and does not prove an exchange effect failed.
+
 - current open-orders evidence may confirm only an exact locally persisted
   managed `orderId`;
 - an absent managed order MUST be queried through the exact provider order
@@ -970,6 +976,10 @@ restart between those writes reconciles the exact result without repeating the
 provider call. Blocked evaluations consume a cycle but not an effect. Any
 provider attempt consumes an effect; unresolved or terminal failure stops the
 session. Reaching the signed cycle, effect, or expiry bound is terminal.
+Session deployment and activation do not require a currently executable zone.
+The Runner remains active across bounded blocked cycles and waits for a later
+fresh zone; only a cycle that passes the canonical market, freshness,
+account-risk, and mandate checks may reach the existing effect owner.
 
 Interrupted delivery has one separate recovery-only entry point. It requires
 the retained signed session, exact runner identity, existing session journal,
