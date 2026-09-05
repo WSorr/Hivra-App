@@ -635,17 +635,29 @@ class BingxFuturesExchangeExecutionUseCaseService {
           diagnostic: 'provider_evidence_missing',
         );
       }
-      if ((normalizedOrderId.isNotEmpty &&
-              order.orderId != normalizedOrderId) ||
-          order.symbol.trim().toUpperCase() != symbol.trim().toUpperCase() ||
-          order.side.trim().toLowerCase() != side.trim().toLowerCase() ||
-          (normalizedOrderId.isEmpty &&
-              order.clientOrderId?.trim().toLowerCase() !=
-                  normalizedClientOrderId.toLowerCase())) {
+      final observedClientOrderId =
+          order.clientOrderId?.trim().toLowerCase() ?? '';
+      final expectedClientOrderId = normalizedClientOrderId.toLowerCase();
+      final clientOrderIdMatches =
+          expectedClientOrderId.isNotEmpty &&
+          observedClientOrderId == expectedClientOrderId;
+      final identityMismatch =
+          normalizedOrderId.isNotEmpty &&
+                  order.orderId != normalizedOrderId &&
+                  !clientOrderIdMatches
+              ? 'order_id'
+              : order.symbol.trim().toUpperCase() != symbol.trim().toUpperCase()
+              ? 'symbol'
+              : order.side.trim().toLowerCase() != side.trim().toLowerCase()
+              ? 'side'
+              : normalizedOrderId.isEmpty && !clientOrderIdMatches
+              ? 'client_order_id'
+              : null;
+      if (identityMismatch != null) {
         return (
           status: BingxManagedOrderLifecycleStatus.unresolved,
           order: order,
-          diagnostic: 'provider_evidence_identity_mismatch',
+          diagnostic: 'provider_evidence_identity_mismatch:$identityMismatch',
         );
       }
       final lifecycle = switch (order.status.trim().toUpperCase()) {
