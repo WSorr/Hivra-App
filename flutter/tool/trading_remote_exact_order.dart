@@ -318,30 +318,50 @@ Future<String> runAuthorizedExactOrder({
   final accountBinding = context.accountBinding;
   final effects = context.effects;
   ExternalEffectOperation? existing;
+  ExternalEffectOperation? semanticClaim;
   for (final operation in await effects.list(
     pluginId: bingxFuturesTradingPluginId,
   )) {
     if (operation.operationId == effectOperationId) {
       existing = operation;
-      break;
+      continue;
     }
+    if (_claimsSameExactOrder(
+      operation: operation,
+      normalizedOrder: normalizedOrder,
+      accountBinding: accountBinding,
+    )) {
+      semanticClaim = operation;
+    }
+  }
+  if (existing == null && semanticClaim != null) {
+    return _blockedDeterministicCycleEvidence(
+      effectOperationId,
+      'liquidity_event_already_claimed',
+    );
   }
   if (existing == null && !admission.mandate.isActiveAt(now().toUtc())) {
     throw const FormatException('exact order authority is not active');
   }
   if (existing == null ||
-      {ExternalEffectState.prepared, ExternalEffectState.approved,
-       ExternalEffectState.queued}.contains(existing.state)) {
+      {
+        ExternalEffectState.prepared,
+        ExternalEffectState.approved,
+        ExternalEffectState.queued,
+      }.contains(existing.state)) {
     if (jsonEncode(admission.strategyPolicy?['account_read_scope']) !=
         jsonEncode(BingxFuturesRemoteMandateAdmission.exposureReadScope)) {
       throw const FormatException('exposure_read_authority_missing');
     }
     if (!admission.mandate.isActiveAt(now().toUtc())) {
-      throw const FormatException('exact order authority expired before exposure');
+      throw const FormatException(
+        'exact order authority expired before exposure',
+      );
     }
     final exposure = await const BingxFuturesExchangeRiskInputService().read(
       exchangeService: BingxFuturesExchangeService(
-        requestSender: requestSender, clockMs: clockMs,
+        requestSender: requestSender,
+        clockMs: clockMs,
       ),
       riskHistoryService: BingxFuturesRiskHistoryService(
         readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
@@ -360,8 +380,10 @@ Future<String> runAuthorizedExactOrder({
     final blocker = BingxFuturesRiskGovernorService.exposureBlocker(
       notional: quantity * entry,
       lossAtStop: stop == null ? double.nan : quantity * (entry - stop).abs(),
-      openingLeverage: payload.side == 'buy'
-          ? exposure.longLeverage : exposure.shortLeverage,
+      openingLeverage:
+          payload.side == 'buy'
+              ? exposure.longLeverage
+              : exposure.shortLeverage,
       marginType: exposure.marginType,
       availableMarginQuoteDecimal: exposure.availableMarginQuoteDecimal,
     );
@@ -406,6 +428,38 @@ Future<String> runAuthorizedExactOrder({
   );
   return _exactOrderEvidence(operation, admission.mandate.testOrder);
 }
+
+bool _claimsSameExactOrder({
+  required ExternalEffectOperation operation,
+  required Map<String, dynamic> normalizedOrder,
+  required String accountBinding,
+}) {
+  if (operation.providerId != BingxFuturesExternalEffectAdapter.providerId ||
+      operation.accountBindingId != accountBinding ||
+      operation.effectKind !=
+          BingxFuturesExternalEffectAdapter.exactOrderEffectKind) {
+    return false;
+  }
+  final decoded = jsonDecode(operation.canonicalPayloadJson);
+  if (decoded is! Map<String, dynamic> || decoded['test_order'] is! bool) {
+    throw const FormatException('retained exact order payload is invalid');
+  }
+  final retained = BingxFuturesIntentPayload.fromPluginResult(decoded);
+  final candidate = BingxFuturesIntentPayload.fromPluginResult(normalizedOrder);
+  return retained.clientOrderId == candidate.clientOrderId &&
+      decoded['test_order'] == normalizedOrder['test_order'];
+}
+
+String _blockedDeterministicCycleEvidence(
+  String operationId,
+  String reasonCode,
+) => jsonEncode(<String, dynamic>{
+  'contract_version': 'hivra-trading-deterministic-cycle-evidence-v1',
+  'operation_id': operationId,
+  'state': 'blocked',
+  'reason_code': reasonCode,
+  'effect': false,
+});
 
 Future<String> reconcileAuthorizedExactOrder({
   required BingxFuturesRemoteMandateAdmission admission,
