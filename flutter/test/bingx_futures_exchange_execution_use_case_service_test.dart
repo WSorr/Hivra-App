@@ -1222,6 +1222,101 @@ void main() {
     );
 
     test(
+      'terminal evidence preserves effect identity across provider order id replacement',
+      () async {
+        final store = _trackingStore(tempHome);
+        final binding =
+            BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+              _credentials,
+            );
+        await store.save(
+          _trackingState(
+            orderId: 'managed-trigger',
+            accountBindingHashHex: binding,
+          ),
+        );
+        final exchange = BingxFuturesExchangeService(
+          requestSender:
+              (_) async => const BingxHttpResponse(
+                statusCode: 200,
+                body:
+                    '{"code":0,"msg":"ok","data":{"orderID":"provider-terminal","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED"}}',
+              ),
+        );
+
+        final result = await _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
+
+        expect(result.terminalCount, 1);
+        expect(result.unresolvedCount, 0);
+        expect(result.state!.managedOrderIds, isEmpty);
+        expect(
+          result
+              .state!
+              .managedOrderProvenance['managed-trigger']!
+              .lifecycleStatus,
+          BingxManagedOrderLifecycleStatus.filled,
+        );
+        expect(
+          result.state!.managedOrderProvenance,
+          isNot(contains('provider-terminal')),
+        );
+      },
+    );
+
+    for (final mismatch
+        in <String, String>{
+          'order_id':
+              '{"orderID":"other-order","clientOrderId":"other-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED"}',
+          'symbol':
+              '{"orderID":"managed-filled","clientOrderId":"managed-client","symbol":"ETH-USDT","side":"BUY","status":"FILLED"}',
+          'side':
+              '{"orderID":"managed-filled","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"SELL","status":"FILLED"}',
+        }.entries) {
+      test('terminal evidence identifies ${mismatch.key} mismatch', () async {
+        final store = _trackingStore(tempHome);
+        final binding =
+            BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+              _credentials,
+            );
+        await store.save(
+          _trackingState(
+            orderId: 'managed-filled',
+            accountBindingHashHex: binding,
+          ),
+        );
+        final exchange = BingxFuturesExchangeService(
+          requestSender:
+              (_) async => BingxHttpResponse(
+                statusCode: 200,
+                body: '{"code":0,"msg":"ok","data":${mismatch.value}}',
+              ),
+        );
+
+        final result = await _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
+
+        expect(result.unresolvedCount, 1);
+        expect(
+          result.diagnostics,
+          contains('provider_evidence_identity_mismatch:${mismatch.key}'),
+        );
+      });
+    }
+
+    test(
       'timeout preserves unresolved ownership evidence without recreation',
       () async {
         final store = _trackingStore(tempHome);
