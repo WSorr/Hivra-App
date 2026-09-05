@@ -93,7 +93,7 @@ void main() {
       expect(result.strength, greaterThanOrEqualTo(50));
     });
 
-    test('liquidation proxy ranks fresh structure without becoming anchor', () {
+    test('fresh structure without event time remains non executable', () {
       final base = _inputForSweepUp();
       BingxFuturesZoneDecisionInput input({List<num> proxies = const <num>[]}) {
         return BingxFuturesZoneDecisionInput(
@@ -165,6 +165,7 @@ void main() {
       expect(withProxy.externalBuyRetest, 102);
       expect(withProxy.anchorSource, '4h_fresh_low');
       expect(withProxy.anchorExecutable, isFalse);
+      expect(withProxy.liquidityEventId, isNull);
     });
 
     test('locks zone calculation to upstream TVH side', () {
@@ -412,10 +413,11 @@ void main() {
       expect(result.anchorExecutable, isFalse);
     });
 
-    test('uses an untouched confirmed swing pivot as fresh liquidity', () {
+    test('uses timestamped untouched low as executable fresh liquidity', () {
       final base = _inputForSweepUp();
       final result = service.decide(
         input: BingxFuturesZoneDecisionInput(
+          symbol: 'BTC-USDT',
           midPrice: 110,
           fallbackSide: 'buy',
           requiredSide: 'buy',
@@ -465,6 +467,12 @@ void main() {
             107,
             109,
           ],
+          higherCloseTimesUtc: List<String>.generate(
+            12,
+            (index) => DateTime.utc(2026, 8, 1)
+                .add(Duration(hours: 4 * index))
+                .toIso8601String(),
+          ),
           dailyHighs: const <num>[],
           dailyLows: const <num>[],
           dailyCloses: const <num>[],
@@ -478,14 +486,16 @@ void main() {
 
       expect(result.externalBuyRetest, 100);
       expect(result.anchorSource, '4h_fresh_low');
-      expect(result.anchorExecutable, isFalse);
+      expect(result.anchorExecutable, isTrue);
       expect(result.anchorLifecycle, 'fresh');
+      expect(result.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
     });
 
-    test('untouched high cannot authorize short entry', () {
+    test('uses timestamped untouched high as executable fresh liquidity', () {
       final base = _inputForSweepUp();
       final result = service.decide(
         input: BingxFuturesZoneDecisionInput(
+          symbol: 'BTC-USDT',
           midPrice: 130,
           fallbackSide: 'sell',
           requiredSide: 'sell',
@@ -538,6 +548,12 @@ void main() {
                 107,
                 109,
               ].map<num>((price) => 240 - price).toList(),
+          higherCloseTimesUtc: List<String>.generate(
+            12,
+            (index) => DateTime.utc(2026, 8, 1)
+                .add(Duration(hours: 4 * index))
+                .toIso8601String(),
+          ),
           dailyHighs: const [],
           dailyLows: const [],
           dailyCloses: const [],
@@ -551,7 +567,8 @@ void main() {
       expect(result.externalSellRetest, 140);
       expect(result.anchorSource, '4h_fresh_high');
       expect(result.anchorLifecycle, 'fresh');
-      expect(result.anchorExecutable, isFalse);
+      expect(result.anchorExecutable, isTrue);
+      expect(result.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
     });
 
     test('internal diagnostic low cannot authorize pending entry', () {

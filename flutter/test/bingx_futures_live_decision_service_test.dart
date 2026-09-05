@@ -58,6 +58,9 @@ void main() {
       expect(first.zoneSide, 'buyside');
       expect(first.zoneLowDecimal, isNotNull);
       expect(first.zoneHighDecimal, isNotNull);
+      expect(first.zoneAnchorLifecycle, 'fresh');
+      expect(first.trendGateBlocked, isFalse);
+      expect(first.trendGateCode, 'ok');
       expect(first.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
       expect(first.liquidityEventAtUtc, isNotNull);
       expect(first.latestClosedMicroBarAtUtc, isNotNull);
