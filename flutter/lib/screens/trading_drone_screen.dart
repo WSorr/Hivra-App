@@ -29,6 +29,43 @@ const String preparedTradingIntentTerminalOutcome = 'intent:prepared';
 const List<int> tradingEffectBudgetOptions = <int>[1, 2, 4, 8, 16, 32];
 
 @visibleForTesting
+String? tradingReconciliationNotice(
+  BingxFuturesManagedOrderReconciliationResult? result,
+  String? activeCapsuleRootHex,
+) {
+  if (result == null || activeCapsuleRootHex == null ||
+      result.capsuleRootHex != activeCapsuleRootHex || result.state == null) {
+    return null;
+  }
+  final state = result.state!;
+  String reason(String? diagnostic) {
+    const prefix = 'provider_status_unknown:';
+    if (diagnostic?.startsWith(prefix) == true) {
+      return 'BingX reports ${diagnostic!.substring(prefix.length)}; final outcome unverified';
+    }
+    return diagnostic ?? 'Evidence unavailable';
+  }
+  final unresolved = <String, String>{
+    for (final record in state.managedOrderProvenance.values)
+      if (!record.testOrder && record.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+        record.orderId: '${record.symbol} · ${record.orderId} · ${reason(record.lifecycleDiagnostic)}',
+    for (final claim in state.liquidityEventEffectClaims.values)
+      if (!claim.testOrder && claim.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+        claim.orderId ?? claim.clientOrderId: '${claim.symbol} · ${claim.orderId ?? claim.clientOrderId} · ${reason(claim.lifecycleDiagnostic)}',
+  };
+  return <String>[
+    'Last reconciliation · Active ${result.activeCount} · Completed ${result.terminalCount} · Needs review ${result.unresolvedCount}',
+    'Completed means filled, cancelled, rejected or expired — not necessarily filled.',
+    if (state.managedOrderProvenance.values.any((record) => record.testOrder) ||
+        state.liquidityEventEffectClaims.values.any((claim) => claim.testOrder))
+      'Test records are retained separately; they are not live orders.',
+    if (result.unresolvedCount > 0)
+      'Do not recreate these orders. Verify their outcome in BingX; missing evidence is not success or cancellation.',
+    ...unresolved.values,
+  ].join('\n');
+}
+
+@visibleForTesting
 String tradingPreparedSessionApplyCommand({
   required String runnerKeyId,
   required String mandateFileName,
@@ -472,6 +509,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   String? _intentBlockingMessage;
   BingxFuturesOrderExecutionResult? _lastExecution;
   BingxFuturesOpenOrdersResult? _lastOpenOrdersRead;
+  BingxFuturesManagedOrderReconciliationResult? _lastReconciliation;
   BingxFuturesCancelOrderResult? _lastCancelOrder;
   List<BingxFuturesOpenOrder> _openOrders = const <BingxFuturesOpenOrder>[];
   final Set<String> _managedOrderIds = <String>{};

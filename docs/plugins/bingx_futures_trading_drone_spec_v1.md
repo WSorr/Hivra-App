@@ -364,7 +364,15 @@ and Capsule-scoped. The existing exchange execution use case owns the decision:
 The account binding is a non-secret hash of the exact API-key identity. No
 credential enters the tracking journal. Test-order validation has no provider
 order lifecycle and therefore remains explicitly unresolved rather than being
-queried as a live order.
+queried as a live order. Retained test evidence is excluded from live active,
+terminal, and unresolved counts, including after restart. Unknown provider
+statuses, including observed `FAILED`, remain unresolved until endpoint-specific
+evidence supports a terminal interpretation; they must not be silently mapped
+to cancellation, rejection, or execution.
+The order workspace displays the last Capsule-scoped reconciliation counts and
+identifiers/diagnostics requiring review. Terminal counts are not presented as
+filled counts; test evidence is explicitly labelled as non-live. Switching
+Capsule must not expose the preceding Capsule's reconciliation summary.
 
 ### 5.3.3 Capsule-Owned Bounded Trading Mandate
 

@@ -479,6 +479,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     _managedOrderIds
       ..clear()
       ..addAll(state.managedOrderIds);
+    _lastReconciliation = reconciliation;
     _managedOrderSymbols
       ..clear()
       ..addAll(state.managedOrderSymbols);

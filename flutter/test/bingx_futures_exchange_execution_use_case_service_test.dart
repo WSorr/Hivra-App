@@ -775,16 +775,21 @@ void main() {
           if (request.uri.path.endsWith('/user/balance')) {
             return const BingxHttpResponse(
               statusCode: 200,
-              body: '{"code":0,"msg":"ok","data":{"balance":{"equity":"100","availableMargin":"100"}}}',
+              body:
+                  '{"code":0,"msg":"ok","data":{"balance":{"equity":"100","availableMargin":"100"}}}',
             );
           }
           if (request.uri.path.endsWith('/trade/leverage')) {
-            return const BingxHttpResponse(statusCode: 200,
-              body: '{"code":0,"data":{"longLeverage":2,"shortLeverage":2}}');
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"data":{"longLeverage":2,"shortLeverage":2}}',
+            );
           }
           if (request.uri.path.endsWith('/trade/marginType')) {
-            return const BingxHttpResponse(statusCode: 200,
-              body: '{"code":0,"data":{"marginType":"ISOLATED"}}');
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"data":{"marginType":"ISOLATED"}}',
+            );
           }
           if (request.uri.path.endsWith('/user/positions')) {
             return const BingxHttpResponse(
@@ -1263,80 +1268,102 @@ void main() {
       },
     );
 
-    test('counts one lifecycle for matching claim and provenance', () async {
-      final store = _trackingStore(tempHome);
-      final binding =
-          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
-            _credentials,
-          );
-      final eventId = List<String>.filled(64, 'e').join();
-      await store.save(
-        BingxFuturesOrderTrackingState(
-          trackedSymbol: 'BNB-USDT',
-          trackedOrderId: 'test-order',
-          managedOrderIds: const <String>['test-order'],
-          managedOrderSymbols: const <String, String>{'test-order': 'BNB-USDT'},
-          managedOrderProvenance: <String, BingxManagedOrderProvenance>{
-            'test-order': BingxManagedOrderProvenance(
-              orderId: 'test-order',
-              symbol: 'BNB-USDT',
-              side: 'sell',
-              testOrder: true,
-              intentHashHex: List<String>.filled(64, 'c').join(),
-              canonicalIntentJson: '{"symbol":"BNB-USDT","side":"sell"}',
-              clientOrderId: 'hivra-test-client',
-              accountBindingHashHex: binding,
-              lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
-              lifecycleEvidenceAtUtc: '2026-08-13T09:00:00.000Z',
-              marketSnapshotHashHex: null,
-              featureHashHex: null,
-              tvhDecisionHashHex: null,
-              liveDecisionHashHex: null,
-              recordedAtUtc: '2026-08-13T09:00:00.000Z',
-            ),
-          },
-          liquidityEventEffectClaims: <String, BingxLiquidityEventEffectClaim>{
-            'test|$eventId': BingxLiquidityEventEffectClaim(
-              liquidityEventId: eventId,
-              clientOrderId: 'hivra-test-client',
-              symbol: 'BNB-USDT',
-              side: 'sell',
-              intentHashHex: List<String>.filled(64, 'c').join(),
-              canonicalIntentJson: '{"symbol":"BNB-USDT","side":"sell"}',
-              testOrder: true,
-              status: BingxLiquidityEventEffectClaimStatus.confirmed,
-              orderId: 'test-order',
-              accountBindingHashHex: binding,
-              lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
-              lifecycleEvidenceAtUtc: '2026-08-13T09:00:00.000Z',
-              recordedAtUtc: '2026-08-13T09:00:00.000Z',
-            ),
-          },
-          stopLossPercent: 5,
-          takeProfitRiskReward: 2,
-        ),
-      );
+    test(
+      'test evidence survives restart without live lifecycle counts',
+      () async {
+        final store = _trackingStore(tempHome);
+        final binding =
+            BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+              _credentials,
+            );
+        final eventId = List<String>.filled(64, 'e').join();
+        await store.saveReconciledForCapsule(
+          store.activeCapsuleRootHex!,
+          BingxFuturesOrderTrackingState(
+            trackedSymbol: 'BNB-USDT',
+            trackedOrderId: 'test-order',
+            managedOrderIds: const <String>['test-order'],
+            managedOrderSymbols: const <String, String>{
+              'test-order': 'BNB-USDT',
+            },
+            managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+              'test-order': BingxManagedOrderProvenance(
+                orderId: 'test-order',
+                symbol: 'BNB-USDT',
+                side: 'sell',
+                testOrder: true,
+                intentHashHex: List<String>.filled(64, 'c').join(),
+                canonicalIntentJson: '{"symbol":"BNB-USDT","side":"sell"}',
+                clientOrderId: 'hivra-test-client',
+                accountBindingHashHex: binding,
+                lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
+                lifecycleEvidenceAtUtc: '2026-08-13T09:00:00.000Z',
+                marketSnapshotHashHex: null,
+                featureHashHex: null,
+                tvhDecisionHashHex: null,
+                liveDecisionHashHex: null,
+                recordedAtUtc: '2026-08-13T09:00:00.000Z',
+              ),
+            },
+            liquidityEventEffectClaims:
+                <String, BingxLiquidityEventEffectClaim>{
+                  'test|$eventId': BingxLiquidityEventEffectClaim(
+                    liquidityEventId: eventId,
+                    clientOrderId: 'hivra-test-client',
+                    symbol: 'BNB-USDT',
+                    side: 'sell',
+                    intentHashHex: List<String>.filled(64, 'c').join(),
+                    canonicalIntentJson: '{"symbol":"BNB-USDT","side":"sell"}',
+                    testOrder: true,
+                    status: BingxLiquidityEventEffectClaimStatus.confirmed,
+                    orderId: 'test-order',
+                    accountBindingHashHex: binding,
+                    lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
+                    lifecycleEvidenceAtUtc: '2026-08-13T09:00:00.000Z',
+                    recordedAtUtc: '2026-08-13T09:00:00.000Z',
+                  ),
+                },
+            stopLossPercent: 5,
+            takeProfitRiskReward: 2,
+          ),
+        );
 
-      final result = await _reconciliationUseCase(
-        exchange: BingxFuturesExchangeService(
-          requestSender: (_) async {
-            throw StateError('test orders must not query the provider');
-          },
-        ),
-        store: store,
-        riskHistory: riskHistory,
-      ).reconcileManagedOrders(
-        credentials: _credentials,
-        openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
-      );
+        final result = await _reconciliationUseCase(
+          exchange: BingxFuturesExchangeService(
+            requestSender: (_) async {
+              throw StateError('test orders must not query the provider');
+            },
+          ),
+          store: store,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
 
-      expect(result.activeCount, 0);
-      expect(result.terminalCount, 0);
-      expect(result.unresolvedCount, 1);
-      expect(result.diagnostics, <String>[
-        'test_order_has_no_provider_lifecycle',
-      ]);
-    });
+        expect(result.activeCount, 0);
+        expect(result.terminalCount, 0);
+        expect(result.unresolvedCount, 0);
+        expect(result.diagnostics, <String>[
+          'test_order_has_no_provider_lifecycle',
+        ]);
+        final restarted = await _reconciliationUseCase(
+          exchange: BingxFuturesExchangeService(
+            requestSender: (_) async {
+              fail('test evidence must never query the provider after restart');
+            },
+          ),
+          store: _trackingStore(tempHome),
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(credentials: _credentials);
+        expect(restarted.unresolvedCount, 0);
+        expect(restarted.activeCount, 0);
+        expect(restarted.terminalCount, 0);
+        expect(restarted.state!.managedOrderProvenance, hasLength(1));
+        expect(restarted.state!.liquidityEventEffectClaims, hasLength(1));
+        expect(restarted.state!.managedOrderIds, isEmpty);
+      },
+    );
 
     test('account mismatch fails closed before provider access', () async {
       final store = _trackingStore(tempHome);
@@ -1520,50 +1547,78 @@ void main() {
       },
     );
 
-    test('unknown provider status remains unresolved', () async {
-      final store = _trackingStore(tempHome);
-      final binding =
-          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
-            _credentials,
-          );
-      await store.save(
-        _trackingState(
-          orderId: 'managed-unknown',
+    for (final providerStatus in <String>['PENDING_REVIEW', 'FAILED']) {
+      test('$providerStatus remains unresolved across restart', () async {
+        final store = _trackingStore(tempHome);
+        final binding =
+            BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+              _credentials,
+            );
+        await store.save(
+          _trackingState(
+            orderId: 'managed-unknown',
+            accountBindingHashHex: binding,
+          ),
+        );
+        await store.reserveLiquidityEventEffect(
+          liquidityEventId: List<String>.filled(64, 'f').join(),
+          clientOrderId: 'test-only-client',
+          symbol: 'BTC-USDT',
+          side: 'buy',
+          testOrder: true,
+          recordedAtUtc: '2026-08-13T10:00:00.000Z',
           accountBindingHashHex: binding,
-        ),
-      );
-      final exchange = BingxFuturesExchangeService(
-        requestSender:
-            (_) async => const BingxHttpResponse(
+        );
+        final exchange = BingxFuturesExchangeService(
+          requestSender: (request) async {
+            expect(request.method, 'GET');
+            expect(request.uri.query, contains('orderId=managed-unknown'));
+            return BingxHttpResponse(
               statusCode: 200,
               body:
-                  '{"code":0,"msg":"ok","data":{"orderID":"managed-unknown","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"PENDING_REVIEW"}}',
-            ),
-      );
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-unknown","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"$providerStatus"}}',
+            );
+          },
+        );
 
-      final result = await _reconciliationUseCase(
-        exchange: exchange,
-        store: store,
-        riskHistory: riskHistory,
-      ).reconcileManagedOrders(
-        credentials: _credentials,
-        openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
-      );
+        final result = await _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
 
-      expect(result.unresolvedCount, 1);
-      expect(
-        result.diagnostics,
-        contains('provider_status_unknown:PENDING_REVIEW'),
-      );
-      expect(
-        result
-            .state!
-            .managedOrderProvenance['managed-unknown']!
-            .lifecycleStatus,
-        BingxManagedOrderLifecycleStatus.unresolved,
-      );
-      expect(result.state!.managedOrderIds, isEmpty);
-    });
+        expect(result.unresolvedCount, 1);
+        expect(
+          result.diagnostics,
+          contains('provider_status_unknown:$providerStatus'),
+        );
+        expect(
+          result
+              .state!
+              .managedOrderProvenance['managed-unknown']!
+              .lifecycleStatus,
+          BingxManagedOrderLifecycleStatus.unresolved,
+        );
+        expect(result.state!.managedOrderIds, isEmpty);
+        final restarted = await _reconciliationUseCase(
+          exchange: exchange,
+          store: _trackingStore(tempHome),
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(credentials: _credentials);
+        expect(restarted.unresolvedCount, 1);
+        expect(restarted.terminalCount, 0);
+        expect(restarted.activeCount, 0);
+        expect(restarted.state!.managedOrderProvenance, hasLength(1));
+        expect(restarted.state!.liquidityEventEffectClaims, hasLength(1));
+        expect(
+          restarted.diagnostics,
+          contains('provider_status_unknown:$providerStatus'),
+        );
+      });
+    }
 
     test(
       'remote receipt restores one managed order without adopting manual orders',

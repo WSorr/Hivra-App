@@ -812,13 +812,14 @@ class BingxFuturesExchangeExecutionUseCaseService {
     final lifecycleStates =
         <String, BingxManagedOrderLifecycleStatus>{
           for (final record in provenance.values)
-            'order:${record.orderId}': record.lifecycleStatus,
+            if (!record.testOrder)
+              'order:${record.orderId}': record.lifecycleStatus,
           for (final claim in claims.values)
-            if (claim.orderId?.trim().isNotEmpty == true)
-              'order:${claim.orderId!.trim()}': claim.lifecycleStatus
-            else
-              'client:${claim.testOrder ? "test" : "live"}:${claim.clientOrderId}':
-                  claim.lifecycleStatus,
+            if (!claim.testOrder)
+              if (claim.orderId?.trim().isNotEmpty == true)
+                'order:${claim.orderId!.trim()}': claim.lifecycleStatus
+              else
+                'client:live:${claim.clientOrderId}': claim.lifecycleStatus,
         }.values;
     final terminalCount = lifecycleStates.where(_isTerminalLifecycle).length;
     final unresolvedCount =

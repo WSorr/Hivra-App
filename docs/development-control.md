@@ -4,6 +4,13 @@ Status date: 2026-09-05
 
 ## Current State
 
+- Current bounded follow-up: managed-order reconciliation excludes retained
+  test evidence from live lifecycle counts. Observed provider `FAILED` remains
+  unresolved pending endpoint-specific terminal evidence; no new order,
+  cancellation, VPS activation, or release is authorized by this follow-up.
+  The existing order workspace now presents Capsule-scoped reconciliation
+  evidence and distinguishes terminal outcomes from fills. Packaged acceptance
+  of this follow-up remains pending.
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
   artifacts have manual signoff.

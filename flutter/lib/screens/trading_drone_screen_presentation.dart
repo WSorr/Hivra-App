@@ -1083,6 +1083,14 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                     ),
                 ],
               ),
+              if (tradingReconciliationNotice(
+                    _lastReconciliation, _module.activeCapsuleRootHex()) case final notice?) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SelectableText(notice),
+                ),
+              ],
               if (_openOrders.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 const Align(

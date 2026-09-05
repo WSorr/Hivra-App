@@ -1,11 +1,57 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
 import 'package:hivra_app/models/bingx_futures_signal_rank_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
+  test('reconciliation feedback is scoped and distinguishes tests from effects', () {
+    final state = BingxFuturesOrderTrackingState(
+      trackedSymbol: null,
+      trackedOrderId: null,
+      managedOrderIds: const [],
+      managedOrderSymbols: const {},
+      stopLossPercent: null,
+      takeProfitRiskReward: null,
+      liquidityEventEffectClaims: {
+        for (final testOrder in [false, true])
+          '$testOrder': BingxLiquidityEventEffectClaim(
+            liquidityEventId: '$testOrder',
+            clientOrderId: testOrder ? 'test-client' : 'live-client',
+            orderId: null,
+            symbol: 'DOGE-USDT',
+            side: 'buy',
+            testOrder: testOrder,
+            status: BingxLiquidityEventEffectClaimStatus.confirmed,
+            lifecycleDiagnostic: 'provider_status_unknown:FAILED',
+            recordedAtUtc: '2026-09-05T00:00:00Z',
+          ),
+      },
+    );
+    final result = BingxFuturesManagedOrderReconciliationResult(
+      status: BingxFuturesManagedOrderReconciliationStatus.reconciled,
+      capsuleRootHex: 'capsule-a',
+      state: state,
+      activeCount: 0,
+      terminalCount: 7,
+      unresolvedCount: 1,
+      diagnostics: const [],
+    );
+    final notice = tradingReconciliationNotice(result, 'capsule-a')!;
+    expect(notice, contains('Completed 7 · Needs review 1'));
+    expect(notice, contains('not necessarily filled'));
+    expect(notice, contains('DOGE-USDT · live-client'));
+    expect(notice, contains('BingX reports FAILED; final outcome unverified'));
+    expect(notice, contains('Do not recreate'));
+    expect(notice, contains('Test records are retained separately'));
+    expect(notice, isNot(contains('test-client')));
+    expect(tradingReconciliationNotice(result, 'capsule-b'), isNull);
+    expect(tradingReconciliationNotice(result, null), isNull);
+    expect(tradingReconciliationNotice(null, 'capsule-a'), isNull);
+  });
+
   test('paused process does not imply disabled startup', () {
     for (final details in ['', ' session_state=active cycles=0 effects=0 '
       'last_scheduled_check=none next_check=2026-09-05T02:00:00Z last_outcome=none']) {
