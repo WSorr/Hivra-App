@@ -2430,7 +2430,7 @@ admit_remote_mandate() {
             "$(cat "$work/retained/mandate-max-effects")" \
             "$(cat "$work/retained/session-interval-seconds")" \
             "$(cat "$work/retained/session-starts-at")" \
-            "$(cat "$work/retained/expires-at")")" ||
+            "$(cat "$work/retained/expires-at")" activate)" ||
             die "mandate admission refused invalid retained session state"
           case "$session_status" in
             terminal:completed:*|terminal:stopped:*) ;;
@@ -4983,6 +4983,18 @@ PY
     2 1 300 "2998-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
     activate)" = "active:0:0" ] ||
     die "self-test did not activate a future bounded session without execution"
+  inspection_before="$(sha256_file "$future_session_state")"
+  session_status="$(prepare_deterministic_session_cycle \
+    "$future_session_state" "$(printf 'future-session' | sha256_stdin)" \
+    2 1 300 "2998-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)"
+  [ "$session_status" = "active:0:0" ] ||
+    die "self-test treated a waiting retained session as invalid"
+  case "$session_status" in
+    terminal:completed:*|terminal:stopped:*)
+      die "self-test allowed replacement of a waiting active session" ;;
+  esac
+  [ "$(sha256_file "$future_session_state")" = "$inspection_before" ] ||
+    die "self-test changed a waiting retained session during admission validation"
   if prepare_deterministic_session_cycle \
     "$future_session_state" "$(printf 'future-session' | sha256_stdin)" \
     2 1 300 "2998-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \

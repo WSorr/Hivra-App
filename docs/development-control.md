@@ -8,7 +8,9 @@ Status date: 2026-09-05
   smoke passed on `8179c7c`. Test records are excluded from live counts; two
   observed `FAILED` outcomes remain unresolved. Android acceptance is unverified.
 - Current bounded follow-up: one total BingX HTTP deadline with request/body
-  cleanup and timeout/restart regression evidence. Password entry, trading
+  cleanup and timeout/restart regression evidence, plus retained-session
+  admission independent of next-cycle eligibility. Active-session replacement
+  remains refused. Full Trading acceptance is pending. Password entry, trading
   effects, VPS activation and release remain outside this unit.
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
