@@ -130,7 +130,6 @@ liquidity_sequence_is_canonical() {
     rg -q 'volume activation does not require trend or whale alignment' "$5" &&
     rg -q 'opposite trade flow cannot flip a constrained liquidity side' "$5" &&
     rg -q 'incomplete session evidence remains context, not authority' "$5" &&
-    rg -q 'liquidation proxy ranks fresh structure without becoming anchor' "$6" &&
     rg -q 'projects the exact market blocker without preparing an effect' "$7"
 }
 

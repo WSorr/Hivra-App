@@ -4,14 +4,15 @@ Status date: 2026-09-05
 
 ## Current State
 
-- Managed-order reconciliation feedback is merged at `573c5fd`; macOS packaged
-  smoke passed on `8179c7c`. Test records are excluded from live counts; two
-  observed `FAILED` outcomes remain unresolved. Android acceptance is unverified.
-- Current bounded follow-up: one total BingX HTTP deadline with request/body
-  cleanup and timeout/restart regression evidence, plus retained-session
-  admission independent of next-cycle eligibility. Active-session replacement
-  remains refused. Full Trading acceptance is pending. Password entry, trading
-  effects, VPS activation and release remain outside this unit.
+- Trading HTTP deadlines, retained-session admission, concurrent provider
+  reads, and packaged Remote Runner activation are merged at `604bf09`. A
+  bounded DOGE live session was accepted by the updated VPS Runner with zero
+  exchange attempts before its first scheduled cycle; Android is unverified.
+- Current bounded product unit: an untouched timestamped HTF buyside/sellside
+  level may authorize one counter-directional pending entry through the existing
+  zone decision owner. Sweep/reclaim remains preferred when present. Missing
+  timestamps, breached or consumed levels, liquidation proxies alone, and
+  internal fallback geometry remain non-executable.
 - Maintained runtime: Hivra 1.x.
 - Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
   artifacts have manual signoff.

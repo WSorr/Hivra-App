@@ -292,12 +292,20 @@ The executable microstructure path MUST be a pure reduction over ordered,
 closed 5m OHLC candles. A currently forming provider candle MUST NOT enter the
 canonical normalized snapshot, derived liquidity, ATR, or zone decision.
 
-For the side selected by TVH:
+For the side selected by TVH, the zone owner chooses one canonical anchor:
+
+- a confirmed closed-candle sweep/reclaim is preferred when present;
+- otherwise an untouched, confirmed HTF buyside/sellside pivot with a stable
+  source timestamp may authorize a pending counter-directional retest entry;
+- a window extremum, liquidation proxy by itself, missing timestamp, breached
+  level, consumed level, or internal fallback remains non-executable.
+
+For the sweep/reclaim path:
 
 1. Consume the existing feature extractor's detected cluster, with at least
    three confirmed pivots, matching liquidity side, finite ordered bounds,
    and a first breach inside the recent evaluation window. Window extrema
-   alone MUST NOT authorize entry. Buyside clusters feed short reclaim;
+   alone MUST NOT authorize a sweep/reclaim entry. Buyside clusters feed short reclaim;
    sellside clusters feed long reclaim.
 2. Record a sweep when a closed wick crosses that level. A deeper wick in the
    same active event updates its extreme without creating another event.

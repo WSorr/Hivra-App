@@ -519,6 +519,7 @@ class BingxFuturesZoneDecisionService {
         anchorLifecycle = 'fresh';
         liquidityAnchorPrice = externalSellRetest.price;
         liquidityEventAtUtc = externalSellRetest.eventAtUtc;
+        anchorExecutable = liquidityEventAtUtc != null;
       }
       if (contrarian && !reversalSignal) {
         zoneLow = anchorHigh - width * 0.15;
@@ -558,6 +559,7 @@ class BingxFuturesZoneDecisionService {
         anchorLifecycle = 'fresh';
         liquidityAnchorPrice = externalBuyRetest.price;
         liquidityEventAtUtc = externalBuyRetest.eventAtUtc;
+        anchorExecutable = liquidityEventAtUtc != null;
       }
       if (contrarian && !reversalSignal) {
         zoneLow = anchorLow - width * 0.35;
