@@ -345,6 +345,12 @@ order authority or exchange path.
 After restart or reconnect, managed-order reconciliation MUST remain read-only
 and Capsule-scoped. The existing exchange execution use case owns the decision:
 
+The default BingX HTTP sender uses one 12-second deadline for connection,
+response headers and the complete body together. Expiry aborts an unfinished
+request or cancels body consumption, without closing unrelated pooled requests.
+A late connection must not send an expired request. This network deadline does
+not include credential unlock and does not prove an exchange effect failed.
+
 - current open-orders evidence may confirm only an exact locally persisted
   managed `orderId`;
 - an absent managed order MUST be queried through the exact provider order

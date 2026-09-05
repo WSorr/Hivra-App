@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -2236,25 +2237,56 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     BingxHttpRequest request,
   ) async {
     final method = request.method.trim().toUpperCase();
-    final httpRequest = switch (method) {
-      'GET' => await _defaultHttpClient
-          .getUrl(request.uri)
-          .timeout(_httpTimeout),
-      'POST' => await _defaultHttpClient
-          .postUrl(request.uri)
-          .timeout(_httpTimeout),
-      'DELETE' => await _defaultHttpClient
-          .deleteUrl(request.uri)
-          .timeout(_httpTimeout),
-      _ => throw FormatException('Unsupported HTTP method: $method'),
-    };
-    request.headers.forEach(httpRequest.headers.set);
-    if (request.body.isNotEmpty) {
-      httpRequest.write(request.body);
+    if (!const ['GET', 'POST', 'DELETE'].contains(method)) {
+      throw FormatException('Unsupported HTTP method: $method');
     }
-    final httpResponse = await httpRequest.close().timeout(_httpTimeout);
-    final body = await utf8.decodeStream(httpResponse).timeout(_httpTimeout);
-    return BingxHttpResponse(statusCode: httpResponse.statusCode, body: body);
+    final timeout = TimeoutException(
+      'BingX HTTP deadline exceeded',
+      _httpTimeout,
+    );
+    var expired = false;
+    HttpClientRequest? activeRequest;
+    StreamIterator<String>? responseBody;
+
+    Future<BingxHttpResponse> send() async {
+      final httpRequest = await _defaultHttpClient.openUrl(method, request.uri);
+      activeRequest = httpRequest;
+      if (expired) {
+        httpRequest.abort(timeout);
+        await httpRequest.done;
+        throw timeout;
+      }
+      request.headers.forEach(httpRequest.headers.set);
+      if (request.body.isNotEmpty) httpRequest.write(request.body);
+      final httpResponse = await httpRequest.close();
+      final body = StreamIterator(httpResponse.transform(utf8.decoder));
+      responseBody = body;
+      if (expired) {
+        await body.cancel();
+        throw timeout;
+      }
+      final text = StringBuffer();
+      while (await body.moveNext()) {
+        text.write(body.current);
+      }
+      return BingxHttpResponse(
+        statusCode: httpResponse.statusCode,
+        body: text.toString(),
+      );
+    }
+
+    try {
+      return await send().timeout(
+        _httpTimeout,
+        onTimeout: () {
+          expired = true;
+          activeRequest?.abort(timeout);
+          throw timeout;
+        },
+      );
+    } finally {
+      await responseBody?.cancel();
+    }
   }
 }
 

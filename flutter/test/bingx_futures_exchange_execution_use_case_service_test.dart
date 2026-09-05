@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1235,10 +1236,19 @@ void main() {
           ),
         );
         var requests = 0;
+        var responseAvailable = false;
         final exchange = BingxFuturesExchangeService(
-          requestSender: (_) async {
+          requestSender: (request) async {
             requests += 1;
-            throw const SocketException('offline');
+            expect(request.method, 'GET');
+            if (responseAvailable) {
+              return const BingxHttpResponse(
+                statusCode: 200,
+                body:
+                    '{"code":0,"data":{"orderID":"managed-timeout","symbol":"BTC-USDT","side":"BUY","status":"FILLED"}}',
+              );
+            }
+            throw TimeoutException('provider response deadline exceeded');
           },
         );
 
@@ -1263,7 +1273,23 @@ void main() {
         );
         expect(
           result.diagnostics,
-          contains('provider_query_error:SocketException'),
+          contains('provider_query_error:TimeoutException'),
+        );
+        responseAvailable = true;
+        final recovered = await _reconciliationUseCase(
+          exchange: exchange,
+          store: _trackingStore(tempHome),
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(credentials: _credentials);
+        expect(requests, 2);
+        expect(recovered.unresolvedCount, 0);
+        expect(recovered.terminalCount, 1);
+        expect(
+          recovered
+              .state!
+              .managedOrderProvenance['managed-timeout']!
+              .lifecycleStatus,
+          BingxManagedOrderLifecycleStatus.filled,
         );
       },
     );
