@@ -468,16 +468,27 @@ class DartSshBingxFuturesRemoteRunnerHostPort
           port,
           timeout: _connectTimeout,
         );
+        Timer? handshakeNetworkTimer;
+        SSHClient? candidateReference;
+        void closeTimedOutCandidate() {
+          final timedOutCandidate = candidateReference;
+          if (timedOutCandidate != null) {
+            unawaited(timedOutCandidate.close());
+          }
+        }
+        handshakeNetworkTimer = Timer(
+          _connectTimeout,
+          closeTimedOutCandidate,
+        );
         final candidate = SSHClient(
           socket,
           username: rootUsername,
           algorithms: _algorithms,
           onPasswordRequest: () => rootPassword,
-          // dartssh2 verifies the host key during the handshake, so the
-          // bounded interactive window covers fingerprint review and auth.
-          handshakeTimeout: _interactiveAuthTimeout,
+          handshakeTimeout: null,
           authTimeout: _interactiveAuthTimeout,
           onVerifyHostKey: (algorithm, fingerprintBytes) async {
+            handshakeNetworkTimer?.cancel();
             final fingerprint = utf8.decode(
               fingerprintBytes,
               allowMalformed: false,
@@ -485,27 +496,42 @@ class DartSshBingxFuturesRemoteRunnerHostPort
             final knownAlgorithm = acceptedAlgorithm;
             final knownFingerprint = acceptedFingerprint;
             if (knownAlgorithm != null || knownFingerprint != null) {
-              return algorithm == knownAlgorithm &&
+              final matches = algorithm == knownAlgorithm &&
                   fingerprint == knownFingerprint;
+              if (matches) {
+                handshakeNetworkTimer = Timer(
+                  _interactiveAuthTimeout,
+                  closeTimedOutCandidate,
+                );
+              }
+              return matches;
             }
             final accepted = await confirmHostKey(algorithm, fingerprint);
             if (accepted) {
               acceptedAlgorithm = algorithm;
               acceptedFingerprint = fingerprint;
+              handshakeNetworkTimer = Timer(
+                _interactiveAuthTimeout,
+                closeTimedOutCandidate,
+              );
             }
             return accepted;
           },
         );
+        candidateReference = candidate;
         try {
-          await candidate.authenticated.timeout(_interactiveAuthTimeout);
+          await candidate.authenticated;
+          handshakeNetworkTimer?.cancel();
           client = candidate;
           break;
         } on SSHAuthAbortError {
+          handshakeNetworkTimer?.cancel();
           await candidate.close();
           await candidate.done.catchError((_) {});
           if (attempt == _bootstrapAuthAttempts) rethrow;
           await Future<void>.delayed(Duration(milliseconds: 300 * attempt));
         } catch (_) {
+          handshakeNetworkTimer?.cancel();
           await candidate.close();
           await candidate.done.catchError((_) {});
           rethrow;
