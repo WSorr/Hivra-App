@@ -1741,6 +1741,87 @@ void main() {
       });
     }
 
+    test('FAILED with exact zero execution reconciles as rejected', () async {
+      final store = _trackingStore(tempHome);
+      final binding =
+          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+            _credentials,
+          );
+      await store.save(
+        _trackingState(
+          orderId: 'managed-failed',
+          accountBindingHashHex: binding,
+        ),
+      );
+      final exchange = BingxFuturesExchangeService(
+        requestSender:
+            (_) async => const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-failed","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FAILED","executedQty":"0"}}',
+            ),
+      );
+
+      final result = await _reconciliationUseCase(
+        exchange: exchange,
+        store: store,
+        riskHistory: riskHistory,
+      ).reconcileManagedOrders(
+        credentials: _credentials,
+        openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+      );
+
+      expect(result.unresolvedCount, 0);
+      expect(result.terminalCount, 1);
+      expect(
+        result.state!.managedOrderProvenance['managed-failed']!.lifecycleStatus,
+        BingxManagedOrderLifecycleStatus.rejected,
+      );
+
+      final restarted = await _reconciliationUseCase(
+        exchange: exchange,
+        store: _trackingStore(tempHome),
+        riskHistory: riskHistory,
+      ).reconcileManagedOrders(credentials: _credentials);
+      expect(restarted.unresolvedCount, 0);
+      expect(restarted.terminalCount, 1);
+    });
+
+    test('FAILED with nonzero execution remains unresolved', () async {
+      final store = _trackingStore(tempHome);
+      final binding =
+          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+            _credentials,
+          );
+      await store.save(
+        _trackingState(
+          orderId: 'managed-failed-partial',
+          accountBindingHashHex: binding,
+        ),
+      );
+      final exchange = BingxFuturesExchangeService(
+        requestSender:
+            (_) async => const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-failed-partial","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FAILED","executedQty":"0.01"}}',
+            ),
+      );
+
+      final result = await _reconciliationUseCase(
+        exchange: exchange,
+        store: store,
+        riskHistory: riskHistory,
+      ).reconcileManagedOrders(
+        credentials: _credentials,
+        openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+      );
+
+      expect(result.unresolvedCount, 1);
+      expect(result.terminalCount, 0);
+      expect(result.diagnostics, contains('provider_status_unknown:FAILED'));
+    });
+
     test(
       'remote receipt restores one managed order without adopting manual orders',
       () async {
