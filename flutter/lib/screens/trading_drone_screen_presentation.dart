@@ -332,6 +332,63 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 style: const TextStyle(color: Color(0xFF97A3B5)),
               ),
               const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F141C),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF273142)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(Icons.dns_outlined, size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '24/7 Runner',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            tradingRemoteRunnerSummaryLabel(
+                              loading: _loadingRemoteRunnerSummary,
+                              configured: _remoteRunnerConfigured,
+                              unavailable: _remoteRunnerStatusUnavailable,
+                              statusWire: _remoteRunnerStatusWire,
+                            ),
+                            style: const TextStyle(color: Color(0xFF97A3B5)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Refresh Runner status',
+                      onPressed:
+                          _loadingRemoteRunnerSummary
+                              ? null
+                              : () => unawaited(_refreshRemoteRunnerSummary()),
+                      icon:
+                          _loadingRemoteRunnerSummary
+                              ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Icon(Icons.refresh_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,

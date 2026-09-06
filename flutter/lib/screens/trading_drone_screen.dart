@@ -536,6 +536,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _exportingRemoteMandate = false;
   bool _exportingRemoteRevocation = false;
   bool _provisioningRemoteRunner = false;
+  bool _loadingRemoteRunnerSummary = true;
+  bool _remoteRunnerConfigured = false;
+  String? _remoteRunnerStatusWire;
+  bool _remoteRunnerStatusUnavailable = false;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
   int _maxEffects = 1;
@@ -596,6 +600,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         restoreOpenOrdersTrackingState: _restoreOpenOrdersTrackingState,
       ),
     );
+    unawaited(_refreshRemoteRunnerSummary());
     _loadPerpetualSymbols(silent: true);
   }
 

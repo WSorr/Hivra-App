@@ -181,6 +181,48 @@ void main() {
     );
   });
 
+  test('runner summary distinguishes configuration and live status', () {
+    expect(
+      tradingRemoteRunnerSummaryLabel(
+        loading: true,
+        configured: false,
+        unavailable: false,
+        statusWire: null,
+      ),
+      contains('Checking'),
+    );
+    expect(
+      tradingRemoteRunnerSummaryLabel(
+        loading: false,
+        configured: false,
+        unavailable: false,
+        statusWire: null,
+      ),
+      contains('No 24/7 Runner'),
+    );
+    expect(
+      tradingRemoteRunnerSummaryLabel(
+        loading: false,
+        configured: true,
+        unavailable: true,
+        statusWire: null,
+      ),
+      contains('unavailable'),
+    );
+    expect(
+      tradingRemoteRunnerSummaryLabel(
+        loading: false,
+        configured: true,
+        unavailable: false,
+        statusWire:
+            'active=active enabled=linked session_state=active cycles=0 '
+            'effects=0 last_scheduled_check=none '
+            'next_check=2026-09-06T12:00:00Z last_outcome=none',
+      ),
+      contains('Runner running'),
+    );
+  });
+
   test('defaults to live and restores test only from an active mandate', () {
     final now = DateTime.utc(2026, 8, 22, 10);
     final live = BingxFuturesTradingMandate.issue(
