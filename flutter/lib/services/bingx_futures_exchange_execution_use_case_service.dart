@@ -660,11 +660,14 @@ class BingxFuturesExchangeExecutionUseCaseService {
           diagnostic: 'provider_evidence_identity_mismatch:$identityMismatch',
         );
       }
-      final lifecycle = switch (order.status.trim().toUpperCase()) {
+      final providerStatus = order.status.trim().toUpperCase();
+      final lifecycle = switch (providerStatus) {
         'NEW' || 'PARTIALLY_FILLED' => BingxManagedOrderLifecycleStatus.active,
         'FILLED' => BingxManagedOrderLifecycleStatus.filled,
         'CANCELED' || 'CANCELLED' => BingxManagedOrderLifecycleStatus.cancelled,
         'REJECTED' => BingxManagedOrderLifecycleStatus.rejected,
+        'FAILED' when _hasExactZeroExecution(order) =>
+          BingxManagedOrderLifecycleStatus.rejected,
         'EXPIRED' => BingxManagedOrderLifecycleStatus.expired,
         _ => BingxManagedOrderLifecycleStatus.unresolved,
       };
@@ -866,6 +869,11 @@ class BingxFuturesExchangeExecutionUseCaseService {
         status == BingxManagedOrderLifecycleStatus.cancelled ||
         status == BingxManagedOrderLifecycleStatus.rejected ||
         status == BingxManagedOrderLifecycleStatus.expired;
+  }
+
+  static bool _hasExactZeroExecution(BingxFuturesOpenOrder order) {
+    final executed = double.tryParse(order.executedQuantityDecimal ?? '');
+    return executed != null && executed.isFinite && executed == 0;
   }
 
   Future<BingxFuturesRiskEvaluationResult> evaluateRisk({
