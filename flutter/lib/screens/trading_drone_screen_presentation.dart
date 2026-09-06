@@ -285,6 +285,11 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
             : (shortIntentHash.length > 12
                 ? '${shortIntentHash.substring(0, 12)}..'
                 : shortIntentHash);
+    final controlStateLabel = tradingControlStateLabel(
+      loaded: _tradingControlLoaded,
+      saving: _savingTradingControl,
+      enabled: _droneEnabled,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Trading Drone')),
@@ -292,11 +297,118 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
         padding: const EdgeInsets.all(16),
         children: [
           _panel(
-            title: 'Intent Builder',
-            subtitle: 'Deterministic pending futures intent for plugin host.',
+            title: 'Trading Control',
+            subtitle:
+                'Choose the limits once. The Capsule keeps authority while '
+                'the local drone or trusted VPS watches for a valid liquidity retest.',
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _statusChip(
+                    controlStateLabel,
+                    accent:
+                        _droneEnabled
+                            ? const Color(0xFF75D98A)
+                            : const Color(0xFFFFC76A),
+                  ),
+                  _statusChip(
+                    _useTestOrderEndpoint ? 'Simulation' : 'Live orders',
+                    accent:
+                        _useTestOrderEndpoint
+                            ? const Color(0xFF8DC2FF)
+                            : const Color(0xFFFFC76A),
+                  ),
+                  _statusChip(
+                    selectedSymbol.isEmpty ? 'No market' : selectedSymbol,
+                  ),
+                  _statusChip('${tradingOrderBudgetLabel(_maxEffects)} / 24h'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                tradingControlSubtitle,
+                style: const TextStyle(color: Color(0xFF97A3B5)),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed:
+                        _runningIntent ||
+                                !_tradingControlLoaded ||
+                                _savingTradingControl
+                            ? null
+                            : () =>
+                                unawaited(_changeDroneEnabled(!_droneEnabled)),
+                    icon: Icon(
+                      _droneEnabled
+                          ? Icons.pause_circle_outline_rounded
+                          : Icons.play_circle_outline_rounded,
+                    ),
+                    label: Text(
+                      _droneEnabled ? 'Pause Trading' : 'Enable Trading',
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent ||
+                                _savingTradingControl ||
+                                _exportingRemoteMandate ||
+                                _exportingRemoteRevocation
+                            ? null
+                            : _manageRemoteRunners,
+                    icon:
+                        _exportingRemoteRevocation
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.dns_outlined),
+                    label: Text(
+                      _exportingRemoteRevocation
+                          ? 'Loading VPS'
+                          : 'Manage 24/7 Runner',
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent ||
+                                _savingTradingControl ||
+                                _exportingRemoteMandate ||
+                                !_droneEnabled
+                            ? null
+                            : _exportSignedRemoteDeterministicSession,
+                    icon:
+                        _exportingRemoteMandate
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.verified_user_outlined),
+                    label: Text(
+                      _exportingRemoteMandate
+                          ? 'Starting 24/7 session'
+                          : 'Start 24/7 Session',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _panel(
+            title: 'Find a Trade',
+            subtitle:
+                'Scan liquidity, choose a market, and recheck current conditions before preparing an order.',
             children: [
               const Text(
-                'Playbook · Short Breakdown v1',
+                'Popular markets',
                 style: TextStyle(
                   color: Color(0xFF97A3B5),
                   fontWeight: FontWeight.w600,
@@ -433,12 +545,12 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                     items: const [
                       DropdownMenuItem<String>(
                         value: _TradingDroneScreenState._signalScanScopeCore,
-                        child: Text('Core Watchlist'),
+                        child: Text('Watchlist'),
                       ),
                       DropdownMenuItem<String>(
                         value:
                             _TradingDroneScreenState._signalScanScopeAllPerps,
-                        child: Text('All Perps'),
+                        child: Text('All futures'),
                       ),
                     ],
                     onChanged:
@@ -536,23 +648,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       ? 'Reading exchange settings…'
                       : 'Estimate margin and risk',
                 ),
-              ),
-              SwitchListTile.adaptive(
-                value: _droneEnabled,
-                onChanged:
-                    _runningIntent ||
-                            !_tradingControlLoaded ||
-                            _savingTradingControl
-                        ? null
-                        : (value) {
-                          unawaited(_changeDroneEnabled(value));
-                        },
-                title: const Text('Drone enabled'),
-                subtitle: Text(
-                  tradingControlSubtitle,
-                  style: const TextStyle(color: Color(0xFF97A3B5)),
-                ),
-                contentPadding: EdgeInsets.zero,
               ),
               if (mandateSelectionNotice != null)
                 Align(
@@ -745,66 +840,10 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             )
                             : const Icon(Icons.bolt_rounded),
                     label: Text(
-                      _runningIntent ? _intentProgressLabel : 'Run Intent',
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed:
-                        _runningIntent ||
-                                _savingTradingControl ||
-                                _exportingRemoteMandate ||
-                                _exportingRemoteRevocation
-                            ? null
-                            : _manageRemoteRunners,
-                    icon:
-                        _exportingRemoteRevocation
-                            ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.dns_outlined),
-                    label: Text(
-                      _exportingRemoteRevocation
-                          ? 'Loading Runner'
-                          : 'Remote Runner',
-                    ),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed:
-                        _runningIntent ||
-                                !_tradingControlLoaded ||
-                                _savingTradingControl
-                            ? null
-                            : () =>
-                                unawaited(_changeDroneEnabled(!_droneEnabled)),
-                    icon: Icon(
-                      _droneEnabled
-                          ? Icons.pause_circle_outline_rounded
-                          : Icons.play_circle_outline_rounded,
-                    ),
-                    label: Text(_droneEnabled ? 'Pause local drone' : 'Resume'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed:
-                        _runningIntent ||
-                                _savingTradingControl ||
-                                _exportingRemoteMandate ||
-                                !_droneEnabled
-                            ? null
-                            : _exportSignedRemoteDeterministicSession,
-                    icon:
-                        _exportingRemoteMandate
-                            ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.verified_user_outlined),
-                    label: Text(
-                      _exportingRemoteMandate
-                          ? 'Signing VPS session'
-                          : 'Authorize VPS Session',
+                      tradingMarketCheckActionLabel(
+                        running: _runningIntent,
+                        progress: _intentProgressLabel,
+                      ),
                     ),
                   ),
                 ],
@@ -854,9 +893,10 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 runSpacing: 8,
                 children: [
                   _statusChip(
-                    'Status: ${tradingIntentStatusLabel(_lastIntentResponse?.status)}',
+                    tradingIntentStatusLabel(_lastIntentResponse?.status),
                   ),
-                  _statusChip('Intent: $intentHashLabel'),
+                  if (shortIntentHash.isNotEmpty)
+                    _statusChip('Setup proof: $intentHashLabel'),
                   if (_lastIntentResponse?.errorCode != null &&
                       _lastIntentResponse!.errorCode!.trim().isNotEmpty)
                     _statusChip(
@@ -885,52 +925,10 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           ),
           const SizedBox(height: 14),
           _panel(
-            title: 'Exchange Execution',
+            title: 'Order and Activity',
             subtitle:
-                'Credentialed execution queue with retry + idempotency cache.',
+                'Review the exact order, place it once, and follow its exchange status.',
             children: [
-              TradingDroneCredentialField(
-                fieldKey: const ValueKey<String>('bingx-api-key-field'),
-                controller: _apiKeyController,
-                label: 'BingX API Key',
-                showTooltip: 'Show API key',
-                hideTooltip: 'Hide API key',
-              ),
-              const SizedBox(height: 10),
-              TradingDroneCredentialField(
-                fieldKey: const ValueKey<String>('bingx-api-secret-field'),
-                controller: _apiSecretController,
-                label: 'BingX API Secret',
-                showTooltip: 'Show secret',
-                hideTooltip: 'Hide secret',
-              ),
-              const SizedBox(height: 6),
-              SwitchListTile.adaptive(
-                value: _useTestOrderEndpoint,
-                onChanged:
-                    _executing
-                        ? null
-                        : (value) {
-                          _updateState(() {
-                            _useTestOrderEndpoint = value;
-                            _lastIntentResponse = null;
-                            _lastPreparedLiveDecision = null;
-                            _intentBlockingMessage = null;
-                          });
-                        },
-                title: Text(
-                  _useTestOrderEndpoint
-                      ? 'Simulation endpoint (no exchange order)'
-                      : 'Live endpoint (creates exchange order)',
-                ),
-                subtitle: Text(
-                  _useTestOrderEndpoint
-                      ? 'Validates one exact request without placing it on BingX.'
-                      : 'Places the exact authorized order on BingX.',
-                  style: const TextStyle(color: Color(0xFF97A3B5)),
-                ),
-                contentPadding: EdgeInsets.zero,
-              ),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
@@ -949,27 +947,11 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             )
                             : const Icon(Icons.send_rounded),
                     label: Text(
-                      _executing
-                          ? 'Sending to BingX'
-                          : !hasExecutableIntent
-                          ? 'Run Intent to Enable Order'
-                          : _useTestOrderEndpoint
-                          ? 'Send Test Order to BingX'
-                          : 'Send Live Order to BingX',
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _savingCredentials ? null : _saveCredentials,
-                    icon:
-                        _savingCredentials
-                            ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.key_rounded),
-                    label: Text(
-                      _savingCredentials ? 'Saving' : 'Save Credentials',
+                      tradingOrderActionLabel(
+                        executing: _executing,
+                        hasExecutableIntent: hasExecutableIntent,
+                        testOrder: _useTestOrderEndpoint,
+                      ),
                     ),
                   ),
                   OutlinedButton.icon(
@@ -1000,37 +982,103 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                   ),
                 ),
               ],
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              const SizedBox(height: 6),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 8),
+                title: const Text('BingX account and manual controls'),
+                subtitle: const Text(
+                  'Credentials, simulation mode, and order-id cancellation.',
+                  style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+                ),
                 children: [
-                  SizedBox(
-                    width: 260,
-                    child: TextField(
-                      controller: _cancelOrderIdController,
-                      decoration: InputDecoration(
-                        labelText: 'Order ID to cancel',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  TradingDroneCredentialField(
+                    fieldKey: const ValueKey<String>('bingx-api-key-field'),
+                    controller: _apiKeyController,
+                    label: 'BingX API Key',
+                    showTooltip: 'Show API key',
+                    hideTooltip: 'Hide API key',
+                  ),
+                  const SizedBox(height: 10),
+                  TradingDroneCredentialField(
+                    fieldKey: const ValueKey<String>('bingx-api-secret-field'),
+                    controller: _apiSecretController,
+                    label: 'BingX API Secret',
+                    showTooltip: 'Show secret',
+                    hideTooltip: 'Hide secret',
+                  ),
+                  SwitchListTile.adaptive(
+                    value: _useTestOrderEndpoint,
+                    onChanged:
+                        _executing
+                            ? null
+                            : (value) {
+                              _updateState(() {
+                                _useTestOrderEndpoint = value;
+                                _lastIntentResponse = null;
+                                _lastPreparedLiveDecision = null;
+                                _intentBlockingMessage = null;
+                              });
+                            },
+                    title: const Text('Simulation only'),
+                    subtitle: const Text(
+                      'Validate the exact request without creating an exchange order.',
+                      style: TextStyle(color: Color(0xFF97A3B5)),
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _savingCredentials ? null : _saveCredentials,
+                        icon:
+                            _savingCredentials
+                                ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : const Icon(Icons.key_rounded),
+                        label: Text(
+                          _savingCredentials ? 'Saving' : 'Save BingX Account',
                         ),
                       ),
-                    ),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: _cancelingOrder ? null : _cancelOrder,
-                    icon:
-                        _cancelingOrder
-                            ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.cancel_presentation_rounded),
-                    label: Text(_cancelingOrder ? 'Canceling' : 'Cancel Order'),
+                      SizedBox(
+                        width: 260,
+                        child: TextField(
+                          controller: _cancelOrderIdController,
+                          decoration: InputDecoration(
+                            labelText: 'Order ID to cancel',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: _cancelingOrder ? null : _cancelOrder,
+                        icon:
+                            _cancelingOrder
+                                ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : const Icon(Icons.cancel_presentation_rounded),
+                        label: Text(
+                          _cancelingOrder ? 'Canceling' : 'Cancel by ID',
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1084,7 +1132,10 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 ],
               ),
               if (tradingReconciliationNotice(
-                    _lastReconciliation, _module.activeCapsuleRootHex()) case final notice?) ...[
+                    _lastReconciliation,
+                    _module.activeCapsuleRootHex(),
+                  )
+                  case final notice?) ...[
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerLeft,

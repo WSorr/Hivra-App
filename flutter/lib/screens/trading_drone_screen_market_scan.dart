@@ -421,10 +421,10 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
     if (_signalScanScope == _TradingDroneScreenState._signalScanScopeAllPerps) {
       final count = _availablePerpSymbols.length;
       return count > 0
-          ? 'All Perps ($count, top $_TradingDroneScreenState._signalTickerPrefilterLimit volume)'
-          : 'All Perps';
+          ? 'All futures ($count, top $_TradingDroneScreenState._signalTickerPrefilterLimit by volume)'
+          : 'All futures';
     }
-    return 'Core Watchlist (${_TradingDroneScreenState._shortBreakdownSymbols.length})';
+    return 'Watchlist (${_TradingDroneScreenState._shortBreakdownSymbols.length})';
   }
 
   Future<void> _applySignalRankEntry(BingxFuturesSignalRankEntry entry) async {
@@ -441,7 +441,8 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         _zoneSide = tradingZoneSideForOrderSide(entry.side!);
       }
       if (decision?.canPrepareIntent == true &&
-          entry.zoneLowDecimal != null && entry.zoneHighDecimal != null) {
+          entry.zoneLowDecimal != null &&
+          entry.zoneHighDecimal != null) {
         _zoneLowController.text = entry.zoneLowDecimal!;
         _zoneHighController.text = entry.zoneHighDecimal!;
       } else {

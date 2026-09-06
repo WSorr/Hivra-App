@@ -211,7 +211,7 @@ void main() {
         expect(result.reasonCode, 'market_volume_activation_unavailable');
         expect(
           result.reasonMessage,
-          'Recent aggressive volume has not activated either side.',
+          'Buyers and sellers are still balanced. The drone will wait for a clearer move.',
         );
         expect(intentCalls, 0);
         expect(executionCalls, 0);

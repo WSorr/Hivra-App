@@ -417,7 +417,7 @@ class BingxFuturesTradingCycleUseCaseService {
         code: decision.trendGateCode,
         message: switch (decision.trendGateCode) {
           'liquidity_anchor_unavailable' =>
-            'No fresh executable liquidity anchor is available.',
+            'No fresh liquidity retest is ready now. Try again later or start a 24/7 session.',
           'momentum_gate_short_missed_retest' ||
           'momentum_gate_long_missed_retest' =>
             'The market has already moved beyond the bounded retest.',
@@ -433,13 +433,15 @@ class BingxFuturesTradingCycleUseCaseService {
     if (volumeUnavailable || decision.side == null) {
       return (
         code: 'market_volume_activation_unavailable',
-        message: 'Recent aggressive volume has not activated either side.',
+        message:
+            'Buyers and sellers are still balanced. The drone will wait for a clearer move.',
       );
     }
     if (!decision.zoneAnchorExecutable) {
       return (
         code: 'liquidity_anchor_unavailable',
-        message: 'No fresh executable liquidity anchor is available.',
+        message:
+            'No fresh liquidity retest is ready now. Try again later or start a 24/7 session.',
       );
     }
     return (
