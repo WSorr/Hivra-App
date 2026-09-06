@@ -333,8 +333,54 @@ void main() {
   });
 
   test('prepared intent is not labelled as executed effect', () {
-    expect(tradingIntentStatusLabel(null), 'idle');
-    expect(tradingIntentStatusLabel(PluginHostApiStatus.executed), 'prepared');
+    expect(tradingIntentStatusLabel(null), 'No setup prepared');
+    expect(
+      tradingIntentStatusLabel(PluginHostApiStatus.executed),
+      'Order ready for review',
+    );
+  });
+
+  test('trading controls use product language for the primary journey', () {
+    expect(
+      tradingControlStateLabel(loaded: false, saving: false, enabled: false),
+      'Loading trading control',
+    );
+    expect(
+      tradingControlStateLabel(loaded: true, saving: false, enabled: true),
+      'Trading enabled',
+    );
+    expect(
+      tradingControlStateLabel(loaded: true, saving: false, enabled: false),
+      'Trading paused',
+    );
+    expect(
+      tradingMarketCheckActionLabel(running: false, progress: 'ignored'),
+      'Check market now',
+    );
+    expect(
+      tradingOrderActionLabel(
+        executing: false,
+        hasExecutableIntent: false,
+        testOrder: false,
+      ),
+      'Check market to prepare order',
+    );
+    expect(
+      tradingOrderActionLabel(
+        executing: false,
+        hasExecutableIntent: true,
+        testOrder: false,
+      ),
+      'Review and Place Order',
+    );
+    expect(
+      tradingOrderActionLabel(
+        executing: false,
+        hasExecutableIntent: true,
+        testOrder: true,
+      ),
+      'Validate Without Order',
+    );
   });
 
   test('prepared intent is executable only under its active exact mandate', () {

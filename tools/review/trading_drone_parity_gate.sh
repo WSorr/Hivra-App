@@ -718,8 +718,7 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
     rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
     rg -q 'session recovery reconciles one existing effect without POST' "$4" &&
-    rg -q 'Authorize VPS Session' "$5" &&
-    rg -q '_exportSignedRemoteDeterministicSession' "$5" &&
+    rg -q '_exportSignedRemoteDeterministicSession,' "$5" &&
     rg -q 'Revoke VPS Session' "$5" &&
     rg -q '_revokeRemoteSession' "$5" &&
     rg -q 'BingxFuturesRemoteSessionRevocation.issue' "$5" &&

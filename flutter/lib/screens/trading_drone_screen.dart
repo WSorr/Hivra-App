@@ -175,8 +175,37 @@ int tradingRestoredEffectBudget(BingxFuturesTradingMandate mandate) =>
 
 @visibleForTesting
 String tradingIntentStatusLabel(PluginHostApiStatus? status) {
-  if (status == null) return 'idle';
-  return status == PluginHostApiStatus.executed ? 'prepared' : status.name;
+  if (status == null) return 'No setup prepared';
+  return status == PluginHostApiStatus.executed
+      ? 'Order ready for review'
+      : 'No trade: ${status.name}';
+}
+
+@visibleForTesting
+String tradingControlStateLabel({
+  required bool loaded,
+  required bool saving,
+  required bool enabled,
+}) {
+  if (!loaded || saving) return 'Loading trading control';
+  return enabled ? 'Trading enabled' : 'Trading paused';
+}
+
+@visibleForTesting
+String tradingMarketCheckActionLabel({
+  required bool running,
+  required String progress,
+}) => running ? progress : 'Check market now';
+
+@visibleForTesting
+String tradingOrderActionLabel({
+  required bool executing,
+  required bool hasExecutableIntent,
+  required bool testOrder,
+}) {
+  if (executing) return 'Sending to BingX';
+  if (!hasExecutableIntent) return 'Check market to prepare order';
+  return testOrder ? 'Validate Without Order' : 'Review and Place Order';
 }
 
 @visibleForTesting
