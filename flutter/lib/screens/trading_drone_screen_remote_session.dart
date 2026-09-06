@@ -23,6 +23,59 @@ String? tradingRemoteSessionStopLossNotice({
 }
 
 extension _TradingDroneRemoteSession on _TradingDroneScreenState {
+  Future<void> _refreshRemoteRunnerSummary() async {
+    final capsuleRootHex = _module.activeCapsuleRootHex();
+    if (capsuleRootHex == null) {
+      if (mounted) {
+        _updateState(() {
+          _loadingRemoteRunnerSummary = false;
+          _remoteRunnerConfigured = false;
+          _remoteRunnerStatusWire = null;
+          _remoteRunnerStatusUnavailable = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      _updateState(() {
+        _loadingRemoteRunnerSummary = true;
+        _remoteRunnerStatusUnavailable = false;
+      });
+    }
+    try {
+      final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+      if (!mounted || _module.activeCapsuleRootHex() != capsuleRootHex) return;
+      if (profiles.isEmpty) {
+        _updateState(() {
+          _loadingRemoteRunnerSummary = false;
+          _remoteRunnerConfigured = false;
+          _remoteRunnerStatusWire = null;
+        });
+        return;
+      }
+      final status = await _module.remoteRunnerProvisioning.status(
+        profiles.single,
+      );
+      if (!mounted || _module.activeCapsuleRootHex() != capsuleRootHex) return;
+      _updateState(() {
+        _loadingRemoteRunnerSummary = false;
+        _remoteRunnerConfigured = true;
+        _remoteRunnerStatusWire = status;
+      });
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.remote_runner.summary.error',
+        'error=$error effect=false',
+      );
+      if (!mounted || _module.activeCapsuleRootHex() != capsuleRootHex) return;
+      _updateState(() {
+        _loadingRemoteRunnerSummary = false;
+        _remoteRunnerStatusWire = null;
+        _remoteRunnerStatusUnavailable = true;
+      });
+    }
+  }
+
   Future<bool> _restoreRemoteCompletedEffects() async {
     try {
       final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
@@ -138,6 +191,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
               ),
             ),
       );
+      await _refreshRemoteRunnerSummary();
     } catch (error) {
       await _module.uiLog.log(
         'bingx.remote_runner.manage.error',
@@ -319,6 +373,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             'max_cycles=$maxCycles interval_seconds=$intervalSeconds effect=false',
       );
       await _showSnack('Remote Runner is enabled.', seconds: 5);
+      await _refreshRemoteRunnerSummary();
     } catch (error) {
       await _module.uiLog.log(
         'bingx.remote_session.deploy.error',
@@ -844,6 +899,23 @@ String tradingRemoteRunnerStatusLabel(String raw) {
     if (state == 'active' && fields['active'] != 'active')
       'No checks run while the Runner is paused or failed.',
   ].join('\n');
+}
+
+@visibleForTesting
+String tradingRemoteRunnerSummaryLabel({
+  required bool loading,
+  required bool configured,
+  required bool unavailable,
+  required String? statusWire,
+}) {
+  if (loading) return 'Checking the 24/7 Runner…';
+  if (!configured && !unavailable) {
+    return 'No 24/7 Runner is configured for this Capsule.';
+  }
+  if (unavailable) {
+    return 'Runner status unavailable. Refresh to retry.';
+  }
+  return tradingRemoteRunnerStatusLabel(statusWire ?? '');
 }
 
 class _RemoteRunnerProfileTile extends StatefulWidget {
