@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-05
+Status date: 2026-09-07
 
 ## Current State
 
@@ -16,6 +16,10 @@ Status date: 2026-09-05
   by the existing execution use case. BingX may replace a triggered order ID;
   terminal evidence is accepted only when the retained client order ID, account,
   symbol, and side remain exact. The original effect identity is preserved.
+- A filled managed entry is no longer presented as the final trade result. The
+  same owner now retains BingX `positionID`, reconciles an exact open or fully
+  closed position, and keeps realized/net PnL across restart. Ambiguous or
+  delayed provider evidence remains unresolved rather than guessed.
 - Packaged macOS evidence confirms the executed DOGE effect reconciles from
   unresolved to filled after restart without creating or adopting another
   managed order. Provider-created protection and operator-modified orders remain

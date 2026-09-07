@@ -7,10 +7,13 @@ import 'bingx_futures_risk_governor_service.dart';
 
 class BingxFuturesOrderSizingService {
   final BingxFuturesExchangeService _exchange;
+  final Duration _exposureReadTimeout;
 
   const BingxFuturesOrderSizingService({
     required BingxFuturesExchangeService exchange,
-  }) : _exchange = exchange;
+    Duration exposureReadTimeout = const Duration(seconds: 13),
+  }) : _exchange = exchange,
+       _exposureReadTimeout = exposureReadTimeout;
 
   Future<String> describeExposure({
     required BingxFuturesApiCredentials credentials,
@@ -31,14 +34,18 @@ class BingxFuturesOrderSizingService {
         'Invalid exposure inputs. Prepare a fresh request.',
       );
     }
-    final values = await Future.wait<Object>([
-      _exchange.getUserBalance(credentials: credentials),
-      _exchange.getLeverage(credentials: credentials, symbol: normalizedSymbol),
-      _exchange.getMarginType(
-        credentials: credentials,
-        symbol: normalizedSymbol,
-      ),
-    ]);
+    final values = await (() async => <Object>[
+          await _exchange.getUserBalance(credentials: credentials),
+          await _exchange.getLeverage(
+            credentials: credentials,
+            symbol: normalizedSymbol,
+          ),
+          await _exchange.getMarginType(
+            credentials: credentials,
+            symbol: normalizedSymbol,
+          ),
+        ])()
+        .timeout(_exposureReadTimeout);
     final balance = values[0] as BingxFuturesUserBalanceResult;
     final leverage = values[1] as BingxFuturesLeverageReadResult;
     final margin = values[2] as BingxFuturesMarginTypeReadResult;
@@ -111,8 +118,10 @@ class BingxFuturesOrderSizingService {
         availableMarginQuoteDecimal: balance.availableMarginQuoteDecimal,
       );
       if (blocker != null) {
-        throw StateError('The order cannot be approved. '
-          '${BingxFuturesRiskGovernorService.exposureMessage(blocker)}');
+        throw StateError(
+          'The order cannot be approved. '
+          '${BingxFuturesRiskGovernorService.exposureMessage(blocker)}',
+        );
       }
     }
     return [
@@ -151,6 +160,7 @@ class BingxFuturesOrderSizingService {
     required num accountEquityQuote,
     required num maximumRiskPercent,
     required num stopLossPercent,
+    String? referencePriceDecimal,
   }) async {
     if (accountEquityQuote <= 0 ||
         maximumRiskPercent <= 0 ||
@@ -167,6 +177,7 @@ class BingxFuturesOrderSizingService {
       sizing = await size(
         symbol: normalizedSymbol,
         maximumNotionalQuote: fittedNotionalQuote,
+        referencePriceDecimal: referencePriceDecimal,
       );
       if (sizing.status == BingxFuturesOrderSizingStatus.blocked &&
           sizing.reasonCode == 'exchange_minimum_exceeds_risk_budget') {
@@ -180,6 +191,7 @@ class BingxFuturesOrderSizingService {
           sizing = await size(
             symbol: normalizedSymbol,
             maximumNotionalQuote: fittedNotionalQuote,
+            referencePriceDecimal: referencePriceDecimal,
           );
         }
       }

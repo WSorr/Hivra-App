@@ -40,7 +40,7 @@ void main() {
       },
     );
 
-    test('sizes a pending buy against its exact trigger price', () async {
+    test('sizes a pending buy against its exact zone-mid price', () async {
       String? capturedReferencePrice;
       BingxFuturesIntentCommand? capturedIntent;
       final service = _service(
@@ -70,12 +70,12 @@ void main() {
       final result = await service.run(_command(executeEffect: false));
 
       expect(result.status, BingxFuturesTradingCycleStatus.prepared);
-      expect(capturedReferencePrice, '110');
+      expect(capturedReferencePrice, '100');
       expect(capturedIntent!.quantityDecimal, '0.13');
       expect(capturedIntent!.triggerPriceDecimal, '110');
     });
 
-    test('sizes a pending sell against its exact trigger price', () async {
+    test('sizes a pending sell against its exact zone-mid price', () async {
       String? capturedReferencePrice;
       BingxFuturesIntentCommand? capturedIntent;
       final service = _service(
@@ -106,7 +106,7 @@ void main() {
       final result = await service.run(_command(executeEffect: false));
 
       expect(result.status, BingxFuturesTradingCycleStatus.prepared);
-      expect(capturedReferencePrice, '90');
+      expect(capturedReferencePrice, '100');
       expect(capturedIntent!.quantityDecimal, '0.13');
       expect(capturedIntent!.triggerPriceDecimal, '90');
       expect(capturedIntent!.takeProfitDecimal, '70');

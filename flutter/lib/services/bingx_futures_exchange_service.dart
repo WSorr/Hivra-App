@@ -39,6 +39,8 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   static const String _userBalancePath = '/openApi/swap/v3/user/balance';
   static const String _userPositionsPath = '/openApi/swap/v2/user/positions';
   static const String _userIncomePath = '/openApi/swap/v2/user/income';
+  static const String _positionHistoryPath =
+      '/openApi/swap/v1/trade/positionHistory';
 
   final BingxHttpRequestSender _requestSender;
   final int Function() _clockMs;
@@ -351,6 +353,57 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       requestedClientOrderId:
           normalizedClientOrderId.isEmpty ? null : normalizedClientOrderId,
       order: order,
+    );
+  }
+
+  Future<BingxFuturesPositionHistoryResult> getPositionHistory({
+    required BingxFuturesApiCredentials credentials,
+    required String symbol,
+    required String positionId,
+    required int startTimeMs,
+    required int endTimeMs,
+  }) async {
+    final normalizedCredentials = credentials.normalized();
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final normalizedPositionId = positionId.trim();
+    if (normalizedPositionId.isEmpty) {
+      throw const FormatException('positionId is required');
+    }
+    if (startTimeMs <= 0 || endTimeMs < startTimeMs) {
+      throw const FormatException('Invalid position history time range');
+    }
+    if (endTimeMs - startTimeMs > const Duration(days: 90).inMilliseconds) {
+      throw const FormatException('Position history range exceeds 90 days');
+    }
+    final response = await _executeSignedGet(
+      credentials: normalizedCredentials,
+      endpointPath: _positionHistoryPath,
+      params: <String, String>{
+        'symbol': normalizedSymbol,
+        'positionId': normalizedPositionId,
+        'startTs': startTimeMs.toString(),
+        'endTs': endTimeMs.toString(),
+        'pageIndex': '1',
+        'pageSize': '100',
+        'recvWindow': recvWindowMs.toString(),
+        'timestamp': _clockMs().toString(),
+      },
+    );
+    final parsed = _extractClosedPositions(
+      decoded: _tryDecodeMap(response.body),
+      fallbackSymbol: normalizedSymbol,
+    );
+    return BingxFuturesPositionHistoryResult(
+      isSuccess: response.isSuccess && parsed.shapeValid,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _positionHistoryPath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      positionId: normalizedPositionId,
+      positions: parsed.positions,
     );
   }
 
@@ -1455,6 +1508,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
           map['timestamp']?.toString() ??
           '',
     );
+    final updatedAtMs = int.tryParse(map['updateTime']?.toString() ?? '');
     return BingxFuturesOpenOrder(
       orderId: orderId,
       clientOrderId: _readTrimmedAny(map, const <String>[
@@ -1473,6 +1527,100 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       executedQuantityDecimal:
           (executedQty == null || executedQty.isEmpty) ? null : executedQty,
       createdAtMs: createdAtMs,
+      updatedAtMs: updatedAtMs,
+      positionId: _readTrimmedAny(map, const <String>[
+        'positionID',
+        'positionId',
+      ]),
+    );
+  }
+
+  static ({bool shapeValid, List<BingxFuturesClosedPosition> positions})
+  _extractClosedPositions({
+    required Map<String, dynamic>? decoded,
+    required String fallbackSymbol,
+  }) {
+    if (decoded == null || !decoded.containsKey('data')) {
+      return (
+        shapeValid: false,
+        positions: const <BingxFuturesClosedPosition>[],
+      );
+    }
+    final data = decoded['data'];
+    final rows = <dynamic>[];
+    var shapeValid = false;
+    if (data is List) {
+      rows.addAll(data);
+      shapeValid = true;
+    } else if (data is Map) {
+      final list = data['list'];
+      if (list is List) {
+        rows.addAll(list);
+        shapeValid = true;
+      }
+    }
+    final parsed = <BingxFuturesClosedPosition>[];
+    for (final raw in rows) {
+      if (raw is! Map) {
+        shapeValid = false;
+        continue;
+      }
+      final map = Map<String, dynamic>.from(raw);
+      final positionId = _readTrimmedAny(map, const <String>[
+        'positionID',
+        'positionId',
+      ]);
+      final symbol = _readTrimmed(map, 'symbol')?.toUpperCase();
+      final positionSide = _readTrimmed(map, 'positionSide')?.toUpperCase();
+      final openTimeMs = int.tryParse(map['openTime']?.toString() ?? '');
+      final updatedAtMs = int.tryParse(map['updateTime']?.toString() ?? '');
+      final averageEntry = _readTrimmed(map, 'avgPrice');
+      final averageClose = _readTrimmed(map, 'avgClosePrice');
+      final realizedPnl = _readTrimmedAny(map, const <String>[
+        'realisedProfit',
+        'realizedProfit',
+      ]);
+      final netPnl = _readTrimmed(map, 'netProfit');
+      final positionQuantity = _readTrimmed(map, 'positionAmt');
+      final closedQuantity = _readTrimmed(map, 'closePositionAmt');
+      final fullyClosed = map['closeAllPositions'];
+      final requiredDecimals = <String?>[
+        averageEntry,
+        averageClose,
+        realizedPnl,
+        netPnl,
+        positionQuantity,
+        closedQuantity,
+      ];
+      if (positionId == null ||
+          positionSide == null ||
+          openTimeMs == null ||
+          updatedAtMs == null ||
+          fullyClosed is! bool ||
+          requiredDecimals.any((value) => !_isFiniteDecimal(value))) {
+        shapeValid = false;
+        continue;
+      }
+      parsed.add(
+        BingxFuturesClosedPosition(
+          positionId: positionId,
+          symbol: symbol == null || symbol.isEmpty ? fallbackSymbol : symbol,
+          positionSide: positionSide,
+          openTimeMs: openTimeMs,
+          updatedAtMs: updatedAtMs,
+          averageEntryPriceDecimal: averageEntry!,
+          averageClosePriceDecimal: averageClose!,
+          realizedPnlQuoteDecimal: realizedPnl!,
+          netPnlQuoteDecimal: netPnl!,
+          positionQuantityDecimal: positionQuantity!,
+          closedQuantityDecimal: closedQuantity!,
+          fullyClosed: fullyClosed,
+        ),
+      );
+    }
+    return (
+      shapeValid: shapeValid && parsed.length == rows.length,
+      positions: List<BingxFuturesClosedPosition>.unmodifiable(parsed),
     );
   }
 
@@ -1918,6 +2066,10 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       }
       parsed.add(
         BingxFuturesUserPosition(
+          positionId: _readStringField(map, const <String>[
+            'positionID',
+            'positionId',
+          ]),
           symbol: _tryNormalizeSymbol(symbol) ?? symbol.toUpperCase(),
           quantityDecimal: quantity,
           unrealizedPnlDecimal: _readStringField(map, const <String>[

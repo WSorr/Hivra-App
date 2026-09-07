@@ -572,12 +572,16 @@ class BingxFuturesExchangeExecutionUseCaseService {
     }
 
     final bindingHash = accountBindingHashHex(credentials);
-    final evidenceAtUtc = DateTime.now().toUtc().toIso8601String();
+    final evidenceNow = _nowUtc().toUtc();
+    final evidenceAtUtc = evidenceNow.toIso8601String();
     final openById = <String, BingxFuturesOpenOrder>{
       if (openOrders?.isSuccess == true)
         for (final order in openOrders!.orders) order.orderId: order,
     };
     final queryCache = <String, Future<BingxFuturesOrderQueryResult>>{};
+    final positionCache = <String, Future<BingxFuturesUserPositionsResult>>{};
+    final positionHistoryCache =
+        <String, Future<BingxFuturesPositionHistoryResult>>{};
     final diagnostics = <String>[];
 
     Future<
@@ -681,6 +685,206 @@ class BingxFuturesExchangeExecutionUseCaseService {
       );
     }
 
+    Future<
+      ({
+        BingxManagedPositionLifecycleStatus status,
+        String? positionId,
+        String? diagnostic,
+        String? realizedPnlQuoteDecimal,
+        String? netPnlQuoteDecimal,
+        String? closedAtUtc,
+      })
+    >
+    readPositionEvidence({
+      required BingxManagedOrderProvenance record,
+      required BingxFuturesOpenOrder? entryOrder,
+    }) async {
+      if (record.positionLifecycleStatus ==
+          BingxManagedPositionLifecycleStatus.closed) {
+        return (
+          status: record.positionLifecycleStatus,
+          positionId: record.positionId,
+          diagnostic: record.positionDiagnostic,
+          realizedPnlQuoteDecimal: record.realizedPnlQuoteDecimal,
+          netPnlQuoteDecimal: record.netPnlQuoteDecimal,
+          closedAtUtc: record.closedAtUtc,
+        );
+      }
+      final positionId =
+          entryOrder?.positionId?.trim().isNotEmpty == true
+              ? entryOrder!.positionId!.trim()
+              : record.positionId?.trim() ?? '';
+      if (positionId.isEmpty) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: null,
+          diagnostic: 'provider_position_id_missing',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      final recordedAt = DateTime.tryParse(record.recordedAtUtc)?.toUtc();
+      if (recordedAt == null || evidenceNow.isBefore(recordedAt)) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: positionId,
+          diagnostic: 'position_history_window_invalid',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      final oldestAllowed = evidenceNow.subtract(const Duration(days: 90));
+      if (recordedAt.isBefore(oldestAllowed)) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: positionId,
+          diagnostic: 'position_history_window_expired',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      BingxFuturesPositionHistoryResult history;
+      try {
+        history = await positionHistoryCache.putIfAbsent(
+          '${record.symbol}|$positionId',
+          () => _exchange.getPositionHistory(
+            credentials: credentials,
+            symbol: record.symbol,
+            positionId: positionId,
+            startTimeMs: recordedAt.millisecondsSinceEpoch,
+            endTimeMs: evidenceNow.millisecondsSinceEpoch,
+          ),
+        );
+      } catch (error) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: positionId,
+          diagnostic: 'position_history_error:${error.runtimeType}',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      if (!history.isSuccess) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: positionId,
+          diagnostic: 'position_history_${history.exchangeCode}',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      final expectedPositionSide = record.side == 'buy' ? 'LONG' : 'SHORT';
+      final exactHistory = history.positions
+          .where(
+            (position) =>
+                position.positionId == positionId &&
+                position.symbol == record.symbol.toUpperCase() &&
+                position.positionSide == expectedPositionSide,
+          )
+          .toList(growable: false);
+      if (exactHistory.length > 1) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: positionId,
+          diagnostic: 'position_history_conflict',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      if (exactHistory.length == 1) {
+        final closed = exactHistory.single;
+        if (!closed.fullyClosed) {
+          return (
+            status: BingxManagedPositionLifecycleStatus.unresolved,
+            positionId: positionId,
+            diagnostic: 'position_history_not_fully_closed',
+            realizedPnlQuoteDecimal: null,
+            netPnlQuoteDecimal: null,
+            closedAtUtc: null,
+          );
+        }
+        return (
+          status: BingxManagedPositionLifecycleStatus.closed,
+          positionId: positionId,
+          diagnostic: null,
+          realizedPnlQuoteDecimal: closed.realizedPnlQuoteDecimal,
+          netPnlQuoteDecimal: closed.netPnlQuoteDecimal,
+          closedAtUtc:
+              DateTime.fromMillisecondsSinceEpoch(
+                closed.updatedAtMs,
+                isUtc: true,
+              ).toIso8601String(),
+        );
+      }
+      BingxFuturesUserPositionsResult positions;
+      try {
+        positions = await positionCache.putIfAbsent(
+          record.symbol,
+          () => _exchange.getUserPositions(
+            credentials: credentials,
+            symbol: record.symbol,
+          ),
+        );
+      } catch (error) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: positionId,
+          diagnostic: 'provider_positions_error:${error.runtimeType}',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      if (!positions.isSuccess) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: positionId,
+          diagnostic: 'provider_positions_${positions.exchangeCode}',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      final sameSide = positions.positions
+          .where(
+            (position) =>
+                position.symbol == record.symbol.toUpperCase() &&
+                position.positionSide?.toUpperCase() == expectedPositionSide &&
+                (double.tryParse(position.quantityDecimal ?? '') ?? 0) != 0,
+          )
+          .toList(growable: false);
+      final exactOpen = sameSide
+          .where((position) => position.positionId == positionId)
+          .toList(growable: false);
+      if (exactOpen.length == 1) {
+        return (
+          status: BingxManagedPositionLifecycleStatus.open,
+          positionId: positionId,
+          diagnostic: null,
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
+        );
+      }
+      return (
+        status: BingxManagedPositionLifecycleStatus.unresolved,
+        positionId: positionId,
+        diagnostic:
+            sameSide.isEmpty
+                ? 'closed_position_evidence_pending'
+                : 'provider_position_identity_mismatch',
+        realizedPnlQuoteDecimal: null,
+        netPnlQuoteDecimal: null,
+        closedAtUtc: null,
+      );
+    }
+
     final provenance = <String, BingxManagedOrderProvenance>{
       ...current.managedOrderProvenance,
     };
@@ -713,11 +917,28 @@ class BingxFuturesExchangeExecutionUseCaseService {
         orderId: record.orderId,
         clientOrderId: record.clientOrderId,
       );
-      provenance[entry.key] = record.withLifecycle(
+      var reconciledRecord = record.withLifecycle(
         status: evidence.status,
         evidenceAtUtc: evidenceAtUtc,
         diagnostic: evidence.diagnostic,
+        observedPositionId: evidence.order?.positionId,
       );
+      if (evidence.status == BingxManagedOrderLifecycleStatus.filled) {
+        final positionEvidence = await readPositionEvidence(
+          record: reconciledRecord,
+          entryOrder: evidence.order,
+        );
+        reconciledRecord = reconciledRecord.withPositionLifecycle(
+          status: positionEvidence.status,
+          evidenceAtUtc: evidenceAtUtc,
+          diagnostic: positionEvidence.diagnostic,
+          observedPositionId: positionEvidence.positionId,
+          realizedPnlQuoteDecimal: positionEvidence.realizedPnlQuoteDecimal,
+          netPnlQuoteDecimal: positionEvidence.netPnlQuoteDecimal,
+          closedAtUtc: positionEvidence.closedAtUtc,
+        );
+      }
+      provenance[entry.key] = reconciledRecord;
       if (evidence.status == BingxManagedOrderLifecycleStatus.active) {
         activeIds.add(record.orderId);
         activeSymbols[record.orderId] = record.symbol;

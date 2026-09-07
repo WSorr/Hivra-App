@@ -47,6 +47,13 @@ void main() {
               canonicalIntentJson: '{"symbol":"BNB-USDT","side":"sell"}',
               externalEffectOperationId:
                   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              positionId: 'position-1',
+              positionLifecycleStatus:
+                  BingxManagedPositionLifecycleStatus.closed,
+              positionEvidenceAtUtc: '2026-06-12T13:00:00.000Z',
+              realizedPnlQuoteDecimal: '-0.79',
+              netPnlQuoteDecimal: '-0.83',
+              closedAtUtc: '2026-06-12T12:30:00.000Z',
               marketSnapshotHashHex: 'market-1',
               featureHashHex: 'feature-1',
               tvhDecisionHashHex: 'tvh-1',
@@ -78,6 +85,14 @@ void main() {
       expect(
         restored.managedOrderProvenance['ord-1']!.externalEffectOperationId,
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      );
+      expect(
+        restored.managedOrderProvenance['ord-1']!.positionLifecycleStatus,
+        BingxManagedPositionLifecycleStatus.closed,
+      );
+      expect(
+        restored.managedOrderProvenance['ord-1']!.netPnlQuoteDecimal,
+        '-0.83',
       );
       expect(restored.stopLossPercent, 10.0);
       expect(restored.takeProfitRiskReward, 2.0);
@@ -159,6 +174,25 @@ void main() {
           'canonical_intent_json': '{"symbol":"SOL-USDT"}',
           'external_effect_operation_id': 'invalid',
           'recorded_at_utc': '2026-08-28T00:00:00.000Z',
+        }),
+        isNull,
+      );
+    });
+
+    test('rejects incomplete closed-position evidence', () {
+      expect(
+        BingxManagedOrderProvenance.fromJsonMap(<String, dynamic>{
+          'order_id': 'ord-1',
+          'symbol': 'SOL-USDT',
+          'side': 'buy',
+          'test_order': false,
+          'intent_hash_hex': 'intent-1',
+          'canonical_intent_json': '{"symbol":"SOL-USDT"}',
+          'position_id': 'position-1',
+          'position_lifecycle_status': 'closed',
+          'position_evidence_at_utc': '2026-09-07T00:00:00.000Z',
+          'realized_pnl_quote_decimal': '-1.0',
+          'recorded_at_utc': '2026-09-07T00:00:00.000Z',
         }),
         isNull,
       );

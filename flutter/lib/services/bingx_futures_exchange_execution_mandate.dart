@@ -81,15 +81,17 @@ extension on BingxFuturesExchangeExecutionUseCaseService {
       if (quantity == null || quantity <= 0 || maxNotional == null) {
         return blocked('trading_mandate_notional_invalid');
       }
-      if (price != null && (price <= 0 || quantity * price > maxNotional)) {
-        return blocked('trading_mandate_notional_exceeded');
-      }
-      if (orderNotionalQuoteDecimal != null &&
-          (evaluatedNotional == null || evaluatedNotional <= 0)) {
-        return blocked('trading_mandate_notional_invalid');
-      }
-      if (evaluatedNotional != null && evaluatedNotional > maxNotional) {
-        return blocked('trading_mandate_notional_exceeded');
+      if (price != null) {
+        if (price <= 0 || quantity * price > maxNotional) {
+          return blocked('trading_mandate_notional_exceeded');
+        }
+      } else if (orderNotionalQuoteDecimal != null) {
+        if (evaluatedNotional == null || evaluatedNotional <= 0) {
+          return blocked('trading_mandate_notional_invalid');
+        }
+        if (evaluatedNotional > maxNotional) {
+          return blocked('trading_mandate_notional_exceeded');
+        }
       }
       if (effectCount >= mandate.maxEffects) {
         return blocked('trading_mandate_effect_budget_exhausted');

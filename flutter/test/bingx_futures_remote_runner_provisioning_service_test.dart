@@ -34,6 +34,23 @@ void main() {
     );
   });
 
+  test('bundle upgrade refreshes evidence before exporting its anchor', () {
+    final script = const DartSshBingxFuturesRemoteRunnerHostPort()
+        .buildBootstrapScriptForTesting(
+          profileId: 'a' * 64,
+          sshPublicKeyLine: 'ssh-ed25519 AAAA test',
+          controlBytes: Uint8List.fromList(utf8.encode('#!/bin/sh\n')),
+        );
+
+    final upgrade = script.indexOf('--upgrade-disabled');
+    final initialize = script.indexOf('--initialize-disabled', upgrade);
+    final export = script.indexOf('--export-anchor', initialize);
+
+    expect(upgrade, greaterThanOrEqualTo(0));
+    expect(initialize, greaterThan(upgrade));
+    expect(export, greaterThan(initialize));
+  });
+
   test(
     'bootstrap stores only scoped SSH identity after authenticated anchor',
     () async {

@@ -223,6 +223,8 @@ class BingxFuturesOpenOrder {
   final String? quantityDecimal;
   final String? executedQuantityDecimal;
   final int? createdAtMs;
+  final int? updatedAtMs;
+  final String? positionId;
 
   const BingxFuturesOpenOrder({
     required this.orderId,
@@ -237,6 +239,64 @@ class BingxFuturesOpenOrder {
     required this.quantityDecimal,
     required this.executedQuantityDecimal,
     required this.createdAtMs,
+    this.updatedAtMs,
+    this.positionId,
+  });
+}
+
+class BingxFuturesClosedPosition {
+  final String positionId;
+  final String symbol;
+  final String positionSide;
+  final int openTimeMs;
+  final int updatedAtMs;
+  final String averageEntryPriceDecimal;
+  final String averageClosePriceDecimal;
+  final String realizedPnlQuoteDecimal;
+  final String netPnlQuoteDecimal;
+  final String positionQuantityDecimal;
+  final String closedQuantityDecimal;
+  final bool fullyClosed;
+
+  const BingxFuturesClosedPosition({
+    required this.positionId,
+    required this.symbol,
+    required this.positionSide,
+    required this.openTimeMs,
+    required this.updatedAtMs,
+    required this.averageEntryPriceDecimal,
+    required this.averageClosePriceDecimal,
+    required this.realizedPnlQuoteDecimal,
+    required this.netPnlQuoteDecimal,
+    required this.positionQuantityDecimal,
+    required this.closedQuantityDecimal,
+    required this.fullyClosed,
+  });
+}
+
+class BingxFuturesPositionHistoryResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final String symbol;
+  final String positionId;
+  final List<BingxFuturesClosedPosition> positions;
+
+  const BingxFuturesPositionHistoryResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.symbol,
+    required this.positionId,
+    required this.positions,
   });
 }
 
@@ -715,12 +775,14 @@ class BingxFuturesIncomeResult {
 }
 
 class BingxFuturesUserPosition {
+  final String? positionId;
   final String symbol;
   final String? quantityDecimal;
   final String? unrealizedPnlDecimal;
   final String? positionSide;
 
   const BingxFuturesUserPosition({
+    this.positionId,
     required this.symbol,
     required this.quantityDecimal,
     required this.unrealizedPnlDecimal,

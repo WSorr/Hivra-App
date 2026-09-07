@@ -582,6 +582,69 @@ void main() {
       expect(result.order!.status, 'FILLED');
     });
 
+    test('reads exact closed position history with net pnl', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1787356800000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"total":1,"list":[{"positionId":"position-1","symbol":"ZIL-USDT","isolated":true,"positionSide":"SHORT","openTime":1787356800000,"updateTime":1787360400000,"avgPrice":"0.00291","avgClosePrice":"0.00294","realisedProfit":"-0.79","netProfit":"-0.83","positionAmt":"27146","closePositionAmt":"27146","leverage":10,"closeAllPositions":true,"positionCommission":"-0.04","totalFunding":"0"}]}}',
+          );
+        },
+      );
+
+      final result = await service.getPositionHistory(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'zil-usdt',
+        positionId: 'position-1',
+        startTimeMs: 1787356800000,
+        endTimeMs: 1787360400000,
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(
+        capturedRequest.uri.path,
+        '/openApi/swap/v1/trade/positionHistory',
+      );
+      expect(capturedRequest.uri.queryParameters['positionId'], 'position-1');
+      expect(result.isSuccess, isTrue);
+      expect(result.positions, hasLength(1));
+      expect(result.positions.single.positionSide, 'SHORT');
+      expect(result.positions.single.netPnlQuoteDecimal, '-0.83');
+      expect(result.positions.single.fullyClosed, isTrue);
+    });
+
+    test('fails closed on malformed closed position history', () async {
+      final service = BingxFuturesExchangeService(
+        requestSender:
+            (_) async => const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"list":[{"positionId":"position-1","symbol":"ZIL-USDT","positionSide":"SHORT","openTime":1787356800000,"updateTime":1787360400000,"netProfit":"not-a-decimal","closeAllPositions":true}]}}',
+            ),
+      );
+
+      final result = await service.getPositionHistory(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'ZIL-USDT',
+        positionId: 'position-1',
+        startTimeMs: 1787356800000,
+        endTimeMs: 1787360400000,
+      );
+
+      expect(result.isSuccess, isFalse);
+      expect(result.positions, isEmpty);
+    });
+
     test('cancels order via signed DELETE endpoint', () async {
       late BingxHttpRequest capturedRequest;
       final service = BingxFuturesExchangeService(
