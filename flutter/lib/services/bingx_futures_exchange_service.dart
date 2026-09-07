@@ -11,6 +11,78 @@ import 'bingx_futures_public_market_data_port.dart';
 typedef BingxHttpRequestSender =
     Future<BingxHttpResponse> Function(BingxHttpRequest request);
 
+enum BingxExecutionRetryClass {
+  retryableTransient,
+  retryableClockSkew,
+  nonRetryable,
+}
+
+bool bingxExchangeExecutionShouldRetry({
+  required int httpStatusCode,
+  required String exchangeCode,
+  required String exchangeMessage,
+}) {
+  return bingxExchangeExecutionRetryClass(
+        httpStatusCode: httpStatusCode,
+        exchangeCode: exchangeCode,
+        exchangeMessage: exchangeMessage,
+      ) !=
+      BingxExecutionRetryClass.nonRetryable;
+}
+
+BingxExecutionRetryClass bingxExchangeExecutionRetryClass({
+  required int httpStatusCode,
+  required String exchangeCode,
+  required String exchangeMessage,
+}) {
+  if (httpStatusCode == 408 || httpStatusCode == 429 || httpStatusCode >= 500) {
+    return BingxExecutionRetryClass.retryableTransient;
+  }
+
+  final code = exchangeCode.trim().toLowerCase();
+  if (const <String>{
+    '-1003',
+    '-11',
+    '-12',
+    '-13',
+    '-5',
+    '-6',
+    'http_408',
+    'http_429',
+    'http_500',
+    'http_502',
+    'http_503',
+    'http_504',
+  }.contains(code)) {
+    return BingxExecutionRetryClass.retryableTransient;
+  }
+  if (const <String>{
+    '-1021',
+    'timestamp_invalid',
+    'recvwindow_invalid',
+  }.contains(code)) {
+    return BingxExecutionRetryClass.retryableClockSkew;
+  }
+
+  final message = exchangeMessage.trim().toLowerCase();
+  if (message.contains('timestamp') ||
+      message.contains('recvwindow') ||
+      message.contains('clock')) {
+    return BingxExecutionRetryClass.retryableClockSkew;
+  }
+  if (message.contains('timeout') ||
+      message.contains('timed out') ||
+      message.contains('connection') ||
+      message.contains('network') ||
+      message.contains('unavailable') ||
+      message.contains('too many requests') ||
+      message.contains('rate limit') ||
+      message.contains('temporarily')) {
+    return BingxExecutionRetryClass.retryableTransient;
+  }
+  return BingxExecutionRetryClass.nonRetryable;
+}
+
 class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   static const Duration _httpTimeout = Duration(seconds: 12);
   static const int _maximumConnectionsPerHost = 8;
@@ -2482,10 +2554,24 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
         signedPayloadHashHex: result.signedPayloadHashHex,
       );
     }
-    if (result.httpStatusCode >= 400 &&
+    final normalizedExchangeCode = result.exchangeCode.trim().toLowerCase();
+    final providerClaimsSuccess = const <String>{
+      '0',
+      'ok',
+    }.contains(normalizedExchangeCode);
+    final retryClass = bingxExchangeExecutionRetryClass(
+      httpStatusCode: result.httpStatusCode,
+      exchangeCode: result.exchangeCode,
+      exchangeMessage: result.exchangeMessage,
+    );
+    final explicitHttpRejection =
+        result.httpStatusCode >= 400 &&
         result.httpStatusCode < 500 &&
         result.httpStatusCode != 408 &&
-        result.httpStatusCode != 429) {
+        result.httpStatusCode != 429;
+    if (explicitHttpRejection ||
+        (!providerClaimsSuccess &&
+            retryClass == BingxExecutionRetryClass.nonRetryable)) {
       return ExternalEffectAdapterResult(
         status: ExternalEffectAdapterStatus.terminalFailure,
         errorCode: 'provider_rejected',
@@ -2495,7 +2581,11 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
     return ExternalEffectAdapterResult(
       status: ExternalEffectAdapterStatus.unresolved,
       errorCode: 'provider_outcome_ambiguous',
-      errorMessage: 'BingX order outcome requires reconciliation',
+      errorMessage:
+          providerClaimsSuccess
+              ? 'BingX success response lacked an exact order reference'
+              : 'BingX order outcome requires reconciliation '
+                  '(${result.exchangeCode})',
       providerReferenceId: result.orderId,
     );
   }

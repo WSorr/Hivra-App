@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 
 void main() {
@@ -1108,5 +1109,93 @@ void main() {
       expect(result.positions.first.symbol, 'BTC-USDT');
       expect(result.positions.last.quantityDecimal, '-1.2');
     });
+  });
+
+  group('BingxFuturesExternalEffectAdapter', () {
+    for (final vector in <
+      ({
+        String name,
+        String body,
+        ExternalEffectAdapterStatus expectedStatus,
+        String expectedErrorCode,
+        String expectedErrorMessage,
+      })
+    >[
+      (
+        name: 'treats HTTP 200 business rejection as terminal',
+        body: '{"code":100001,"msg":"invalid order parameters"}',
+        expectedStatus: ExternalEffectAdapterStatus.terminalFailure,
+        expectedErrorCode: 'provider_rejected',
+        expectedErrorMessage: 'BingX rejected the exact order (100001)',
+      ),
+      (
+        name: 'keeps HTTP 200 transient business failure unresolved',
+        body: '{"code":-1003,"msg":"temporarily unavailable"}',
+        expectedStatus: ExternalEffectAdapterStatus.unresolved,
+        expectedErrorCode: 'provider_outcome_ambiguous',
+        expectedErrorMessage:
+            'BingX order outcome requires reconciliation (-1003)',
+      ),
+      (
+        name: 'keeps malformed success without order id unresolved',
+        body: '{"code":0,"msg":"ok","data":{}}',
+        expectedStatus: ExternalEffectAdapterStatus.unresolved,
+        expectedErrorCode: 'provider_outcome_ambiguous',
+        expectedErrorMessage:
+            'BingX success response lacked an exact order reference',
+      ),
+    ]) {
+      test(vector.name, () async {
+        final adapter = BingxFuturesExternalEffectAdapter(
+          exchange: BingxFuturesExchangeService(
+            requestSender:
+                (_) async =>
+                    BingxHttpResponse(statusCode: 200, body: vector.body),
+          ),
+          credentials: const BingxFuturesApiCredentials(
+            apiKey: 'key',
+            apiSecret: 'secret',
+          ),
+          accountBindingId: 'a' * 64,
+        );
+        final payload = jsonEncode(<String, dynamic>{
+          'client_order_id': 'hivra-classification-test',
+          'symbol': 'ZIL-USDT',
+          'side': 'sell',
+          'order_type': 'limit',
+          'quantity_decimal': '25705',
+          'limit_price_decimal': '0.00299516',
+          'time_in_force': 'GTC',
+          'entry_mode': 'zone_pending',
+          'trigger_price_decimal': '0.00299226',
+          'stop_loss_decimal': '0.00302511',
+          'take_profit_decimal': '0.00279',
+          'intent_hash_hex': 'b' * 64,
+          'test_order': false,
+        });
+
+        final result = await adapter.deliver(
+          ExternalEffectAdapterRequest(
+            ownerCapsuleHex: 'c' * 64,
+            operationId: 'd' * 64,
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            providerId: BingxFuturesExternalEffectAdapter.providerId,
+            accountBindingId: 'a' * 64,
+            effectKind: BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
+            canonicalPayloadJson: payload,
+            payloadHashHex: 'e' * 64,
+          ),
+        );
+
+        expect(result.status, vector.expectedStatus);
+        expect(result.errorCode, vector.expectedErrorCode);
+        expect(result.errorMessage, vector.expectedErrorMessage);
+        expect(
+          result.errorMessage,
+          isNot(contains('invalid order parameters')),
+        );
+        expect(result.errorMessage, isNot(contains('temporarily unavailable')));
+      });
+    }
   });
 }
