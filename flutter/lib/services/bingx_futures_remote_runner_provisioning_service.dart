@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
 import '../models/external_effect_models.dart';
@@ -447,6 +448,17 @@ class DartSshBingxFuturesRemoteRunnerHostPort
 
   const DartSshBingxFuturesRemoteRunnerHostPort();
 
+  @visibleForTesting
+  String buildBootstrapScriptForTesting({
+    required String profileId,
+    required String sshPublicKeyLine,
+    required Uint8List controlBytes,
+  }) => _bootstrapScript(
+    profileId: profileId,
+    sshPublicKeyLine: sshPublicKeyLine,
+    controlBytes: controlBytes,
+  );
+
   @override
   Future<BingxFuturesRemoteRunnerBootstrapResult> bootstrap({
     required String host,
@@ -476,10 +488,8 @@ class DartSshBingxFuturesRemoteRunnerHostPort
             unawaited(timedOutCandidate.close());
           }
         }
-        handshakeNetworkTimer = Timer(
-          _connectTimeout,
-          closeTimedOutCandidate,
-        );
+
+        handshakeNetworkTimer = Timer(_connectTimeout, closeTimedOutCandidate);
         final candidate = SSHClient(
           socket,
           username: rootUsername,
@@ -496,7 +506,8 @@ class DartSshBingxFuturesRemoteRunnerHostPort
             final knownAlgorithm = acceptedAlgorithm;
             final knownFingerprint = acceptedFingerprint;
             if (knownAlgorithm != null || knownFingerprint != null) {
-              final matches = algorithm == knownAlgorithm &&
+              final matches =
+                  algorithm == knownAlgorithm &&
                   fingerprint == knownFingerprint;
               if (matches) {
                 handshakeNetworkTimer = Timer(
@@ -944,6 +955,7 @@ PY
 )"
   if ! cmp -s "\$bundle/ARTIFACT-MANIFEST.v2" /opt/hivra/trading-public-shadow/ARTIFACT-MANIFEST.v2; then
     "\$bundle/hivra-trading-runner-lifecycle" --upgrade-disabled "\$bundle" --expected-runner-key-id "\$runner_key_id"
+    /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --initialize-disabled /opt/hivra/trading-public-shadow >/dev/null
   fi
   /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --verify /opt/hivra/trading-public-shadow >/dev/null
   /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --export-anchor /opt/hivra/trading-public-shadow --expected-runner-key-id "\$runner_key_id" --anchor-output "\$anchor"
