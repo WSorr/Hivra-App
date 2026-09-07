@@ -375,6 +375,17 @@ not include credential unlock and does not prove an exchange effect failed.
 - effect claims remain durable after active tracking ends, and a late result is
   written only to the Capsule that started reconciliation.
 
+A filled entry order is not the final trade outcome. The same execution use
+case MUST retain the provider `positionID` returned by the exact managed entry
+query and use only that identifier for post-trade reconciliation. A matching
+current position is `open`; a unique, fully closed position-history record with
+the same account, symbol, direction, and `positionID` is `closed` and supplies
+the retained realized and net PnL. Missing identity, malformed history,
+multiple matches, a different position, provider failure, or history lag stays
+`unresolved`. Final closed evidence is durable across restart and is not
+re-fetched or replaced. Manual orders are never adopted as managed effects,
+and price proximity alone cannot classify a close as stop-loss or take-profit.
+
 The account binding is a non-secret hash of the exact API-key identity. No
 credential enters the tracking journal. Test-order validation has no provider
 order lifecycle and therefore remains explicitly unresolved rather than being

@@ -27,6 +27,43 @@ part 'trading_drone_screen_presentation.dart';
 
 const String preparedTradingIntentTerminalOutcome = 'intent:prepared';
 const List<int> tradingEffectBudgetOptions = <int>[1, 2, 4, 8, 16, 32];
+const int tradingSignalRankCandidateLimit = 12;
+
+@visibleForTesting
+String? tradingPendingSizingReferencePrice({
+  required String zoneLowDecimal,
+  required String zoneHighDecimal,
+}) {
+  final low = num.tryParse(zoneLowDecimal.trim());
+  final high = num.tryParse(zoneHighDecimal.trim());
+  if (low == null ||
+      high == null ||
+      !low.isFinite ||
+      !high.isFinite ||
+      low <= 0 ||
+      high < low) {
+    return null;
+  }
+  final fixed = ((low + high) / 2).toStringAsFixed(8);
+  return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+}
+
+@visibleForTesting
+List<BingxFuturesSignalRankCandidate> tradingBoundedSignalRankCandidates(
+  List<BingxFuturesSignalRankCandidate> candidates, {
+  int limit = tradingSignalRankCandidateLimit,
+}) {
+  if (limit <= 0) return const <BingxFuturesSignalRankCandidate>[];
+  final ranked = List<BingxFuturesSignalRankCandidate>.of(candidates)
+    ..sort((left, right) {
+      final readiness = (right.decision.canPrepareIntent ? 1 : 0).compareTo(
+        left.decision.canPrepareIntent ? 1 : 0,
+      );
+      if (readiness != 0) return readiness;
+      return left.symbol.compareTo(right.symbol);
+    });
+  return List<BingxFuturesSignalRankCandidate>.unmodifiable(ranked.take(limit));
+}
 
 @visibleForTesting
 String? tradingReconciliationNotice(
@@ -60,6 +97,26 @@ String? tradingReconciliationNotice(
         claim.orderId ?? claim.clientOrderId:
             '${claim.symbol} · ${claim.orderId ?? claim.clientOrderId} · ${reason(claim.lifecycleDiagnostic)}',
   };
+  final positions = state.managedOrderProvenance.values
+      .where(
+        (record) =>
+            !record.testOrder &&
+            record.positionLifecycleStatus !=
+                BingxManagedPositionLifecycleStatus.unresolved,
+      )
+      .toList(growable: false)
+    ..sort((a, b) => b.recordedAtUtc.compareTo(a.recordedAtUtc));
+  String positionSummary(BingxManagedOrderProvenance record) {
+    if (record.positionLifecycleStatus ==
+        BingxManagedPositionLifecycleStatus.open) {
+      return '${record.symbol} position is open · ${record.positionId}';
+    }
+    final net = record.netPnlQuoteDecimal;
+    return '${record.symbol} position closed'
+        '${net == null ? '' : ' · net $net USDT'}'
+        '${record.closedAtUtc == null ? '' : ' · ${record.closedAtUtc}'}';
+  }
+
   return <String>[
     'Last reconciliation · Active ${result.activeCount} · Completed ${result.terminalCount} · Needs review ${result.unresolvedCount}',
     'Completed means filled, cancelled, rejected or expired — not necessarily filled.',
@@ -68,6 +125,7 @@ String? tradingReconciliationNotice(
       'Test records are retained separately; they are not live orders.',
     if (result.unresolvedCount > 0)
       'Do not recreate these orders. Verify their outcome in BingX; missing evidence is not success or cancellation.',
+    ...positions.take(3).map(positionSummary),
     ...unresolved.values,
   ].join('\n');
 }
@@ -1223,11 +1281,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         return;
       }
       final symbol = _symbolController.text.trim();
+      final sizingReferencePrice = tradingPendingSizingReferencePrice(
+        zoneLowDecimal: _zoneLowController.text,
+        zoneHighDecimal: _zoneHighController.text,
+      );
       final fit = await _module.orderSizing.fitMaximumNotional(
         symbol: symbol,
         accountEquityQuote: equity,
         maximumRiskPercent: _executionRiskPolicy.maxRiskPerTradePercent,
         stopLossPercent: _stopLossPercent,
+        referencePriceDecimal: sizingReferencePrice,
       );
       final safeNotional = fit.safeNotionalQuote;
       final fittedNotional = fit.fittedNotionalQuote;

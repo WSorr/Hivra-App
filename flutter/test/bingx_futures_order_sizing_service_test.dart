@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
@@ -6,6 +8,52 @@ import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_order_sizing_service.dart';
 
 void main() {
+  test(
+    'exposure review fails closed when an exchange read never returns',
+    () async {
+      final pending = Completer<BingxHttpResponse>();
+      final requests = <String>[];
+      final owner = BingxFuturesOrderSizingService(
+        exchange: BingxFuturesExchangeService(
+          requestSender: (request) {
+            requests.add(request.uri.path);
+            if (request.uri.path.endsWith('/leverage')) {
+              return pending.future;
+            }
+            final data =
+                request.uri.path.endsWith('/marginType')
+                    ? '{"marginType":"ISOLATED"}'
+                    : '[{"asset":"USDT","equity":"100","availableMargin":"10"}]';
+            return Future.value(
+              BingxHttpResponse(
+                statusCode: 200,
+                body: '{"code":0,"data":$data}',
+              ),
+            );
+          },
+        ),
+        exposureReadTimeout: const Duration(milliseconds: 5),
+      );
+
+      await expectLater(
+        owner.describeExposure(
+          credentials: const BingxFuturesApiCredentials(
+            apiKey: 'test',
+            apiSecret: 'test',
+          ),
+          symbol: 'DOGE-USDT',
+          maximumNotionalQuote: 8,
+          stopLossPercent: 1,
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(requests, <String>[
+        '/openApi/swap/v3/user/balance',
+        '/openApi/swap/v2/trade/leverage',
+      ]);
+    },
+  );
+
   test(
     'exposure uses side leverage and free margin, never wallet equity',
     () async {
@@ -269,6 +317,47 @@ void main() {
         expect(result.sizing?.quantityDecimal, '1');
       },
     );
+
+    test('auto-fit sizes a pending order at its exact zone price', () async {
+      var quoteCalls = 0;
+      final service = BingxFuturesOrderSizingService(
+        exchange: BingxFuturesExchangeService(
+          requestSender: (request) async {
+            if (request.uri.path.endsWith('/quote/price')) {
+              quoteCalls += 1;
+              return const BingxHttpResponse(
+                statusCode: 200,
+                body: '{"code":0,"msg":"ok","data":{"price":"0.09"}}',
+              );
+            }
+            if (request.uri.path.endsWith('/quote/contracts')) {
+              return const BingxHttpResponse(
+                statusCode: 200,
+                body:
+                    '{"code":0,"msg":"ok","data":[{"symbol":"DOGE-USDT","tradeMinQuantity":"1","tradeMinUSDT":"2","quantityPrecision":0,"pricePrecision":6}]}',
+              );
+            }
+            throw StateError('unexpected endpoint ${request.uri.path}');
+          },
+        ),
+      );
+
+      final result = await service.fitMaximumNotional(
+        symbol: 'DOGE-USDT',
+        accountEquityQuote: 39.2812,
+        maximumRiskPercent: 2,
+        stopLossPercent: 1,
+        referencePriceDecimal: '0.08031921',
+      );
+
+      expect(result.sizing?.status, BingxFuturesOrderSizingStatus.sized);
+      expect(result.sizing?.quantityDecimal, '958');
+      expect(
+        num.parse(result.sizing!.orderNotionalQuoteDecimal!),
+        lessThanOrEqualTo(result.fittedNotionalQuote),
+      );
+      expect(quoteCalls, 0);
+    });
   });
 }
 

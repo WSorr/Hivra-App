@@ -15,6 +15,8 @@ enum BingxManagedOrderLifecycleStatus {
   expired,
 }
 
+enum BingxManagedPositionLifecycleStatus { unresolved, open, closed }
+
 enum BingxLiquidityEventEffectReservation {
   acquired,
   alreadyClaimed,
@@ -1343,6 +1345,13 @@ class BingxManagedOrderProvenance {
   final BingxManagedOrderLifecycleStatus lifecycleStatus;
   final String? lifecycleEvidenceAtUtc;
   final String? lifecycleDiagnostic;
+  final String? positionId;
+  final BingxManagedPositionLifecycleStatus positionLifecycleStatus;
+  final String? positionEvidenceAtUtc;
+  final String? positionDiagnostic;
+  final String? realizedPnlQuoteDecimal;
+  final String? netPnlQuoteDecimal;
+  final String? closedAtUtc;
   final String? marketSnapshotHashHex;
   final String? featureHashHex;
   final String? tvhDecisionHashHex;
@@ -1362,6 +1371,14 @@ class BingxManagedOrderProvenance {
     this.lifecycleStatus = BingxManagedOrderLifecycleStatus.unresolved,
     this.lifecycleEvidenceAtUtc,
     this.lifecycleDiagnostic,
+    this.positionId,
+    this.positionLifecycleStatus =
+        BingxManagedPositionLifecycleStatus.unresolved,
+    this.positionEvidenceAtUtc,
+    this.positionDiagnostic,
+    this.realizedPnlQuoteDecimal,
+    this.netPnlQuoteDecimal,
+    this.closedAtUtc,
     required this.marketSnapshotHashHex,
     required this.featureHashHex,
     required this.tvhDecisionHashHex,
@@ -1383,6 +1400,13 @@ class BingxManagedOrderProvenance {
       'lifecycle_status': lifecycleStatus.name,
       'lifecycle_evidence_at_utc': lifecycleEvidenceAtUtc,
       'lifecycle_diagnostic': lifecycleDiagnostic,
+      'position_id': positionId,
+      'position_lifecycle_status': positionLifecycleStatus.name,
+      'position_evidence_at_utc': positionEvidenceAtUtc,
+      'position_diagnostic': positionDiagnostic,
+      'realized_pnl_quote_decimal': realizedPnlQuoteDecimal,
+      'net_pnl_quote_decimal': netPnlQuoteDecimal,
+      'closed_at_utc': closedAtUtc,
       'market_snapshot_hash_hex': marketSnapshotHashHex?.trim().toLowerCase(),
       'feature_hash_hex': featureHashHex?.trim().toLowerCase(),
       'tvh_decision_hash_hex': tvhDecisionHashHex?.trim().toLowerCase(),
@@ -1404,6 +1428,41 @@ class BingxManagedOrderProvenance {
         read('account_binding_hash_hex').toLowerCase();
     final externalEffectOperationId =
         read('external_effect_operation_id').toLowerCase();
+    final positionId = _readOptionalString(map['position_id']);
+    final positionLifecycleStatus = _readPositionLifecycleStatus(
+      read('position_lifecycle_status'),
+    );
+    final positionEvidenceAtUtc = _readOptionalString(
+      map['position_evidence_at_utc'],
+    );
+    final realizedPnlQuoteDecimal = _readOptionalFiniteDecimal(
+      map['realized_pnl_quote_decimal'],
+    );
+    final netPnlQuoteDecimal = _readOptionalFiniteDecimal(
+      map['net_pnl_quote_decimal'],
+    );
+    final closedAtUtc = _readOptionalString(map['closed_at_utc']);
+    final positionEvidenceTime =
+        DateTime.tryParse(positionEvidenceAtUtc ?? '')?.toUtc();
+    final closedTime = DateTime.tryParse(closedAtUtc ?? '')?.toUtc();
+    final invalidPositionEvidence = switch (positionLifecycleStatus) {
+      BingxManagedPositionLifecycleStatus.closed =>
+        positionId == null ||
+            positionEvidenceTime == null ||
+            realizedPnlQuoteDecimal == null ||
+            netPnlQuoteDecimal == null ||
+            closedTime == null,
+      BingxManagedPositionLifecycleStatus.open =>
+        positionId == null ||
+            positionEvidenceTime == null ||
+            realizedPnlQuoteDecimal != null ||
+            netPnlQuoteDecimal != null ||
+            closedAtUtc != null,
+      BingxManagedPositionLifecycleStatus.unresolved =>
+        realizedPnlQuoteDecimal != null ||
+            netPnlQuoteDecimal != null ||
+            closedAtUtc != null,
+    };
     if (orderId.isEmpty ||
         symbol.isEmpty ||
         (side != 'buy' && side != 'sell') ||
@@ -1411,6 +1470,7 @@ class BingxManagedOrderProvenance {
         canonicalIntentJson.trim().isEmpty ||
         (externalEffectOperationId.isNotEmpty &&
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(externalEffectOperationId)) ||
+        invalidPositionEvidence ||
         recordedAtUtc.isEmpty) {
       return null;
     }
@@ -1435,6 +1495,13 @@ class BingxManagedOrderProvenance {
         map['lifecycle_evidence_at_utc'],
       ),
       lifecycleDiagnostic: _readOptionalString(map['lifecycle_diagnostic']),
+      positionId: positionId,
+      positionLifecycleStatus: positionLifecycleStatus,
+      positionEvidenceAtUtc: positionEvidenceAtUtc,
+      positionDiagnostic: _readOptionalString(map['position_diagnostic']),
+      realizedPnlQuoteDecimal: realizedPnlQuoteDecimal,
+      netPnlQuoteDecimal: netPnlQuoteDecimal,
+      closedAtUtc: closedAtUtc,
       marketSnapshotHashHex: _readOptionalHash(map['market_snapshot_hash_hex']),
       featureHashHex: _readOptionalHash(map['feature_hash_hex']),
       tvhDecisionHashHex: _readOptionalHash(map['tvh_decision_hash_hex']),
@@ -1447,6 +1514,7 @@ class BingxManagedOrderProvenance {
     required BingxManagedOrderLifecycleStatus status,
     required String evidenceAtUtc,
     String? diagnostic,
+    String? observedPositionId,
   }) {
     return BingxManagedOrderProvenance(
       orderId: orderId,
@@ -1461,6 +1529,50 @@ class BingxManagedOrderProvenance {
       lifecycleStatus: status,
       lifecycleEvidenceAtUtc: evidenceAtUtc,
       lifecycleDiagnostic: diagnostic,
+      positionId: observedPositionId ?? positionId,
+      positionLifecycleStatus: positionLifecycleStatus,
+      positionEvidenceAtUtc: positionEvidenceAtUtc,
+      positionDiagnostic: positionDiagnostic,
+      realizedPnlQuoteDecimal: realizedPnlQuoteDecimal,
+      netPnlQuoteDecimal: netPnlQuoteDecimal,
+      closedAtUtc: closedAtUtc,
+      marketSnapshotHashHex: marketSnapshotHashHex,
+      featureHashHex: featureHashHex,
+      tvhDecisionHashHex: tvhDecisionHashHex,
+      liveDecisionHashHex: liveDecisionHashHex,
+      recordedAtUtc: recordedAtUtc,
+    );
+  }
+
+  BingxManagedOrderProvenance withPositionLifecycle({
+    required BingxManagedPositionLifecycleStatus status,
+    required String evidenceAtUtc,
+    required String? diagnostic,
+    String? observedPositionId,
+    String? realizedPnlQuoteDecimal,
+    String? netPnlQuoteDecimal,
+    String? closedAtUtc,
+  }) {
+    return BingxManagedOrderProvenance(
+      orderId: orderId,
+      symbol: symbol,
+      side: side,
+      testOrder: testOrder,
+      intentHashHex: intentHashHex,
+      canonicalIntentJson: canonicalIntentJson,
+      clientOrderId: clientOrderId,
+      accountBindingHashHex: accountBindingHashHex,
+      externalEffectOperationId: externalEffectOperationId,
+      lifecycleStatus: lifecycleStatus,
+      lifecycleEvidenceAtUtc: lifecycleEvidenceAtUtc,
+      lifecycleDiagnostic: lifecycleDiagnostic,
+      positionId: observedPositionId ?? positionId,
+      positionLifecycleStatus: status,
+      positionEvidenceAtUtc: evidenceAtUtc,
+      positionDiagnostic: diagnostic,
+      realizedPnlQuoteDecimal: realizedPnlQuoteDecimal,
+      netPnlQuoteDecimal: netPnlQuoteDecimal,
+      closedAtUtc: closedAtUtc,
       marketSnapshotHashHex: marketSnapshotHashHex,
       featureHashHex: featureHashHex,
       tvhDecisionHashHex: tvhDecisionHashHex,
@@ -1486,6 +1598,14 @@ BingxManagedOrderLifecycleStatus _readLifecycleStatus(String value) {
   };
 }
 
+BingxManagedPositionLifecycleStatus _readPositionLifecycleStatus(String value) {
+  return switch (value) {
+    'open' => BingxManagedPositionLifecycleStatus.open,
+    'closed' => BingxManagedPositionLifecycleStatus.closed,
+    _ => BingxManagedPositionLifecycleStatus.unresolved,
+  };
+}
+
 String? _readOptionalString(Object? value) {
   final normalized = value?.toString().trim() ?? '';
   return normalized.isEmpty ? null : normalized;
@@ -1494,6 +1614,13 @@ String? _readOptionalString(Object? value) {
 String? _readOptionalSha256(Object? value) {
   final normalized = value?.toString().trim().toLowerCase() ?? '';
   return RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized) ? normalized : null;
+}
+
+String? _readOptionalFiniteDecimal(Object? value) {
+  final normalized = value?.toString().trim() ?? '';
+  if (normalized.isEmpty) return null;
+  final parsed = double.tryParse(normalized);
+  return parsed != null && parsed.isFinite ? normalized : null;
 }
 
 class BingxFuturesOrderTrackingState {

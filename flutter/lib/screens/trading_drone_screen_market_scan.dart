@@ -221,8 +221,9 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         await _showSnack('Signal scan failed: no live decisions', seconds: 3);
         return;
       }
+      final rankCandidates = tradingBoundedSignalRankCandidates(candidates);
       final ranked = await _module.signalRankUseCase.execute(
-        BingxFuturesSignalRankCommand(candidates: candidates),
+        BingxFuturesSignalRankCommand(candidates: rankCandidates),
       );
       if (!ranked.isSuccess) {
         await _module.uiLog.log(
@@ -241,7 +242,7 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         _signalRankEntries = ranked.entries;
         _signalScanCompletedAtUtc = DateTime.now().toUtc();
         _signalDecisionByHash = <String, BingxFuturesLiveDecisionResult>{
-          for (final candidate in candidates)
+          for (final candidate in rankCandidates)
             candidate.decision.liveDecisionHashHex: candidate.decision,
         };
         _side = tradingPreferredSideForCycle(
@@ -258,6 +259,8 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         'scope=$_signalScanScope source_symbols=${rawSymbols.length} '
             'volume_growth_symbols=${symbols.length} '
             'candidates=${candidates.length} '
+            'rank_candidates=${rankCandidates.length} '
+            'omitted=${candidates.length - rankCandidates.length} '
             'skipped=$skipped '
             'entries=${ranked.entries.length} scan_hash=${_shortHash(ranked.scanHashHex)} '
             'top=${top == null ? "-" : "${top.symbol}:${top.bucket}:${top.score}"}',

@@ -1,12 +1,62 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
+import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
 import 'package:hivra_app/models/bingx_futures_signal_rank_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
+import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
+  test('pending sizing uses the exact zone-mid entry price', () {
+    expect(
+      tradingPendingSizingReferencePrice(
+        zoneLowDecimal: '0.0801',
+        zoneHighDecimal: '0.0803',
+      ),
+      '0.0802',
+    );
+    expect(
+      tradingPendingSizingReferencePrice(
+        zoneLowDecimal: '0.1017',
+        zoneHighDecimal: '0.1019',
+      ),
+      '0.1018',
+    );
+    expect(
+      tradingPendingSizingReferencePrice(
+        zoneLowDecimal: '0.0803',
+        zoneHighDecimal: '0.0801',
+      ),
+      isNull,
+    );
+  });
+
+  test('signal rank input is bounded and keeps ready candidates first', () {
+    final candidates = <BingxFuturesSignalRankCandidate>[
+      for (var index = 0; index < 14; index += 1)
+        _rankCandidate('N${index.toString().padLeft(2, '0')}-USDT'),
+      _rankCandidate('READY-B-USDT', ready: true),
+      _rankCandidate('READY-A-USDT', ready: true),
+    ];
+
+    final bounded = tradingBoundedSignalRankCandidates(candidates);
+    final reversed = tradingBoundedSignalRankCandidates(
+      candidates.reversed.toList(growable: false),
+    );
+
+    expect(bounded, hasLength(tradingSignalRankCandidateLimit));
+    expect(bounded.take(2).map((candidate) => candidate.symbol), <String>[
+      'READY-A-USDT',
+      'READY-B-USDT',
+    ]);
+    expect(
+      reversed.map((candidate) => candidate.symbol),
+      bounded.map((candidate) => candidate.symbol),
+    );
+  });
+
   test('remote session rejects an SL outside current leverage buffer', () {
     expect(
       tradingRemoteSessionStopLossNotice(
@@ -38,6 +88,25 @@ void main() {
         trackedOrderId: null,
         managedOrderIds: const [],
         managedOrderSymbols: const {},
+        managedOrderProvenance: const {
+          'closed-order': BingxManagedOrderProvenance(
+            orderId: 'closed-order',
+            symbol: 'ZIL-USDT',
+            side: 'sell',
+            testOrder: false,
+            intentHashHex: 'intent',
+            canonicalIntentJson: '{}',
+            positionId: 'position-1',
+            positionLifecycleStatus: BingxManagedPositionLifecycleStatus.closed,
+            netPnlQuoteDecimal: '-0.83',
+            closedAtUtc: '2026-09-06T13:00:00.000Z',
+            marketSnapshotHashHex: null,
+            featureHashHex: null,
+            tvhDecisionHashHex: null,
+            liveDecisionHashHex: null,
+            recordedAtUtc: '2026-09-06T12:00:00.000Z',
+          ),
+        },
         stopLossPercent: null,
         takeProfitRiskReward: null,
         liquidityEventEffectClaims: {
@@ -74,6 +143,7 @@ void main() {
       );
       expect(notice, contains('Do not recreate'));
       expect(notice, contains('Test records are retained separately'));
+      expect(notice, contains('ZIL-USDT position closed · net -0.83 USDT'));
       expect(notice, isNot(contains('test-client')));
       expect(tradingReconciliationNotice(result, 'capsule-b'), isNull);
       expect(tradingReconciliationNotice(result, null), isNull);
@@ -775,4 +845,40 @@ void main() {
 
     expect(tradingReconciliationResumeSymbol(state), isNull);
   });
+}
+
+BingxFuturesSignalRankCandidate _rankCandidate(
+  String symbol, {
+  bool ready = false,
+}) {
+  const hash =
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  return BingxFuturesSignalRankCandidate(
+    symbol: symbol,
+    decision: BingxFuturesLiveDecisionResult(
+      canPrepareIntent: ready,
+      decision:
+          ready ? BingxTvhDecisionKind.short : BingxTvhDecisionKind.noSignal,
+      side: ready ? 'sell' : null,
+      zoneSide: ready ? 'sellside' : null,
+      zoneLowDecimal: ready ? '1' : null,
+      zoneHighDecimal: ready ? '2' : null,
+      zoneConflict: false,
+      marketSnapshotHashHex: hash,
+      featureHashHex: hash,
+      tvhDecisionHashHex: hash,
+      liveDecisionHashHex: hash,
+      canonicalJson: '{}',
+      reasons: const [],
+      trend15m: 'flat',
+      trend4h: 'flat',
+      trend1d: 'flat',
+      trendGateBlocked: false,
+      trendGateCode: 'ok',
+      zoneAnchorSource: ready ? '1d_fresh_high' : null,
+      zoneAnchorExecutable: ready,
+      zoneAnchorLifecycle: ready ? 'fresh' : null,
+      zoneEvaluationSide: ready ? 'sell' : null,
+    ),
+  );
 }
