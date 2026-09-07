@@ -147,7 +147,7 @@ class MoltbookPublicBulletinAiService {
     final body =
         normalizedFacts.every(proposal.body.contains)
             ? proposal.body
-            : _appendConfirmedFacts(proposal.body, factsBlock);
+            : factsBlock;
     final bound = MoltbookPublicBulletinProposal(
       title: proposal.title,
       body: body,
@@ -161,29 +161,6 @@ class MoltbookPublicBulletinAiService {
 
   static String _confirmedFactsBlock(List<String> facts) =>
       'Confirmed facts:\n${facts.join('\n')}';
-
-  static String _appendConfirmedFacts(String body, String factsBlock) {
-    if (factsBlock.length > MoltbookPublicBulletinAiService.maxBodyCharacters) {
-      throw const FormatException(
-        'Confirmed public facts exceed bulletin body bounds',
-      );
-    }
-    final separatorLength = body.isEmpty ? 0 : 2;
-    final availableBodyCharacters =
-        MoltbookPublicBulletinAiService.maxBodyCharacters -
-        factsBlock.length -
-        separatorLength;
-    if (availableBodyCharacters < 0) {
-      throw const FormatException(
-        'Confirmed public facts exceed bulletin body bounds',
-      );
-    }
-    final prefix =
-        body.length <= availableBodyCharacters
-            ? body
-            : _truncate(body, availableBodyCharacters).trimRight();
-    return prefix.isEmpty ? factsBlock : '$prefix\n\n$factsBlock';
-  }
 
   Future<MoltbookReplyProposal> proposeReply({
     required MoltbookConversationObservation conversation,

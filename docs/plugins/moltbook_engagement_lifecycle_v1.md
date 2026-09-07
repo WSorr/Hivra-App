@@ -113,15 +113,20 @@ Each confirmed item binds one producer-supplied `source_id`, one allowed topic,
 and 1..8 explicit public facts to a versioned SHA-256 commitment. Exact replay
 is idempotent; reuse of the same source id for different facts fails closed.
 
-The feed is Capsule scoped, oldest-first, and bounded to 100 items. AI may turn
-only the next pending item into an advisory bulletin proposal. Every confirmed
-fact must remain verbatim in both the proposal body and its ordered supporting
-facts; generic summaries and paraphrases fail closed before WASM. A foreground
-cycle may prepare that local draft only when no remote target claimed the
-cycle's proposal slot and no local draft or non-terminal publication already
-awaits review. The item becomes drafted only after the existing ambassador
-WASM preserves the exact title/body and the existing draft store durably
-records the canonical draft hash.
+The feed is Capsule scoped, oldest-first for explicitly recorded items, and
+bounded to 100 items. A reviewed build-time manifest is an ordered snapshot
+lineage: only its newest allowed snapshot may remain pending, while older
+undrafted entries from that same manifest are sealed instead of replayed as
+current news on a new Capsule. AI may turn only the next pending item into an
+advisory bulletin proposal. Every confirmed fact must remain verbatim in both
+the proposal body and its ordered supporting facts. If AI omits or paraphrases
+any fact, the existing proposal owner replaces the drifting prose with one
+non-repeating exact facts block before WASM. A foreground cycle may prepare
+that local draft only when no remote target claimed the cycle's proposal slot
+and no local draft or non-terminal publication already awaits review. The item
+becomes drafted only after the existing ambassador WASM preserves the exact
+title/body and the existing draft store durably records the canonical draft
+hash.
 
 `Assisted` mode stops at the local draft. Existing `Bounded` mode may advance
 one exact public-change draft through the existing post effect only when the
@@ -133,11 +138,12 @@ a second semantic post. Missing community evidence, AI fact drift, secret-like
 material, Capsule switching, or account rotation keeps the change pending and
 creates no provider effect.
 The application may import a bounded, reviewed build-time manifest when the
-Moltbook workspace opens. The manifest parser is strict and atomic, and only
-items matching the Capsule's existing allowed-topic policy are ingested. This
-producer reads neither Git nor runtime Capsule data, and gains no draft,
-approval, effect, or publication authority. Any future provider or CI producer
-must use the same ingestion contract rather than create a second feed.
+Moltbook workspace opens. The manifest parser is strict and atomic, validates
+the complete lineage, and exposes only the newest entry matching the Capsule's
+existing allowed-topic policy. This producer reads neither Git nor runtime
+Capsule data, and gains no draft, approval, effect, or publication authority.
+Any future provider or CI producer must use the same ingestion contract rather
+than create a second feed.
 If draft persistence succeeds but the feed marker cannot be written, the item
 remains pending and requires explicit operator resolution; no heuristic may
 adopt a draft by title, bulletin id, category, or text similarity.
