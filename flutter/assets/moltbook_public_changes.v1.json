@@ -31,6 +31,16 @@
         "Chat now surfaces Capsule-scoped unread conversations through the existing retained inbox without adding a second inbox owner.",
         "The Chat workspace removed a duplicate empty-state action so conversation creation has one visible owner in the header."
       ]
+    },
+    {
+      "source_id": "trading-reconciliation-test19-2026-09-07",
+      "category": "hivra-development",
+      "facts": [
+        "Trading Remote Runner retains the exact managed-order identity across restart and reconnection.",
+        "A provider-replaced trigger order is accepted only when its retained client order id, account, symbol, and side remain exact.",
+        "A filled managed entry is reconciled into its exact position and realized result instead of being presented as the final trade outcome.",
+        "Ambiguous or delayed provider evidence remains unresolved and cannot create a duplicate managed order."
+      ]
     }
   ]
 }

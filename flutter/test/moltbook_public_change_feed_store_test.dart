@@ -122,7 +122,7 @@ void main() {
   });
 
   test(
-    'packaged manifest produces independent pending public changes',
+    'packaged manifest exposes only its newest snapshot as pending',
     () async {
       final raw = await rootBundle.loadString(
         'assets/moltbook_public_changes.v1.json',
@@ -133,15 +133,56 @@ void main() {
             MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
       );
 
-      expect(inserted, hasLength(3));
-      expect(inserted.map((change) => change.sourceId), <String>[
-        'moltbook-product-cycle-2026-08-29',
-        'moltbook-gemini-verification-2026-08-30',
-        'moltbook-pfr-destination-2026-09-02',
-      ]);
-      expect((await store.nextPending())?.sourceId, inserted.first.sourceId);
+      expect(inserted, hasLength(1));
+      expect(
+        inserted.single.sourceId,
+        'trading-reconciliation-test19-2026-09-07',
+      );
+      expect(await store.load(), hasLength(1));
+      expect(
+        (await store.nextPending())?.sourceId,
+        'trading-reconciliation-test19-2026-09-07',
+      );
     },
   );
+
+  test('new packaged snapshot seals an older bundled pending item', () async {
+    final raw = await rootBundle.loadString(
+      'assets/moltbook_public_changes.v1.json',
+    );
+    final decoded = jsonDecode(raw) as Map<String, dynamic>;
+    final changes = List<Map<String, dynamic>>.from(
+      (decoded['changes'] as List).cast<Map<String, dynamic>>(),
+    );
+    final previousRaw = jsonEncode(<String, dynamic>{
+      ...decoded,
+      'changes': changes.take(changes.length - 1).toList(growable: false),
+    });
+
+    final previousInserted = await store.ingestManifest(
+      previousRaw,
+      allowedTopics:
+          MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
+    );
+    expect(
+      previousInserted.single.sourceId,
+      'moltbook-pfr-destination-2026-09-02',
+    );
+
+    final inserted = await store.ingestManifest(
+      raw,
+      allowedTopics:
+          MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
+    );
+
+    expect(
+      inserted.single.sourceId,
+      'trading-reconciliation-test19-2026-09-07',
+    );
+    expect((await store.load()).map((change) => change.sourceId), <String>[
+      'trading-reconciliation-test19-2026-09-07',
+    ]);
+  });
 
   test(
     'packaged manifest appends a new pending change after earlier drafts',
@@ -173,10 +214,13 @@ void main() {
       );
 
       expect(appended, hasLength(1));
-      expect(appended.single.sourceId, 'moltbook-pfr-destination-2026-09-02');
+      expect(
+        appended.single.sourceId,
+        'trading-reconciliation-test19-2026-09-07',
+      );
       expect(
         (await store.nextPending())?.sourceId,
-        'moltbook-pfr-destination-2026-09-02',
+        'trading-reconciliation-test19-2026-09-07',
       );
     },
   );

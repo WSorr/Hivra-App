@@ -224,30 +224,50 @@ class MoltbookPublicChangeFeedStore {
       final bySource = <String, MoltbookPublicChange>{
         for (final change in changes) change.sourceId: change,
       };
-      final inserted = <MoltbookPublicChange>[];
-      for (final manifestChange in manifestChanges) {
-        if (!allowedTopics.contains(manifestChange.category)) continue;
+      final allowedManifestChanges = manifestChanges
+          .where((change) => allowedTopics.contains(change.category))
+          .toList(growable: false);
+      if (allowedManifestChanges.isEmpty) {
+        return const <MoltbookPublicChange>[];
+      }
+      for (final manifestChange in allowedManifestChanges) {
         final existing = bySource[manifestChange.sourceId];
-        if (existing != null) {
-          if (existing.commitmentHashHex != manifestChange.commitment) {
-            throw StateError(
-              'Public change source id is already bound to different facts',
-            );
-          }
-          continue;
+        if (existing != null &&
+            existing.commitmentHashHex != manifestChange.commitment) {
+          throw StateError(
+            'Public change source id is already bound to different facts',
+          );
         }
+      }
+
+      final currentSnapshot = allowedManifestChanges.last;
+      final supersededSourceIds =
+          allowedManifestChanges
+              .take(allowedManifestChanges.length - 1)
+              .map((change) => change.sourceId)
+              .toSet();
+      final previousLength = changes.length;
+      changes.removeWhere(
+        (change) =>
+            change.isPending && supersededSourceIds.contains(change.sourceId),
+      );
+      final inserted = <MoltbookPublicChange>[];
+      final existing = bySource[currentSnapshot.sourceId];
+      if (existing == null) {
         final change = MoltbookPublicChange(
-          sourceId: manifestChange.sourceId,
-          category: manifestChange.category,
-          facts: List<String>.unmodifiable(manifestChange.facts),
-          commitmentHashHex: manifestChange.commitment,
+          sourceId: currentSnapshot.sourceId,
+          category: currentSnapshot.category,
+          facts: List<String>.unmodifiable(currentSnapshot.facts),
+          commitmentHashHex: currentSnapshot.commitment,
           recordedAtUtc: DateTime.now().toUtc(),
         );
         changes.add(change);
         bySource[change.sourceId] = change;
         inserted.add(change);
       }
-      if (inserted.isEmpty) return const <MoltbookPublicChange>[];
+      if (inserted.isEmpty && changes.length == previousLength) {
+        return const <MoltbookPublicChange>[];
+      }
       if (changes.length > maxChanges) {
         changes.removeRange(0, changes.length - maxChanges);
       }
