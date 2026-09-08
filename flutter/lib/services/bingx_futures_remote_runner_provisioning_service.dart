@@ -424,6 +424,11 @@ abstract interface class BingxFuturesRemoteRunnerHostPort {
     required String privateKeyPem,
   });
 
+  Future<String> resume({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required String privateKeyPem,
+  });
+
   Future<String> remove({
     required BingxFuturesRemoteRunnerProfile profile,
     required String privateKeyPem,
@@ -738,6 +743,19 @@ class DartSshBingxFuturesRemoteRunnerHostPort
       profile: profile,
       privateKeyPem: privateKeyPem,
       operation: 'pause',
+      input: const <int>[],
+    );
+  }
+
+  @override
+  Future<String> resume({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required String privateKeyPem,
+  }) {
+    return _runRestricted(
+      profile: profile,
+      privateKeyPem: privateKeyPem,
+      operation: 'resume:${profile.runnerKeyId}',
       input: const <int>[],
     );
   }
@@ -1194,6 +1212,22 @@ class BingxFuturesRemoteRunnerProvisioningService {
       throw StateError('Remote Runner profile belongs to another Capsule.');
     }
     return _host.pause(
+      profile: profile,
+      privateKeyPem: await _privateKey(profile),
+    );
+  }
+
+  Future<String> resume(BingxFuturesRemoteRunnerProfile profile) async {
+    if (profile.capsuleHex != _capsuleHex()) {
+      throw StateError('Remote Runner profile belongs to another Capsule.');
+    }
+    final retainedSession = await _profiles.loadActiveSession(
+      profile.profileId,
+    );
+    if (retainedSession == null) {
+      throw StateError('This Runner has no locally retained active session.');
+    }
+    return _host.resume(
       profile: profile,
       privateKeyPem: await _privateKey(profile),
     );

@@ -1,17 +1,22 @@
 # Hivra Development Control
 
-Status date: 2026-09-07
+Status date: 2026-09-08
 
 ## Current State
 
 - Maintained runtime: Hivra 1.x.
-- Published prerelease: `v1.0.3-test18` at `9cd70cc`; exact macOS and Android
+- Published prerelease: `v1.0.3-test19` at `dabeaa7`; exact macOS and Android
   artifacts have manual signoff.
 - Current source baseline: manifest-bound plugin workspaces opened through one
   App Shell navigation path, with Chat UI, Moltbook lifecycle, and the local
   Trading intent route assigned to dedicated capability owners; Capsule
   Analyst is the sole in-app diagnostic AI surface.
 - Trading Remote Runner acceptance remains complete at `b88a886`.
+- The Trading workspace now derives the visible VPS instrument, mode, limits,
+  and authority fingerprints from the verified retained signed session. Pause
+  and resume reuse that exact session; an active session cannot be replaced by
+  an accidental second Start action. Technical reconciliation records remain
+  available on demand instead of flooding the primary product surface.
 - Trading entry, exact-effect identity, and restart reconciliation remain owned
   by the existing execution use case. BingX may replace a triggered order ID;
   terminal evidence is accepted only when the retained client order ID, account,

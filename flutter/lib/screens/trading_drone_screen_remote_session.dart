@@ -23,6 +23,36 @@ String? tradingRemoteSessionStopLossNotice({
 }
 
 extension _TradingDroneRemoteSession on _TradingDroneScreenState {
+  Future<BingxFuturesRemoteMandateAdmission?> _loadVerifiedRemoteSession(
+    BingxFuturesRemoteRunnerProfile profile,
+  ) async {
+    final canonicalSession = await _module.remoteRunnerProvisioning
+        .loadActiveSession(profile);
+    if (canonicalSession == null) return null;
+    final session = BingxFuturesRemoteMandateAdmission.parseAndVerify(
+      untrustedWireBytes: utf8.encode(canonicalSession),
+      verifySignature:
+          ({
+            required messageHashHex,
+            required participantIdHex,
+            required signatureHex,
+          }) => _module.verifyRootCommitmentSignature(
+            commitmentHashHex: messageHashHex,
+            capsuleRootHex: participantIdHex,
+            signatureHex: signatureHex,
+          ),
+    );
+    if (session == null ||
+        !session.isDeterministicSession ||
+        session.runnerKeyId != profile.runnerKeyId ||
+        session.mandate.capsuleRootHex != profile.capsuleHex ||
+        session.mandate.accountBindingHashHex !=
+            profile.accountBindingHashHex) {
+      throw StateError('The retained VPS session is not authentic.');
+    }
+    return session;
+  }
+
   Future<void> _refreshRemoteRunnerSummary() async {
     final capsuleRootHex = _module.activeCapsuleRootHex();
     if (capsuleRootHex == null) {
@@ -31,6 +61,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
           _loadingRemoteRunnerSummary = false;
           _remoteRunnerConfigured = false;
           _remoteRunnerStatusWire = null;
+          _remoteRunnerSession = null;
           _remoteRunnerStatusUnavailable = false;
         });
       }
@@ -50,17 +81,19 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
           _loadingRemoteRunnerSummary = false;
           _remoteRunnerConfigured = false;
           _remoteRunnerStatusWire = null;
+          _remoteRunnerSession = null;
         });
         return;
       }
-      final status = await _module.remoteRunnerProvisioning.status(
-        profiles.single,
-      );
+      final profile = profiles.single;
+      final session = await _loadVerifiedRemoteSession(profile);
+      final status = await _module.remoteRunnerProvisioning.status(profile);
       if (!mounted || _module.activeCapsuleRootHex() != capsuleRootHex) return;
       _updateState(() {
         _loadingRemoteRunnerSummary = false;
         _remoteRunnerConfigured = true;
         _remoteRunnerStatusWire = status;
+        _remoteRunnerSession = session;
       });
     } catch (error) {
       await _module.uiLog.log(
@@ -71,6 +104,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       _updateState(() {
         _loadingRemoteRunnerSummary = false;
         _remoteRunnerStatusWire = null;
+        _remoteRunnerSession = null;
         _remoteRunnerStatusUnavailable = true;
       });
     }
@@ -81,30 +115,8 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
       if (profiles.length != 1) return false;
       final profile = profiles.single;
-      final canonicalSession = await _module.remoteRunnerProvisioning
-          .loadActiveSession(profile);
-      if (canonicalSession == null) return false;
-      final session = BingxFuturesRemoteMandateAdmission.parseAndVerify(
-        untrustedWireBytes: utf8.encode(canonicalSession),
-        verifySignature:
-            ({
-              required messageHashHex,
-              required participantIdHex,
-              required signatureHex,
-            }) => _module.verifyRootCommitmentSignature(
-              commitmentHashHex: messageHashHex,
-              capsuleRootHex: participantIdHex,
-              signatureHex: signatureHex,
-            ),
-      );
-      if (session == null ||
-          !session.isDeterministicSession ||
-          session.runnerKeyId != profile.runnerKeyId ||
-          session.mandate.capsuleRootHex != profile.capsuleHex ||
-          session.mandate.accountBindingHashHex !=
-              profile.accountBindingHashHex) {
-        throw StateError('The retained VPS session is not authentic.');
-      }
+      final session = await _loadVerifiedRemoteSession(profile);
+      if (session == null) return false;
       final operations = await _module.remoteRunnerProvisioning
           .completedSessionEffects(
             profile: profile,
@@ -179,6 +191,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                         pause:
                             () =>
                                 _module.remoteRunnerProvisioning.pause(profile),
+                        resume: () => _resumeRemoteRunnerSession(profile),
                         revoke: () => _revokeRemoteSession(profile),
                         remove:
                             () => _module.remoteRunnerProvisioning.remove(
@@ -200,6 +213,53 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       await _showSnack('Remote Runner could not be loaded: $error', seconds: 5);
     } finally {
       if (mounted) _updateState(() => _exportingRemoteRevocation = false);
+    }
+  }
+
+  Future<String> _resumeRemoteRunnerSession(
+    BingxFuturesRemoteRunnerProfile profile,
+  ) async {
+    final session = await _loadVerifiedRemoteSession(profile);
+    if (session == null) {
+      throw StateError('This Runner has no retained signed session.');
+    }
+    if (!session.mandate.isActiveAt(DateTime.now().toUtc())) {
+      throw StateError('The retained signed session has expired.');
+    }
+    final status = await _module.remoteRunnerProvisioning.status(profile);
+    if (!tradingRemoteRunnerCanResume(status)) {
+      throw StateError('The retained session is not paused and resumable.');
+    }
+    final result = await _module.remoteRunnerProvisioning.resume(profile);
+    await _module.uiLog.log(
+      'bingx.remote_session.resumed',
+      'session_operation_id=${session.operationId} '
+          'runner_key_id=${session.runnerKeyId} effect=false',
+    );
+    if (mounted) {
+      await _showSnack('Same signed VPS session resumed.', seconds: 4);
+    }
+    return result;
+  }
+
+  Future<void> _resumeConfiguredRemoteRunnerSession() async {
+    if (_exportingRemoteMandate) return;
+    _updateState(() => _exportingRemoteMandate = true);
+    try {
+      final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+      if (profiles.length != 1) {
+        throw StateError('Exactly one Capsule Runner is required.');
+      }
+      await _resumeRemoteRunnerSession(profiles.single);
+      await _refreshRemoteRunnerSummary();
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.remote_session.resume.error',
+        'error=$error effect=false',
+      );
+      await _showSnack('VPS session could not resume: $error', seconds: 5);
+    } finally {
+      if (mounted) _updateState(() => _exportingRemoteMandate = false);
     }
   }
 
@@ -388,28 +448,9 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   Future<String> _revokeRemoteSession(
     BingxFuturesRemoteRunnerProfile profile,
   ) async {
-    final canonicalSession = await _module.remoteRunnerProvisioning
-        .loadActiveSession(profile);
-    if (canonicalSession == null) {
+    final session = await _loadVerifiedRemoteSession(profile);
+    if (session == null) {
       throw StateError('This Runner has no locally retained active session.');
-    }
-    final session = BingxFuturesRemoteMandateAdmission.parseAndVerify(
-      untrustedWireBytes: utf8.encode(canonicalSession),
-      verifySignature:
-          ({
-            required messageHashHex,
-            required participantIdHex,
-            required signatureHex,
-          }) => _module.verifyRootCommitmentSignature(
-            commitmentHashHex: messageHashHex,
-            capsuleRootHex: participantIdHex,
-            signatureHex: signatureHex,
-          ),
-    );
-    if (session == null ||
-        !session.isDeterministicSession ||
-        session.runnerKeyId != profile.runnerKeyId) {
-      throw StateError('The retained VPS session is not authentic.');
     }
     final revocation = BingxFuturesRemoteSessionRevocation.issue(
       session: session,
@@ -809,24 +850,72 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   }
 }
 
-String tradingRemoteRunnerStatusLabel(String raw) {
-  const unknown = 'Runner status unknown. Refresh to retry.';
-  if (raw.trim().isEmpty || raw.length > 4096) return unknown;
+Map<String, String>? _tradingRemoteRunnerStatusFields(String raw) {
+  if (raw.trim().isEmpty || raw.length > 4096) return null;
   final fields = <String, String>{};
   for (final token in raw.trim().split(RegExp(r'\s+'))) {
     final separator = token.indexOf('=');
-    if (separator <= 0) return unknown;
+    if (separator <= 0) return null;
     final key = token.substring(0, separator);
-    if (fields.containsKey(key)) return unknown;
+    if (fields.containsKey(key)) return null;
     fields[key] = token.substring(separator + 1);
   }
+  if (!{'active', 'inactive', 'failed'}.contains(fields['active'])) return null;
+  final state = fields['session_state'];
+  if (state == null || state == 'unavailable') {
+    return fields;
+  }
+  if (!{'active', 'completed', 'stopped', 'expired'}.contains(state)) {
+    return null;
+  }
+  final cycles = int.tryParse(fields['cycles'] ?? '');
+  final effects = int.tryParse(fields['effects'] ?? '');
+  if (cycles == null ||
+      effects == null ||
+      cycles < 0 ||
+      cycles > 288 ||
+      effects < 0 ||
+      effects > cycles) {
+    return null;
+  }
+  final outcome = fields['last_outcome'];
+  final validOutcome =
+      outcome == 'none' && cycles == 0 ||
+      cycles > 0 &&
+          outcome != null &&
+          RegExp(r'^blocked:[a-z0-9_]{1,96}$').hasMatch(outcome) ||
+      cycles > 0 &&
+          effects > 0 &&
+          outcome != null &&
+          RegExp(
+            r'^effect:(succeeded|unresolved|terminal_failure):test=(true|false)$',
+          ).hasMatch(outcome);
+  if (!validOutcome) {
+    return null;
+  }
+  final last = fields['last_scheduled_check'];
+  final next = fields['next_check'];
+  bool validTime(String? value) =>
+      value != null &&
+      RegExp(r'^\d{4}-\d{2}-\d{2}T.*(?:Z|\+00:00)$').hasMatch(value) &&
+      DateTime.tryParse(value) != null;
+  if ((cycles == 0 ? last != 'none' : !validTime(last)) ||
+      (state == 'active' ? !validTime(next) : next != 'none')) {
+    return null;
+  }
+  return fields;
+}
+
+String tradingRemoteRunnerStatusLabel(String raw) {
+  const unknown = 'Runner status unknown. Refresh to retry.';
+  final fields = _tradingRemoteRunnerStatusFields(raw);
+  if (fields == null) return unknown;
   final process = switch (fields['active']) {
     'active' => 'Runner running',
     'inactive' => 'Runner paused',
     'failed' => 'Runner failed',
-    _ => null,
+    _ => throw StateError('Validated Runner process is missing.'),
   };
-  if (process == null) return unknown;
   final startup = switch (fields['enabled']) {
     'enabled' =>
       'WARNING: autostart enabled — a VPS reboot may start the Runner.',
@@ -839,55 +928,23 @@ String tradingRemoteRunnerStatusLabel(String raw) {
   if (state == null || state == 'unavailable') {
     return '$process\n$startup\nSession details unavailable on this Runner.';
   }
-  if (!{'active', 'completed', 'stopped', 'expired'}.contains(state)) {
-    return unknown;
-  }
-  final cycles = int.tryParse(fields['cycles'] ?? '');
-  final effects = int.tryParse(fields['effects'] ?? '');
-  if (cycles == null ||
-      effects == null ||
-      cycles < 0 ||
-      cycles > 288 ||
-      effects < 0 ||
-      effects > cycles) {
-    return unknown;
-  }
-  final outcome = fields['last_outcome'];
-  String result;
-  if (outcome == 'none' && cycles == 0) {
-    result = 'No completed check yet';
-  } else if (cycles > 0 &&
-      outcome != null &&
-      RegExp(r'^blocked:[a-z0-9_]{1,96}$').hasMatch(outcome)) {
-    result = 'No order: ${outcome.substring(8).replaceAll('_', ' ')}';
-  } else if (cycles > 0 &&
-      effects > 0 &&
-      outcome != null &&
-      RegExp(
-        r'^effect:(succeeded|unresolved|terminal_failure):test=(true|false)$',
-      ).hasMatch(outcome)) {
-    final status = outcome.split(':')[1];
-    result = switch (status) {
-      'succeeded' =>
-        outcome.endsWith('true')
-            ? 'Test request confirmed — not a live order'
-            : 'Provider receipt confirmed',
-      'unresolved' => 'Outcome unresolved — reconciliation required',
-      _ => 'Provider execution failed',
-    };
-  } else {
-    return unknown;
-  }
+  final cycles = int.parse(fields['cycles']!);
+  final effects = int.parse(fields['effects']!);
+  final outcome = fields['last_outcome']!;
+  final result = switch (outcome) {
+    'none' => 'No completed check yet',
+    _ when outcome.startsWith('blocked:') =>
+      'No order: ${outcome.substring(8).replaceAll('_', ' ')}',
+    _ when outcome.contains('succeeded') =>
+      outcome.endsWith('true')
+          ? 'Test request confirmed — not a live order'
+          : 'Provider receipt confirmed',
+    _ when outcome.contains('unresolved') =>
+      'Outcome unresolved — reconciliation required',
+    _ => 'Provider execution failed',
+  };
   final last = fields['last_scheduled_check'];
   final next = fields['next_check'];
-  bool validTime(String? value) =>
-      value != null &&
-      RegExp(r'^\d{4}-\d{2}-\d{2}T.*(?:Z|\+00:00)$').hasMatch(value) &&
-      DateTime.tryParse(value) != null;
-  if ((cycles == 0 ? last != 'none' : !validTime(last)) ||
-      (state == 'active' ? !validTime(next) : next != 'none')) {
-    return unknown;
-  }
   return [
     '$process · Session $state',
     startup,
@@ -898,6 +955,87 @@ String tradingRemoteRunnerStatusLabel(String raw) {
       'Next scheduled check: $next (not guaranteed execution)',
     if (state == 'active' && fields['active'] != 'active')
       'No checks run while the Runner is paused or failed.',
+  ].join('\n');
+}
+
+@visibleForTesting
+bool tradingRemoteRunnerCanResume(String raw) {
+  final fields = _tradingRemoteRunnerStatusFields(raw);
+  return fields != null &&
+      fields['active'] == 'inactive' &&
+      fields['session_state'] == 'active' &&
+      {
+        'enabled',
+        'linked',
+        'linked-runtime',
+        'disabled',
+      }.contains(fields['enabled']);
+}
+
+@visibleForTesting
+bool tradingRemoteRunnerIsRunning(String raw) {
+  final fields = _tradingRemoteRunnerStatusFields(raw);
+  return fields != null &&
+      fields['active'] == 'active' &&
+      fields['session_state'] == 'active';
+}
+
+@visibleForTesting
+bool tradingRemoteRunnerCanPause(String raw) {
+  final fields = _tradingRemoteRunnerStatusFields(raw);
+  return fields != null &&
+      {'active', 'failed'}.contains(fields['active']) &&
+      fields['session_state'] == 'active';
+}
+
+@visibleForTesting
+bool tradingRemoteRunnerCanStartSession({
+  required String raw,
+  required bool hasVerifiedSession,
+}) {
+  final fields = _tradingRemoteRunnerStatusFields(raw);
+  if (fields == null ||
+      fields['active'] != 'inactive' ||
+      !{'linked', 'linked-runtime', 'disabled'}.contains(fields['enabled'])) {
+    return false;
+  }
+  final state = fields['session_state'];
+  return hasVerifiedSession
+      ? {'completed', 'stopped', 'expired'}.contains(state)
+      : state == null ||
+          state == 'unavailable' ||
+          {'completed', 'stopped', 'expired'}.contains(state);
+}
+
+@visibleForTesting
+String tradingRemoteRunnerSessionDetailsLabel(
+  BingxFuturesRemoteMandateAdmission? session,
+) {
+  if (session == null || !session.isDeterministicSession) {
+    return 'No verified signed session is retained.';
+  }
+  String short(String value) => value.substring(0, 8);
+  String number(Object? value) {
+    final parsed = value is num ? value.toDouble() : double.nan;
+    if (!parsed.isFinite) return 'unknown';
+    return parsed.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  final strategy = session.strategyPolicy!;
+  final policy = session.sessionPolicy!;
+  final intervalSeconds = policy['interval_seconds'] as int;
+  return <String>[
+    '${session.mandate.symbol} · ${session.mandate.testOrder ? "TEST" : "LIVE"}',
+    'Limit ${session.mandate.maxOrderNotionalQuoteDecimal} USDT · '
+        'Up to ${session.mandate.maxEffects} order${session.mandate.maxEffects == 1 ? "" : "s"}',
+    'SL ${number(strategy['stop_loss_percent'])}% · '
+        'Minimum R:R ${number(strategy['minimum_risk_reward'])}',
+    'Checks every ${intervalSeconds ~/ 60} min · '
+        'Up to ${policy['max_cycles']} checks',
+    'Expires ${session.mandate.expiresAtUtc}',
+    'Session ${short(session.operationId)} · '
+        'Capsule ${short(session.mandate.capsuleRootHex)} · '
+        'Account ${short(session.mandate.accountBindingHashHex)}',
   ].join('\n');
 }
 
@@ -922,6 +1060,7 @@ class _RemoteRunnerProfileTile extends StatefulWidget {
   final BingxFuturesRemoteRunnerProfile profile;
   final Future<String> Function() loadStatus;
   final Future<String> Function() pause;
+  final Future<String> Function() resume;
   final Future<String> Function() revoke;
   final Future<String> Function() remove;
 
@@ -929,6 +1068,7 @@ class _RemoteRunnerProfileTile extends StatefulWidget {
     required this.profile,
     required this.loadStatus,
     required this.pause,
+    required this.resume,
     required this.revoke,
     required this.remove,
   });
@@ -939,10 +1079,21 @@ class _RemoteRunnerProfileTile extends StatefulWidget {
 }
 
 class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
-  late Future<String> _status = widget.loadStatus();
+  late Future<String> _status = _loadStatus();
+  String? _statusWire;
   var _pausing = false;
   var _removed = false;
   String? _actionError;
+
+  Future<String> _loadStatus() async {
+    final status = await widget.loadStatus();
+    if (mounted) {
+      setState(() => _statusWire = status);
+    } else {
+      _statusWire = status;
+    }
+    return status;
+  }
 
   Future<void> _runAction(
     Future<String> Function() action, {
@@ -960,7 +1111,7 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
         _status =
             marksRemoved
                 ? Future<String>.value('Remote Runner removed')
-                : widget.loadStatus();
+                : _loadStatus();
       });
     } catch (error) {
       if (mounted) setState(() => _actionError = error.toString());
@@ -1011,15 +1162,23 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                   onPressed:
                       _pausing
                           ? null
-                          : () => setState(() => _status = widget.loadStatus()),
+                          : () => setState(() => _status = _loadStatus()),
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('Refresh'),
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: _pausing ? null : () => _runAction(widget.pause),
-                  icon: const Icon(Icons.pause_circle_outline_rounded),
-                  label: Text(_pausing ? 'Pausing' : 'Pause'),
-                ),
+                if (tradingRemoteRunnerCanPause(_statusWire ?? ''))
+                  FilledButton.tonalIcon(
+                    onPressed: _pausing ? null : () => _runAction(widget.pause),
+                    icon: const Icon(Icons.pause_circle_outline_rounded),
+                    label: Text(_pausing ? 'Pausing' : 'Pause'),
+                  ),
+                if (tradingRemoteRunnerCanResume(_statusWire ?? ''))
+                  FilledButton.tonalIcon(
+                    onPressed:
+                        _pausing ? null : () => _runAction(widget.resume),
+                    icon: const Icon(Icons.play_circle_outline_rounded),
+                    label: Text(_pausing ? 'Resuming' : 'Resume same session'),
+                  ),
                 OutlinedButton.icon(
                   onPressed:
                       _pausing || _removed

@@ -35,6 +35,23 @@ main() {
     [ -x "$LIFECYCLE" ] || { echo "Remote Runner is removed"; exit 0; }
     exec "$LIFECYCLE" --pause-prepared-session-service "$BUNDLE"
     ;;
+  resume:*)
+    [ -x "$LIFECYCLE" ] || { echo "runner lifecycle unavailable" >&2; exit 1; }
+    runner_key_id="${operation#resume:}"
+    [[ "$runner_key_id" =~ ^[0-9a-f]{64}$ ]] || { echo "invalid runner key id" >&2; exit 1; }
+    installed_key_id="$("$LIFECYCLE" --prepared-session-service-status "$BUNDLE" | runner_key_id_from_status)"
+    [ "$runner_key_id" = "$installed_key_id" ] || { echo "runner identity mismatch" >&2; exit 1; }
+    "$LIFECYCLE" --enable-prepared-session-service "$BUNDLE" \
+      --expected-runner-key-id "$runner_key_id"
+    status="$("$LIFECYCLE" --prepared-session-service-status "$BUNDLE")"
+    [[ "$status" == *"active=active"* ]] &&
+      [[ "$status" == *"enabled=enabled"* ]] || {
+        echo "Remote Runner did not resume the retained session" >&2
+        exit 1
+      }
+    printf '%s\n' "$status"
+    echo "Remote Runner resumed the retained signed session"
+    ;;
   completed-effects:*)
     [ -x "$LIFECYCLE" ] || { echo "runner lifecycle unavailable" >&2; exit 1; }
     identity="${operation#completed-effects:}"

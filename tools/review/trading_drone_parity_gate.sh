@@ -775,7 +775,14 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$TEST_CALLS"
 case "$1" in
   --prepared-session-service-status)
-    printf '%s\n' "$TEST_STATUS"
+    if [ -s "$TEST_RESUMED" ]; then
+      printf '%s\n' "$TEST_STATUS_AFTER"
+    else
+      printf '%s\n' "$TEST_STATUS"
+    fi
+    ;;
+  --enable-prepared-session-service)
+    printf '1\n' > "$TEST_RESUMED"
     ;;
   --pause-prepared-session-service|--uninstall-disabled)
     ;;
@@ -795,12 +802,29 @@ SH
     BUNDLE="$work/bundle"
     id() { printf '0\n'; }
     export TEST_CALLS="$calls"
+    export TEST_RESUMED="$work/resumed"
+    export TEST_STATUS_AFTER="session_unit=hivra-trading-deterministic-session.service active=active enabled=enabled runner_key_id=$expected restart=on-failure restart_sec=30s start_limit=3/10min"
     export TEST_STATUS="session_unit=hivra-trading-deterministic-session.service active=inactive enabled=enabled runner_key_id=$expected restart=on-failure restart_sec=30s start_limit=3/10min"
     main "remove:$expected" >/dev/null
     diff -u <(printf '%s\n' \
       "--prepared-session-service-status $work/bundle" \
       "--pause-prepared-session-service $work/bundle" \
       "--uninstall-disabled $work/bundle") "$calls"
+
+    : > "$calls"
+    rm -f "$TEST_RESUMED"
+    [ "$(main "resume:$expected" | tail -n 1)" = 'Remote Runner resumed the retained signed session' ]
+    diff -u <(printf '%s\n' \
+      "--prepared-session-service-status $work/bundle" \
+      "--enable-prepared-session-service $work/bundle --expected-runner-key-id $expected" \
+      "--prepared-session-service-status $work/bundle") "$calls"
+
+    : > "$calls"
+    rm -f "$TEST_RESUMED"
+    if (main "resume:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") >/dev/null 2>&1; then
+      exit 1
+    fi
+    [ "$(cat "$calls")" = "--prepared-session-service-status $work/bundle" ] || exit 1
 
     : > "$calls"
     session="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -817,6 +841,7 @@ SH
       "session_unit=x runner_key_id=$expected runner_key_id=$expected" \
       'session_unit=x runner_key_id=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'; do
       : > "$calls"
+      rm -f "$TEST_RESUMED"
       export TEST_STATUS="$invalid_status"
       if (main "remove:$expected" >/dev/null 2>&1); then
         exit 1

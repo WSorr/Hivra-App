@@ -77,7 +77,58 @@ String? tradingReconciliationNotice(
     return null;
   }
   final state = result.state!;
+  final unresolvedLiveRecords = <String, String>{
+    for (final record in state.managedOrderProvenance.values)
+      if (!record.testOrder &&
+          record.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+        record.orderId: record.lifecycleDiagnostic ?? 'evidence_unavailable',
+    for (final claim in state.liquidityEventEffectClaims.values)
+      if (!claim.testOrder &&
+          claim.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+        claim.orderId ?? claim.clientOrderId:
+            claim.lifecycleDiagnostic ?? 'evidence_unavailable',
+  };
+  final accountMismatchCount =
+      unresolvedLiveRecords.values
+          .where((diagnostic) => diagnostic == 'account_binding_mismatch')
+          .length;
+  final activeLabel =
+      result.activeCount == 0
+          ? 'No active orders'
+          : '${result.activeCount} active';
+  final reviewLabel =
+      result.unresolvedCount == 0
+          ? 'History verified'
+          : result.unresolvedCount == 1
+          ? '1 needs review'
+          : '${result.unresolvedCount} need review';
+  return <String>[
+    'Order check · $activeLabel · $reviewLabel',
+    if (accountMismatchCount == result.unresolvedCount &&
+        accountMismatchCount > 0)
+      '$accountMismatchCount earlier records belong to another BingX account. '
+          'They stay isolated and will not be reused.',
+    if (result.unresolvedCount > accountMismatchCount)
+      'Some outcomes are not verified. Hivra will not recreate those orders automatically.',
+  ].join('\n');
+}
+
+@visibleForTesting
+String? tradingReconciliationDetails(
+  BingxFuturesManagedOrderReconciliationResult? result,
+  String? activeCapsuleRootHex,
+) {
+  if (result == null ||
+      activeCapsuleRootHex == null ||
+      result.capsuleRootHex != activeCapsuleRootHex ||
+      result.state == null) {
+    return null;
+  }
+  final state = result.state!;
   String reason(String? diagnostic) {
+    if (diagnostic == 'account_binding_mismatch') {
+      return 'different BingX account';
+    }
     const prefix = 'provider_status_unknown:';
     if (diagnostic?.startsWith(prefix) == true) {
       return 'BingX reports ${diagnostic!.substring(prefix.length)}; final outcome unverified';
@@ -118,13 +169,12 @@ String? tradingReconciliationNotice(
   }
 
   return <String>[
-    'Last reconciliation · Active ${result.activeCount} · Completed ${result.terminalCount} · Needs review ${result.unresolvedCount}',
-    'Completed means filled, cancelled, rejected or expired — not necessarily filled.',
+    'Verified history: ${result.terminalCount} completed records. Completed may mean filled, cancelled, rejected, or expired.',
     if (state.managedOrderProvenance.values.any((record) => record.testOrder) ||
         state.liquidityEventEffectClaims.values.any((claim) => claim.testOrder))
       'Test records are retained separately; they are not live orders.',
     if (result.unresolvedCount > 0)
-      'Do not recreate these orders. Verify their outcome in BingX; missing evidence is not success or cancellation.',
+      'Review unresolved records in BingX. Missing evidence is not success or cancellation.',
     ...positions.take(3).map(positionSummary),
     ...unresolved.values,
   ].join('\n');
@@ -597,6 +647,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _loadingRemoteRunnerSummary = true;
   bool _remoteRunnerConfigured = false;
   String? _remoteRunnerStatusWire;
+  BingxFuturesRemoteMandateAdmission? _remoteRunnerSession;
   bool _remoteRunnerStatusUnavailable = false;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
