@@ -82,6 +82,13 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       'running=$_executing hasIntent=${_lastIntentResponse?.status == PluginHostApiStatus.executed}',
     );
     if (_executing) return;
+    if (_localRunnerRunning) {
+      await _showSnack(
+        'Stop trading on this computer before placing a manual order.',
+        seconds: 4,
+      );
+      return;
+    }
     final response = _lastIntentResponse;
     final result = response?.result;
     if (response?.status != PluginHostApiStatus.executed || result == null) {

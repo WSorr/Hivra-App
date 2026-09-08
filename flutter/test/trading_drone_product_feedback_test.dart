@@ -389,7 +389,7 @@ void main() {
         unavailable: false,
         statusWire: null,
       ),
-      contains('No 24/7 Runner'),
+      contains('No VPS Runner'),
     );
     expect(
       tradingRemoteRunnerSummaryLabel(
@@ -411,6 +411,81 @@ void main() {
             'next_check=2026-09-06T12:00:00Z last_outcome=none',
       ),
       contains('Runner running'),
+    );
+  });
+
+  test('Runner controls separate setup, authorization, and resume', () {
+    expect(
+      tradingRemoteRunnerPrimaryActionLabel(
+        configured: false,
+        running: false,
+        resumable: false,
+      ),
+      'Set up VPS Runner',
+    );
+    expect(
+      tradingRemoteRunnerPrimaryActionEnabled(
+        configured: false,
+        localTradingEnabled: false,
+        running: false,
+        resumable: false,
+        canStart: false,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingRemoteRunnerControlNotice(
+        configured: false,
+        localTradingEnabled: false,
+        running: false,
+        resumable: false,
+      ),
+      contains('do not need to pause'),
+    );
+    expect(
+      tradingRemoteRunnerPrimaryActionLabel(
+        configured: true,
+        running: false,
+        resumable: false,
+      ),
+      'Authorize 24/7 session',
+    );
+    expect(
+      tradingRemoteRunnerPrimaryActionEnabled(
+        configured: true,
+        localTradingEnabled: false,
+        running: false,
+        resumable: false,
+        canStart: true,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingRemoteRunnerPrimaryActionLabel(
+        configured: true,
+        running: false,
+        resumable: true,
+      ),
+      'Resume VPS session',
+    );
+    expect(
+      tradingRemoteRunnerPrimaryActionEnabled(
+        configured: true,
+        localTradingEnabled: false,
+        running: false,
+        resumable: true,
+        canStart: false,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingRemoteRunnerControlNotice(
+        configured: true,
+        localTradingEnabled: true,
+        running: true,
+        resumable: false,
+      ),
+      contains('Pausing this app does not stop it'),
     );
   });
 
@@ -613,6 +688,46 @@ void main() {
         testOrder: true,
       ),
       'Validate Without Order',
+    );
+    expect(
+      tradingLocalRunnerActionLabel(starting: false, running: false),
+      'Run on this computer',
+    );
+    expect(
+      tradingLocalRunnerActionLabel(starting: false, running: true),
+      'Stop on this computer',
+    );
+    expect(
+      tradingLocalRunnerStatusLabel(null),
+      contains('while Hivra and this Trading workspace stay open'),
+    );
+  });
+
+  test('local automation cannot overlap a running VPS session', () {
+    expect(
+      tradingLocalRunnerActionEnabled(
+        starting: false,
+        running: false,
+        remoteRunning: true,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingLocalRunnerActionEnabled(
+        starting: false,
+        running: false,
+        remoteRunning: false,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingLocalRunnerActionEnabled(
+        starting: false,
+        running: true,
+        remoteRunning: true,
+      ),
+      isTrue,
+      reason: 'the stop action must remain available',
     );
   });
 

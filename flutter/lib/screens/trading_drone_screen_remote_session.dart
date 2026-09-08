@@ -95,6 +95,13 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         _remoteRunnerStatusWire = status;
         _remoteRunnerSession = session;
       });
+      if (tradingRemoteRunnerIsRunning(status) && _localRunnerRunning) {
+        await _stopLocalRunner(reason: 'vps_session_running');
+        await _showSnack(
+          'Trading stopped on this computer because the VPS session is running.',
+          seconds: 5,
+        );
+      }
     } catch (error) {
       await _module.uiLog.log(
         'bingx.remote_runner.summary.error',
@@ -177,9 +184,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                         'Remote Runner',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      subtitle: Text(
-                        'Capsule-scoped status and emergency controls',
-                      ),
+                      subtitle: Text('Capsule-scoped VPS status and controls'),
                     ),
                     ...profiles.map(
                       (profile) => _RemoteRunnerProfileTile(
@@ -219,6 +224,11 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   Future<String> _resumeRemoteRunnerSession(
     BingxFuturesRemoteRunnerProfile profile,
   ) async {
+    if (_localRunnerRunning) {
+      throw StateError(
+        'Stop trading on this computer before resuming the VPS session.',
+      );
+    }
     final session = await _loadVerifiedRemoteSession(profile);
     if (session == null) {
       throw StateError('This Runner has no retained signed session.');
@@ -244,6 +254,13 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
 
   Future<void> _resumeConfiguredRemoteRunnerSession() async {
     if (_exportingRemoteMandate) return;
+    if (_localRunnerRunning) {
+      await _showSnack(
+        'Stop trading on this computer before resuming the VPS session.',
+        seconds: 5,
+      );
+      return;
+    }
     _updateState(() => _exportingRemoteMandate = true);
     try {
       final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
@@ -265,6 +282,13 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
 
   Future<void> _exportSignedRemoteDeterministicSession() async {
     if (_exportingRemoteMandate) return;
+    if (_localRunnerRunning) {
+      await _showSnack(
+        'Stop trading on this computer before authorizing the VPS session.',
+        seconds: 5,
+      );
+      return;
+    }
     final mandate = _tradingMandate;
     if (!_droneEnabled ||
         mandate == null ||
@@ -1048,12 +1072,60 @@ String tradingRemoteRunnerSummaryLabel({
 }) {
   if (loading) return 'Checking the 24/7 Runner…';
   if (!configured && !unavailable) {
-    return 'No 24/7 Runner is configured for this Capsule.';
+    return 'No VPS Runner is installed for this Capsule.';
   }
   if (unavailable) {
     return 'Runner status unavailable. Refresh to retry.';
   }
   return tradingRemoteRunnerStatusLabel(statusWire ?? '');
+}
+
+@visibleForTesting
+String tradingRemoteRunnerPrimaryActionLabel({
+  required bool configured,
+  required bool running,
+  required bool resumable,
+}) {
+  if (!configured) return 'Set up VPS Runner';
+  if (resumable) return 'Resume VPS session';
+  if (running) return 'VPS session running';
+  return 'Authorize 24/7 session';
+}
+
+@visibleForTesting
+bool tradingRemoteRunnerPrimaryActionEnabled({
+  required bool configured,
+  required bool localTradingEnabled,
+  required bool running,
+  required bool resumable,
+  required bool canStart,
+}) {
+  if (!configured) return true;
+  if (running) return false;
+  if (resumable) return true;
+  return localTradingEnabled && canStart;
+}
+
+@visibleForTesting
+String tradingRemoteRunnerControlNotice({
+  required bool configured,
+  required bool localTradingEnabled,
+  required bool running,
+  required bool resumable,
+}) {
+  if (!configured) {
+    return 'Set up the VPS first. You do not need to pause trading in this app.';
+  }
+  if (running) {
+    return 'The VPS session runs independently. Pausing this app does not stop it.';
+  }
+  if (resumable) {
+    return 'Resume the same signed VPS session; no new authority is created.';
+  }
+  if (!localTradingEnabled) {
+    return 'Enable trading in this app before authorizing a new VPS session.';
+  }
+  return 'Authorize the VPS session, then the app may be closed.';
 }
 
 class _RemoteRunnerProfileTile extends StatefulWidget {
@@ -1110,7 +1182,7 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
         _removed = marksRemoved;
         _status =
             marksRemoved
-                ? Future<String>.value('Remote Runner removed')
+                ? Future<String>.value('VPS Runner uninstalled')
                 : _loadStatus();
       });
     } catch (error) {
@@ -1142,7 +1214,7 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                         : snapshot.hasError
                         ? 'Runner status unavailable. Refresh to retry.'
                         : _removed
-                        ? 'Remote Runner removed'
+                        ? 'VPS Runner uninstalled'
                         : tradingRemoteRunnerStatusLabel(snapshot.data ?? '');
                 return Text(label);
               },
@@ -1170,14 +1242,14 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                   FilledButton.tonalIcon(
                     onPressed: _pausing ? null : () => _runAction(widget.pause),
                     icon: const Icon(Icons.pause_circle_outline_rounded),
-                    label: Text(_pausing ? 'Pausing' : 'Pause'),
+                    label: Text(_pausing ? 'Pausing' : 'Pause VPS session'),
                   ),
                 if (tradingRemoteRunnerCanResume(_statusWire ?? ''))
                   FilledButton.tonalIcon(
                     onPressed:
                         _pausing ? null : () => _runAction(widget.resume),
                     icon: const Icon(Icons.play_circle_outline_rounded),
-                    label: Text(_pausing ? 'Resuming' : 'Resume same session'),
+                    label: Text(_pausing ? 'Resuming' : 'Resume VPS session'),
                   ),
                 OutlinedButton.icon(
                   onPressed:
@@ -1190,7 +1262,7 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                                   builder:
                                       (context) => AlertDialog(
                                         title: const Text(
-                                          'Revoke VPS Session?',
+                                          'Revoke trading authority?',
                                         ),
                                         content: const Text(
                                           'The Capsule signs an exact revocation. '
@@ -1211,7 +1283,7 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                                                   context,
                                                 ).pop(true),
                                             child: const Text(
-                                              'Revoke VPS Session',
+                                              'Revoke authority',
                                             ),
                                           ),
                                         ],
@@ -1222,7 +1294,7 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                             await _runAction(widget.revoke);
                           },
                   icon: const Icon(Icons.block_rounded),
-                  label: const Text('Revoke VPS Session'),
+                  label: const Text('Revoke trading authority'),
                 ),
                 OutlinedButton.icon(
                   onPressed:
@@ -1235,13 +1307,14 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                                   builder:
                                       (context) => AlertDialog(
                                         title: const Text(
-                                          'Remove Remote Runner?',
+                                          'Uninstall Runner from VPS?',
                                         ),
                                         content: Text(
-                                          'This pauses and removes the exact Runner from '
+                                          'This stops and removes only the Hivra Trading Runner from '
                                           '${widget.profile.host}:${widget.profile.port}, '
-                                          'then deletes its Capsule-local SSH identity. '
-                                          'It does not delete the VPS.',
+                                          'then deletes this Capsule\'s local control binding. '
+                                          'It does not pause trading in this app and it is not a restart. '
+                                          'Using this VPS again requires setup.',
                                         ),
                                         actions: [
                                           TextButton(
@@ -1257,7 +1330,7 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                                                   context,
                                                 ).pop(true),
                                             child: const Text(
-                                              'Remove exact Runner',
+                                              'Uninstall from VPS',
                                             ),
                                           ),
                                         ],
@@ -1268,7 +1341,9 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                             await _runAction(widget.remove, marksRemoved: true);
                           },
                   icon: const Icon(Icons.delete_outline_rounded),
-                  label: Text(_removed ? 'Removed' : 'Remove'),
+                  label: Text(
+                    _removed ? 'Uninstalled' : 'Uninstall Runner from VPS',
+                  ),
                 ),
               ],
             ),

@@ -296,17 +296,28 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
         _remoteRunnerSession?.mandate.isActiveAt(nowUtc) == true &&
         tradingRemoteRunnerCanResume(remoteStatusWire);
     final remoteSessionCanStart =
-        !_remoteRunnerConfigured ||
+        _remoteRunnerConfigured &&
         tradingRemoteRunnerCanStartSession(
           raw: remoteStatusWire,
           hasVerifiedSession: _remoteRunnerSession != null,
         );
-    final remoteSessionActionLabel =
-        remoteSessionResumable
-            ? 'Resume same session'
-            : remoteSessionRunning
-            ? '24/7 Session running'
-            : 'Start 24/7 Session';
+    final remoteSessionActionLabel = tradingRemoteRunnerPrimaryActionLabel(
+      configured: _remoteRunnerConfigured,
+      running: remoteSessionRunning,
+      resumable: remoteSessionResumable,
+    );
+    final remoteSessionActionEnabled = tradingRemoteRunnerPrimaryActionEnabled(
+      configured: _remoteRunnerConfigured,
+      localTradingEnabled: _droneEnabled,
+      running: remoteSessionRunning,
+      resumable: remoteSessionResumable,
+      canStart: remoteSessionCanStart,
+    );
+    final localRunnerRunning = _localRunnerRunning;
+    final localRunnerSnapshot =
+        _localRunnerSnapshot?.capsuleScope == _localRunnerScope
+            ? _localRunnerSnapshot
+            : null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Trading Drone')),
@@ -314,10 +325,10 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
         padding: const EdgeInsets.all(16),
         children: [
           _panel(
-            title: 'Trading Control',
+            title: 'Trading Modes',
             subtitle:
-                'Choose the limits once. The Capsule keeps authority while '
-                'the local drone or trusted VPS watches for a valid liquidity retest.',
+                'Trade interactively while this app is open, or authorize a '
+                'trusted VPS Runner to watch independently around the clock.',
             children: [
               Wrap(
                 spacing: 8,
@@ -369,7 +380,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '24/7 Runner',
+                            'Run on VPS · 24/7',
                             style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 3),
@@ -436,41 +447,77 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                           : Icons.play_circle_outline_rounded,
                     ),
                     label: Text(
-                      _droneEnabled ? 'Pause Trading' : 'Enable Trading',
+                      _droneEnabled
+                          ? 'Pause trading in this app'
+                          : 'Enable trading in this app',
                     ),
                   ),
                   OutlinedButton.icon(
                     onPressed:
                         _runningIntent ||
                                 _savingTradingControl ||
-                                _exportingRemoteMandate ||
-                                _exportingRemoteRevocation
+                                !tradingLocalRunnerActionEnabled(
+                                  starting: _startingLocalRunner,
+                                  running: localRunnerRunning,
+                                  remoteRunning: remoteSessionRunning,
+                                )
                             ? null
-                            : _manageRemoteRunners,
+                            : _toggleLocalRunner,
                     icon:
-                        _exportingRemoteRevocation
+                        _startingLocalRunner
                             ? const SizedBox(
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                            : const Icon(Icons.dns_outlined),
+                            : Icon(
+                              localRunnerRunning
+                                  ? Icons.stop_circle_outlined
+                                  : Icons.computer_rounded,
+                            ),
                     label: Text(
-                      _exportingRemoteRevocation
-                          ? 'Loading VPS'
-                          : 'Manage 24/7 Runner',
+                      tradingLocalRunnerActionLabel(
+                        starting: _startingLocalRunner,
+                        running: localRunnerRunning,
+                      ),
                     ),
                   ),
+                  if (_remoteRunnerConfigured)
+                    OutlinedButton.icon(
+                      onPressed:
+                          _runningIntent ||
+                                  _savingTradingControl ||
+                                  _exportingRemoteMandate ||
+                                  _exportingRemoteRevocation
+                              ? null
+                              : _manageRemoteRunners,
+                      icon:
+                          _exportingRemoteRevocation
+                              ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Icon(Icons.dns_outlined),
+                      label: Text(
+                        _exportingRemoteRevocation
+                            ? 'Loading VPS'
+                            : 'Manage VPS Runner',
+                      ),
+                    ),
                   OutlinedButton.icon(
                     onPressed:
                         _runningIntent ||
                                 _savingTradingControl ||
                                 _exportingRemoteMandate ||
                                 _loadingRemoteRunnerSummary ||
-                                !_droneEnabled ||
-                                (!remoteSessionResumable &&
-                                    !remoteSessionCanStart)
+                                localRunnerRunning ||
+                                !remoteSessionActionEnabled
                             ? null
+                            : !_remoteRunnerConfigured
+                            ? _manageRemoteRunners
                             : remoteSessionResumable
                             ? _resumeConfiguredRemoteRunnerSession
                             : _exportSignedRemoteDeterministicSession,
@@ -489,6 +536,21 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                tradingLocalRunnerStatusLabel(localRunnerSnapshot),
+                style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                tradingRemoteRunnerControlNotice(
+                  configured: _remoteRunnerConfigured,
+                  localTradingEnabled: _droneEnabled,
+                  running: remoteSessionRunning,
+                  resumable: remoteSessionResumable,
+                ),
+                style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
             ],
           ),
@@ -918,6 +980,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                   FilledButton.icon(
                     onPressed:
                         _runningIntent ||
+                                localRunnerRunning ||
                                 !_tradingControlLoaded ||
                                 _savingTradingControl
                             ? null
@@ -1026,7 +1089,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 children: [
                   FilledButton.icon(
                     onPressed:
-                        _executing || !hasExecutableIntent
+                        _executing ||
+                                localRunnerRunning ||
+                                !hasExecutableIntent
                             ? null
                             : _executeLastIntent,
                     icon:

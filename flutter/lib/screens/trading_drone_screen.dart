@@ -17,6 +17,7 @@ import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../services/bingx_futures_trading_cycle_use_case_service.dart';
+import '../services/bingx_futures_mode_orchestrator_service.dart';
 import '../services/bingx_futures_remote_runner_provisioning_service.dart';
 import '../utils/bingx_futures_zone_evidence_formatter.dart';
 
@@ -297,6 +298,43 @@ String tradingControlStateLabel({
 }) {
   if (!loaded || saving) return 'Loading trading control';
   return enabled ? 'Trading enabled' : 'Trading paused';
+}
+
+@visibleForTesting
+String tradingLocalRunnerActionLabel({
+  required bool starting,
+  required bool running,
+}) {
+  if (starting) return 'Starting on this computer';
+  return running ? 'Stop on this computer' : 'Run on this computer';
+}
+
+@visibleForTesting
+bool tradingLocalRunnerActionEnabled({
+  required bool starting,
+  required bool running,
+  required bool remoteRunning,
+}) => !starting && (running || !remoteRunning);
+
+@visibleForTesting
+String tradingLocalRunnerStatusLabel(
+  BingxFuturesInteractiveRunnerSnapshot? snapshot,
+) {
+  if (snapshot == null) {
+    return 'Runs every 5 minutes while Hivra and this Trading workspace stay open.';
+  }
+  final outcome = snapshot.lastOutcome?.trim();
+  return switch (snapshot.phase) {
+    BingxFuturesInteractiveRunnerPhase.running =>
+      'Checking the market now · ${snapshot.completedCycles} completed',
+    BingxFuturesInteractiveRunnerPhase.waiting =>
+      'Watching on this computer · ${snapshot.completedCycles} completed'
+          '${outcome == null || outcome.isEmpty ? '' : ' · last $outcome'}',
+    BingxFuturesInteractiveRunnerPhase.stopped =>
+      'Stopped on this computer · ${snapshot.completedCycles} completed',
+    BingxFuturesInteractiveRunnerPhase.failed =>
+      'Stopped safely after an error. Review diagnostics and start again.',
+  };
 }
 
 @visibleForTesting
@@ -638,6 +676,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _reviewingExposure = false;
   bool _useTestOrderEndpoint = false;
   bool _droneEnabled = false;
+  bool _startingLocalRunner = false;
+  BingxFuturesInteractiveRunnerSnapshot? _localRunnerSnapshot;
   BingxFuturesTradingMandate? _tradingMandate;
   bool _tradingControlLoaded = false;
   bool _savingTradingControl = false;
@@ -715,6 +755,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   @override
   void dispose() {
+    _module.modeOrchestrator.stopAll();
     _openOrdersPollTimer?.cancel();
     unawaited(_module.publicSessionStream.disconnect());
     _symbolController.dispose();
@@ -1011,6 +1052,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     bool requirePersistence = false,
   }) async {
     if (!_tradingControlLoaded || _savingTradingControl) return false;
+    if (!value) {
+      await _stopLocalRunner(reason: 'local_mandate_revoked');
+    }
     BingxFuturesTradingMandate? nextMandate = _tradingMandate;
     if (value) {
       final credentials = await _ensureCredentialsLoaded();
@@ -1093,6 +1137,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               '${_executionRiskPolicy.maxDailyLossPercent}% daily\n'
               'Maximum orders: ${tradingOrderBudgetLabel(_maxEffects)}\n'
               'Expires: 24 hours\n\n'
+              'This authority can be used by manual execution, this computer, '
+              'or one VPS session, but local and VPS automation cannot overlap. '
               'Emergency Pause revokes this mandate.',
             ),
             actions: [
@@ -1191,6 +1237,202 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(content: Text(message), duration: Duration(seconds: seconds)),
+    );
+  }
+
+  String? get _localRunnerScope {
+    final value = _module.activeCapsuleRootHex()?.trim().toLowerCase() ?? '';
+    return RegExp(r'^[0-9a-f]{64}$').hasMatch(value) ? value : null;
+  }
+
+  bool get _localRunnerRunning {
+    final scope = _localRunnerScope;
+    return scope != null && _module.modeOrchestrator.isRunning(scope);
+  }
+
+  Future<void> _toggleLocalRunner() async {
+    if (_localRunnerRunning) {
+      await _stopLocalRunner(reason: 'user');
+      return;
+    }
+    var authorityJustConfirmed = false;
+    if (!_droneEnabled) {
+      if (!await _changeDroneEnabled(true)) return;
+      authorityJustConfirmed = true;
+    }
+    await _startLocalRunner(authorityJustConfirmed: authorityJustConfirmed);
+  }
+
+  Future<void> _startLocalRunner({bool authorityJustConfirmed = false}) async {
+    if (_startingLocalRunner || _localRunnerRunning) return;
+    final scope = _localRunnerScope;
+    final mandate = _tradingMandate;
+    if (scope == null ||
+        !_droneEnabled ||
+        mandate == null ||
+        !mandate.isActiveAt(DateTime.now().toUtc())) {
+      await _showSnack('Enable bounded trading before starting this computer.');
+      return;
+    }
+    final selectionNotice = tradingMandateSelectionNotice(
+      mandate: mandate,
+      droneEnabled: _droneEnabled,
+      selectedSymbol: _symbolController.text,
+      selectedMaxNotional: _maxNotionalUsdtController.text,
+      selectedMaxEffects: _maxEffects,
+      testOrder: _useTestOrderEndpoint,
+      nowUtc: DateTime.now().toUtc(),
+    );
+    if (selectionNotice != null) {
+      await _showSnack(selectionNotice, seconds: 5);
+      return;
+    }
+    await _refreshRemoteRunnerSummary();
+    if (_remoteRunnerConfigured &&
+        (_remoteRunnerStatusUnavailable ||
+            _remoteRunnerStatusWire == null ||
+            _remoteRunnerStatusWire!.trim().isEmpty)) {
+      await _showSnack(
+        'VPS status is unavailable. Local automation stays blocked to prevent duplicate trading.',
+        seconds: 5,
+      );
+      return;
+    }
+    if (tradingRemoteRunnerIsRunning(_remoteRunnerStatusWire ?? '')) {
+      await _showSnack(
+        'The VPS session is already running. Pause it before running here.',
+        seconds: 5,
+      );
+      return;
+    }
+    final credentials = await _ensureCredentialsLoaded();
+    if (credentials == null || !mounted) return;
+    final approved =
+        authorityJustConfirmed
+            ? true
+            : await showDialog<bool>(
+              context: context,
+              builder:
+                  (context) => AlertDialog(
+                    title: const Text('Run trading on this computer?'),
+                    content: Text(
+                      'Symbol: ${mandate.symbol}\n'
+                      'Mode: ${mandate.testOrder ? "test" : "live"}\n'
+                      'Check interval: 5 minutes\n'
+                      'Maximum order: ${mandate.maxOrderNotionalQuoteDecimal} USDT\n'
+                      'Maximum exchange effects: ${mandate.maxEffects}\n'
+                      'Expires: ${mandate.expiresAtUtc}\n\n'
+                      'Hivra will check and may place bounded orders automatically while '
+                      'this Trading workspace remains open and the computer is awake. '
+                      'The existing mandate, effect journal, and risk policy remain authoritative.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Run on this computer'),
+                      ),
+                    ],
+                  ),
+            );
+    if (approved != true || !mounted) return;
+    _updateState(() => _startingLocalRunner = true);
+    await _module.uiLog.log(
+      'bingx.local_runner.start',
+      'scope=$scope symbol=${mandate.symbol} '
+          'test=${mandate.testOrder} interval_seconds='
+          '${BingxFuturesModeOrchestratorService.defaultInteractiveInterval.inSeconds} '
+          'effect=false',
+    );
+    unawaited(
+      _module.modeOrchestrator
+          .startInteractive(
+            capsuleScope: scope,
+            runCycle: () => _runLocalContinuousCycle(scope),
+            onSnapshot: (snapshot) {
+              if (!mounted || _localRunnerScope != scope) return;
+              _updateState(() {
+                _localRunnerSnapshot = snapshot;
+                if (snapshot.completedCycles > 0 || !snapshot.isActive) {
+                  _startingLocalRunner = false;
+                }
+              });
+            },
+          )
+          .catchError((Object error) async {
+            await _module.uiLog.log(
+              'bingx.local_runner.error',
+              'scope=$scope error=$error effect=false',
+            );
+            if (mounted && _localRunnerScope == scope) {
+              _updateState(() => _startingLocalRunner = false);
+            }
+            return 'failed';
+          }),
+    );
+  }
+
+  Future<void> _stopLocalRunner({required String reason}) async {
+    final scope = _localRunnerScope;
+    if (scope == null) return;
+    final stopped = _module.modeOrchestrator.stop(scope);
+    final snapshot = _module.modeOrchestrator.snapshot(scope);
+    if (mounted) {
+      _updateState(() {
+        _startingLocalRunner = false;
+        _localRunnerSnapshot = snapshot;
+      });
+    }
+    if (stopped) {
+      await _module.uiLog.log(
+        'bingx.local_runner.stop',
+        'scope=$scope reason=$reason effect=false',
+      );
+      if (reason == 'user') {
+        await _showSnack('Trading stopped on this computer.');
+      }
+    }
+  }
+
+  Future<String> _runLocalContinuousCycle(String capsuleScope) async {
+    if (!mounted || _localRunnerScope != capsuleScope) {
+      throw StateError('Active Capsule changed; local trading stopped.');
+    }
+    final mandate = _tradingMandate;
+    if (!_droneEnabled ||
+        mandate == null ||
+        !mandate.isActiveAt(DateTime.now().toUtc())) {
+      throw StateError('Bounded trading authority is no longer active.');
+    }
+    if (_remoteRunnerConfigured) {
+      await _refreshRemoteRunnerSummary();
+      if (_remoteRunnerStatusUnavailable ||
+          _remoteRunnerStatusWire == null ||
+          _remoteRunnerStatusWire!.trim().isEmpty) {
+        throw StateError(
+          'VPS status became unavailable; local trading stopped.',
+        );
+      }
+    }
+    if (tradingRemoteRunnerIsRunning(_remoteRunnerStatusWire ?? '')) {
+      throw StateError('VPS session became active; local trading stopped.');
+    }
+    if (_resolveCredentials() == null &&
+        await _ensureCredentialsLoaded(silent: true) == null) {
+      throw StateError('BingX credentials are unavailable.');
+    }
+    final symbol = mandate.symbol;
+    if (!await _primePublicSessionEvidence(symbol)) {
+      return 'blocked:session_stream_unavailable';
+    }
+    return _runCanonicalSoloCycle(
+      symbol: symbol,
+      executeEffect: true,
+      silent: true,
+      screen: 'trading_drone_local_runner',
     );
   }
 
@@ -1502,27 +1744,35 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     });
   }
 
-  Future<String> _runCanonicalSoloCycle({required String symbol}) async {
+  Future<String> _runCanonicalSoloCycle({
+    required String symbol,
+    bool executeEffect = false,
+    bool silent = false,
+    String screen = 'trading_drone',
+  }) async {
     final maximumNotional = num.tryParse(
       _maxNotionalUsdtController.text.trim(),
     );
     if (maximumNotional == null || maximumNotional <= 0) {
-      await _showSnack('Max notional must be a positive number');
+      if (!silent) {
+        await _showSnack('Max notional must be a positive number');
+      }
       return 'blocked:risk_notional_invalid';
     }
     _setIntentProgress('Analyzing market');
+    final executionCredentials = _resolveCredentials();
     final cycle = await _module.cycleUseCase.run(
       BingxFuturesTradingCycleCommand(
-        screen: 'trading_drone',
+        screen: screen,
         symbol: symbol,
         preferredSide: _side,
         maximumNotionalQuote: maximumNotional,
         stopLossPercent: _stopLossPercent,
         takeProfitRiskReward: _takeProfitRiskReward,
-        credentials: _resolveCredentials(),
+        credentials: executionCredentials,
         riskPolicy: _executionRiskPolicy,
         testOrder: _useTestOrderEndpoint,
-        executeEffect: false,
+        executeEffect: executeEffect,
         recentMicroBars: _recentMicroBars,
         zoneNearBps: _zoneNearBps,
         zoneFarBps: _zoneFarBps,
@@ -1584,7 +1834,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     await _module.uiLog.log(
       'bingx.trading_cycle.result',
       'status=${cycle.status.name} code=${cycle.reasonCode} '
-          'symbol=$symbol effect=false '
+          'symbol=$symbol effect=$executeEffect '
           'decision=${decision?.decision.name ?? "-"} '
           'side=${decision?.side ?? "-"} '
           'zone_side=${decision?.zoneSide ?? "-"} '
@@ -1600,16 +1850,88 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (envelope != null) {
       await _module.uiLog.log(
         'drone.decision.envelope',
-        'hash=${envelope.envelopeHashHex} kind=decision screen=trading_drone',
+        'hash=${envelope.envelopeHashHex} kind=decision screen=$screen',
       );
+    }
+    final execution = cycle.execution;
+    final queued = execution?.queuedExecution;
+    if (executeEffect && queued != null) {
+      for (final diagnostic in execution!.diagnostics) {
+        await _module.uiLog.log('bingx.exchange.risk_detail', diagnostic);
+      }
+      final executionEnvelope = execution.executionEnvelope;
+      if (executionEnvelope != null) {
+        await _module.uiLog.log(
+          'drone.execution.envelope',
+          'hash=${executionEnvelope.envelopeHashHex} '
+              'kind=execution screen=$screen',
+        );
+      }
+      if (mounted) {
+        _updateState(() {
+          _lastExecution = queued.execution;
+          _lastExecutionAttempts = queued.attempts;
+          _lastExecutionFromCache = queued.fromIdempotentCache;
+        });
+      }
+      if (cycle.status == BingxFuturesTradingCycleStatus.executed &&
+          queued.execution.isSuccess &&
+          response?.result != null) {
+        final payload = BingxFuturesIntentPayload.fromPluginResult(
+          response!.result!,
+        );
+        final orderId = queued.execution.orderId?.trim();
+        _registerManagedOrderId(
+          orderId,
+          symbol: payload.symbol,
+          provenance:
+              orderId == null || orderId.isEmpty
+                  ? null
+                  : _buildManagedOrderProvenance(
+                    orderId: orderId,
+                    payload: payload,
+                    result: response.result!,
+                    testOrder: _useTestOrderEndpoint,
+                    credentials: executionCredentials!,
+                  ),
+        );
+        _startOpenOrdersAutoTracking(
+          symbol: payload.symbol,
+          orderId: queued.execution.orderId,
+        );
+        unawaited(_fetchOpenOrders(silent: true));
+        if (!silent) {
+          await _showSnack(
+            'Order sent${orderId == null || orderId.isEmpty ? '' : ' · id $orderId'}',
+          );
+        }
+        return 'effect:succeeded';
+      }
+      if (cycle.status == BingxFuturesTradingCycleStatus.validated) {
+        if (!silent) {
+          await _showSnack(
+            'Exact request validated. No exchange order was created.',
+            seconds: 4,
+          );
+        }
+        return 'validated:no_effect';
+      }
+      if (!silent) {
+        await _showSnack(cycle.reasonMessage, seconds: 4);
+      }
+      return 'blocked:${cycle.reasonCode}';
     }
     if (cycle.isPrepared && response != null) {
       final hash = response.result?['intent_hash_hex']?.toString() ?? '';
       final shortHash = hash.length >= 12 ? '${hash.substring(0, 12)}..' : hash;
-      await _showSnack('BingX intent prepared: $shortHash');
+      if (!silent) {
+        await _showSnack('BingX intent prepared: $shortHash');
+      }
       return preparedTradingIntentTerminalOutcome;
     }
-    await _showSnack(cycle.reasonMessage, seconds: 4);
+    if (!silent) {
+      await _showSnack(cycle.reasonMessage, seconds: 4);
+    }
     return 'blocked:${cycle.reasonCode}';
   }
 
@@ -1621,6 +1943,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (!_droneEnabled) {
       await _showSnack('Drone is paused. Resume before running strategy.');
       return 'blocked:drone_paused';
+    }
+    if (_localRunnerRunning) {
+      await _showSnack('This computer is already watching the market.');
+      return 'blocked:local_runner_active';
     }
     final symbol = _symbolController.text.trim();
     if (symbol.isEmpty) {

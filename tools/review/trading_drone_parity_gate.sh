@@ -548,9 +548,13 @@ runner_prepared_session_scheduler_is_bounded() {
     printf '%s\n' "$body" | rg -q 'SCHEDULER_SESSION_OPERATION_ID="\$session_id"' &&
     rg -q 'deterministic scheduler refused mandate rotation during its session' "$1" &&
     printf '%s\n' "$body" | rg -q '\[ "\$wait_seconds" -le 5 \]' &&
-    printf '%s\n' "$body" | rg -q 'refused a missed signed cycle window' &&
-    printf '%s\n' "$body" | rg -q 'terminalize_stale_deterministic_session' &&
-    rg -q 'self-test resurrected terminalized stale session state' "$1" &&
+    printf '%s\n' "$body" | rg -q 'settle_missed_deterministic_session_cycles' &&
+    printf '%s\n' "$body" | rg -q 'provider_request=false effect=false' &&
+    rg -q 'self-test missed-slot settlement did not retain canonical evidence' "$1" &&
+    rg -q 'self-test replayed already-settled missed session slots' "$1" &&
+    rg -q 'self-test did not reconcile retained missed-slot evidence' "$1" &&
+    rg -q 'self-test accepted conflicting missed-slot evidence' "$1" &&
+    rg -q 'self-test changed state after missed-slot conflict' "$1" &&
     [ "$(printf '%s\n' "$body" | rg -c 'execute_deterministic_order_once')" -eq 1 ] &&
     printf '%s\n' "$body" | rg -q 'foreground=true serial=true' &&
     ! printf '%s\n' "$body" | rg -q 'systemctl (enable|start)|capture_deterministic_market_evidence_once|systemd-run' &&
@@ -719,7 +723,6 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
     rg -q 'session recovery reconciles one existing effect without POST' "$4" &&
     rg -q '_exportSignedRemoteDeterministicSession,' "$5" &&
-    rg -q 'Revoke VPS Session' "$5" &&
     rg -q '_revokeRemoteSession' "$5" &&
     rg -q 'BingxFuturesRemoteSessionRevocation.issue' "$5" &&
     rg -q 'Future<String> revokeSession' "$7" &&

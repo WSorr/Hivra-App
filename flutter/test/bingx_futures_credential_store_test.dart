@@ -9,6 +9,9 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
+  final List<String> readKeys = <String>[];
+  final List<String> writeKeys = <String>[];
+  final List<String> deleteKeys = <String>[];
 
   _FakeSecureStorage();
 
@@ -23,6 +26,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    writeKeys.add(key);
     if (value == null) {
       values.remove(key);
       return;
@@ -40,6 +44,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    readKeys.add(key);
     return values[key];
   }
 
@@ -53,6 +58,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    deleteKeys.add(key);
     values.remove(key);
   }
 }
@@ -187,6 +193,111 @@ void main() {
         isFalse,
       );
     });
+
+    test('canonical load reads secure storage without rewriting it', () async {
+      const scope =
+          'abababababababababababababababababababababababababababababababab';
+      final secureStorage = _FakeSecureStorage();
+      final writer = BingxFuturesCredentialStore(
+        readActiveCapsuleRootHex: () => scope,
+        secureStorage: secureStorage,
+      );
+      await writer.save(
+        const BingxFuturesApiCredentials(
+          apiKey: 'canonical-key',
+          apiSecret: 'canonical-secret',
+        ),
+      );
+      secureStorage.readKeys.clear();
+      secureStorage.writeKeys.clear();
+      secureStorage.deleteKeys.clear();
+
+      final reader = BingxFuturesCredentialStore(
+        readActiveCapsuleRootHex: () => scope,
+        secureStorage: secureStorage,
+      );
+      final loaded = await reader.load();
+
+      expect(loaded?.apiKey, 'canonical-key');
+      expect(loaded?.apiSecret, 'canonical-secret');
+      expect(secureStorage.readKeys, <String>[
+        'hivra.bingx.futures.$scope.credentials',
+      ]);
+      expect(secureStorage.writeKeys, isEmpty);
+      expect(secureStorage.deleteKeys, isEmpty);
+    });
+
+    test('legacy split keys migrate once and are then sealed', () async {
+      const scope =
+          'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd';
+      final secureStorage = _FakeSecureStorage();
+      secureStorage.values['hivra.bingx.futures.$scope.api_key'] = 'legacy-key';
+      secureStorage.values['hivra.bingx.futures.$scope.api_secret'] =
+          'legacy-secret';
+      final migratingStore = BingxFuturesCredentialStore(
+        readActiveCapsuleRootHex: () => scope,
+        secureStorage: secureStorage,
+      );
+
+      final migrated = await migratingStore.load();
+
+      expect(migrated?.apiKey, 'legacy-key');
+      expect(migrated?.apiSecret, 'legacy-secret');
+      expect(
+        secureStorage.values['hivra.bingx.futures.$scope.credentials'],
+        isNotNull,
+      );
+      expect(
+        secureStorage.values.containsKey('hivra.bingx.futures.$scope.api_key'),
+        isFalse,
+      );
+      expect(
+        secureStorage.values.containsKey(
+          'hivra.bingx.futures.$scope.api_secret',
+        ),
+        isFalse,
+      );
+
+      secureStorage.readKeys.clear();
+      secureStorage.writeKeys.clear();
+      secureStorage.deleteKeys.clear();
+      final restartedStore = BingxFuturesCredentialStore(
+        readActiveCapsuleRootHex: () => scope,
+        secureStorage: secureStorage,
+      );
+      final restarted = await restartedStore.load();
+
+      expect(restarted?.apiKey, 'legacy-key');
+      expect(secureStorage.readKeys, <String>[
+        'hivra.bingx.futures.$scope.credentials',
+      ]);
+      expect(secureStorage.writeKeys, isEmpty);
+      expect(secureStorage.deleteKeys, isEmpty);
+    });
+
+    test(
+      'malformed canonical record fails closed without legacy fallback',
+      () async {
+        const scope =
+            'efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef';
+        final secureStorage = _FakeSecureStorage();
+        secureStorage.values['hivra.bingx.futures.$scope.credentials'] = '{}';
+        secureStorage.values['hivra.bingx.futures.$scope.api_key'] =
+            'stale-key';
+        secureStorage.values['hivra.bingx.futures.$scope.api_secret'] =
+            'stale-secret';
+        final store = BingxFuturesCredentialStore(
+          readActiveCapsuleRootHex: () => scope,
+          secureStorage: secureStorage,
+        );
+
+        await expectLater(store.load(), throwsA(isA<StateError>()));
+        expect(secureStorage.readKeys, <String>[
+          'hivra.bingx.futures.$scope.credentials',
+        ]);
+        expect(secureStorage.writeKeys, isEmpty);
+      },
+    );
 
     test('fails closed when secure storage is unavailable', () async {
       final tempHome = await Directory.systemTemp.createTemp(

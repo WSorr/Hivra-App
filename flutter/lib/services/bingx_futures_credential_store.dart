@@ -120,27 +120,32 @@ class BingxFuturesCredentialStore {
     }
   }
 
-  Future<BingxFuturesApiCredentials?> _readScope(String scope) async {
+  Future<BingxFuturesApiCredentials?> _readCanonicalScope(String scope) async {
     try {
       final raw = await _secureStorage.read(key: _credentialsForScope(scope));
-      if (raw != null && raw.trim().isNotEmpty) {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map) {
-          final map = Map<String, dynamic>.from(decoded);
-          final apiKey = map[_apiKeySuffix]?.toString().trim() ?? '';
-          final apiSecret = map[_apiSecretSuffix]?.toString().trim() ?? '';
-          if (apiKey.isNotEmpty && apiSecret.isNotEmpty) {
-            return BingxFuturesApiCredentials(
-              apiKey: apiKey,
-              apiSecret: apiSecret,
-            ).normalized();
-          }
-        }
+      if (raw == null || raw.trim().isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        throw const FormatException('credential record must be an object');
       }
-    } catch (_) {
-      // Continue into legacy secure storage/fallback migration.
+      final map = Map<String, dynamic>.from(decoded);
+      final apiKey = map[_apiKeySuffix]?.toString().trim() ?? '';
+      final apiSecret = map[_apiSecretSuffix]?.toString().trim() ?? '';
+      if (apiKey.isEmpty || apiSecret.isEmpty) {
+        throw const FormatException('credential record is incomplete');
+      }
+      return BingxFuturesApiCredentials(
+        apiKey: apiKey,
+        apiSecret: apiSecret,
+      ).normalized();
+    } catch (error) {
+      throw StateError('Secure credential storage is unavailable: $error');
     }
+  }
 
+  Future<BingxFuturesApiCredentials?> _readLegacySecureScope(
+    String scope,
+  ) async {
     try {
       final apiKey = await _secureStorage.read(key: _apiKeyForScope(scope));
       final apiSecret = await _secureStorage.read(
@@ -155,16 +160,10 @@ class BingxFuturesCredentialStore {
           apiSecret: apiSecret.trim(),
         ).normalized();
       }
-    } catch (_) {
-      // Continue into one-time migration of legacy plaintext storage.
+      return null;
+    } catch (error) {
+      throw StateError('Secure credential storage is unavailable: $error');
     }
-
-    final fallback = await _readScopeFallback(scope);
-    if (fallback == null) return null;
-    return BingxFuturesApiCredentials(
-      apiKey: fallback.$1,
-      apiSecret: fallback.$2,
-    ).normalized();
   }
 
   Future<File> _fallbackFile() async {
@@ -219,13 +218,6 @@ class BingxFuturesCredentialStore {
     await _writeFallbackMap(map);
   }
 
-  Future<void> _promoteToSecureIfNeeded(
-    String scope,
-    BingxFuturesApiCredentials credentials,
-  ) async {
-    await _writeScope(scope, credentials);
-  }
-
   Future<void> _migrateLegacyFallbackFile() async {
     final file = await _fallbackFile();
     if (!await file.exists()) return;
@@ -273,9 +265,25 @@ class BingxFuturesCredentialStore {
   }
 
   Future<BingxFuturesApiCredentials?> _readScopeAndPromote(String scope) async {
-    final loaded = await _readScope(scope);
-    if (loaded == null) return null;
-    await _promoteToSecureIfNeeded(scope, loaded);
+    final canonical = await _readCanonicalScope(scope);
+    if (canonical != null) return canonical;
+
+    final legacySecure = await _readLegacySecureScope(scope);
+    if (legacySecure != null) {
+      await _writeScope(scope, legacySecure);
+      await _secureStorage.delete(key: _apiKeyForScope(scope));
+      await _secureStorage.delete(key: _apiSecretForScope(scope));
+      return legacySecure;
+    }
+
+    final fallback = await _readScopeFallback(scope);
+    if (fallback == null) return null;
+    final loaded =
+        BingxFuturesApiCredentials(
+          apiKey: fallback.$1,
+          apiSecret: fallback.$2,
+        ).normalized();
+    await _writeScope(scope, loaded);
     return loaded;
   }
 }
