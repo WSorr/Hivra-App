@@ -134,22 +134,70 @@ void main() {
         diagnostics: const [],
       );
       final notice = tradingReconciliationNotice(result, 'capsule-a')!;
-      expect(notice, contains('Completed 7 · Needs review 1'));
-      expect(notice, contains('not necessarily filled'));
-      expect(notice, contains('DOGE-USDT · live-client'));
+      final details = tradingReconciliationDetails(result, 'capsule-a')!;
+      expect(notice, contains('No active orders · 1 needs review'));
+      expect(notice, contains('not recreate'));
+      expect(notice, isNot(contains('live-client')));
+      expect(details, contains('may mean filled'));
+      expect(details, contains('DOGE-USDT · live-client'));
       expect(
-        notice,
+        details,
         contains('BingX reports FAILED; final outcome unverified'),
       );
-      expect(notice, contains('Do not recreate'));
-      expect(notice, contains('Test records are retained separately'));
-      expect(notice, contains('ZIL-USDT position closed · net -0.83 USDT'));
-      expect(notice, isNot(contains('test-client')));
+      expect(details, contains('Test records are retained separately'));
+      expect(details, contains('ZIL-USDT position closed · net -0.83 USDT'));
+      expect(details, isNot(contains('test-client')));
       expect(tradingReconciliationNotice(result, 'capsule-b'), isNull);
+      expect(tradingReconciliationDetails(result, 'capsule-b'), isNull);
       expect(tradingReconciliationNotice(result, null), isNull);
       expect(tradingReconciliationNotice(null, 'capsule-a'), isNull);
     },
   );
+
+  test('account changes stay concise until reconciliation details expand', () {
+    const state = BingxFuturesOrderTrackingState(
+      trackedSymbol: null,
+      trackedOrderId: null,
+      managedOrderIds: <String>[],
+      managedOrderSymbols: <String, String>{},
+      managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+        '2091062608844660736': BingxManagedOrderProvenance(
+          orderId: '2091062608844660736',
+          symbol: 'DOGE-USDT',
+          side: 'buy',
+          testOrder: false,
+          intentHashHex: 'intent',
+          canonicalIntentJson: '{}',
+          lifecycleStatus: BingxManagedOrderLifecycleStatus.unresolved,
+          lifecycleDiagnostic: 'account_binding_mismatch',
+          marketSnapshotHashHex: null,
+          featureHashHex: null,
+          tvhDecisionHashHex: null,
+          liveDecisionHashHex: null,
+          recordedAtUtc: '2026-09-06T12:00:00.000Z',
+        ),
+      },
+      stopLossPercent: null,
+      takeProfitRiskReward: null,
+    );
+    const result = BingxFuturesManagedOrderReconciliationResult(
+      status: BingxFuturesManagedOrderReconciliationStatus.reconciled,
+      capsuleRootHex: 'capsule-a',
+      state: state,
+      activeCount: 0,
+      terminalCount: 0,
+      unresolvedCount: 1,
+      diagnostics: <String>[],
+    );
+
+    final notice = tradingReconciliationNotice(result, 'capsule-a')!;
+    final details = tradingReconciliationDetails(result, 'capsule-a')!;
+    expect(notice, contains('earlier records belong to another BingX account'));
+    expect(notice, isNot(contains('2091062608844660736')));
+    expect(notice, isNot(contains('account_binding_mismatch')));
+    expect(details, contains('2091062608844660736'));
+    expect(details, contains('different BingX account'));
+  });
 
   test('paused process does not imply disabled startup', () {
     for (final details in [
@@ -184,6 +232,79 @@ void main() {
       ),
       contains('Runner status unknown'),
     );
+  });
+
+  test('Runner actions preserve one retained session lifecycle', () {
+    const running =
+        'active=active enabled=linked session_state=active cycles=1 effects=0 '
+        'last_scheduled_check=2026-09-04T16:50:00+00:00 '
+        'next_check=2026-09-04T16:55:00+00:00 '
+        'last_outcome=blocked:market_proposal_blocked';
+    final paused = running.replaceFirst('active=active', 'active=inactive');
+    final terminal = paused
+        .replaceFirst('session_state=active', 'session_state=completed')
+        .replaceFirst(
+          'next_check=2026-09-04T16:55:00+00:00',
+          'next_check=none',
+        );
+
+    expect(tradingRemoteRunnerIsRunning(running), isTrue);
+    expect(tradingRemoteRunnerCanPause(running), isTrue);
+    expect(tradingRemoteRunnerCanResume(running), isFalse);
+    expect(tradingRemoteRunnerCanResume(paused), isTrue);
+    expect(tradingRemoteRunnerCanPause(paused), isFalse);
+    expect(
+      tradingRemoteRunnerCanStartSession(raw: paused, hasVerifiedSession: true),
+      isFalse,
+    );
+    expect(
+      tradingRemoteRunnerCanStartSession(
+        raw: terminal,
+        hasVerifiedSession: true,
+      ),
+      isTrue,
+    );
+    expect(tradingRemoteRunnerCanResume('$paused active=inactive'), isFalse);
+  });
+
+  test('verified Runner session summary names exact market and limits', () {
+    final issuedAt = DateTime.utc(2026, 9, 8, 10);
+    final mandate = BingxFuturesTradingMandate.issue(
+      capsuleRootHex: 'a' * 64,
+      accountBindingHashHex: 'b' * 64,
+      symbol: 'SOL-USDT',
+      testOrder: false,
+      issuedAtUtc: issuedAt,
+      expiresAtUtc: issuedAt.add(const Duration(hours: 24)),
+      maxOrderNotionalQuoteDecimal: '17',
+      maxRiskPerTradePercent: 2,
+      maxDailyLossPercent: 5,
+      maxConcurrentPositions: 1,
+      cooldownAfterLossStreak: 2,
+      cooldownMinutes: 60,
+      maxEffects: 1,
+    );
+    final session =
+        BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+          mandate: mandate,
+          runnerKeyId: 'c' * 64,
+          strategyPolicy:
+              BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                stopLossPercent: 2,
+                minimumRiskReward: 2.5,
+              ),
+          startsAtUtc: issuedAt.add(const Duration(minutes: 15)),
+          intervalSeconds: 300,
+          maxCycles: 24,
+          signCommitment: (_) => 'd' * 128,
+        );
+
+    final summary = tradingRemoteRunnerSessionDetailsLabel(session);
+    expect(summary, contains('SOL-USDT · LIVE'));
+    expect(summary, contains('Limit 17 USDT · Up to 1 order'));
+    expect(summary, contains('SL 2% · Minimum R:R 2.5'));
+    expect(summary, contains('Checks every 5 min · Up to 24 checks'));
+    expect(summary, contains('Capsule aaaaaaaa · Account bbbbbbbb'));
   });
   test('remote status reports retained outcomes, not process success', () {
     const wire =

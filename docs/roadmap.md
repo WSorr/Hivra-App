@@ -34,8 +34,12 @@ The following product foundations are implemented and retained:
   cycle and no peer-selected or Chat-signal route;
 - guarded repository integration and exact-artifact release signoff.
 
-The current public prerelease is `v1.0.3-test18`. The invalid `test17` artifact
+The current public prerelease is `v1.0.3-test19`. The invalid `test17` artifact
 evidence remains immutable history and cannot authorize another publication.
+
+Trading Remote Runner product control exposes the exact verified signed session
+and resumes it after pause without issuing replacement authority. Reconciliation
+keeps internal provider identifiers behind an explicit details disclosure.
 
 ## Current Product Convergence
 

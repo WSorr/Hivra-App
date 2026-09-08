@@ -290,6 +290,23 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
       saving: _savingTradingControl,
       enabled: _droneEnabled,
     );
+    final remoteStatusWire = _remoteRunnerStatusWire ?? '';
+    final remoteSessionRunning = tradingRemoteRunnerIsRunning(remoteStatusWire);
+    final remoteSessionResumable =
+        _remoteRunnerSession?.mandate.isActiveAt(nowUtc) == true &&
+        tradingRemoteRunnerCanResume(remoteStatusWire);
+    final remoteSessionCanStart =
+        !_remoteRunnerConfigured ||
+        tradingRemoteRunnerCanStartSession(
+          raw: remoteStatusWire,
+          hasVerifiedSession: _remoteRunnerSession != null,
+        );
+    final remoteSessionActionLabel =
+        remoteSessionResumable
+            ? 'Resume same session'
+            : remoteSessionRunning
+            ? '24/7 Session running'
+            : 'Start 24/7 Session';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Trading Drone')),
@@ -365,6 +382,18 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             ),
                             style: const TextStyle(color: Color(0xFF97A3B5)),
                           ),
+                          if (_remoteRunnerSession != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              tradingRemoteRunnerSessionDetailsLabel(
+                                _remoteRunnerSession,
+                              ),
+                              style: const TextStyle(
+                                color: Color(0xFFD2D8E5),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -437,8 +466,13 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                         _runningIntent ||
                                 _savingTradingControl ||
                                 _exportingRemoteMandate ||
-                                !_droneEnabled
+                                _loadingRemoteRunnerSummary ||
+                                !_droneEnabled ||
+                                (!remoteSessionResumable &&
+                                    !remoteSessionCanStart)
                             ? null
+                            : remoteSessionResumable
+                            ? _resumeConfiguredRemoteRunnerSession
                             : _exportSignedRemoteDeterministicSession,
                     icon:
                         _exportingRemoteMandate
@@ -450,8 +484,8 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             : const Icon(Icons.verified_user_outlined),
                     label: Text(
                       _exportingRemoteMandate
-                          ? 'Starting 24/7 session'
-                          : 'Start 24/7 Session',
+                          ? 'Updating 24/7 session'
+                          : remoteSessionActionLabel,
                     ),
                   ),
                 ],
@@ -1194,9 +1228,21 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                   )
                   case final notice?) ...[
                 const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: SelectableText(notice),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 8),
+                  title: Text(notice),
+                  children: [
+                    if (tradingReconciliationDetails(
+                          _lastReconciliation,
+                          _module.activeCapsuleRootHex(),
+                        )
+                        case final details?)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: SelectableText(details),
+                      ),
+                  ],
                 ),
               ],
               if (_openOrders.isNotEmpty) ...[

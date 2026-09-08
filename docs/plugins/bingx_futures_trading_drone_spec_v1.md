@@ -1149,7 +1149,14 @@ already exists. Active, failed, masked, foreign, or otherwise unexpected unit
 state remains fail-closed.
 After host reboot it starts only because the operator explicitly enabled it and
 still fails closed against the retained signed state. Pause disables and stops
-the service without mutating the signed session. Pause is idempotent after a
+the service without mutating the signed session. Resume revalidates the exact
+retained session, Capsule, account, and Runner binding before enabling that same
+service; it creates no new authority, decision, or effect. The product surface
+must derive the session instrument, live/test mode, limits, expiry, and binding
+fingerprints from that verified artifact rather than current local form fields.
+A fresh Start remains unavailable while the retained session is active, whether
+running or paused, and becomes available only after a verified terminal state.
+Pause is idempotent after a
 fail-closed service error: it clears only the systemd failed state and boot
 enablement while preserving the canonical unit link. Uninstall refuses an
 enabled service. No secret is stored in the unit, command line, environment,

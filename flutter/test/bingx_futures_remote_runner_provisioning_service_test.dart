@@ -135,6 +135,8 @@ void main() {
         throwsStateError,
       );
       expect(host.deployCalls, 0);
+      await expectLater(service.resume(profile), throwsStateError);
+      expect(host.resumeCalls, 0);
 
       await service.deploySession(
         profile: profile,
@@ -144,6 +146,8 @@ void main() {
         apiSecret: 'secret',
       );
       expect(await service.loadActiveSession(profile), '{"signed":"session"}');
+      expect(await service.resume(profile), 'resumed');
+      expect(host.resumeCalls, 1);
       expect(
         await service.revokeSession(
           profile: profile,
@@ -309,6 +313,7 @@ class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
   int deployCalls = 0;
   int bootstrapCalls = 0;
   int removeCalls = 0;
+  int resumeCalls = 0;
   int revokeCalls = 0;
   int statusCalls = 0;
 
@@ -379,6 +384,15 @@ class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
     required BingxFuturesRemoteRunnerProfile profile,
     required String privateKeyPem,
   }) async => 'paused';
+
+  @override
+  Future<String> resume({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required String privateKeyPem,
+  }) async {
+    resumeCalls += 1;
+    return 'resumed';
+  }
 
   @override
   Future<String> remove({
