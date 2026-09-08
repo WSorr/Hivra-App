@@ -41,10 +41,17 @@ The trading drone supports two operation modes in v1:
    - Capsule and drone are invoked by explicit user action.
    - Drone computes one deterministic decision cycle on current closed-bar snapshot.
    - Result is projected immediately (`NO_SIGNAL` or deterministic intent draft).
-2. `interactive` (always-on):
-   - Drone runs continuously with scheduled evaluation cycles.
-   - Drone refreshes snapshot on each cycle and manages pending intents/order lifecycle according to policy.
-   - Requires heartbeat and self-recovery orchestration in app runtime layer.
+2. `interactive` (local continuous):
+   - Drone runs serial evaluation cycles every five minutes while the Trading
+     workspace remains open and the computer remains awake.
+   - Every cycle refreshes the snapshot and delegates any authorized effect to
+     the canonical trading cycle and exchange-execution owners.
+   - Closing the workspace, changing Capsule, revoking the mandate, losing the
+     required credential, or detecting an active VPS session stops local
+     automation fail-closed.
+   - Local continuous execution and the VPS session are mutually exclusive.
+     The VPS Runner remains the 24/7 option when Hivra may be closed or the
+     computer may sleep.
 
 Mode invariants:
 
@@ -52,6 +59,9 @@ Mode invariants:
   `snapshot_normalize -> feature_extract -> rule_engine -> intent_builder`.
 - Mode differences are orchestration-only (when/why to run), not decision-logic differences.
 - For identical normalized snapshot and identical policy config, both modes MUST produce identical decision payload/hash.
+- Starting the local cadence creates no second intent, effect, claim, receipt,
+  or reconciliation path and grants no authority beyond the active bounded
+  trading mandate.
 
 ### 2.2 Canonical Trading Cycle Port
 
@@ -925,6 +935,8 @@ If gate passes:
 - execution adapter uses local secret storage only,
 - exchange API credentials MUST NOT be mirrored into user-visible or
   app-private plaintext files; unavailable secure storage blocks persistence,
+- a canonical Capsule-scoped credential record is read without rewriting it;
+  legacy split-key records are promoted once and removed after promotion,
 - the test endpoint validates one exact provider request but does not reserve
   or confirm a durable liquidity-event effect claim and MUST NOT be projected
   as an exchange order,
@@ -1086,9 +1098,13 @@ The bounded scheduler may call only the existing single-cycle
 parallel decision or effect path. One host lock permits only one scheduler for
 the installed Runner. The scheduler waits for the signed cadence, polls for an
 exact retained revocation at least every five seconds, executes cycles serially,
-and exits on any cycle error, missed cadence window, or terminal session state.
-It atomically marks a missed-window session `stopped` so replacement authority
-can be admitted, but never catches up missed cycles by executing them in a burst.
+and exits on any cycle error or terminal session state. When an operator pauses
+the Runner, elapsed cadence slots are settled atomically as
+`blocked:missed_while_paused`: they consume their original signed slot identity,
+perform no market or provider request, create no effect, and cannot be replayed.
+The scheduler then continues only from the current signed slot without extending
+the session deadline, cycle bound, or effect bound. It never catches up missed
+cycles by executing them in a burst.
 Session export reserves a bounded provisioning lead time and shows the exact
 first-cycle start and deadline before the Capsule signs. Missing that reviewed
 deadline remains terminal and requires a fresh session; the Runner never shifts
@@ -1189,6 +1205,15 @@ endpoint may remain for exact-replay recovery or a later root-authorized
 reprovision, but it owns no trading effect and has no private key. Shared
 credentials, implicit post-bootstrap root access, silent host-key replacement,
 and a second decision or exchange-effect route are forbidden.
+
+The product surface MUST distinguish three operations: installing the exact
+Runner on a VPS, authorizing or resuming one bounded signed VPS session, and
+uninstalling the Runner. Local Trading pause is not a prerequisite for VPS
+setup and does not stop an already authorized VPS session. A resumable retained
+VPS session remains resumable through its existing verified lifecycle even when
+local Trading is paused; creating a new VPS session still requires an active
+local mandate. The destructive action MUST be presented as an uninstall, state
+that the local control binding is removed, and never be labelled as a restart.
 
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
 the exact signed session artifact, then signs one

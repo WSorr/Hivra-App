@@ -8,6 +8,7 @@ import 'bingx_futures_execution_queue_service.dart';
 import 'bingx_futures_intent_use_case_service.dart';
 import 'bingx_futures_live_strategy_use_case_service.dart';
 import 'bingx_futures_live_snapshot_builder_service.dart';
+import 'bingx_futures_mode_orchestrator_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
 import 'bingx_futures_order_replacement_service.dart';
 import 'bingx_futures_order_revalidation_service.dart';
@@ -44,6 +45,7 @@ class TradingDroneModule {
   final BingxFuturesRemoteRunnerIdentityService remoteRunnerIdentity;
   final BingxFuturesRemoteRunnerProvisioningService remoteRunnerProvisioning;
   final BingxFuturesLiveStrategyUseCaseService liveStrategyUseCase;
+  final BingxFuturesModeOrchestratorService modeOrchestrator;
   final BingxFuturesStrategyNamingService strategyNaming;
   final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
   final BingxFuturesTradingCycleUseCaseService cycleUseCase;
@@ -76,6 +78,7 @@ class TradingDroneModule {
     required this.remoteRunnerIdentity,
     required this.remoteRunnerProvisioning,
     required this.liveStrategyUseCase,
+    required this.modeOrchestrator,
     required this.strategyNaming,
     required this.volumeGrowthFilter,
     required this.cycleUseCase,
@@ -162,6 +165,7 @@ class TradingDroneModuleService {
         identity: remoteRunnerIdentity,
       ),
       liveStrategyUseCase: liveStrategyUseCase,
+      modeOrchestrator: BingxFuturesModeOrchestratorService(),
       strategyNaming: const BingxFuturesStrategyNamingService(),
       volumeGrowthFilter: const BingxFuturesVolumeGrowthFilterService(),
       cycleUseCase: BingxFuturesTradingCycleUseCaseService(

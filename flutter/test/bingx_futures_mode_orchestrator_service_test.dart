@@ -1,84 +1,201 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/bingx_futures_mode_orchestrator_service.dart';
 
 void main() {
-  group('BingxFuturesModeOrchestratorService', () {
-    test('runs situational mode through shared pipeline', () async {
-      var calls = 0;
-      final service = BingxFuturesModeOrchestratorService(
-        pipeline: (input) {
-          calls += 1;
-          return BingxFuturesDroneDecisionEnvelope(
-            decisionHashHex: '${input.snapshotHashHex}:${input.policyHashHex}',
-            payload: <String, dynamic>{
-              'snapshot': input.snapshotHashHex,
-              'policy': input.policyHashHex,
-            },
-          );
-        },
-      );
+  const capsuleA =
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const capsuleB =
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-      final result = await service.runSituational(
-        input: const BingxFuturesDroneCycleInput(
-          snapshotHashHex: 'snap-a',
-          policyHashHex: 'policy-a',
-        ),
-      );
+  group('BingxFuturesModeOrchestratorService', () {
+    test('runs situational mode once through the supplied cycle', () async {
+      var calls = 0;
+      final service = BingxFuturesModeOrchestratorService();
+
+      final result = await service.runSituational(() async {
+        calls += 1;
+        return 'blocked:no_signal';
+      });
 
       expect(calls, 1);
-      expect(result.decisionHashHex, 'snap-a:policy-a');
-      expect(result.payload['snapshot'], 'snap-a');
+      expect(result, 'blocked:no_signal');
+      expect(service.isRunning(capsuleA), isFalse);
     });
 
-    test('runs interactive mode sequentially through shared pipeline',
-        () async {
-      final seen = <String>[];
+    test('runs interactive cycles serially at one cadence', () async {
+      final delays = <Completer<void>>[];
+      final observed = <BingxFuturesInteractiveRunnerSnapshot>[];
+      var cycles = 0;
+      var activeCycles = 0;
+      var maximumConcurrentCycles = 0;
       final service = BingxFuturesModeOrchestratorService(
-        pipeline: (input) {
-          final marker = '${input.snapshotHashHex}:${input.policyHashHex}';
-          seen.add(marker);
-          return BingxFuturesDroneDecisionEnvelope(
-            decisionHashHex: marker,
-            payload: <String, dynamic>{'marker': marker},
-          );
+        interactiveInterval: const Duration(minutes: 5),
+        delay: (_) {
+          final completer = Completer<void>();
+          delays.add(completer);
+          return completer.future;
+        },
+        nowUtc: () => DateTime.utc(2026, 9, 8, 12),
+      );
+
+      final first = service.startInteractive(
+        capsuleScope: capsuleA,
+        runCycle: () async {
+          activeCycles += 1;
+          maximumConcurrentCycles =
+              maximumConcurrentCycles < activeCycles
+                  ? activeCycles
+                  : maximumConcurrentCycles;
+          cycles += 1;
+          await Future<void>.delayed(Duration.zero);
+          activeCycles -= 1;
+          return 'blocked:cycle_$cycles';
+        },
+        onSnapshot: observed.add,
+      );
+
+      expect(await first, 'blocked:cycle_1');
+      await _drainMicrotasks();
+      expect(cycles, 1);
+      expect(delays, hasLength(1));
+      expect(
+        service.snapshot(capsuleA)!.phase,
+        BingxFuturesInteractiveRunnerPhase.waiting,
+      );
+      expect(
+        service.snapshot(capsuleA)!.nextCycleAtUtc,
+        DateTime.utc(2026, 9, 8, 12, 5),
+      );
+
+      delays.removeAt(0).complete();
+      await _drainMicrotasks();
+      expect(cycles, 2);
+      expect(maximumConcurrentCycles, 1);
+      expect(service.snapshot(capsuleA)!.completedCycles, 2);
+      expect(observed.last.lastOutcome, 'blocked:cycle_2');
+
+      expect(service.stop(capsuleA), isTrue);
+      expect(service.isRunning(capsuleA), isFalse);
+      expect(
+        service.snapshot(capsuleA)!.phase,
+        BingxFuturesInteractiveRunnerPhase.stopped,
+      );
+    });
+
+    test('duplicate start shares one active run', () async {
+      final cycle = Completer<String>();
+      var calls = 0;
+      final service = BingxFuturesModeOrchestratorService();
+
+      final first = service.startInteractive(
+        capsuleScope: capsuleA,
+        runCycle: () {
+          calls += 1;
+          return cycle.future;
+        },
+      );
+      final duplicate = service.startInteractive(
+        capsuleScope: capsuleA,
+        runCycle: () async => 'must_not_run',
+      );
+
+      expect(identical(first, duplicate), isTrue);
+      expect(calls, 1);
+      cycle.complete('blocked:no_signal');
+      expect(await first, 'blocked:no_signal');
+      expect(await duplicate, 'blocked:no_signal');
+      service.stop(capsuleA);
+    });
+
+    test('starting another Capsule seals the previous local run', () async {
+      final delays = <Completer<void>>[];
+      final service = BingxFuturesModeOrchestratorService(
+        delay: (_) {
+          final completer = Completer<void>();
+          delays.add(completer);
+          return completer.future;
         },
       );
 
-      final results = await service.runInteractive(
-        cycles: const <BingxFuturesDroneCycleInput>[
-          BingxFuturesDroneCycleInput(
-            snapshotHashHex: 'snap-1',
-            policyHashHex: 'policy-1',
-          ),
-          BingxFuturesDroneCycleInput(
-            snapshotHashHex: 'snap-2',
-            policyHashHex: 'policy-1',
-          ),
-        ],
+      expect(
+        await service.startInteractive(
+          capsuleScope: capsuleA,
+          runCycle: () async => 'blocked:a',
+        ),
+        'blocked:a',
       );
+      await _drainMicrotasks();
+      expect(service.isRunning(capsuleA), isTrue);
 
-      expect(seen, <String>['snap-1:policy-1', 'snap-2:policy-1']);
-      expect(results.length, 2);
-      expect(results.first.decisionHashHex, 'snap-1:policy-1');
-      expect(results.last.decisionHashHex, 'snap-2:policy-1');
+      expect(
+        await service.startInteractive(
+          capsuleScope: capsuleB,
+          runCycle: () async => 'blocked:b',
+        ),
+        'blocked:b',
+      );
+      await _drainMicrotasks();
+
+      expect(service.isRunning(capsuleA), isFalse);
+      expect(
+        service.snapshot(capsuleA)!.phase,
+        BingxFuturesInteractiveRunnerPhase.stopped,
+      );
+      expect(service.isRunning(capsuleB), isTrue);
+      service.stop(capsuleB);
+      for (final delay in delays) {
+        if (!delay.isCompleted) delay.complete();
+      }
     });
 
-    test('verifies mode parity for identical cycle input', () async {
-      final service = BingxFuturesModeOrchestratorService(
-        pipeline: (input) => BingxFuturesDroneDecisionEnvelope(
-          decisionHashHex: '${input.snapshotHashHex}:${input.policyHashHex}',
-          payload: const <String, dynamic>{'ok': true},
-        ),
+    test('cycle exception stops fail-closed without another cycle', () async {
+      var calls = 0;
+      final service = BingxFuturesModeOrchestratorService(delay: (_) async {});
+
+      final first = service.startInteractive(
+        capsuleScope: capsuleA,
+        runCycle: () async {
+          calls += 1;
+          throw StateError('authority changed');
+        },
       );
 
-      final parity = await service.verifyModeParity(
-        input: const BingxFuturesDroneCycleInput(
-          snapshotHashHex: 'snap-parity',
-          policyHashHex: 'policy-parity',
-        ),
+      await expectLater(first, throwsStateError);
+      await _drainMicrotasks();
+      expect(calls, 1);
+      expect(service.isRunning(capsuleA), isFalse);
+      expect(
+        service.snapshot(capsuleA)!.phase,
+        BingxFuturesInteractiveRunnerPhase.failed,
       );
+      expect(
+        service.snapshot(capsuleA)!.lastError,
+        contains('authority changed'),
+      );
+    });
 
-      expect(parity, isTrue);
+    test('rejects ambiguous Capsule scope and cadence', () {
+      expect(
+        () => BingxFuturesModeOrchestratorService(
+          interactiveInterval: Duration.zero,
+        ),
+        throwsArgumentError,
+      );
+      final service = BingxFuturesModeOrchestratorService();
+      expect(
+        () => service.startInteractive(
+          capsuleScope: 'capsule-a',
+          runCycle: () async => 'blocked',
+        ),
+        throwsArgumentError,
+      );
     });
   });
+}
+
+Future<void> _drainMicrotasks() async {
+  await Future<void>.delayed(Duration.zero);
+  await Future<void>.delayed(Duration.zero);
 }

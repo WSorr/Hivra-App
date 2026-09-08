@@ -641,7 +641,8 @@ eligible = starts + datetime.timedelta(seconds=interval * index)
 if now >= expires:
     print(f"ready:{index}")
 elif now >= eligible + datetime.timedelta(seconds=interval):
-    print(f"stale:{index}")
+    latest_index = math.floor((now - starts).total_seconds() / interval)
+    print(f"skip:{index}:{latest_index}")
 elif now >= eligible:
     print(f"ready:{index}")
 else:
@@ -677,11 +678,56 @@ deterministic_session_scheduler_decision_with_revocation() {
   esac
 }
 
-terminalize_stale_deterministic_session() {
+settle_missed_deterministic_session_cycles() {
   local state="$1"
   local session_operation_id="$2"
-  [ "$(stop_deterministic_session_state "$state" "$session_operation_id")" = \
-    "stopped" ] || return 1
+  local first_index="$3"
+  local target_index="$4"
+  local max_cycles="$5"
+  local max_effects="$6"
+  [[ "$first_index" =~ ^[0-9]+$ ]] &&
+    [[ "$target_index" =~ ^[0-9]+$ ]] &&
+    [[ "$max_cycles" =~ ^[0-9]+$ ]] &&
+    [[ "$max_effects" =~ ^[0-9]+$ ]] &&
+    [ "$first_index" -lt "$target_index" ] &&
+    [ "$target_index" -le "$max_cycles" ] ||
+    die "missed session settlement received invalid bounds"
+
+  local result_dir="$STATE_DIRECTORY/deterministic-results"
+  ensure_private_operation_store "$result_dir"
+  local index="$first_index"
+  local session_status="active:$first_index:0"
+  while [ "$index" -lt "$target_index" ]; do
+    local operation_id retained_result retained_outcome pending_result
+    operation_id="$(derive_deterministic_session_cycle_operation_id \
+      "$session_operation_id" "$index")" ||
+      die "missed session cycle identity derivation failed"
+    validate_deterministic_operation_store \
+      "$result_dir" "$operation_id" "$DETERMINISTIC_HISTORY_LIMIT" 2048 ||
+      die "missed session settlement refused invalid result history"
+    retained_result="$result_dir/$operation_id.json"
+    if [ -e "$retained_result" ] || [ -L "$retained_result" ]; then
+      [ -f "$retained_result" ] && [ ! -L "$retained_result" ] ||
+        die "missed session settlement retained result is invalid"
+      retained_outcome="$(validate_deterministic_cycle_outcome \
+        "$retained_result" "$operation_id")" ||
+        die "missed session settlement retained result validation failed"
+      [ "$retained_outcome" = "blocked:missed_while_paused" ] ||
+        die "missed session settlement found conflicting cycle evidence"
+    else
+      pending_result="$(mktemp "$result_dir/.result.pending.XXXXXX")"
+      printf '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","operation_id":"%s","state":"blocked","reason_code":"missed_while_paused","effect":false}\n' \
+        "$operation_id" >"$pending_result"
+      chmod 0600 "$pending_result"
+      mv "$pending_result" "$retained_result"
+    fi
+    session_status="$(advance_deterministic_session_cycle \
+      "$state" "$session_operation_id" "$index" "$operation_id" \
+      "blocked:missed_while_paused" "$max_cycles" "$max_effects")" ||
+      die "missed session settlement could not advance canonical state"
+    index=$((index + 1))
+  done
+  printf '%s\n' "$session_status"
 }
 
 advance_deterministic_session_cycle() {
@@ -2850,11 +2896,19 @@ run_prepared_session_scheduler() {
         execute_deterministic_order_once "$directory"
         SCHEDULER_SESSION_OPERATION_ID=""
         ;;
-      stale:*)
-        terminalize_stale_deterministic_session \
-          "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" ||
-          die "prepared session scheduler could not stop a stale session"
-        die "prepared session scheduler refused a missed signed cycle window"
+      skip:*)
+        local skipped_from skipped_to settled_status
+        skipped_from="${decision#skip:}"
+        skipped_to="${skipped_from#*:}"
+        skipped_from="${skipped_from%%:*}"
+        [ "$skipped_to" -le "$session_max_cycles" ] ||
+          skipped_to="$session_max_cycles"
+        settled_status="$(settle_missed_deterministic_session_cycles \
+          "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
+          "$skipped_from" "$skipped_to" "$session_max_cycles" \
+          "$mandate_max_effects")" ||
+          die "prepared session scheduler could not settle missed slots"
+        echo "PASS trading-runner-artifact: prepared session scheduler skipped missed slots session_operation_id=$session_id from=$skipped_from to=$skipped_to status=$settled_status provider_request=false effect=false"
         ;;
       *) die "prepared session scheduler received an invalid decision" ;;
     esac
@@ -5016,22 +5070,77 @@ PY
   [ "$(deterministic_session_scheduler_decision \
     "active:0:0" 300 "2000-01-01T00:00:00.000Z" \
     "2000-01-01T01:00:00.000Z" "2000-01-01T00:05:00.000Z")" = \
-    "stale:0" ] || die "self-test scheduler attempted cadence catch-up"
+    "skip:0:1" ] || die "self-test scheduler did not isolate a missed slot"
   local stale_session_state="$root/stale-deterministic-session.v1.json"
   local stale_session_id
   stale_session_id="$(printf 'stale-session' | sha256_stdin)"
   [ "$(prepare_deterministic_session_cycle \
-    "$stale_session_state" "$stale_session_id" 2 1 300 \
+    "$stale_session_state" "$stale_session_id" 3 1 300 \
     "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)" = \
     "active:0:0" ] || die "self-test did not activate stale session state"
-  terminalize_stale_deterministic_session \
-    "$stale_session_state" "$stale_session_id" ||
-    die "self-test did not terminalize stale session state"
+  local stale_result_dir="$root/deterministic-results"
+  local previous_state_directory="$STATE_DIRECTORY"
+  STATE_DIRECTORY="$root"
+  [ "$(settle_missed_deterministic_session_cycles \
+    "$stale_session_state" "$stale_session_id" 0 2 3 1)" = \
+    "active:2:0" ] || die "self-test did not settle missed session slots"
+  local skipped_cycle_0 skipped_cycle_1
+  skipped_cycle_0="$(derive_deterministic_session_cycle_operation_id \
+    "$stale_session_id" 0)"
+  skipped_cycle_1="$(derive_deterministic_session_cycle_operation_id \
+    "$stale_session_id" 1)"
+  [ "$(validate_deterministic_cycle_outcome \
+    "$stale_result_dir/$skipped_cycle_0.json" "$skipped_cycle_0")" = \
+    "blocked:missed_while_paused" ] &&
+    [ "$(validate_deterministic_cycle_outcome \
+    "$stale_result_dir/$skipped_cycle_1.json" "$skipped_cycle_1")" = \
+    "blocked:missed_while_paused" ] ||
+    die "self-test missed-slot settlement did not retain canonical evidence"
   [ "$(prepare_deterministic_session_cycle \
-    "$stale_session_state" "$stale_session_id" 2 1 300 \
+    "$stale_session_state" "$stale_session_id" 3 1 300 \
     "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
-    "terminal:stopped:0:0" ] ||
-    die "self-test resurrected terminalized stale session state"
+    "ready:2:0" ] || die "self-test did not resume at the current signed slot"
+  if (settle_missed_deterministic_session_cycles \
+    "$stale_session_state" "$stale_session_id" 0 2 3 1) \
+    >/dev/null 2>&1; then
+    die "self-test replayed already-settled missed session slots"
+  fi
+  local replay_session_state replay_session_id replay_cycle_0
+  replay_session_state="$root/replay-deterministic-session.v1.json"
+  replay_session_id="$(printf 'replay-session' | sha256_stdin)"
+  [ "$(prepare_deterministic_session_cycle \
+    "$replay_session_state" "$replay_session_id" 2 1 300 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)" = \
+    "active:0:0" ] || die "self-test did not activate replay session state"
+  replay_cycle_0="$(derive_deterministic_session_cycle_operation_id \
+    "$replay_session_id" 0)"
+  printf '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","operation_id":"%s","state":"blocked","reason_code":"missed_while_paused","effect":false}\n' \
+    "$replay_cycle_0" >"$stale_result_dir/$replay_cycle_0.json"
+  chmod 0600 "$stale_result_dir/$replay_cycle_0.json"
+  [ "$(settle_missed_deterministic_session_cycles \
+    "$replay_session_state" "$replay_session_id" 0 1 2 1)" = \
+    "active:1:0" ] || die "self-test did not reconcile retained missed-slot evidence"
+  local conflict_session_state conflict_session_id conflict_cycle_0
+  conflict_session_state="$root/conflict-deterministic-session.v1.json"
+  conflict_session_id="$(printf 'conflict-session' | sha256_stdin)"
+  [ "$(prepare_deterministic_session_cycle \
+    "$conflict_session_state" "$conflict_session_id" 2 1 300 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)" = \
+    "active:0:0" ] || die "self-test did not activate conflict session state"
+  conflict_cycle_0="$(derive_deterministic_session_cycle_operation_id \
+    "$conflict_session_id" 0)"
+  printf '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","operation_id":"%s","state":"blocked","reason_code":"market_evidence_stale","effect":false}\n' \
+    "$conflict_cycle_0" >"$stale_result_dir/$conflict_cycle_0.json"
+  chmod 0600 "$stale_result_dir/$conflict_cycle_0.json"
+  if (settle_missed_deterministic_session_cycles \
+    "$conflict_session_state" "$conflict_session_id" 0 1 2 1) \
+    >/dev/null 2>&1; then
+    die "self-test accepted conflicting missed-slot evidence"
+  fi
+  [ "$(inspect_deterministic_session_cycle \
+    "$conflict_session_state" "$conflict_session_id" 2 1)" = \
+    "active:0:0" ] || die "self-test changed state after missed-slot conflict"
+  STATE_DIRECTORY="$previous_state_directory"
   [ "$(deterministic_session_scheduler_decision \
     "stopped:1:0" 300 "2000-01-01T00:00:00.000Z" \
     "2000-01-01T01:00:00.000Z" "2000-01-01T00:00:00.000Z")" = \
@@ -5052,7 +5161,7 @@ PY
     die "self-test scheduler accepted an invalid cadence"
   fi
   echo "PASS trading-runner-artifact: bounded restart-safe deterministic session"
-  unset session_state session_id session_cycle_0 session_cycle_1 session_status future_session_state stale_session_state stale_session_id
+  unset session_state session_id session_cycle_0 session_cycle_1 session_status future_session_state stale_session_state stale_session_id stale_result_dir previous_state_directory skipped_cycle_0 skipped_cycle_1 replay_session_state replay_session_id replay_cycle_0 conflict_session_state conflict_session_id conflict_cycle_0
 
   local artifact="$root/artifact"
   mkdir "$artifact"

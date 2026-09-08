@@ -17,6 +17,23 @@ Status date: 2026-09-08
   and resume reuse that exact session; an active session cannot be replaced by
   an accidental second Start action. Technical reconciliation records remain
   available on demand instead of flooding the primary product surface.
+- Canonical Capsule-scoped BingX credentials are read without a redundant
+  Keychain rewrite. Legacy split-key records migrate once into the existing
+  credential owner and are removed, so opening Trading does not repeat the
+  former read-then-write authorization cycle.
+- Trading now separates VPS installation, bounded session authorization or
+  resume, and destructive uninstall in the product surface. Local Trading does
+  not need to be paused before VPS setup, does not stop an active VPS session,
+  and no longer blocks resume of the same retained signed session.
+- A user without a VPS can run the same canonical Trading cycle every five
+  minutes while the Trading workspace stays open and the computer is awake.
+  This local cadence and the VPS session are mutually exclusive; both delegate
+  effects, claims, receipts, and reconciliation to the existing owners.
+- Packaged macOS smoke proved one local live-authority cycle reached the
+  canonical market decision and stopped without an effect when liquidity was
+  blocked. A paused VPS session now settles elapsed signed slots as retained
+  no-effect outcomes before continuing from the current slot; it neither
+  catches up provider requests nor extends the signed session bounds.
 - Trading entry, exact-effect identity, and restart reconciliation remain owned
   by the existing execution use case. BingX may replace a triggered order ID;
   terminal evidence is accepted only when the retained client order ID, account,
