@@ -275,8 +275,8 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
             ? 'Loading Capsule trading control.'
             : mandateSelectionNotice ??
                 (_droneEnabled
-                    ? 'Strategy can prepare and execute orders.'
-                    : 'Paused. New strategy runs are blocked.');
+                    ? 'The active Capsule may use the displayed bounded limits.'
+                    : 'Choose this computer or VPS; bounded authority is requested during start.');
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
     final intentHashLabel =
@@ -308,7 +308,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
     );
     final remoteSessionActionEnabled = tradingRemoteRunnerPrimaryActionEnabled(
       configured: _remoteRunnerConfigured,
-      localTradingEnabled: _droneEnabled,
       running: remoteSessionRunning,
       resumable: remoteSessionResumable,
       canStart: remoteSessionCanStart,
@@ -433,25 +432,17 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  FilledButton.tonalIcon(
-                    onPressed:
-                        _runningIntent ||
-                                !_tradingControlLoaded ||
-                                _savingTradingControl
-                            ? null
-                            : () =>
-                                unawaited(_changeDroneEnabled(!_droneEnabled)),
-                    icon: Icon(
-                      _droneEnabled
-                          ? Icons.pause_circle_outline_rounded
-                          : Icons.play_circle_outline_rounded,
+                  if (_droneEnabled)
+                    FilledButton.tonalIcon(
+                      onPressed:
+                          _runningIntent ||
+                                  !_tradingControlLoaded ||
+                                  _savingTradingControl
+                              ? null
+                              : () => unawaited(_changeDroneEnabled(false)),
+                      icon: const Icon(Icons.pause_circle_outline_rounded),
+                      label: const Text('Emergency pause'),
                     ),
-                    label: Text(
-                      _droneEnabled
-                          ? 'Pause trading in this app'
-                          : 'Enable trading in this app',
-                    ),
-                  ),
                   OutlinedButton.icon(
                     onPressed:
                         _runningIntent ||
@@ -546,7 +537,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
               Text(
                 tradingRemoteRunnerControlNotice(
                   configured: _remoteRunnerConfigured,
-                  localTradingEnabled: _droneEnabled,
                   running: remoteSessionRunning,
                   resumable: remoteSessionResumable,
                 ),
@@ -1089,9 +1079,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 children: [
                   FilledButton.icon(
                     onPressed:
-                        _executing ||
-                                localRunnerRunning ||
-                                !hasExecutableIntent
+                        _executing || localRunnerRunning || !hasExecutableIntent
                             ? null
                             : _executeLastIntent,
                     icon:

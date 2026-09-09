@@ -29,6 +29,14 @@ Status date: 2026-09-08
   minutes while the Trading workspace stays open and the computer is awake.
   This local cadence and the VPS session are mutually exclusive; both delegate
   effects, claims, receipts, and reconciliation to the existing owners.
+- Starting either local or VPS Trading now requests the existing bounded
+  Capsule mandate inside that selected journey. The former separate enable
+  step is removed from the primary surface; Emergency Pause remains the one
+  explicit local revocation control.
+- Opening a configured VPS workspace detects its local profile without
+  unlocking either the remote SSH identity or the independent local BingX
+  credential. Explicit Runner refresh/control restores the remote lifecycle;
+  local exchange actions request the BingX credential only when needed.
 - Packaged macOS smoke proved one local live-authority cycle reached the
   canonical market decision and stopped without an effect when liquidity was
   blocked. A paused VPS session now settles elapsed signed slots as retained

@@ -297,7 +297,7 @@ String tradingControlStateLabel({
   required bool enabled,
 }) {
   if (!loaded || saving) return 'Loading trading control';
-  return enabled ? 'Trading enabled' : 'Trading paused';
+  return enabled ? 'Bounded authority active' : 'No active authority';
 }
 
 @visibleForTesting
@@ -365,11 +365,11 @@ bool tradingUsesTestEndpointAfterRestore({
 
 @visibleForTesting
 Future<void> restoreTradingDroneOrderState({
-  required Future<bool> Function() restoreRemoteCompletedEffects,
-  required Future<void> Function() restoreOpenOrdersTrackingState,
+  required bool remoteRunnerConfigured,
+  required Future<void> Function({required bool reconcile})
+  restoreOpenOrdersTrackingState,
 }) async {
-  await restoreRemoteCompletedEffects();
-  await restoreOpenOrdersTrackingState();
+  await restoreOpenOrdersTrackingState(reconcile: !remoteRunnerConfigured);
 }
 
 String tradingPreferredSideForCycle({
@@ -743,13 +743,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           runtime: widget.runtime ?? AppRuntimeService(),
         ).build();
     unawaited(_primePublicSessionEvidence(_symbolController.text));
-    unawaited(
-      restoreTradingDroneOrderState(
-        restoreRemoteCompletedEffects: _restoreRemoteCompletedEffects,
-        restoreOpenOrdersTrackingState: _restoreOpenOrdersTrackingState,
-      ),
-    );
-    unawaited(_refreshRemoteRunnerSummary());
+    unawaited(_restoreTradingWorkspaceState());
     _loadPerpetualSymbols(silent: true);
   }
 
@@ -1156,7 +1150,37 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return result == true;
   }
 
-  Future<void> _restoreOpenOrdersTrackingState() async {
+  Future<void> _restoreTradingWorkspaceState() async {
+    var remoteRunnerConfigured = true;
+    var remoteRunnerProfileUnavailable = false;
+    try {
+      remoteRunnerConfigured =
+          (await _module.remoteRunnerProvisioning.loadProfiles()).isNotEmpty;
+    } catch (error) {
+      remoteRunnerProfileUnavailable = true;
+      await _module.uiLog.log(
+        'bingx.remote_runner.profile_restore.error',
+        'error=$error effect=false',
+      );
+    }
+    if (mounted) {
+      _updateState(() {
+        _loadingRemoteRunnerSummary = false;
+        _remoteRunnerConfigured = remoteRunnerConfigured;
+        _remoteRunnerStatusWire = null;
+        _remoteRunnerSession = null;
+        _remoteRunnerStatusUnavailable = remoteRunnerProfileUnavailable;
+      });
+    }
+    await restoreTradingDroneOrderState(
+      remoteRunnerConfigured: remoteRunnerConfigured,
+      restoreOpenOrdersTrackingState: _restoreOpenOrdersTrackingState,
+    );
+  }
+
+  Future<void> _restoreOpenOrdersTrackingState({
+    required bool reconcile,
+  }) async {
     try {
       final state = await _module.orderTrackingStore.load();
       if (state == null) return;
@@ -1201,12 +1225,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (!mandateActive && resumeSymbol != null) {
         _symbolController.text = resumeSymbol;
       }
-      final resumed = await _resumeManagedOrderReconciliation(
-        source: 'state_restored',
-      );
+      final resumed =
+          reconcile
+              ? await _resumeManagedOrderReconciliation(
+                source: 'state_restored',
+              )
+              : false;
       await _module.uiLog.log(
         'bingx.exchange.tracking.restore',
         'tracked=${resumed ? "yes" : "deferred_or_idle"} '
+            'reconcile_on_open=$reconcile '
             'symbol=${resumeSymbol ?? "-"} '
             'orderId=${state.trackedOrderId ?? "-"} '
             'managedCount=${_managedOrderIds.length} '
@@ -1287,7 +1315,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack(selectionNotice, seconds: 5);
       return;
     }
-    await _refreshRemoteRunnerSummary();
+    await _refreshRemoteRunnerSummary(restoreCompletedEffects: false);
     if (_remoteRunnerConfigured &&
         (_remoteRunnerStatusUnavailable ||
             _remoteRunnerStatusWire == null ||
@@ -1408,7 +1436,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       throw StateError('Bounded trading authority is no longer active.');
     }
     if (_remoteRunnerConfigured) {
-      await _refreshRemoteRunnerSummary();
+      await _refreshRemoteRunnerSummary(restoreCompletedEffects: false);
       if (_remoteRunnerStatusUnavailable ||
           _remoteRunnerStatusWire == null ||
           _remoteRunnerStatusWire!.trim().isEmpty) {

@@ -53,7 +53,9 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     return session;
   }
 
-  Future<void> _refreshRemoteRunnerSummary() async {
+  Future<void> _refreshRemoteRunnerSummary({
+    bool restoreCompletedEffects = true,
+  }) async {
     final capsuleRootHex = _module.activeCapsuleRootHex();
     if (capsuleRootHex == null) {
       if (mounted) {
@@ -95,6 +97,9 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         _remoteRunnerStatusWire = status;
         _remoteRunnerSession = session;
       });
+      if (restoreCompletedEffects) {
+        await _restoreRemoteCompletedEffects();
+      }
       if (tradingRemoteRunnerIsRunning(status) && _localRunnerRunning) {
         await _stopLocalRunner(reason: 'vps_session_running');
         await _showSnack(
@@ -289,15 +294,20 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       );
       return;
     }
-    final mandate = _tradingMandate;
+    var mandate = _tradingMandate;
     if (!_droneEnabled ||
         mandate == null ||
         !mandate.isActiveAt(DateTime.now().toUtc())) {
-      await _showSnack('An active bounded trading mandate is required.');
+      if (!await _changeDroneEnabled(true)) return;
+      mandate = _tradingMandate;
+    }
+    if (mandate == null || !mandate.isActiveAt(DateTime.now().toUtc())) {
+      await _showSnack('Bounded trading authority could not be activated.');
       return;
     }
+    final activeMandate = mandate;
     final selectionNotice = tradingMandateSelectionNotice(
-      mandate: mandate,
+      mandate: activeMandate,
       droneEnabled: _droneEnabled,
       selectedSymbol: _symbolController.text,
       selectedMaxNotional: _maxNotionalUsdtController.text,
@@ -309,14 +319,14 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       await _showSnack(selectionNotice, seconds: 5);
       return;
     }
-    final credentials = await _loadCredentials();
+    final credentials = await _ensureCredentialsLoaded();
     if (credentials == null) {
       await _showSnack('Save BingX Futures credentials first.');
       return;
     }
     final leverage = await _module.exchangeService.getLeverage(
       credentials: credentials,
-      symbol: mandate.symbol,
+      symbol: activeMandate.symbol,
     );
     final nominalStopLossLimitPercent = _module.riskGovernor
         .nominalStopLossLimitPercent(
@@ -333,7 +343,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     if (leverageNotice != null) {
       await _module.uiLog.log(
         'bingx.remote_session.leverage_blocked',
-        'symbol=${mandate.symbol} '
+        'symbol=${activeMandate.symbol} '
             'sl_pct=${_stopLossPercent.toStringAsFixed(2)} '
             'long_leverage=${leverage.longLeverage ?? "-"} '
             'short_leverage=${leverage.shortLeverage ?? "-"} effect=false',
@@ -343,7 +353,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     }
     final accountBindingHashHex = _module.accountBindingHashHex(credentials);
     final runner = await _selectRemoteRunner(
-      mandate,
+      activeMandate,
       accountBindingHashHex: accountBindingHashHex,
     );
     if (runner == null) return;
@@ -355,7 +365,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     final firstCycleDeadlineUtc = startsAtUtc.add(
       const Duration(seconds: intervalSeconds),
     );
-    final expiresAtUtc = DateTime.tryParse(mandate.expiresAtUtc)?.toUtc();
+    final expiresAtUtc = DateTime.tryParse(activeMandate.expiresAtUtc)?.toUtc();
     if (expiresAtUtc == null) {
       await _showSnack('The active mandate has an invalid expiry.');
       return;
@@ -371,19 +381,19 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
           (context) => AlertDialog(
             title: const Text('Authorize VPS trading session?'),
             content: Text(
-              'Symbol: ${mandate.symbol}\n'
-              'Mode: ${mandate.testOrder ? "test" : "live"}\n'
+              'Symbol: ${activeMandate.symbol}\n'
+              'Mode: ${activeMandate.testOrder ? "test" : "live"}\n'
               'Check interval: 5 minutes\n'
               'First check: ${startsAtUtc.toIso8601String()}\n'
               'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
               'Maximum checks: $maxCycles\n'
-              'Maximum exchange effects: ${mandate.maxEffects}\n'
+              'Maximum exchange effects: ${activeMandate.maxEffects}\n'
               'Exchange leverage: long ${leverage.longLeverage}x, '
               'short ${leverage.shortLeverage}x\n'
               'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}%\n'
               'Authorized reads: balance, positions, realized PnL, and '
-              '${mandate.symbol} leverage and margin mode.\n'
-              'Expires: ${mandate.expiresAtUtc}\n\n'
+              '${activeMandate.symbol} leverage and margin mode.\n'
+              'Expires: ${activeMandate.expiresAtUtc}\n\n'
               'The VPS may evaluate only this signed strategy and mandate. '
               'Every exchange attempt remains bounded by the existing effect journal.',
             ),
@@ -409,7 +419,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     }
     final admission =
         BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
-          mandate: mandate,
+          mandate: activeMandate,
           runnerKeyId: runner.runnerKeyId,
           strategyPolicy:
               BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
@@ -1077,7 +1087,10 @@ String tradingRemoteRunnerSummaryLabel({
   if (unavailable) {
     return 'Runner status unavailable. Refresh to retry.';
   }
-  return tradingRemoteRunnerStatusLabel(statusWire ?? '');
+  if (statusWire == null || statusWire.trim().isEmpty) {
+    return 'Runner configured. Refresh to unlock and check status.';
+  }
+  return tradingRemoteRunnerStatusLabel(statusWire);
 }
 
 @visibleForTesting
@@ -1095,7 +1108,6 @@ String tradingRemoteRunnerPrimaryActionLabel({
 @visibleForTesting
 bool tradingRemoteRunnerPrimaryActionEnabled({
   required bool configured,
-  required bool localTradingEnabled,
   required bool running,
   required bool resumable,
   required bool canStart,
@@ -1103,13 +1115,12 @@ bool tradingRemoteRunnerPrimaryActionEnabled({
   if (!configured) return true;
   if (running) return false;
   if (resumable) return true;
-  return localTradingEnabled && canStart;
+  return canStart;
 }
 
 @visibleForTesting
 String tradingRemoteRunnerControlNotice({
   required bool configured,
-  required bool localTradingEnabled,
   required bool running,
   required bool resumable,
 }) {
@@ -1122,10 +1133,7 @@ String tradingRemoteRunnerControlNotice({
   if (resumable) {
     return 'Resume the same signed VPS session; no new authority is created.';
   }
-  if (!localTradingEnabled) {
-    return 'Enable trading in this app before authorizing a new VPS session.';
-  }
-  return 'Authorize the VPS session, then the app may be closed.';
+  return 'Start once to review bounded authority and the VPS session, then the app may be closed.';
 }
 
 class _RemoteRunnerProfileTile extends StatefulWidget {
