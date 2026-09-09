@@ -227,6 +227,31 @@ void main() {
       expect(secureStorage.deleteKeys, isEmpty);
     });
 
+    test('repeated canonical load reuses the Capsule session cache', () async {
+      const scope =
+          'acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac';
+      final secureStorage = _FakeSecureStorage();
+      secureStorage.values['hivra.bingx.futures.$scope.credentials'] =
+          jsonEncode(<String, String>{
+            'api_key': 'cached-key',
+            'api_secret': 'cached-secret',
+          });
+      final store = BingxFuturesCredentialStore(
+        readActiveCapsuleRootHex: () => scope,
+        secureStorage: secureStorage,
+      );
+
+      final first = await store.load();
+      final second = await store.load();
+
+      expect(first?.apiKey, 'cached-key');
+      expect(second?.apiKey, 'cached-key');
+      expect(identical(first, second), isTrue);
+      expect(secureStorage.readKeys, <String>[
+        'hivra.bingx.futures.$scope.credentials',
+      ]);
+    });
+
     test('legacy split keys migrate once and are then sealed', () async {
       const scope =
           'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd';

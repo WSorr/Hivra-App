@@ -395,6 +395,15 @@ void main() {
       tradingRemoteRunnerSummaryLabel(
         loading: false,
         configured: true,
+        unavailable: false,
+        statusWire: null,
+      ),
+      contains('Refresh to unlock'),
+    );
+    expect(
+      tradingRemoteRunnerSummaryLabel(
+        loading: false,
+        configured: true,
         unavailable: true,
         statusWire: null,
       ),
@@ -426,7 +435,6 @@ void main() {
     expect(
       tradingRemoteRunnerPrimaryActionEnabled(
         configured: false,
-        localTradingEnabled: false,
         running: false,
         resumable: false,
         canStart: false,
@@ -436,7 +444,6 @@ void main() {
     expect(
       tradingRemoteRunnerControlNotice(
         configured: false,
-        localTradingEnabled: false,
         running: false,
         resumable: false,
       ),
@@ -453,12 +460,11 @@ void main() {
     expect(
       tradingRemoteRunnerPrimaryActionEnabled(
         configured: true,
-        localTradingEnabled: false,
         running: false,
         resumable: false,
         canStart: true,
       ),
-      isFalse,
+      isTrue,
     );
     expect(
       tradingRemoteRunnerPrimaryActionLabel(
@@ -471,7 +477,6 @@ void main() {
     expect(
       tradingRemoteRunnerPrimaryActionEnabled(
         configured: true,
-        localTradingEnabled: false,
         running: false,
         resumable: true,
         canStart: false,
@@ -481,7 +486,6 @@ void main() {
     expect(
       tradingRemoteRunnerControlNotice(
         configured: true,
-        localTradingEnabled: true,
         running: true,
         resumable: false,
       ),
@@ -571,26 +575,33 @@ void main() {
   });
 
   test(
-    'remote receipts become durable before local reconciliation starts',
+    'VPS startup defers both remote unlock and local reconciliation',
     () async {
-      var remoteReceiptDurable = false;
       var localReconciliationStarted = false;
 
       await restoreTradingDroneOrderState(
-        restoreRemoteCompletedEffects: () async {
-          await Future<void>.delayed(Duration.zero);
-          remoteReceiptDurable = true;
-          return true;
-        },
-        restoreOpenOrdersTrackingState: () async {
-          localReconciliationStarted = true;
-          expect(remoteReceiptDurable, isTrue);
+        remoteRunnerConfigured: true,
+        restoreOpenOrdersTrackingState: ({required reconcile}) async {
+          localReconciliationStarted = reconcile;
         },
       );
 
-      expect(localReconciliationStarted, isTrue);
+      expect(localReconciliationStarted, isFalse);
     },
   );
+
+  test('local startup reconciles without opening the remote secret', () async {
+    var localReconciliationStarted = false;
+
+    await restoreTradingDroneOrderState(
+      remoteRunnerConfigured: false,
+      restoreOpenOrdersTrackingState: ({required reconcile}) async {
+        localReconciliationStarted = reconcile;
+      },
+    );
+
+    expect(localReconciliationStarted, isTrue);
+  });
 
   final issuedAt = DateTime.utc(2026, 8, 20, 10);
   final mandate = BingxFuturesTradingMandate.issue(
@@ -655,11 +666,11 @@ void main() {
     );
     expect(
       tradingControlStateLabel(loaded: true, saving: false, enabled: true),
-      'Trading enabled',
+      'Bounded authority active',
     );
     expect(
       tradingControlStateLabel(loaded: true, saving: false, enabled: false),
-      'Trading paused',
+      'No active authority',
     );
     expect(
       tradingMarketCheckActionLabel(running: false, progress: 'ignored'),

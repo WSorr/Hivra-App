@@ -110,6 +110,7 @@ void main() {
       expect(exactReplay.profileId, profile.profileId);
       expect(host.bootstrapCalls, 2);
       expect(host.statusCalls, 2);
+      secureStorage.readKeys.clear();
 
       await expectLater(
         service.bootstrap(
@@ -148,6 +149,7 @@ void main() {
       expect(await service.loadActiveSession(profile), '{"signed":"session"}');
       expect(await service.resume(profile), 'resumed');
       expect(host.resumeCalls, 1);
+      expect(secureStorage.readKeys, isEmpty);
       expect(
         await service.revokeSession(
           profile: profile,
@@ -428,6 +430,7 @@ class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
+  final List<String> readKeys = <String>[];
 
   @override
   Future<void> write({
@@ -456,7 +459,10 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     WebOptions? webOptions,
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async => values[key];
+  }) async {
+    readKeys.add(key);
+    return values[key];
+  }
 
   @override
   Future<void> delete({

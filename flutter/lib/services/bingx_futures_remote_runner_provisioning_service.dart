@@ -1018,6 +1018,9 @@ class BingxFuturesRemoteRunnerProvisioningService {
   final CapsuleScopedSecretVault _secrets;
   final BingxFuturesEmbeddedRunnerBundleLoader _bundleLoader;
   final BingxFuturesRemoteRunnerHostPort _host;
+  String? _cachedPrivateKeyProfileId;
+  String? _cachedPrivateKeyCapsuleHex;
+  String? _cachedPrivateKeyPem;
 
   BingxFuturesRemoteRunnerProvisioningService({
     required String? Function() activeCapsuleRootHex,
@@ -1118,6 +1121,7 @@ class BingxFuturesRemoteRunnerProvisioningService {
       expectedCapsuleRootHex: capsuleHex,
     );
     await _profiles.save(profile);
+    _cachePrivateKey(profile, generated.$1);
     return profile;
   }
 
@@ -1253,6 +1257,7 @@ class BingxFuturesRemoteRunnerProvisioningService {
       providerId: _vaultProvider,
       accountId: profile.profileId,
     );
+    _clearCachedPrivateKey(profile);
     return result;
   }
 
@@ -1282,6 +1287,14 @@ class BingxFuturesRemoteRunnerProvisioningService {
   }
 
   Future<String> _privateKey(BingxFuturesRemoteRunnerProfile profile) async {
+    if (profile.capsuleHex != _capsuleHex()) {
+      throw StateError('Remote Runner profile belongs to another Capsule.');
+    }
+    if (_cachedPrivateKeyProfileId == profile.profileId &&
+        _cachedPrivateKeyCapsuleHex == profile.capsuleHex &&
+        _cachedPrivateKeyPem != null) {
+      return _cachedPrivateKeyPem!;
+    }
     final value = await _secrets.loadSecret(
       capsuleHex: profile.capsuleHex,
       pluginId: bingxFuturesTradingPluginId,
@@ -1292,7 +1305,27 @@ class BingxFuturesRemoteRunnerProvisioningService {
     if (value == null || value.isEmpty) {
       throw StateError('Remote Runner SSH identity is unavailable.');
     }
+    _cachePrivateKey(profile, value);
     return value;
+  }
+
+  void _cachePrivateKey(
+    BingxFuturesRemoteRunnerProfile profile,
+    String privateKeyPem,
+  ) {
+    _cachedPrivateKeyProfileId = profile.profileId;
+    _cachedPrivateKeyCapsuleHex = profile.capsuleHex;
+    _cachedPrivateKeyPem = privateKeyPem;
+  }
+
+  void _clearCachedPrivateKey(BingxFuturesRemoteRunnerProfile profile) {
+    if (_cachedPrivateKeyProfileId != profile.profileId ||
+        _cachedPrivateKeyCapsuleHex != profile.capsuleHex) {
+      return;
+    }
+    _cachedPrivateKeyProfileId = null;
+    _cachedPrivateKeyCapsuleHex = null;
+    _cachedPrivateKeyPem = null;
   }
 
   Future<(String, String)> _generateSshIdentity(String profileId) async {

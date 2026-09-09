@@ -1211,8 +1211,16 @@ Runner on a VPS, authorizing or resuming one bounded signed VPS session, and
 uninstalling the Runner. Local Trading pause is not a prerequisite for VPS
 setup and does not stop an already authorized VPS session. A resumable retained
 VPS session remains resumable through its existing verified lifecycle even when
-local Trading is paused; creating a new VPS session still requires an active
-local mandate. The destructive action MUST be presented as an uninstall, state
+local Trading is paused; starting either local continuous Trading or a new VPS
+session requests the existing bounded local mandate as part of that selected
+journey instead of requiring a separate preparatory enable action. The same
+mandate owner and confirmation remain authoritative, and Emergency Pause
+revokes it. Opening a configured VPS workspace detects the local Runner profile
+without unlocking either its SSH identity or the independent local exchange
+credential. Explicit Runner refresh or control restores the remote lifecycle;
+local exchange actions request the BingX credential only when needed. Repeated
+remote controls reuse the process-scoped SSH identity already opened by the
+same workspace. The destructive action MUST be presented as an uninstall, state
 that the local control binding is removed, and never be labelled as a restart.
 
 Remote stop is a separate narrowing operation. The Capsule imports and verifies
