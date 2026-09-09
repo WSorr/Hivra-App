@@ -536,7 +536,11 @@ revalidates the zone. Signal ranking is an observational candidate list: its
 internal `ready` bucket MUST be presented as a candidate rather than executable
 readiness. Selecting a ranked observation MUST clear prior pending-order fields
 and MUST NOT project the retained scan decision as current execution state.
-Execution continues to use a newly computed decision.
+Before the rank owner may classify an observation as a candidate, it MUST apply
+the same opposite-liquidity target direction and minimum risk/reward precheck as
+the canonical local and remote cycle. Execution continues to use a newly
+computed decision so elapsed time, market evidence, account risk, and mandate
+authority are revalidated immediately before the effect.
 
 A foreground cycle may populate pending-zone and derived order fields only
 after it has prepared an executable intent from a decision whose

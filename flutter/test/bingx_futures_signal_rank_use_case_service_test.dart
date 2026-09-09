@@ -28,6 +28,8 @@ void main() {
             ),
           ],
         ),
+        stopLossPercent: 10,
+        minimumRiskReward: 2,
       );
 
       expect(result.isSuccess, isTrue);
@@ -35,10 +37,41 @@ void main() {
       expect(handler.lastRequest?.args['candidates'], isA<List>());
       final candidates = handler.lastRequest!.args['candidates'] as List;
       expect((candidates.first as Map)['symbol'], 'SOL-USDT');
+      expect((candidates.first as Map)['can_prepare_intent'], isTrue);
       expect(result.scanHashHex, _hash);
       expect(result.entries.single.symbol, 'SOL-USDT');
       expect(result.entries.single.bucket, 'ready');
       expect(result.entries.single.score, 10800);
+    });
+
+    test('does not rank a cycle-blocked risk/reward as ready', () async {
+      final handler = _CapturingRankHandler();
+      final service = BingxFuturesSignalRankUseCaseService(
+        hostApi: PluginHostApiService(
+          handlers: <PluginHostContractHandler>[handler],
+        ),
+      );
+
+      await service.execute(
+        BingxFuturesSignalRankCommand(
+          candidates: <BingxFuturesSignalRankCandidate>[
+            BingxFuturesSignalRankCandidate(
+              symbol: 'sol-usdt',
+              decision: _decision(oppositeLiquidityTargetDecimal: '80'),
+            ),
+          ],
+        ),
+        stopLossPercent: 10,
+        minimumRiskReward: 2,
+      );
+
+      final candidates = handler.lastRequest!.args['candidates'] as List;
+      final candidate = candidates.single as Map;
+      expect(candidate['can_prepare_intent'], isFalse);
+      expect(
+        candidate['failed_reason_codes'],
+        contains('opposite_liquidity_risk_reward_insufficient'),
+      );
     });
   });
 }
@@ -97,8 +130,10 @@ class _CapturingRankHandler implements PluginHostContractHandler {
   }
 }
 
-BingxFuturesLiveDecisionResult _decision() {
-  return const BingxFuturesLiveDecisionResult(
+BingxFuturesLiveDecisionResult _decision({
+  String oppositeLiquidityTargetDecimal = '70',
+}) {
+  return BingxFuturesLiveDecisionResult(
     canPrepareIntent: true,
     decision: BingxTvhDecisionKind.short,
     side: 'sell',
@@ -121,6 +156,7 @@ BingxFuturesLiveDecisionResult _decision() {
     zoneAnchorExecutable: true,
     zoneAnchorLifecycle: 'fresh',
     zoneEvaluationSide: 'sell',
+    oppositeLiquidityTargetDecimal: oppositeLiquidityTargetDecimal,
   );
 }
 
