@@ -344,12 +344,37 @@ void main() {
     expect(publications.preparedPostDestinations, isEmpty);
   });
 
+  test('primary community drift cannot redirect a retained draft', () async {
+    final change = await publicChanges.record(
+      sourceId: 'community-bound-public-change',
+      category: 'hivra',
+      facts: const <String>['A community-bound public change.'],
+    );
+    await publicChanges.markDrafted(change.commitmentHashHex, '8' * 64);
+    configuration.primaryCommunity = 'my-capsule-notes';
+
+    await expectLater(
+      module.prepareMoltbookPublication(
+        draft: _draftPreview('8' * 64),
+        submoltName: configuration.primaryCommunity,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Moltbook public-change draft binding is inconsistent',
+        ),
+      ),
+    );
+
+    expect(publications.preparedPostDestinations, isEmpty);
+  });
+
   test(
-    'bounded cycle publishes one exact change only to verified PFR community',
+    'bounded cycle publishes one exact change to the default community',
     () async {
       configuration.approvalMode =
           MoltbookAmbassadorConfiguration.approvalBounded;
-      publications.operations.add(_succeededPfrCommunityOperation());
       final change = await publicChanges.record(
         sourceId: 'capsule-change-publish',
         category: 'hivra',
@@ -382,7 +407,6 @@ void main() {
     () async {
       configuration.approvalMode =
           MoltbookAmbassadorConfiguration.approvalBounded;
-      publications.operations.add(_succeededPfrCommunityOperation());
       publications.leavePostUnresolved = true;
       await publicChanges.record(
         sourceId: 'capsule-change-unresolved-publication',
@@ -416,23 +440,26 @@ void main() {
   );
 
   test(
-    'bounded cycle keeps change pending without verified PFR ownership',
+    'bounded cycle publishes to configured community without ownership',
     () async {
       configuration.approvalMode =
           MoltbookAmbassadorConfiguration.approvalBounded;
+      configuration.primaryCommunity = 'my-capsule-notes';
       await publicChanges.record(
-        sourceId: 'capsule-change-unverified-community',
+        sourceId: 'capsule-change-personal-community',
         category: 'hivra',
         facts: const <String>['A confirmed Capsule change.'],
       );
 
       final summary = await module.runMoltbookCycle();
 
-      expect(summary.blockedCount, 1);
-      expect(ai.bulletinProposalCount, 0);
+      expect(summary.blockedCount, 0);
+      expect(ai.bulletinProposalCount, 1);
       expect(drafts.stored, isEmpty);
-      expect(publications.preparedPostDestinations, isEmpty);
-      expect((await publicChanges.load()).single.isPending, isTrue);
+      expect(publications.preparedPostDestinations, <String>[
+        'my-capsule-notes',
+      ]);
+      expect((await publicChanges.load()).single.isPending, isFalse);
     },
   );
 
@@ -1369,6 +1396,8 @@ class _HeartbeatHost implements PluginHostApiService {
 class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
   String approvalMode = MoltbookAmbassadorConfiguration.approvalAssisted;
   String triggerPolicy = MoltbookAmbassadorConfiguration.triggerOnDemand;
+  String primaryCommunity =
+      MoltbookPublicationService.personFirstRuntimeSubmoltName;
   bool enabled = true;
 
   @override
@@ -1378,6 +1407,7 @@ class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
         agentDescription: 'Capsule ambassador',
         personaSummary: 'Technical Hivra updates',
         allowedTopics: const <String>['hivra', 'general'],
+        primaryCommunity: primaryCommunity,
         approvalMode: approvalMode,
         triggerPolicy: triggerPolicy,
         enabled: enabled,
@@ -1387,6 +1417,7 @@ class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
   Future<void> save(MoltbookAmbassadorConfiguration configuration) async {
     approvalMode = configuration.approvalMode;
     triggerPolicy = configuration.triggerPolicy;
+    primaryCommunity = configuration.primaryCommunity;
     enabled = configuration.enabled;
   }
 
@@ -1523,8 +1554,13 @@ class _CyclePublications implements MoltbookPublicationService {
   Future<ExternalEffectOperation> approveBoundedPublicChangeAndQueue({
     required ExternalEffectOperation operation,
     required String publicChangeCommitmentHashHex,
+    required String primaryCommunity,
   }) async {
     expect(publicChangeCommitmentHashHex, hasLength(64));
+    expect(
+      MoltbookPublicationService.decodePayload(operation)['submolt_name'],
+      primaryCommunity,
+    );
     return approveAndQueue(operation);
   }
 
@@ -1806,44 +1842,6 @@ ExternalEffectOperation _spamRejectedPostOperation() {
     providerReferenceId: 'post-1',
     requiredAction: null,
     receipt: null,
-  );
-}
-
-ExternalEffectOperation _succeededPfrCommunityOperation() {
-  const operationId = 'moltbook-submolt-pfr';
-  return ExternalEffectOperation(
-    ownerCapsuleHex: _rootA,
-    operationId: operationId,
-    pluginId: moltbookAmbassadorPluginId,
-    providerId: 'moltbook',
-    accountBindingId: 'agent-1',
-    effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
-    canonicalPayloadJson: jsonEncode(<String, dynamic>{
-      'schema_version': 1,
-      'name': MoltbookPublicationService.personFirstRuntimeSubmoltName,
-      'display_name':
-          MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
-      'description':
-          MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
-    }),
-    payloadHashHex: 'a' * 64,
-    state: ExternalEffectState.succeeded,
-    approvalEvidenceHashHex: 'b' * 64,
-    attemptCount: 1,
-    revision: 2,
-    createdAtUtc: '2026-08-01T00:00:00.000Z',
-    updatedAtUtc: '2026-08-01T00:01:00.000Z',
-    lastErrorCode: null,
-    lastErrorMessage: null,
-    requiredAction: null,
-    receipt: const ExternalEffectReceipt(
-      operationId: operationId,
-      providerId: 'moltbook',
-      providerReceiptId: 'person-first-runtime',
-      evidenceHashHex:
-          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-      receivedAtUtc: '2026-08-01T00:01:00.000Z',
-    ),
   );
 }
 

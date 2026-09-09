@@ -21,8 +21,6 @@ import 'ui_event_log_service.dart';
 
 class MoltbookRuntimeModule {
   static const String _automaticMoltbookReleaseTag = 'development';
-  static const String _automaticMoltbookAudience =
-      MoltbookPublicationService.personFirstRuntimeSubmoltName;
   static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles =
       <String, Future<MoltbookCycleSummary>>{};
   static final Map<String, int> _moltbookCycleEpochs = <String, int>{};
@@ -183,23 +181,6 @@ class MoltbookRuntimeModule {
     final change = await moltbookPublicChanges.nextPending();
     if (change == null) return null;
     final configuration = await _ambassadorConfiguration.load();
-    if (configuration.approvalMode ==
-        MoltbookAmbassadorConfiguration.approvalBounded) {
-      final communityVerified = publications.any(
-        (operation) =>
-            operation.ownerCapsuleHex == ownerHex &&
-            operation.accountBindingId == accountBindingId &&
-            operation.state == ExternalEffectState.succeeded &&
-            MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
-              operation,
-            ),
-      );
-      if (!communityVerified) {
-        throw StateError(
-          'Person-First Runtime community ownership is not verified',
-        );
-      }
-    }
     final proposal = await proposeMoltbookPublicBulletin(
       change.sourceNotes,
       category: change.category,
@@ -222,7 +203,7 @@ class MoltbookRuntimeModule {
       facts: change.facts,
       titleHint: proposal.title,
       reviewedBody: proposal.body,
-      audience: _automaticMoltbookAudience,
+      audience: configuration.primaryCommunity,
       publicChangeCommitmentHashHex: change.commitmentHashHex,
     );
     await uiLog.log(
@@ -241,7 +222,7 @@ class MoltbookRuntimeModule {
     );
     final prepared = await prepareMoltbookPublication(
       draft: preview,
-      submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      submoltName: configuration.primaryCommunity,
     );
     await _ensureMoltbookCycleScope(
       ownerHex,
@@ -254,6 +235,7 @@ class MoltbookRuntimeModule {
             : await moltbookPublications.approveBoundedPublicChangeAndQueue(
               operation: prepared,
               publicChangeCommitmentHashHex: change.commitmentHashHex,
+              primaryCommunity: configuration.primaryCommunity,
             );
     await _ensureMoltbookCycleScope(
       ownerHex,
@@ -270,8 +252,7 @@ class MoltbookRuntimeModule {
       cycleAccountBindingId: accountBindingId,
       cycleEpoch: cycleEpoch,
     );
-    final destination =
-        'm/${MoltbookPublicationService.personFirstRuntimeSubmoltName}';
+    final destination = 'm/${configuration.primaryCommunity}';
     if (result.state == ExternalEffectState.succeeded) {
       await uiLog.log(
         'moltbook.cycle.public_change',
@@ -1312,10 +1293,18 @@ class MoltbookRuntimeModule {
   Future<List<ExternalEffectOperation>> loadMoltbookPublications() =>
       moltbookPublications.list();
 
-  Future<ExternalEffectOperation>
-  prepareMoltbookPersonFirstRuntimeCommunity() async {
-    final operation =
-        await moltbookPublications.preparePersonFirstRuntimeCommunity();
+  Future<ExternalEffectOperation> prepareMoltbookCommunity({
+    required String name,
+    required String displayName,
+    required String description,
+    required bool allowCrypto,
+  }) async {
+    final operation = await moltbookPublications.prepareCommunity(
+      name: name,
+      displayName: displayName,
+      description: description,
+      allowCrypto: allowCrypto,
+    );
     await uiLog.log(
       'moltbook.community.prepare',
       'operation=${operation.operationId} state=${operation.state.wireName}',
@@ -1344,13 +1333,14 @@ class MoltbookRuntimeModule {
     final boundPublicChange = matchingPublicChanges.singleOrNull;
     if (boundPublicChange != null &&
         (boundPublicChange.sourceId != draft.bulletinId ||
-            boundPublicChange.category != draft.category)) {
+            boundPublicChange.category != draft.category ||
+            draft.audience != configuration.primaryCommunity)) {
       throw StateError('Moltbook public-change draft binding is inconsistent');
     }
     final effectiveSubmoltName =
         boundPublicChange == null
             ? submoltName
-            : MoltbookPublicationService.personFirstRuntimeSubmoltName;
+            : configuration.primaryCommunity;
     final operation = await moltbookPublications.prepare(
       draft: draft,
       submoltName: effectiveSubmoltName,

@@ -278,6 +278,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         name: payload.name,
         displayName: payload.displayName,
         description: payload.description,
+        allowCrypto: payload.schemaVersion == 2 ? payload.allowCrypto : null,
       );
     } on MoltbookProviderException catch (error) {
       if (error.code != 'http_400' && error.code != 'http_409') rethrow;
@@ -420,6 +421,8 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         submolt['name'] == payload.name &&
         submolt['display_name'] == payload.displayName &&
         submolt['description'] == payload.description &&
+        (payload.schemaVersion == 1 ||
+            submolt['allow_crypto'] == payload.allowCrypto) &&
         creator?['id'] == request.accountBindingId;
     if (!matches) {
       return const ExternalEffectAdapterResult(
@@ -754,14 +757,18 @@ class _MoltbookCommentPayload implements _MoltbookPayload {
 }
 
 class _MoltbookSubmoltPayload implements _MoltbookPayload {
+  final int schemaVersion;
   final String name;
   final String displayName;
   final String description;
+  final bool allowCrypto;
 
   const _MoltbookSubmoltPayload({
+    required this.schemaVersion,
     required this.name,
     required this.displayName,
     required this.description,
+    required this.allowCrypto,
   });
 
   @override
@@ -773,24 +780,36 @@ class _MoltbookSubmoltPayload implements _MoltbookPayload {
       'name',
       'display_name',
       'description',
+      'allow_crypto',
     };
+    final schemaVersion = json['schema_version'];
     if (json.keys.any((field) => !allowedFields.contains(field)) ||
-        json['schema_version'] != 1) {
+        (schemaVersion != 1 && schemaVersion != 2)) {
       throw const FormatException(
         'Invalid Moltbook community creation payload',
       );
     }
+    if (schemaVersion == 1 && json.containsKey('allow_crypto') ||
+        schemaVersion == 2 && json['allow_crypto'] is! bool) {
+      throw const FormatException('Invalid Moltbook community crypto policy');
+    }
     final payload = _MoltbookSubmoltPayload(
-      name: _required(json, 'name', 64),
+      schemaVersion: schemaVersion as int,
+      name: _required(json, 'name', 30),
       displayName: _required(json, 'display_name', 80),
       description: _required(json, 'description', 500),
+      allowCrypto: schemaVersion == 2 ? json['allow_crypto'] as bool : false,
     );
-    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,63}$').hasMatch(payload.name)) {
+    if (payload.name.length < 2 ||
+        !RegExp(r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$').hasMatch(payload.name)) {
       throw const FormatException('Invalid Moltbook community name');
     }
-    if (payload.name != moltbookPersonFirstRuntimeSubmoltName ||
-        payload.displayName != moltbookPersonFirstRuntimeSubmoltDisplayName ||
-        payload.description != moltbookPersonFirstRuntimeSubmoltDescription) {
+    if (schemaVersion == 1 &&
+        (payload.name != moltbookPersonFirstRuntimeSubmoltName ||
+            payload.displayName !=
+                moltbookPersonFirstRuntimeSubmoltDisplayName ||
+            payload.description !=
+                moltbookPersonFirstRuntimeSubmoltDescription)) {
       throw const FormatException(
         'Unsupported Moltbook community creation contract',
       );

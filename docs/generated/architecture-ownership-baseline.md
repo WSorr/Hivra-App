@@ -492,6 +492,7 @@ Exact line counts are evaluated live by the ownership gate and are not persisted
 - `flutter/lib/services/invitation_intent_handler.dart`
 - `flutter/lib/services/moltbook_external_effect_adapter.dart`
 - `flutter/lib/services/moltbook_provider_adapter.dart`
+- `flutter/lib/services/moltbook_publication_service.dart`
 - `flutter/lib/services/moltbook_runtime_module.dart`
 
 ## UI and Flutter/FFI Boundary Map

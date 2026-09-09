@@ -9,7 +9,7 @@ import '../models/moltbook_provider_models.dart';
 import '../services/moltbook_publication_service.dart';
 import '../services/moltbook_public_change_feed_store.dart';
 import '../services/moltbook_runtime_module.dart';
-import '../widgets/moltbook_person_first_runtime_community_widgets.dart';
+import '../widgets/moltbook_community_settings_widgets.dart';
 
 void bindMoltbookPublicChangeProposal({
   required MoltbookPublicChange change,
@@ -87,9 +87,14 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   final TextEditingController _submoltController = TextEditingController(
     text: MoltbookPublicationService.defaultSubmolt,
   );
+  final TextEditingController _communityDisplayNameController =
+      TextEditingController();
+  final TextEditingController _communityDescriptionController =
+      TextEditingController();
   String _approvalMode = MoltbookAmbassadorConfiguration.approvalAssisted;
   String _triggerPolicy = MoltbookAmbassadorConfiguration.triggerOnDemand;
   bool _enabled = true;
+  bool _communityAllowCrypto = false;
   bool _loading = true;
   bool _saving = false;
   bool _connectionBusy = false;
@@ -179,6 +184,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     _factsController.dispose();
     _replyBodyController.dispose();
     _submoltController.dispose();
+    _communityDisplayNameController.dispose();
+    _communityDescriptionController.dispose();
     super.dispose();
   }
 
@@ -205,16 +212,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       _personaController.text = configuration.personaSummary;
       _topicsController.text = configuration.allowedTopics.join(', ');
       _categoryController.text = configuration.allowedTopics.first;
-      if (publications.any(
-        (operation) =>
-            MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
-              operation,
-            ) &&
-            operation.state == ExternalEffectState.succeeded,
-      )) {
-        _submoltController.text =
-            MoltbookPublicationService.personFirstRuntimeSubmoltName;
-      }
+      _submoltController.text = configuration.primaryCommunity;
+      _audienceController.text = configuration.primaryCommunity;
       setState(() {
         _approvalMode = configuration.approvalMode;
         _triggerPolicy = configuration.triggerPolicy;
@@ -805,8 +804,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
-  Future<void> _save() async {
-    final configuration = MoltbookAmbassadorConfiguration(
+  MoltbookAmbassadorConfiguration _configurationFromFields() {
+    return MoltbookAmbassadorConfiguration(
       agentName: _nameController.text.trim(),
       agentDescription: _descriptionController.text.trim(),
       personaSummary: _personaController.text.trim(),
@@ -816,10 +815,15 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               .map((topic) => topic.trim())
               .where((topic) => topic.isNotEmpty)
               .toList(),
+      primaryCommunity: _submoltController.text.trim(),
       approvalMode: _approvalMode,
       triggerPolicy: _triggerPolicy,
       enabled: _enabled,
     );
+  }
+
+  Future<void> _save() async {
+    final configuration = _configurationFromFields();
     try {
       configuration.validate();
     } on FormatException catch (error) {
@@ -1156,16 +1160,25 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
-  Future<void> _createPersonFirstRuntimeCommunity() async {
+  Future<void> _createCommunity() async {
     setState(() => _publicationBusy = true);
     try {
-      final operation =
-          await widget.module.prepareMoltbookPersonFirstRuntimeCommunity();
+      final name = _submoltController.text.trim();
+      final displayName = _communityDisplayNameController.text.trim();
+      final description = _communityDescriptionController.text.trim();
+      final operation = await widget.module.prepareMoltbookCommunity(
+        name: name,
+        displayName: displayName,
+        description: description,
+        allowCrypto: _communityAllowCrypto,
+      );
       if (!mounted) return;
       if (operation.state == ExternalEffectState.succeeded) {
-        _submoltController.text =
-            MoltbookPublicationService.personFirstRuntimeSubmoltName;
-        _showNotice('Person-First Runtime community ownership is verified');
+        final configuration = _configurationFromFields();
+        configuration.validate();
+        await widget.module.saveAmbassadorConfiguration(configuration);
+        if (!mounted) return;
+        _showNotice('Community ownership is already verified');
         return;
       }
       var executable = operation;
@@ -1173,8 +1186,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           MoltbookPublicationService.canReauthorizeRejectedDelivery(
             operation,
           )) {
-        final approved = await showMoltbookPersonFirstRuntimeCommunityApproval(
+        final approved = await showMoltbookCommunityCreationApproval(
           context,
+          name: name,
+          displayName: displayName,
+          description: description,
+          allowCrypto: _communityAllowCrypto,
         );
         if (!approved || !mounted) {
           _showNotice('Community creation remains local and unapproved');
@@ -1189,21 +1206,22 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       if (!mounted) return;
       setState(() {
         _publications = publications;
-        if (result.state == ExternalEffectState.succeeded) {
-          _submoltController.text =
-              MoltbookPublicationService.personFirstRuntimeSubmoltName;
-        }
       });
+      if (result.state == ExternalEffectState.succeeded) {
+        final configuration = _configurationFromFields();
+        configuration.validate();
+        await widget.module.saveAmbassadorConfiguration(configuration);
+      }
       _showNotice(
         result.state == ExternalEffectState.succeeded
-            ? 'Person-First Runtime community created and verified'
+            ? 'Community created, verified, and selected for publication'
             : 'Community state: ${result.state.wireName} '
                 '(${result.lastErrorCode ?? "no receipt"})',
         isError: result.state != ExternalEffectState.succeeded,
       );
     } catch (error) {
       if (mounted) {
-        _showNotice('Could not create PFR community: $error', isError: true);
+        _showNotice('Could not create community: $error', isError: true);
       }
     } finally {
       if (mounted) setState(() => _publicationBusy = false);
@@ -1515,6 +1533,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final primaryCommunity = _submoltController.text.trim();
+    final primaryCommunityOperation = _latestOperationWhere(
+      (operation) => MoltbookPublicationService.isCommunityOperationFor(
+        operation,
+        primaryCommunity,
+      ),
+    );
     final verificationOperation = _latestOperationWhere(
       (operation) =>
           operation.requiredAction != null && !operation.state.isTerminal,
@@ -1711,25 +1736,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       ),
                       const SizedBox(height: 20),
                       _MoltbookWorkspaceSection(
-                        icon: Icons.hub_outlined,
-                        title: 'Person-First Runtime community',
-                        subtitle:
-                            'A category for person-owned digital architecture, not a Hivra product channel',
-                        child: MoltbookPersonFirstRuntimeCommunityCard(
-                          operation:
-                              _publications
-                                  .where(
-                                    MoltbookPublicationService
-                                        .isPersonFirstRuntimeCommunityOperation,
-                                  )
-                                  .singleOrNull,
-                          busy: _publicationBusy,
-                          connected: _binding != null,
-                          onCreate: _createPersonFirstRuntimeCommunity,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      _MoltbookWorkspaceSection(
                         icon: Icons.edit_note_rounded,
                         title: 'Create a post',
                         subtitle:
@@ -1824,8 +1830,33 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Allowed topics',
                                 helperText:
-                                    'Comma-separated ids, for example hivra-development.',
+                                    'What the agent may discuss. Comma-separated ids, for example capsule-runtime.',
                               ),
+                            ),
+                            const SizedBox(height: 20),
+                            const Divider(),
+                            const SizedBox(height: 12),
+                            MoltbookCommunitySettingsCard(
+                              primaryCommunityController: _submoltController,
+                              displayNameController:
+                                  _communityDisplayNameController,
+                              descriptionController:
+                                  _communityDescriptionController,
+                              allowCrypto: _communityAllowCrypto,
+                              ownershipVerified:
+                                  primaryCommunityOperation?.state ==
+                                  ExternalEffectState.succeeded,
+                              connected: _binding != null,
+                              busy: _publicationBusy,
+                              onPrimaryCommunityChanged: (value) {
+                                _audienceController.text = value.trim();
+                                setState(() {});
+                              },
+                              onAllowCryptoChanged:
+                                  (value) => setState(
+                                    () => _communityAllowCrypto = value,
+                                  ),
+                              onCreate: _createCommunity,
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
@@ -1833,7 +1864,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Approval mode',
                                 helperText:
-                                    'Bounded may publish one exact confirmed change to the verified Person-First Runtime community and nested replies: at most 3 replies per UTC day, 30 minutes apart. Unlocked Gemini may solve an exact numeric provider challenge without receiving publication authority.',
+                                    'Bounded may publish one exact confirmed change to the selected primary community and nested replies: at most 3 replies per UTC day, 30 minutes apart. Unlocked Gemini may solve an exact numeric provider challenge without receiving publication authority.',
                               ),
                               items: const [
                                 DropdownMenuItem(
@@ -2507,9 +2538,7 @@ class _MoltbookPublicationCard extends StatelessWidget {
               );
               final isReply = payload.containsKey('post_id');
               final isCommunity =
-                  MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
-                    operation,
-                  );
+                  MoltbookPublicationService.isCommunityOperation(operation);
               final postUri = MoltbookPublicationService.publishedPostUri(
                 operation,
               );

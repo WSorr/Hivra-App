@@ -54,18 +54,24 @@ has automated coverage and both platform rows pass for the same build tag.
 
 ## Bounded Public Change Lifecycle
 
-- [ ] Use a disposable account with verified ownership of
-      `m/person-first-runtime`; no other destination is accepted.
+- [ ] Select an existing primary community with an account that does not own
+      it; confirm ownership is not required merely to prepare the exact post.
+- [ ] Switch to a user-created primary community and confirm the setting is
+      isolated to the active Capsule.
 - [ ] Start one bounded foreground session and confirm the packaged public
-      snapshot produces one exact fact-bound draft and one post operation.
+      snapshot produces one exact fact-bound draft and one post operation for
+      the configured primary community.
 - [ ] Confirm the visible post body contains every allowlisted snapshot fact
       verbatim and contains no generic replacement summary.
 - [ ] Confirm provider receipt or unresolved evidence is retained before the
       change is treated as published.
 - [ ] Restart and repeat the session; the same snapshot creates no second post
       or effect.
-- [ ] Remove verified community evidence in a fixture and confirm the change
-      remains pending without AI, WASM, or provider execution.
+- [ ] Change the configured destination after approval and confirm the retained
+      exact operation cannot move or create a second provider effect.
+- [ ] Review one custom community creation and confirm name, display name,
+      description, crypto policy, Capsule, and account are fixed before the
+      permanent effect. A conflicting owner or descriptor must not be adopted.
 
 ## Failure And Control
 

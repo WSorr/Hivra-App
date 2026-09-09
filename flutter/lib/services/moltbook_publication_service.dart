@@ -127,7 +127,12 @@ class MoltbookPublicationService {
     });
   }
 
-  Future<ExternalEffectOperation> preparePersonFirstRuntimeCommunity() async {
+  Future<ExternalEffectOperation> prepareCommunity({
+    required String name,
+    required String displayName,
+    required String description,
+    required bool allowCrypto,
+  }) async {
     final binding = await _loadBinding();
     if (binding == null) {
       throw StateError(
@@ -137,12 +142,21 @@ class MoltbookPublicationService {
     if (!binding.isClaimed || !binding.isActive) {
       throw StateError('Moltbook account must be claimed and active');
     }
+    final normalizedName = name.trim();
+    final normalizedDisplayName = displayName.trim();
+    final normalizedDescription = description.trim();
+    _validateCommunityName(normalizedName);
+    _validateCommunityDescriptor(
+      displayName: normalizedDisplayName,
+      description: normalizedDescription,
+    );
     final ownerHex = _effects.activeOwnerCapsuleHex;
     final canonicalPayload = jsonEncode(<String, dynamic>{
-      'schema_version': 1,
-      'name': personFirstRuntimeSubmoltName,
-      'display_name': personFirstRuntimeSubmoltDisplayName,
-      'description': personFirstRuntimeSubmoltDescription,
+      'schema_version': 2,
+      'name': normalizedName,
+      'display_name': normalizedDisplayName,
+      'description': normalizedDescription,
+      'allow_crypto': allowCrypto,
     });
     final semanticId =
         sha256
@@ -151,20 +165,17 @@ class MoltbookPublicationService {
             )
             .toString();
     final operationId = 'moltbook-submolt-$semanticId';
-    return _withEngagementLock(
-      '$ownerHex::submolt::$personFirstRuntimeSubmoltName',
-      () async {
-        _requireSameOwner(ownerHex);
-        return _effects.prepare(
-          operationId: operationId,
-          pluginId: moltbookAmbassadorPluginId,
-          providerId: MoltbookConnectionService.providerId,
-          accountBindingId: binding.accountId,
-          effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
-          canonicalPayloadJson: canonicalPayload,
-        );
-      },
-    );
+    return _withEngagementLock('$ownerHex::submolt::$normalizedName', () async {
+      _requireSameOwner(ownerHex);
+      return _effects.prepare(
+        operationId: operationId,
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: MoltbookConnectionService.providerId,
+        accountBindingId: binding.accountId,
+        effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
+        canonicalPayloadJson: canonicalPayload,
+      );
+    });
   }
 
   Future<ExternalEffectOperation> prepareReply({
@@ -335,8 +346,10 @@ class MoltbookPublicationService {
   Future<ExternalEffectOperation> approveBoundedPublicChangeAndQueue({
     required ExternalEffectOperation operation,
     required String publicChangeCommitmentHashHex,
+    required String primaryCommunity,
   }) async {
     _validateMoltbookOperation(operation);
+    _validateCommunityName(primaryCommunity);
     if (operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind ||
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(publicChangeCommitmentHashHex)) {
       throw const FormatException(
@@ -344,10 +357,10 @@ class MoltbookPublicationService {
       );
     }
     final payload = decodePayload(operation);
-    if (payload['submolt_name'] != personFirstRuntimeSubmoltName ||
+    if (payload['submolt_name'] != primaryCommunity ||
         payload['source_draft_hash_hex'] is! String) {
       throw const FormatException(
-        'Bounded public change must target m/person-first-runtime',
+        'Bounded public change must target the configured primary community',
       );
     }
     final evidenceHash =
@@ -363,7 +376,7 @@ class MoltbookPublicationService {
                   'payload_hash_hex': operation.payloadHashHex,
                   'public_change_commitment_hash_hex':
                       publicChangeCommitmentHashHex,
-                  'submolt_name': personFirstRuntimeSubmoltName,
+                  'submolt_name': primaryCommunity,
                   'max_uses': 1,
                 }),
               ),
@@ -512,17 +525,17 @@ class MoltbookPublicationService {
     return operation.effectKind == MoltbookExternalEffectAdapter.postEffectKind;
   }
 
-  static bool isPersonFirstRuntimeCommunityOperation(
+  static bool isCommunityOperation(ExternalEffectOperation operation) {
+    return operation.effectKind ==
+        MoltbookExternalEffectAdapter.submoltEffectKind;
+  }
+
+  static bool isCommunityOperationFor(
     ExternalEffectOperation operation,
+    String communityName,
   ) {
-    if (operation.effectKind !=
-        MoltbookExternalEffectAdapter.submoltEffectKind) {
-      return false;
-    }
-    final payload = decodePayload(operation);
-    return payload['name'] == personFirstRuntimeSubmoltName &&
-        payload['display_name'] == personFirstRuntimeSubmoltDisplayName &&
-        payload['description'] == personFirstRuntimeSubmoltDescription;
+    return isCommunityOperation(operation) &&
+        decodePayload(operation)['name'] == communityName;
   }
 
   static String? succeededPostDraftHash(ExternalEffectOperation operation) {
@@ -531,6 +544,33 @@ class MoltbookPublicationService {
       return null;
     }
     return postDraftHash(operation);
+  }
+
+  static void _validateCommunityName(String name) {
+    if (name.trim() != name ||
+        name.length < 2 ||
+        name.length > 30 ||
+        !RegExp(r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$').hasMatch(name)) {
+      throw const FormatException(
+        'Community name must be 2..30 lowercase letters, numbers, or hyphens',
+      );
+    }
+  }
+
+  static void _validateCommunityDescriptor({
+    required String displayName,
+    required String description,
+  }) {
+    if (displayName.isEmpty || displayName.length > 80) {
+      throw const FormatException(
+        'Community display name must contain 1..80 characters',
+      );
+    }
+    if (description.isEmpty || description.length > 500) {
+      throw const FormatException(
+        'Community description must contain 1..500 characters',
+      );
+    }
   }
 
   static String? postDraftHash(ExternalEffectOperation operation) {

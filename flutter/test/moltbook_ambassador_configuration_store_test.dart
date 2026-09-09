@@ -8,6 +8,7 @@ import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/moltbook_ambassador_configuration_store.dart';
+import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
@@ -48,6 +49,10 @@ void main() {
     await store.save(configuration);
     final loaded = await store.load();
     expect(loaded.agentName, 'Hivra Notes');
+    expect(
+      loaded.primaryCommunity,
+      MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    );
     expect(
       loaded.triggerPolicy,
       MoltbookAmbassadorConfiguration.triggerSession,
@@ -109,7 +114,7 @@ void main() {
       configuration.triggerPolicy,
       MoltbookAmbassadorConfiguration.triggerOnDemand,
     );
-    expect(configuration.toJson()['schema_version'], 3);
+    expect(configuration.toJson()['schema_version'], 4);
   });
 
   test('migrates schema v2 configuration without changing write authority', () {
@@ -135,10 +140,10 @@ void main() {
       configuration.triggerPolicy,
       MoltbookAmbassadorConfiguration.triggerContinuous,
     );
-    expect(configuration.toJson()['schema_version'], 3);
+    expect(configuration.toJson()['schema_version'], 4);
   });
 
-  test('accepts bounded replies only in configuration schema v3', () {
+  test('migrates bounded schema v3 to the default primary community', () {
     final bounded = <String, dynamic>{
       'schema_version': 3,
       'plugin_id': moltbookAmbassadorPluginId,
@@ -156,11 +161,54 @@ void main() {
       MoltbookAmbassadorConfiguration.approvalBounded,
     );
     expect(
+      MoltbookAmbassadorConfiguration.fromJson(bounded).primaryCommunity,
+      MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    );
+    expect(
       () => MoltbookAmbassadorConfiguration.fromJson(<String, dynamic>{
         ...bounded,
         'schema_version': 2,
       }),
       throwsFormatException,
+    );
+  });
+
+  test('persists a Capsule-scoped primary community', () async {
+    await store.save(
+      MoltbookAmbassadorConfiguration(
+        agentName: 'Hivra Notes',
+        agentDescription: 'Public technical notes about Hivra.',
+        personaSummary: 'Explain verified public changes without hype.',
+        allowedTopics: const <String>['capsule-runtime'],
+        primaryCommunity: 'my-capsule-notes',
+        approvalMode: MoltbookAmbassadorConfiguration.approvalBounded,
+        enabled: true,
+      ),
+    );
+
+    expect((await store.load()).primaryCommunity, 'my-capsule-notes');
+    activeRoot = _rootB;
+    expect(
+      (await store.load()).primaryCommunity,
+      MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    );
+  });
+
+  test('rejects an invalid primary community without writing it', () async {
+    final configuration = MoltbookAmbassadorConfiguration(
+      agentName: 'Hivra Notes',
+      agentDescription: 'Public technical notes about Hivra.',
+      personaSummary: 'Explain verified public changes without hype.',
+      allowedTopics: const <String>['capsule-runtime'],
+      primaryCommunity: 'invalid-',
+      approvalMode: MoltbookAmbassadorConfiguration.approvalAssisted,
+      enabled: true,
+    );
+
+    await expectLater(store.save(configuration), throwsFormatException);
+    expect(
+      (await store.load()).primaryCommunity,
+      MoltbookPublicationService.personFirstRuntimeSubmoltName,
     );
   });
 
