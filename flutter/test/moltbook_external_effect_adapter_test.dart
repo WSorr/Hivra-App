@@ -214,40 +214,62 @@ void main() {
   );
 
   test(
-    'community adapter rejects any non-PFR descriptor before network',
+    'creates an exact custom community with explicit crypto policy',
     () async {
-      var networkCalls = 0;
-      final base = _submoltRequest();
-      final decoded =
-          jsonDecode(base.canonicalPayloadJson) as Map<String, dynamic>;
-      decoded['name'] = 'generic-community';
+      final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
         provider: MoltbookProviderAdapter(
-          send: (_) async {
-            networkCalls++;
-            return _jsonResponse(const <String, dynamic>{});
+          send: (request) async {
+            requests.add(request);
+            return _jsonResponse(
+              _submoltBody(
+                name: 'capsule-notes',
+                displayName: 'Capsule Notes',
+                description: 'Public notes from a personal Capsule.',
+                allowCrypto: true,
+              ),
+            );
           },
         ),
       );
-      final request = ExternalEffectAdapterRequest(
-        ownerCapsuleHex: base.ownerCapsuleHex,
-        operationId: base.operationId,
-        pluginId: base.pluginId,
-        providerId: base.providerId,
-        accountBindingId: base.accountBindingId,
-        effectKind: base.effectKind,
-        canonicalPayloadJson: jsonEncode(decoded),
-        payloadHashHex: base.payloadHashHex,
-      );
 
-      final result = await adapter.deliver(request);
+      final result = await adapter.deliver(_customSubmoltRequest());
 
-      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
-      expect(result.errorCode, 'invalid_effect_payload');
-      expect(networkCalls, 0);
+      expect(result.status, ExternalEffectAdapterStatus.succeeded);
+      expect(requests, hasLength(2));
+      expect(jsonDecode(utf8.decode(requests.first.bodyBytes!)), {
+        'name': 'capsule-notes',
+        'display_name': 'Capsule Notes',
+        'description': 'Public notes from a personal Capsule.',
+        'allow_crypto': true,
+      });
+      expect(requests.last.uri.path, '/api/v1/submolts/capsule-notes');
     },
   );
+
+  test('custom community rejects crypto-policy drift', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send:
+            (_) async => _jsonResponse(
+              _submoltBody(
+                name: 'capsule-notes',
+                displayName: 'Capsule Notes',
+                description: 'Public notes from a personal Capsule.',
+                allowCrypto: false,
+              ),
+            ),
+      ),
+    );
+
+    final result = await adapter.reconcile(_customSubmoltRequest());
+
+    expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+    expect(result.errorCode, 'submolt_conflict');
+    expect(result.receipt, isNull);
+  });
 
   test('accepts a target-bound v2 reply payload', () async {
     final adapter = MoltbookExternalEffectAdapter(
@@ -899,6 +921,27 @@ ExternalEffectAdapterRequest _submoltRequest() {
   );
 }
 
+ExternalEffectAdapterRequest _customSubmoltRequest() {
+  final payload = jsonEncode(<String, dynamic>{
+    'schema_version': 2,
+    'name': 'capsule-notes',
+    'display_name': 'Capsule Notes',
+    'description': 'Public notes from a personal Capsule.',
+    'allow_crypto': true,
+  });
+  return ExternalEffectAdapterRequest(
+    ownerCapsuleHex: _owner,
+    operationId: 'submolt-custom-1',
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'account-1',
+    effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
+    canonicalPayloadJson: payload,
+    payloadHashHex:
+        'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+  );
+}
+
 ExternalEffectAdapterRequest _legacyRequest() {
   const payload =
       '{"schema_version":1,"account_name":"HivraAgent",'
@@ -957,16 +1000,19 @@ MoltbookHttpResponse _httpResponse(int statusCode, Map<String, dynamic> body) {
 Map<String, dynamic> _submoltBody({
   String creatorId = 'account-1',
   String name = MoltbookPublicationService.personFirstRuntimeSubmoltName,
+  String displayName =
+      MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
   String description =
       MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
+  bool? allowCrypto,
 }) => <String, dynamic>{
   'success': true,
   'submolt': <String, dynamic>{
     'id': 'submolt-1',
     'name': name,
-    'display_name':
-        MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
+    'display_name': displayName,
     'description': description,
+    if (allowCrypto != null) 'allow_crypto': allowCrypto,
     'created_by': <String, dynamic>{'id': creatorId, 'name': 'HivraAgent'},
   },
 };

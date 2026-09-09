@@ -331,11 +331,11 @@ void main() {
     });
 
     test(
-      'PFR community creation is exact, replay-safe, and Capsule scoped',
+      'custom community creation is exact, replay-safe, and Capsule scoped',
       () async {
         final concurrent = await Future.wait(<Future<ExternalEffectOperation>>[
-          publications.preparePersonFirstRuntimeCommunity(),
-          publications.preparePersonFirstRuntimeCommunity(),
+          _prepareCommunity(publications),
+          _prepareCommunity(publications),
         ]);
         final first = concurrent.first;
         final repeated = concurrent.last;
@@ -343,7 +343,7 @@ void main() {
           _effects(files, () => activeRoot),
           binding,
         );
-        final restored = await restarted.preparePersonFirstRuntimeCommunity();
+        final restored = await _prepareCommunity(restarted);
 
         expect(repeated.operationId, first.operationId);
         expect(restored.operationId, first.operationId);
@@ -352,16 +352,16 @@ void main() {
           MoltbookExternalEffectAdapter.submoltEffectKind,
         );
         expect(MoltbookPublicationService.decodePayload(first), {
-          'schema_version': 1,
-          'name': MoltbookPublicationService.personFirstRuntimeSubmoltName,
-          'display_name':
-              MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
-          'description':
-              MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
+          'schema_version': 2,
+          'name': 'capsule-notes',
+          'display_name': 'Capsule Notes',
+          'description': 'A community for public Capsule notes.',
+          'allow_crypto': true,
         });
         expect(
-          MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
+          MoltbookPublicationService.isCommunityOperationFor(
             first,
+            'capsule-notes',
           ),
           isTrue,
         );
@@ -396,13 +396,11 @@ void main() {
             verifiedAtUtc: binding.verifiedAtUtc,
           ),
         );
-        final afterRename =
-            await renamedAccount.preparePersonFirstRuntimeCommunity();
+        final afterRename = await _prepareCommunity(renamedAccount);
         expect(afterRename.operationId, first.operationId);
 
         activeRoot = _ownerB;
-        final anotherCapsule =
-            await restarted.preparePersonFirstRuntimeCommunity();
+        final anotherCapsule = await _prepareCommunity(restarted);
         expect(anotherCapsule.operationId, isNot(first.operationId));
         expect((await restarted.list()), hasLength(1));
       },
@@ -609,7 +607,7 @@ void main() {
     });
 
     test(
-      'bounded public change approval binds exact PFR post and commitment',
+      'bounded public change approval binds configured community and commitment',
       () async {
         final operation = await publications.prepare(
           draft: _postDraft('1'),
@@ -618,6 +616,8 @@ void main() {
         final queued = await publications.approveBoundedPublicChangeAndQueue(
           operation: operation,
           publicChangeCommitmentHashHex: '9' * 64,
+          primaryCommunity:
+              MoltbookPublicationService.personFirstRuntimeSubmoltName,
         );
         final expectedEvidence =
             sha256
@@ -651,6 +651,8 @@ void main() {
           publications.approveBoundedPublicChangeAndQueue(
             operation: general,
             publicChangeCommitmentHashHex: '9' * 64,
+            primaryCommunity:
+                MoltbookPublicationService.personFirstRuntimeSubmoltName,
           ),
           throwsFormatException,
         );
@@ -658,6 +660,8 @@ void main() {
           publications.approveBoundedPublicChangeAndQueue(
             operation: operation,
             publicChangeCommitmentHashHex: 'invalid',
+            primaryCommunity:
+                MoltbookPublicationService.personFirstRuntimeSubmoltName,
           ),
           throwsFormatException,
         );
@@ -832,6 +836,17 @@ MoltbookPublicationService _publications(
   return MoltbookPublicationService.withBindingLoader(
     effects: effects,
     loadBinding: () async => binding,
+  );
+}
+
+Future<ExternalEffectOperation> _prepareCommunity(
+  MoltbookPublicationService publications,
+) {
+  return publications.prepareCommunity(
+    name: 'capsule-notes',
+    displayName: 'Capsule Notes',
+    description: 'A community for public Capsule notes.',
+    allowCrypto: true,
   );
 }
 

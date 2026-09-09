@@ -115,8 +115,11 @@ is a local projection, not Capsule truth. Cache loss may cause a bounded read
 but cannot authorize duplicate publication.
 
 The user-facing profile contains only non-secret local policy such as agent
-name, description, persona summary, allowed topics, approval mode, trigger
-policy, and enablement. It cannot rename the Capsule or plugin.
+name, description, persona summary, allowed topics, one primary publication
+community, approval mode, trigger policy, and enablement. The primary community
+is Capsule-scoped and names where public-change posts are sent; it does not
+grant ownership or moderation authority. The profile cannot rename the Capsule
+or plugin.
 
 ## 6. Content Pipeline
 

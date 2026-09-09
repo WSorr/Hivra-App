@@ -319,6 +319,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     required String name,
     required String displayName,
     required String description,
+    bool? allowCrypto,
   }) async {
     final response = await _request(
       method: 'POST',
@@ -328,6 +329,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         'name': name,
         'display_name': displayName,
         'description': description,
+        if (allowCrypto != null) 'allow_crypto': allowCrypto,
       },
     );
     final json = _decodeObject(response);

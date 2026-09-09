@@ -471,8 +471,9 @@ class MoltbookStoredDraft {
 }
 
 class MoltbookAmbassadorConfiguration {
-  static const int schemaVersion = 3;
-  static const int previousSchemaVersion = 2;
+  static const int schemaVersion = 4;
+  static const int previousSchemaVersion = 3;
+  static const int triggerSchemaVersion = 2;
   static const int legacySchemaVersion = 1;
   static const String approvalDraft = 'draft';
   static const String approvalAssisted = 'assisted';
@@ -485,6 +486,7 @@ class MoltbookAmbassadorConfiguration {
   final String agentDescription;
   final String personaSummary;
   final List<String> allowedTopics;
+  final String primaryCommunity;
   final String approvalMode;
   final String triggerPolicy;
   final bool enabled;
@@ -494,6 +496,7 @@ class MoltbookAmbassadorConfiguration {
     required this.agentDescription,
     required this.personaSummary,
     required this.allowedTopics,
+    this.primaryCommunity = moltbookPersonFirstRuntimeSubmoltName,
     required this.approvalMode,
     this.triggerPolicy = triggerSession,
     required this.enabled,
@@ -510,6 +513,7 @@ class MoltbookAmbassadorConfiguration {
         'capsule-runtime',
         'wasm-drones',
       ],
+      primaryCommunity: moltbookPersonFirstRuntimeSubmoltName,
       approvalMode: approvalAssisted,
       enabled: true,
     );
@@ -518,6 +522,7 @@ class MoltbookAmbassadorConfiguration {
   factory MoltbookAmbassadorConfiguration.fromJson(Map<String, dynamic> json) {
     final sourceSchemaVersion = json['schema_version'];
     if (sourceSchemaVersion != legacySchemaVersion &&
+        sourceSchemaVersion != triggerSchemaVersion &&
         sourceSchemaVersion != previousSchemaVersion &&
         sourceSchemaVersion != schemaVersion) {
       throw const FormatException('Unsupported Moltbook configuration schema');
@@ -539,6 +544,10 @@ class MoltbookAmbassadorConfiguration {
     if (json['enabled'] is! bool) {
       throw const FormatException('enabled must be a boolean');
     }
+    if (sourceSchemaVersion == schemaVersion &&
+        json['primary_community'] is! String) {
+      throw const FormatException('primary_community must be a string');
+    }
     final config = MoltbookAmbassadorConfiguration(
       agentName:
           json['agent_name'] is String ? json['agent_name'] as String : '',
@@ -551,6 +560,11 @@ class MoltbookAmbassadorConfiguration {
               ? json['persona_summary'] as String
               : '',
       allowedTopics: topics,
+      primaryCommunity:
+          sourceSchemaVersion == schemaVersion &&
+                  json['primary_community'] is String
+              ? json['primary_community'] as String
+              : moltbookPersonFirstRuntimeSubmoltName,
       approvalMode:
           json['approval_mode'] is String
               ? json['approval_mode'] as String
@@ -564,9 +578,10 @@ class MoltbookAmbassadorConfiguration {
       enabled: json['enabled'] as bool,
     );
     if (sourceSchemaVersion != schemaVersion &&
+        sourceSchemaVersion != previousSchemaVersion &&
         config.approvalMode == approvalBounded) {
       throw const FormatException(
-        'bounded approval requires configuration schema v3',
+        'bounded approval requires configuration schema v3 or newer',
       );
     }
     config.validate();
@@ -580,6 +595,7 @@ class MoltbookAmbassadorConfiguration {
     'agent_description': agentDescription,
     'persona_summary': personaSummary,
     'allowed_topics': allowedTopics,
+    'primary_community': primaryCommunity,
     'approval_mode': approvalMode,
     'trigger_policy': triggerPolicy,
     'enabled': enabled,
@@ -600,6 +616,16 @@ class MoltbookAmbassadorConfiguration {
       if (!RegExp(r'^[a-z0-9][a-z0-9._-]*$').hasMatch(topic)) {
         throw const FormatException('allowed_topics contains an invalid value');
       }
+    }
+    if (primaryCommunity.trim() != primaryCommunity ||
+        primaryCommunity.length < 2 ||
+        primaryCommunity.length > 30 ||
+        !RegExp(
+          r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$',
+        ).hasMatch(primaryCommunity)) {
+      throw const FormatException(
+        'primary_community must be a 2..30 character lowercase Moltbook name',
+      );
     }
     if (approvalMode != approvalDraft &&
         approvalMode != approvalAssisted &&

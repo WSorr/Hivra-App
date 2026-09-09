@@ -129,14 +129,16 @@ title/body and the existing draft store durably records the canonical draft
 hash.
 
 `Assisted` mode stops at the local draft. Existing `Bounded` mode may advance
-one exact public-change draft through the existing post effect only when the
-active Capsule and current Moltbook account already hold verified ownership
-evidence for `m/person-first-runtime`. The destination is fixed by policy; AI
-cannot choose it. The same operation id, receipt, unresolved state, and
+one exact public-change draft through the existing post effect to the active
+Capsule's configured primary community. The destination is fixed by local
+policy before draft and effect preparation; AI cannot choose or change it.
+Publishing to an existing community does not require ownership evidence.
+Provider permissions and community rules still fail closed at delivery. The
+same operation id, exact destination binding, receipt, unresolved state, and
 reconciliation rules apply across restart, so repeated launches cannot create
-a second semantic post. Missing community evidence, AI fact drift, secret-like
-material, Capsule switching, or account rotation keeps the change pending and
-creates no provider effect.
+a second semantic post. AI fact drift, secret-like material, Capsule switching,
+account rotation, destination drift, or provider rejection keeps the change
+pending or terminally closed without a second provider effect.
 The application may import a bounded, reviewed build-time manifest when the
 Moltbook workspace opens. The manifest parser is strict and atomic, validates
 the complete lineage, and exposes only the newest entry matching the Capsule's
@@ -160,27 +162,31 @@ requires explicit cancellation or reconciliation. Workspace loading repairs a
 legacy missing-draft orphan only when the retained operation is still
 `prepared`; this repair makes no provider request.
 
-### 4.2 Fixed Person-First Runtime community bootstrap
+### 4.2 Primary community and optional creation
 
-The 1.x bootstrap may prepare exactly one permanent community effect for
-`m/person-first-runtime`, with display name `Person-First Runtime` and the
-canonical description held by the Moltbook contract constants. This is a
-bounded extension of the existing publication service, external-effect
-journal, and provider adapter; it is not a community-management subsystem.
+Each Capsule configuration names one primary publication community. The
+default is `m/person-first-runtime`, but a connected Moltbook account may use
+another existing community without claiming ownership. Selecting a destination
+is local policy only: it grants no moderator role, bypass, subscription, or
+provider permission.
 
-The semantic operation binds the active Capsule, bound Moltbook account id,
-and exact versioned descriptor before approval. Delivery must re-observe the
-community and verify its exact name, display name, description, and stable
-creator account id before recording success. A descriptor or owner mismatch
-is terminal conflict evidence. Timeout, restart, or temporary `404` remains
-unresolved and permits observation only; it never authorizes blind recreation.
-Exact preparation replay resumes the same operation.
+The same existing community effect may create a new user-selected community.
+Creation binds the active Capsule, bound Moltbook account id, exact lowercase
+name, display name, description, and explicit crypto-content policy before
+approval. Delivery must re-observe the community and verify the complete
+descriptor plus stable creator account id before recording success. A crypto
+policy, descriptor, or owner mismatch is terminal conflict evidence. Timeout,
+restart, or temporary `404` remains unresolved and permits observation only;
+it never authorizes blind recreation. Exact preparation replay resumes the
+same operation.
 
-The UI may select this community as the post destination only after verified
-ownership evidence. AI cannot choose, create, rename, migrate, or broaden a
-destination. Existing posts are not migrated and replies remain scoped to
-their original post community. The bootstrap itself authorizes no automatic
-effect; only the bounded public-change policy above may advance an exact post.
+Community creation is a permanent explicit user action and is never required
+to publish in an existing community. Moltbook rate limits, moderation rules,
+and ownership responsibilities remain provider policy. AI cannot select,
+create, rename, migrate, or broaden a destination. Existing posts are not
+migrated and replies remain scoped to their original post community. Schema-v1
+fixed PFR creation effects remain readable for in-flight 1.x compatibility;
+new creation uses the exact configurable schema-v2 descriptor.
 
 ## 5. Lifecycle projection
 
