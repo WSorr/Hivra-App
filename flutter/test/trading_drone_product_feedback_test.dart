@@ -916,9 +916,16 @@ void main() {
   test('scan snapshot is explicitly observational and timestamped', () {
     expect(
       tradingSignalSnapshotLabel(DateTime.utc(2026, 8, 20, 10, 39, 15)),
-      'Snapshot 2026-08-20T10:39:15.000Z. READY is observational; '
-      'Run Intent revalidates current market.',
+      'Snapshot 2026-08-20T10:39:15.000Z. Candidates are observations; '
+      'Check Market validates current conditions.',
     );
+  });
+
+  test('product labels do not present ranked observations as executable', () {
+    expect(tradingSignalBucketProductLabel('ready'), 'CANDIDATE');
+    expect(tradingSignalBucketProductLabel('near'), 'WATCH');
+    expect(tradingSignalBucketProductLabel('blocked'), 'BLOCKED');
+    expect(tradingSignalBucketProductLabel('no_signal'), 'NO SIGNAL');
   });
 
   test('fresh ready rank overrides stale UI side for canonical cycle', () {

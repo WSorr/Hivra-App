@@ -592,7 +592,18 @@ String? tradingMandateSelectionNotice({
 @visibleForTesting
 String tradingSignalSnapshotLabel(DateTime observedAtUtc) {
   final observed = observedAtUtc.toUtc().toIso8601String();
-  return 'Snapshot $observed. READY is observational; Run Intent revalidates current market.';
+  return 'Snapshot $observed. Candidates are observations; Check Market validates current conditions.';
+}
+
+@visibleForTesting
+String tradingSignalBucketProductLabel(String bucket) {
+  return switch (bucket) {
+    'ready' => 'CANDIDATE',
+    'near' => 'WATCH',
+    'blocked' => 'BLOCKED',
+    'no_signal' => 'NO SIGNAL',
+    _ => 'ERROR',
+  };
 }
 
 class TradingDroneScreen extends StatefulWidget {
@@ -720,8 +731,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   List<BingxFuturesSignalRankEntry> _signalRankEntries =
       const <BingxFuturesSignalRankEntry>[];
   DateTime? _signalScanCompletedAtUtc;
-  Map<String, BingxFuturesLiveDecisionResult> _signalDecisionByHash =
-      const <String, BingxFuturesLiveDecisionResult>{};
   BingxFuturesLiveDecisionResult? _displayedZoneDecision;
 
   static const BingxFuturesRiskPolicy _executionRiskPolicy =
