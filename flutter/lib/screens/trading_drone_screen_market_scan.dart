@@ -224,6 +224,8 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
       final rankCandidates = tradingBoundedSignalRankCandidates(candidates);
       final ranked = await _module.signalRankUseCase.execute(
         BingxFuturesSignalRankCommand(candidates: rankCandidates),
+        stopLossPercent: _stopLossPercent,
+        minimumRiskReward: _takeProfitRiskReward,
       );
       if (!ranked.isSuccess) {
         await _module.uiLog.log(
