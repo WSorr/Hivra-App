@@ -532,9 +532,11 @@ The Trading UI MUST present executable HTF bounds as a **pending liquidity
 zone**, not as current market price. Its existing live-decision projection MUST
 show the anchor timeframe/source, formation time, age at the latest closed
 observation, signed distance from the reference price, and that `Run Intent`
-revalidates the zone. A ranked scan selection may project the matching retained
-live decision, but changing the symbol MUST clear that evidence and execution
-MUST continue to use a newly computed decision.
+revalidates the zone. Signal ranking is an observational candidate list: its
+internal `ready` bucket MUST be presented as a candidate rather than executable
+readiness. Selecting a ranked observation MUST clear prior pending-order fields
+and MUST NOT project the retained scan decision as current execution state.
+Execution continues to use a newly computed decision.
 
 A foreground cycle may populate pending-zone and derived order fields only
 after it has prepared an executable intent from a decision whose

@@ -241,10 +241,6 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
       _updateState(() {
         _signalRankEntries = ranked.entries;
         _signalScanCompletedAtUtc = DateTime.now().toUtc();
-        _signalDecisionByHash = <String, BingxFuturesLiveDecisionResult>{
-          for (final candidate in rankCandidates)
-            candidate.decision.liveDecisionHashHex: candidate.decision,
-        };
         _side = tradingPreferredSideForCycle(
           symbol: currentSymbol,
           currentSide: _side,
@@ -267,10 +263,10 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
       );
       await _showSnack(
         ranked.entries.any((entry) => entry.bucket == 'ready')
-            ? 'Signal scan complete: ready found'
+            ? 'Signal scan complete: candidate found'
             : skipped > 0
-            ? 'Signal scan partial: no ready signals, skipped $skipped'
-            : 'Signal scan complete: no ready signals',
+            ? 'Signal scan partial: no candidates, skipped $skipped'
+            : 'Signal scan complete: no candidates',
         seconds: 2,
       );
     } catch (error) {
@@ -432,10 +428,9 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
 
   Future<void> _applySignalRankEntry(BingxFuturesSignalRankEntry entry) async {
     if (!mounted) return;
-    final decision = _signalDecisionByHash[entry.liveDecisionHashHex];
     _updateState(() {
       _symbolController.text = entry.symbol;
-      _displayedZoneDecision = decision;
+      _displayedZoneDecision = null;
       _lastIntentResponse = null;
       _lastPreparedLiveDecision = null;
       _intentBlockingMessage = null;
@@ -443,21 +438,20 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         _side = entry.side!;
         _zoneSide = tradingZoneSideForOrderSide(entry.side!);
       }
-      if (decision?.canPrepareIntent == true &&
-          entry.zoneLowDecimal != null &&
-          entry.zoneHighDecimal != null) {
-        _zoneLowController.text = entry.zoneLowDecimal!;
-        _zoneHighController.text = entry.zoneHighDecimal!;
-      } else {
-        _zoneLowController.clear();
-        _zoneHighController.clear();
-      }
+      _zoneLowController.clear();
+      _zoneHighController.clear();
+      _triggerPriceController.clear();
+      _quantityController.clear();
+      _stopLossController.clear();
+      _takeProfitController.clear();
+      _strategyTagController.clear();
       _signalRankExpanded = false;
     });
     await _module.uiLog.log(
       'bingx.signal.rank.select',
       'symbol=${entry.symbol} bucket=${entry.bucket} score=${entry.score} '
-          'side=${entry.side ?? "-"} live_hash=${_shortHash(entry.liveDecisionHashHex)}',
+          'side=${entry.side ?? "-"} live_hash=${_shortHash(entry.liveDecisionHashHex)} '
+          'projection=cleared',
     );
     await _maybeRetargetOpenOrdersTracking(
       symbol: entry.symbol,

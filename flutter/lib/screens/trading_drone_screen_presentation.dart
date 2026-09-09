@@ -135,16 +135,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
     };
   }
 
-  String _signalBucketLabel(String bucket) {
-    return switch (bucket) {
-      'ready' => 'READY',
-      'near' => 'NEAR',
-      'blocked' => 'BLOCKED',
-      'no_signal' => 'NO SIGNAL',
-      _ => 'ERROR',
-    };
-  }
-
   Widget _signalRankList() {
     if (_signalRankEntries.isEmpty) {
       return const Text(
@@ -174,7 +164,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Top ${top.symbol} · ${_signalBucketLabel(top.bucket)} · score ${top.score}',
+                  'Top ${top.symbol} · ${tradingSignalBucketProductLabel(top.bucket)} · score ${top.score}',
                   style: const TextStyle(
                     color: Color(0xFFCAD2E1),
                     fontSize: 12,
@@ -223,7 +213,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      _signalBucketLabel(entry.bucket),
+                      tradingSignalBucketProductLabel(entry.bucket),
                       style: TextStyle(
                         color: _signalBucketColor(entry.bucket),
                         fontSize: 11,
@@ -706,11 +696,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                                 _signalRankEntries =
                                     const <BingxFuturesSignalRankEntry>[];
                                 _signalScanCompletedAtUtc = null;
-                                _signalDecisionByHash =
-                                    const <
-                                      String,
-                                      BingxFuturesLiveDecisionResult
-                                    >{};
                                 _signalRankExpanded = true;
                               });
                             },
