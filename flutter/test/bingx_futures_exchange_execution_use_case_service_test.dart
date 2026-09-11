@@ -1258,7 +1258,7 @@ void main() {
             return const BingxHttpResponse(
               statusCode: 200,
               body:
-                  '{"code":0,"msg":"ok","data":{"orderID":"managed-filled","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED"}}',
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-filled","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","type":"LIMIT","status":"FILLED","executedQty":"0.01"}}',
             );
           },
         );
@@ -1304,6 +1304,140 @@ void main() {
         );
       },
     );
+
+    test(
+      'trigger activation without execution stays unresolved across restart',
+      () async {
+        final store = _trackingStore(tempHome);
+        final binding =
+            BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+              _credentials,
+            );
+        await store.saveReconciledForCapsule(
+          store.activeCapsuleRootHex!,
+          _trackingState(
+            orderId: 'managed-trigger',
+            accountBindingHashHex: binding,
+            includeEffectClaim: true,
+          ),
+        );
+        var exactQueries = 0;
+        final exchange = BingxFuturesExchangeService(
+          requestSender: (_) async {
+            exactQueries += 1;
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-trigger","clientOrderId":"managed-client","positionID":"0","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","status":"FILLED","price":"100","stopPrice":"99","origQty":"0.01","executedQty":"0"}}',
+            );
+          },
+        );
+        final openOrders = _openOrders(const <BingxFuturesOpenOrder>[
+          BingxFuturesOpenOrder(
+            orderId: 'provider-child-limit',
+            clientOrderId: 'provider-generated-child',
+            symbol: 'BTC-USDT',
+            side: 'BUY',
+            positionSide: 'LONG',
+            orderType: 'LIMIT',
+            status: 'PENDING',
+            priceDecimal: '100',
+            triggerPriceDecimal: null,
+            quantityDecimal: '0.01',
+            executedQuantityDecimal: '0',
+            createdAtMs: 2,
+          ),
+        ]);
+
+        final first = await _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: openOrders,
+        );
+
+        expect(exactQueries, 1);
+        expect(first.activeCount, 0);
+        expect(first.terminalCount, 0);
+        expect(first.unresolvedCount, 1);
+        expect(first.state!.managedOrderIds, isEmpty);
+        expect(first.state!.managedOrderProvenance, hasLength(1));
+        expect(
+          first.state!.managedOrderProvenance,
+          isNot(contains('provider-child-limit')),
+        );
+        expect(first.state!.liquidityEventEffectClaims, hasLength(1));
+        expect(
+          first
+              .state!
+              .managedOrderProvenance['managed-trigger']!
+              .lifecycleDiagnostic,
+          'provider_trigger_activated_without_fill_evidence',
+        );
+
+        final restarted = await _reconciliationUseCase(
+          exchange: exchange,
+          store: _trackingStore(tempHome),
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: openOrders,
+        );
+
+        expect(exactQueries, 2);
+        expect(restarted.terminalCount, 0);
+        expect(restarted.unresolvedCount, 1);
+        expect(restarted.state!.managedOrderProvenance, hasLength(1));
+        expect(restarted.state!.liquidityEventEffectClaims, hasLength(1));
+        expect(
+          restarted.state!.managedOrderProvenance,
+          isNot(contains('provider-child-limit')),
+        );
+      },
+    );
+
+    test('filled trigger with executed quantity remains filled', () async {
+      final store = _trackingStore(tempHome);
+      final binding =
+          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+            _credentials,
+          );
+      await store.save(
+        _trackingState(
+          orderId: 'managed-trigger-filled',
+          accountBindingHashHex: binding,
+        ),
+      );
+      final exchange = BingxFuturesExchangeService(
+        requestSender:
+            (_) async => const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-trigger-filled","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","type":"TRIGGER_LIMIT","status":"FILLED","executedQty":"0.01"}}',
+            ),
+      );
+
+      final result = await _reconciliationUseCase(
+        exchange: exchange,
+        store: store,
+        riskHistory: riskHistory,
+      ).reconcileManagedOrders(
+        credentials: _credentials,
+        openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+      );
+
+      expect(result.unresolvedCount, 0);
+      expect(result.terminalCount, 1);
+      expect(
+        result
+            .state!
+            .managedOrderProvenance['managed-trigger-filled']!
+            .lifecycleStatus,
+        BingxManagedOrderLifecycleStatus.filled,
+      );
+    });
 
     test(
       'terminal evidence preserves effect identity across provider order id replacement',
@@ -2466,7 +2600,13 @@ BingxFuturesExchangeExecutionUseCaseService _reconciliationUseCase({
 BingxFuturesOrderTrackingState _trackingState({
   required String orderId,
   required String accountBindingHashHex,
+  bool includeEffectClaim = false,
 }) {
+  final eventId = List<String>.filled(64, 'f').join();
+  final canonicalIntentJson =
+      includeEffectClaim
+          ? '{"symbol":"BTC-USDT","side":"buy","order_type":"limit","entry_mode":"zone_pending"}'
+          : '{"symbol":"BTC-USDT","side":"buy"}';
   return BingxFuturesOrderTrackingState(
     trackedSymbol: 'BTC-USDT',
     trackedOrderId: orderId,
@@ -2479,7 +2619,7 @@ BingxFuturesOrderTrackingState _trackingState({
         side: 'buy',
         testOrder: false,
         intentHashHex: List<String>.filled(64, 'c').join(),
-        canonicalIntentJson: '{"symbol":"BTC-USDT","side":"buy"}',
+        canonicalIntentJson: canonicalIntentJson,
         clientOrderId: 'managed-client',
         accountBindingHashHex: accountBindingHashHex,
         lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
@@ -2491,6 +2631,26 @@ BingxFuturesOrderTrackingState _trackingState({
         recordedAtUtc: '2026-08-13T09:00:00.000Z',
       ),
     },
+    liquidityEventEffectClaims:
+        includeEffectClaim
+            ? <String, BingxLiquidityEventEffectClaim>{
+              'live|$eventId': BingxLiquidityEventEffectClaim(
+                liquidityEventId: eventId,
+                clientOrderId: 'managed-client',
+                symbol: 'BTC-USDT',
+                side: 'buy',
+                intentHashHex: List<String>.filled(64, 'c').join(),
+                canonicalIntentJson: canonicalIntentJson,
+                testOrder: false,
+                status: BingxLiquidityEventEffectClaimStatus.confirmed,
+                orderId: orderId,
+                accountBindingHashHex: accountBindingHashHex,
+                lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
+                lifecycleEvidenceAtUtc: '2026-08-13T09:00:00.000Z',
+                recordedAtUtc: '2026-08-13T09:00:00.000Z',
+              ),
+            }
+            : const <String, BingxLiquidityEventEffectClaim>{},
     stopLossPercent: 5,
     takeProfitRiskReward: 2,
   );

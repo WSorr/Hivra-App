@@ -379,8 +379,12 @@ not include credential unlock and does not prove an exchange effect failed.
 - an absent managed order MUST be queried through the exact provider order
   endpoint by its persisted `orderId`, or by the persisted deterministic
   `clientOrderId` when provider acceptance preceded local order-id capture;
-- `NEW` and `PARTIALLY_FILLED` remain active; `FILLED`, `CANCELED`, `REJECTED`,
-  and `EXPIRED` become explicit terminal evidence;
+- `NEW` and `PARTIALLY_FILLED` remain active; `CANCELED`, `REJECTED`, and
+  `EXPIRED` become explicit terminal evidence;
+- `FILLED` is terminal fill evidence for a `TRIGGER_LIMIT` only when the exact
+  provider record reports a positive executed quantity. A triggered parent
+  with zero or absent execution remains `unresolved`: activation can create a
+  separate pending limit order and does not prove a filled position;
 - timeout, malformed evidence, unknown status, provider `not found`, legacy
   records without account binding, and account-binding mismatch remain
   `unresolved` and MUST NOT authorize delivery, recreation, replacement, or a
