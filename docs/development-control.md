@@ -1,12 +1,12 @@
 # Hivra Development Control
 
-Status date: 2026-09-09
+Status date: 2026-09-10
 
 ## Current State
 
 - Maintained runtime: Hivra 1.x.
-- Current runtime source checkpoint: `fdf71e1`; the active documentation-only
-  review changes no runtime behavior.
+- Current runtime source checkpoint is the protected `main` HEAD; Git and the
+  required repository gate retain the exact integration identity.
 - Published prerelease: `v1.0.3-test19` at `dabeaa7`; the exact macOS and
   Android artifacts have manual signoff.
 - The runtime is a modular monolith around the Rust Core, append-only Ledger,
@@ -20,9 +20,11 @@ Status date: 2026-09-09
   Bounded mode remains non-reference-grade under its lifecycle contract.
 - Trading supports the same canonical bounded cycle locally or through the
   Remote Runner. Ranked market entries are observations only; exact order
-  fields appear only after fresh market validation. Local and remote sessions
-  are mutually exclusive and reuse the existing execution, effect,
-  reconciliation, credential, and mandate owners.
+  fields appear only after fresh market validation. The local runner starts
+  directly from one selected market and obtains replacement bounded authority
+  in the same action when selection changes; signal scan remains optional.
+  Local and remote sessions are mutually exclusive and reuse the existing
+  execution, effect, reconciliation, credential, and mandate owners.
 - Trading Remote Runner acceptance remains complete at `b88a886`. Exact
   managed-position restart reconciliation is proven on macOS; Android evidence
   for that path remains open.

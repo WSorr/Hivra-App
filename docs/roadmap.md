@@ -31,7 +31,8 @@ The following product foundations are implemented and retained:
   acceptance;
 - exact managed-position post-trade reconciliation with durable net PnL;
 - dedicated Trading capability ownership with one Capsule-local pending-intent
-  cycle and no peer-selected or Chat-signal route;
+  cycle, direct symbol-to-local-runner start, and no peer-selected or
+  Chat-signal route;
 - guarded repository integration and exact-artifact release signoff.
 
 The current public prerelease is `v1.0.3-test19`. The invalid `test17` artifact

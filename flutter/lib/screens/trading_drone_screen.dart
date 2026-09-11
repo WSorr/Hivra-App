@@ -310,6 +310,18 @@ String tradingLocalRunnerActionLabel({
 }
 
 @visibleForTesting
+bool tradingLocalRunnerRequiresAuthorization({
+  required bool droneEnabled,
+  required String? selectionNotice,
+}) => !droneEnabled || selectionNotice != null;
+
+@visibleForTesting
+String tradingRunnerMarketActionLabel(String symbol) {
+  final normalized = symbol.trim().toUpperCase();
+  return normalized.isEmpty ? 'Choose market' : 'Market: $normalized';
+}
+
+@visibleForTesting
 bool tradingLocalRunnerActionEnabled({
   required bool starting,
   required bool running,
@@ -324,16 +336,42 @@ String tradingLocalRunnerStatusLabel(
     return 'Runs every 5 minutes while Hivra and this Trading workspace stay open.';
   }
   final outcome = snapshot.lastOutcome?.trim();
+  final completedAttempts =
+      '${snapshot.completedCycles} ${snapshot.completedCycles == 1 ? "attempt" : "attempts"}';
+  final outcomeLabel = tradingLocalRunnerOutcomeLabel(outcome);
+  final nextCycleAtUtc = snapshot.nextCycleAtUtc?.toUtc();
+  final nextCheckLabel =
+      nextCycleAtUtc == null
+          ? null
+          : 'next check ${nextCycleAtUtc.hour.toString().padLeft(2, '0')}:'
+              '${nextCycleAtUtc.minute.toString().padLeft(2, '0')} UTC';
   return switch (snapshot.phase) {
     BingxFuturesInteractiveRunnerPhase.running =>
-      'Checking the market now · ${snapshot.completedCycles} completed',
+      'Checking the market now · $completedAttempts finished',
     BingxFuturesInteractiveRunnerPhase.waiting =>
-      'Watching on this computer · ${snapshot.completedCycles} completed'
-          '${outcome == null || outcome.isEmpty ? '' : ' · last $outcome'}',
+      'Watching on this computer · $completedAttempts'
+          '${outcomeLabel == null ? '' : ' · $outcomeLabel'}'
+          '${nextCheckLabel == null ? '' : ' · $nextCheckLabel'}',
     BingxFuturesInteractiveRunnerPhase.stopped =>
-      'Stopped on this computer · ${snapshot.completedCycles} completed',
+      'Stopped on this computer · $completedAttempts',
     BingxFuturesInteractiveRunnerPhase.failed =>
       'Stopped safely after an error. Review diagnostics and start again.',
+  };
+}
+
+@visibleForTesting
+String? tradingLocalRunnerOutcomeLabel(String? outcome) {
+  final normalized = outcome?.trim();
+  if (normalized == null || normalized.isEmpty) return null;
+  return switch (normalized) {
+    'blocked:session_stream_unavailable' =>
+      'BingX market connection unavailable',
+    'blocked:market_volume_activation_unavailable' =>
+      'waiting for clearer market volume',
+    'effect:succeeded' => 'order submitted',
+    'validated:no_effect' => 'request validated without an order',
+    _ when normalized.startsWith('blocked:') => 'market check blocked safely',
+    _ => normalized,
   };
 }
 
@@ -1292,8 +1330,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _stopLocalRunner(reason: 'user');
       return;
     }
+    final selectionNotice = tradingMandateSelectionNotice(
+      mandate: _tradingMandate,
+      droneEnabled: _droneEnabled,
+      selectedSymbol: _symbolController.text,
+      selectedMaxNotional: _maxNotionalUsdtController.text,
+      selectedMaxEffects: _maxEffects,
+      testOrder: _useTestOrderEndpoint,
+      nowUtc: DateTime.now().toUtc(),
+    );
     var authorityJustConfirmed = false;
-    if (!_droneEnabled) {
+    if (tradingLocalRunnerRequiresAuthorization(
+      droneEnabled: _droneEnabled,
+      selectionNotice: selectionNotice,
+    )) {
       if (!await _changeDroneEnabled(true)) return;
       authorityJustConfirmed = true;
     }
