@@ -293,6 +293,32 @@ void main() {
       ),
       isTrue,
     );
+    final enabledTerminal = terminal.replaceFirst(
+      'enabled=linked',
+      'enabled=enabled',
+    );
+    expect(
+      tradingRemoteRunnerStatusLabel(enabledTerminal),
+      contains('Runner stopped'),
+    );
+    expect(
+      tradingRemoteRunnerStatusLabel(enabledTerminal),
+      contains('finished session cannot trade'),
+    );
+    expect(
+      tradingRemoteRunnerCanStartSession(
+        raw: enabledTerminal,
+        hasVerifiedSession: true,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingRemoteRunnerCanStartSession(
+        raw: paused.replaceFirst('enabled=linked', 'enabled=enabled'),
+        hasVerifiedSession: true,
+      ),
+      isFalse,
+    );
     expect(tradingRemoteRunnerCanResume('$paused active=inactive'), isFalse);
   });
 
@@ -484,7 +510,7 @@ void main() {
         running: false,
         resumable: false,
       ),
-      'Authorize 24/7 session',
+      'Authorize VPS session',
     );
     expect(
       tradingRemoteRunnerPrimaryActionEnabled(
@@ -511,6 +537,14 @@ void main() {
         canStart: false,
       ),
       isTrue,
+    );
+    expect(
+      tradingRemoteRunnerControlNotice(
+        configured: true,
+        running: false,
+        resumable: false,
+      ),
+      contains('renewal is required'),
     );
     expect(
       tradingRemoteRunnerControlNotice(

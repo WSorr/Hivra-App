@@ -944,21 +944,31 @@ String tradingRemoteRunnerStatusLabel(String raw) {
   const unknown = 'Runner status unknown. Refresh to retry.';
   final fields = _tradingRemoteRunnerStatusFields(raw);
   if (fields == null) return unknown;
-  final process = switch (fields['active']) {
-    'active' => 'Runner running',
-    'inactive' => 'Runner paused',
-    'failed' => 'Runner failed',
+  final state = fields['session_state'];
+  final terminal = {'completed', 'stopped', 'expired'}.contains(state);
+  final process = switch ((fields['active'], terminal)) {
+    ('active', false) => 'Runner running',
+    ('inactive', false) => 'Runner paused',
+    ('active', true) || ('inactive', true) => 'Runner stopped',
+    ('failed', _) => 'Runner failed',
     _ => throw StateError('Validated Runner process is missing.'),
   };
-  final startup = switch (fields['enabled']) {
-    'enabled' =>
+  final startup = switch ((fields['enabled'], terminal)) {
+    ('enabled', true) =>
+      'Autostart remains enabled, but this finished session cannot trade. '
+          'Authorize a new signed session.',
+    ('enabled', false) =>
       'WARNING: autostart enabled — a VPS reboot may start the Runner.',
-    'enabled-runtime' => 'WARNING: runtime startup activation is enabled.',
-    'linked' || 'linked-runtime' || 'disabled' => 'Autostart: not enabled.',
-    'masked' || 'masked-runtime' => 'Startup blocked: service masked.',
+    ('enabled-runtime', true) =>
+      'Runtime startup remains enabled, but this finished session cannot trade. '
+          'Authorize a new signed session.',
+    ('enabled-runtime', false) =>
+      'WARNING: runtime startup activation is enabled.',
+    ('linked' || 'linked-runtime' || 'disabled', _) =>
+      'Autostart: not enabled.',
+    ('masked' || 'masked-runtime', _) => 'Startup blocked: service masked.',
     _ => 'Autostart status unknown — pause persistence is not verified.',
   };
-  final state = fields['session_state'];
   if (state == null || state == 'unavailable') {
     return '$process\n$startup\nSession details unavailable on this Runner.';
   }
@@ -1030,7 +1040,13 @@ bool tradingRemoteRunnerCanStartSession({
   final fields = _tradingRemoteRunnerStatusFields(raw);
   if (fields == null ||
       fields['active'] != 'inactive' ||
-      !{'linked', 'linked-runtime', 'disabled'}.contains(fields['enabled'])) {
+      !{
+        'enabled',
+        'enabled-runtime',
+        'linked',
+        'linked-runtime',
+        'disabled',
+      }.contains(fields['enabled'])) {
     return false;
   }
   final state = fields['session_state'];
@@ -1102,7 +1118,7 @@ String tradingRemoteRunnerPrimaryActionLabel({
   if (!configured) return 'Set up VPS Runner';
   if (resumable) return 'Resume VPS session';
   if (running) return 'VPS session running';
-  return 'Authorize 24/7 session';
+  return 'Authorize VPS session';
 }
 
 @visibleForTesting
@@ -1133,7 +1149,7 @@ String tradingRemoteRunnerControlNotice({
   if (resumable) {
     return 'Resume the same signed VPS session; no new authority is created.';
   }
-  return 'Start once to review bounded authority and the VPS session, then the app may be closed.';
+  return 'Authorize one bounded VPS session. The app shows when renewal is required.';
 }
 
 class _RemoteRunnerProfileTile extends StatefulWidget {
