@@ -7,8 +7,37 @@ import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
+import 'package:hivra_app/services/bingx_futures_mode_orchestrator_service.dart';
 
 void main() {
+  test('symbol picker prioritizes exact and prefix matches', () {
+    expect(
+      tradingFilterPerpetualSymbols(const <String>[
+        'NCCOGASOLINE2USD-USDT',
+        'RESOLV-USDT',
+        'SOL-USDC',
+        'SOL-USDT',
+        'SOLV-USDT',
+      ], 'sol-usdt'),
+      const <String>['SOL-USDT'],
+    );
+    expect(
+      tradingFilterPerpetualSymbols(const <String>[
+        'RESOLV-USDT',
+        'SOL-USDC',
+        'SOL-USDT',
+      ], 'sol'),
+      const <String>['SOL-USDC', 'SOL-USDT', 'RESOLV-USDT'],
+    );
+  });
+
+  test('symbol picker resolves the tapped row from the current query', () {
+    const symbols = <String>['0G-USDT', '1000000MOG-USDT', 'SOL-USDT'];
+    expect(tradingPerpetualSymbolAt(symbols, '', 0), '0G-USDT');
+    expect(tradingPerpetualSymbolAt(symbols, 'SOL-USDT', 0), 'SOL-USDT');
+    expect(tradingPerpetualSymbolAt(symbols, 'SOL-USDT', 1), isNull);
+  });
+
   test('pending sizing uses the exact zone-mid entry price', () {
     expect(
       tradingPendingSizingReferencePrice(
@@ -708,9 +737,65 @@ void main() {
       tradingLocalRunnerActionLabel(starting: false, running: true),
       'Stop on this computer',
     );
+    expect(tradingRunnerMarketActionLabel(' sol-usdt '), 'Market: SOL-USDT');
+    expect(tradingRunnerMarketActionLabel(''), 'Choose market');
     expect(
       tradingLocalRunnerStatusLabel(null),
       contains('while Hivra and this Trading workspace stay open'),
+    );
+    expect(
+      tradingLocalRunnerStatusLabel(
+        BingxFuturesInteractiveRunnerSnapshot(
+          capsuleScope:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          phase: BingxFuturesInteractiveRunnerPhase.waiting,
+          completedCycles: 50,
+          lastOutcome: 'blocked:session_stream_unavailable',
+          nextCycleAtUtc: DateTime.utc(2026, 9, 10, 5, 55),
+          lastError: null,
+        ),
+      ),
+      'Watching on this computer · 50 attempts · '
+      'BingX market connection unavailable · next check 05:55 UTC',
+    );
+    expect(
+      tradingLocalRunnerStatusLabel(
+        const BingxFuturesInteractiveRunnerSnapshot(
+          capsuleScope:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          phase: BingxFuturesInteractiveRunnerPhase.waiting,
+          completedCycles: 1,
+          lastOutcome: 'blocked:market_volume_activation_unavailable',
+          nextCycleAtUtc: null,
+          lastError: null,
+        ),
+      ),
+      'Watching on this computer · 1 attempt · '
+      'waiting for clearer market volume',
+    );
+  });
+
+  test('local runner start reauthorizes a changed market without scan', () {
+    expect(
+      tradingLocalRunnerRequiresAuthorization(
+        droneEnabled: true,
+        selectionNotice: null,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingLocalRunnerRequiresAuthorization(
+        droneEnabled: true,
+        selectionNotice: 'Selected market differs from the active mandate.',
+      ),
+      isTrue,
+    );
+    expect(
+      tradingLocalRunnerRequiresAuthorization(
+        droneEnabled: false,
+        selectionNotice: null,
+      ),
+      isTrue,
     );
   });
 

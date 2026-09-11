@@ -42,6 +42,11 @@ The trading drone supports two operation modes in v1:
    - Drone computes one deterministic decision cycle on current closed-bar snapshot.
    - Result is projected immediately (`NO_SIGNAL` or deterministic intent draft).
 2. `interactive` (local continuous):
+   - The user selects one symbol and starts local automation directly; signal
+     scan is optional and does not authorize execution.
+   - If the selected symbol or bounded settings differ from the active mandate,
+     the same start action MUST obtain replacement Capsule authorization before
+     starting the cadence rather than requiring a separate reauthorization path.
    - Drone runs serial evaluation cycles every five minutes while the Trading
      workspace remains open and the computer remains awake.
    - Every cycle refreshes the snapshot and delegates any authorized effect to

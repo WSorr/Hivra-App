@@ -266,7 +266,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
             : mandateSelectionNotice ??
                 (_droneEnabled
                     ? 'The active Capsule may use the displayed bounded limits.'
-                    : 'Choose this computer or VPS; bounded authority is requested during start.');
+                    : 'Choose a market, then run on this computer or VPS. Bounded authority is requested during start.');
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
     final intentHashLabel =
@@ -316,8 +316,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           _panel(
             title: 'Trading Modes',
             subtitle:
-                'Trade interactively while this app is open, or authorize a '
-                'trusted VPS Runner to watch independently around the clock.',
+                'Choose one market. This computer can watch while Hivra stays '
+                'open, or a trusted VPS Runner can watch around the clock. '
+                'Market Scan below is optional.',
             children: [
               Wrap(
                 spacing: 8,
@@ -337,8 +338,16 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             ? const Color(0xFF8DC2FF)
                             : const Color(0xFFFFC76A),
                   ),
-                  _statusChip(
-                    selectedSymbol.isEmpty ? 'No market' : selectedSymbol,
+                  OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent ||
+                                _startingLocalRunner ||
+                                localRunnerRunning ||
+                                remoteSessionRunning
+                            ? null
+                            : _openPerpetualSymbolPicker,
+                    icon: const Icon(Icons.candlestick_chart_rounded, size: 18),
+                    label: Text(tradingRunnerMarketActionLabel(selectedSymbol)),
                   ),
                   _statusChip('${tradingOrderBudgetLabel(_maxEffects)} / 24h'),
                 ],
@@ -536,9 +545,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           ),
           const SizedBox(height: 14),
           _panel(
-            title: 'Find a Trade',
+            title: 'Market Inspector',
             subtitle:
-                'Scan liquidity, choose a market, and recheck current conditions before preparing an order.',
+                'Optional diagnostics: scan liquidity, compare markets, or prepare one manual order.',
             children: [
               const Text(
                 'Popular markets',

@@ -1,5 +1,36 @@
 part of 'trading_drone_screen.dart';
 
+@visibleForTesting
+List<String> tradingFilterPerpetualSymbols(List<String> symbols, String query) {
+  final normalizedQuery = query.trim().toUpperCase();
+  if (normalizedQuery.isEmpty) return List<String>.of(symbols);
+  final filtered = symbols
+      .where((symbol) => symbol.toUpperCase().contains(normalizedQuery))
+      .toList(growable: false);
+  int matchRank(String symbol) {
+    final normalized = symbol.toUpperCase();
+    if (normalized == normalizedQuery) return 0;
+    if (normalized.startsWith(normalizedQuery)) return 1;
+    return 2;
+  }
+
+  return filtered.toList()..sort((left, right) {
+    final rank = matchRank(left).compareTo(matchRank(right));
+    return rank != 0 ? rank : left.compareTo(right);
+  });
+}
+
+@visibleForTesting
+String? tradingPerpetualSymbolAt(
+  List<String> symbols,
+  String query,
+  int index,
+) {
+  final filtered = tradingFilterPerpetualSymbols(symbols, query);
+  if (index < 0 || index >= filtered.length) return null;
+  return filtered[index];
+}
+
 extension _TradingDroneMarketScan on _TradingDroneScreenState {
   Future<void> _loadPerpetualSymbols({required bool silent}) async {
     if (_loadingPerpSymbols) return;
@@ -61,19 +92,17 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
       if (!mounted) return;
       if (_availablePerpSymbols.isEmpty) return;
     }
+    final searchController = TextEditingController();
     final selected = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
-        var query = '';
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            final filtered = _availablePerpSymbols
-                .where((symbol) {
-                  if (query.isEmpty) return true;
-                  return symbol.toLowerCase().contains(query.toLowerCase());
-                })
-                .toList(growable: false);
+            final filtered = tradingFilterPerpetualSymbols(
+              _availablePerpSymbols,
+              searchController.text,
+            );
             return SafeArea(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -86,6 +115,7 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
+                      controller: searchController,
                       autofocus: true,
                       decoration: InputDecoration(
                         labelText: 'Search perpetual symbol',
@@ -97,11 +127,7 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onChanged: (value) {
-                        setSheetState(() {
-                          query = value.trim();
-                        });
-                      },
+                      onChanged: (_) => setSheetState(() {}),
                     ),
                     const SizedBox(height: 10),
                     SizedBox(
@@ -120,10 +146,18 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
                                   final symbol = filtered[index];
                                   return ListTile(
                                     title: Text(symbol),
-                                    onTap:
-                                        () => Navigator.of(
-                                          sheetContext,
-                                        ).pop(symbol),
+                                    onTap: () {
+                                      final tappedSymbol =
+                                          tradingPerpetualSymbolAt(
+                                            _availablePerpSymbols,
+                                            searchController.text,
+                                            index,
+                                          );
+                                      if (tappedSymbol == null) return;
+                                      Navigator.of(
+                                        sheetContext,
+                                      ).pop(tappedSymbol);
+                                    },
                                   );
                                 },
                               ),
@@ -136,6 +170,7 @@ extension _TradingDroneMarketScan on _TradingDroneScreenState {
         );
       },
     );
+    searchController.dispose();
     if (!mounted || selected == null || selected.isEmpty) return;
     _updateState(() {
       _symbolController.text = selected;
