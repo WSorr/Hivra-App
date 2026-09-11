@@ -82,11 +82,15 @@ docs/checklists/release-manual-signoff-log.md
 
 ## Trading Drone (Observability Gate)
 
-- [ ] `situational` run produces deterministic decision envelope hash (`drone.decision.envelope`).
-- [ ] `interactive` cycle on same fixture input produces matching decision hash (no drift).
-- [ ] Risk-block path is exercised and logs `risk_blocked` with deterministic reason code.
-- [ ] Retry path is exercised (transient failure) and execution envelope is written.
-- [ ] Receipt path is visible (`drone.execution.envelope`) and hash is traceable in logs.
+- [ ] The packaged artifact exposes both READY and BLOCKED decisions without
+      converting a blocked decision into executable fields.
+- [ ] Risk rejection is exercised without a provider effect.
+- [ ] One exact successful provider receipt is observed for the submitted
+      effect; an intent or execution envelope alone is not a receipt.
+- [ ] After app restart, the same effect is reconciled from retained ownership
+      evidence.
+- [ ] Repeating the same semantic operation does not create a second provider
+      effect.
 - [ ] Trading drone parity checklist is completed: `docs/checklists/trading-drone-spec-runtime-parity.md`.
 
 ## Moltbook Ambassador

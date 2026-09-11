@@ -77,3 +77,7 @@ pluginization happens there. Hivra 2.0 remains design-only until an explicit
 implementation decision selects its new UI and composition shell. Neither
 line may create a second Core, Ledger, truth projection, delivery lifecycle, or
 effect route.
+
+V2 design may make these laws mechanically stricter in response to proven 1.x
+failure modes. It may not rename, reorder, or replace them with a second set of
+architectural principles.

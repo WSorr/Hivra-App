@@ -7,8 +7,10 @@ Status date: 2026-09-11
 - Maintained runtime: Hivra 1.x.
 - Current runtime source checkpoint is the protected `main` HEAD; Git and the
   required repository gate retain the exact integration identity.
-- Published prerelease: `v1.0.3-test19` at `dabeaa7`; the exact macOS and
-  Android artifacts have manual signoff.
+- Published prerelease: `v1.0.3-test19` at `dabeaa7`; its published macOS and
+  Android digests match the retained artifact rows. A documentation audit
+  invalidated the Trading Smoke field for both platforms because the retained
+  evidence proves a paused scan, not the complete Trading acceptance contract.
 - The runtime is a modular monolith around the Rust Core, append-only Ledger,
   FFI boundary, WASM sandbox, and one Flutter App Shell. Installed manifest
   profiles select Chat, Moltbook, and Trading workspaces without a direct
@@ -28,7 +30,9 @@ Status date: 2026-09-11
   authorization now fits the selected notional to the current risk budget
   before signing; packaged macOS evidence produced exactly one bounded live
   VPS effect while the application was closed, then stopped at its effect cap.
-- Trading Remote Runner acceptance remains complete at `b88a886`. Exact
+- Trading Remote Runner acceptance at `b88a886` remains historical evidence for
+  that source state. Current `main` includes later Trading lifecycle changes and
+  is not release-qualified by the `test19` Trading evidence. Exact
   managed-position restart reconciliation is proven on macOS; Android evidence
   for that path remains open.
 - Capsule-scoped secret owners retain credentials. AI unlock remains
@@ -54,10 +58,11 @@ V2 must not become a second runtime.
 
 ## Open Product Evidence
 
-1. Complete Moltbook Bounded-mode restart, deduplication, limit, Capsule-scope,
+1. Qualify the next release source with complete packaged Trading evidence on
+   macOS and Android: deterministic ready/blocked paths, provider receipt,
+   restart reconciliation, and duplicate suppression.
+2. Complete Moltbook Bounded-mode restart, deduplication, limit, Capsule-scope,
    and macOS/Android evidence required by its lifecycle contract.
-2. Complete Android evidence for exact Trading managed-position restart
-   reconciliation.
 3. Reduce hardcoded capability activation and Flutter compatibility surfaces
    only while migrating a proven product capability into the Person Runtime
    boundary; no standalone architecture cleanup is selected.

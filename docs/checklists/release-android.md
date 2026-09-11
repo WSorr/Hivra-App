@@ -29,10 +29,11 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Invitation accept succeeds.
 - [ ] Backup/recovery entry path is reachable and operational.
 - [ ] Trading Drone smoke gate completed:
-  - `situational` decision envelope hash captured
-  - `interactive` parity hash verified
-  - risk-block and retry paths exercised
-  - execution envelope receipt hash captured
+  - packaged READY and BLOCKED paths exercised
+  - risk rejection exercised
+  - successful provider receipt observed for the exact effect
+  - the same effect reconciled after app restart
+  - duplicate attempt suppressed without a second provider effect
 - [ ] Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log.md` (via `tools/release/record_trading_drone_evidence.sh`).
 - [ ] Trading Drone evidence coverage validated for this build tag via `tools/release/check_trading_drone_evidence.sh --build-tag <version-tag>`.
 - [ ] Trading drone spec/runtime parity checklist was completed (`docs/checklists/trading-drone-spec-runtime-parity.md`).

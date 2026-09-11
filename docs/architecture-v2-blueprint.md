@@ -64,39 +64,47 @@ No 2.0 component replaces a 1.x component until its owner, contract,
 deterministic tests, migration rule, removal target, and rollback boundary are
 all explicit.
 
-## 3. Refined Hivra Laws
+## 3. Canonical Laws And V2 Structural Requirements
 
-The three laws remain unchanged in count, but 2.0 makes them mechanically
-testable.
+`product-axis.md` remains the sole owner of the three laws. V2 inherits them
+without renaming or restating a second set. The requirements below are stricter
+design consequences learned from concrete 1.x failure modes.
 
-### Law 1: Modularity means one capability, one owner, one public contract
+### 3.1 Package-Level Capability Modularity
 
+- One capability has one package-level owner and one public contract.
 - A capability owns its commands, facts, projections, and effect requests.
+- Installable product behavior lives in external capability packages and uses
+  the capability-scoped WASM host ABI; plugin business semantics do not remain
+  compiled into the App Shell.
 - A DTO has no independent architectural status. It belongs to the contract
   that produces or consumes it.
 - A facade is valid only when it hides a capability implementation. A facade
   that merely exposes an internal service graph is a service locator.
-- Adding a replacement requires naming and removing or sealing the old entry
-  path.
 
-### Law 2: Determinism means one fact history and one effect lifecycle
+### 3.2 Deterministic Truth And Effect Lifecycles
 
-- Confirmed capsule state is reconstructed from one ledger history.
+- Confirmed Capsule state is reconstructed from one Ledger history.
+- Capability operational state, provider responses, caches, and UI projections
+  cannot become parallel domain truth.
 - Pure decisions consume explicit input values and produce canonical output.
 - Effects use stable operation ids and one durable lifecycle owner.
-- Timeout, retry, refresh, restart, or capsule switch cannot create a second
-  operation or a second truth.
-- Wall clock, randomness, network state, and provider responses are inputs or
-  evidence, never hidden dependencies.
+- Timeout, retry, refresh, restart, reconnect, or Capsule switching cannot
+  create a second operation, result path, or truth interpretation.
+- Wall clock, randomness, network state, and provider responses are explicit
+  inputs or evidence, never hidden dependencies.
 
-### Law 3: Dependencies point toward stable contracts; composition stays at the edge
+### 3.3 Edge Composition And Replacement
 
 - Domain code depends on no runtime or adapter implementation.
 - Use cases depend on domain contracts and effect ports.
 - Adapters implement ports without learning domain policy.
-- UI and WASM drones call capability APIs; they do not assemble internals.
-- The platform composition root is the only owner allowed to connect concrete
-  implementations.
+- UI and WASM capabilities call public capability APIs; they do not assemble
+  internal services.
+- Concrete implementations are connected only at the application or platform
+  composition edge.
+- A replacement removes or seals its old entry path in the same migration
+  unit; V2 does not preserve a parallel 1.x capability route.
 
 ### Cross-Cutting Invariant: Cryptographic Agility
 

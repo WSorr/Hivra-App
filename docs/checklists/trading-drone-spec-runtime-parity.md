@@ -59,9 +59,14 @@ Legend:
 
 ## Hivra Laws (Non-Negotiable)
 
-- [ ] Modularity: decision/risk/execution logic stays in services; UI is projection-only.
-- [ ] Determinism: same normalized snapshot + same policy => same decision hash.
-- [ ] Downward dependencies: `UI -> app services -> plugin host API -> adapter` only.
+- [ ] Domain truth remains in Ledger/Core projections; market observations,
+      account evidence, and Trading journals remain operational evidence.
+- [ ] Dependencies point downward; UI projects state, the capability owns
+      product decisions, and adapters do not acquire policy authority.
+- [ ] One Trading action has one owner, stable identity, and canonical result
+      path across local, remote, retry, restart, and reconciliation flows.
+- [ ] Deterministic Trading rule: the same normalized snapshot and policy
+      produce the same decision hash.
 
 ## Spec vs Runtime Matrix
 
