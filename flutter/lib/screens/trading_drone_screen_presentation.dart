@@ -317,7 +317,8 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
             title: 'Trading Modes',
             subtitle:
                 'Choose one market. This computer can watch while Hivra stays '
-                'open, or a trusted VPS Runner can watch around the clock. '
+                'open, or a trusted VPS Runner can watch while its signed '
+                'session remains active. '
                 'Market Scan below is optional.',
             children: [
               Wrap(
@@ -378,7 +379,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Run on VPS · 24/7',
+                            'Run on VPS',
                             style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 3),
@@ -521,7 +522,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             : const Icon(Icons.verified_user_outlined),
                     label: Text(
                       _exportingRemoteMandate
-                          ? 'Updating 24/7 session'
+                          ? 'Updating VPS session'
                           : remoteSessionActionLabel,
                     ),
                   ),
