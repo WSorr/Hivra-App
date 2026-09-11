@@ -37,26 +37,9 @@ The following product foundations are implemented and retained:
   Chat-signal route;
 - guarded repository integration and exact-artifact release signoff.
 
-The current public prerelease is `v1.0.3-test19`. The invalid `test17` artifact
-evidence remains immutable history and cannot authorize another publication.
-
 Trading Remote Runner product control exposes the exact verified signed session
 and resumes it after pause without issuing replacement authority. Reconciliation
 keeps internal provider identifiers behind an explicit details disclosure.
-
-## Current Product Convergence
-
-The 1.x host is a modular monolith around a real Core, Ledger, FFI boundary,
-and WASM sandbox. Product logic is still compiled into Flutter, while installed
-manifest profiles now control which product workspace can be opened.
-
-The remaining migration direction is a thin App Shell over the proven Person
-Runtime API. Chat, Moltbook, and Trading capability ownership are complete, and
-workspace navigation now has one App Shell owner without a duplicate Settings
-entry or plugin-screen runtime composition path.
-
-Every migration must remove or seal the host path it replaces. V2 does not
-receive a duplicated runtime.
 
 ## Design-Only Hivra 2.0 Evidence
 

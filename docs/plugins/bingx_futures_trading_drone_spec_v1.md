@@ -11,7 +11,8 @@ Define a deterministic trading-drone spec for BingX futures that:
 
 - computes TVH (entry setup) from a fixed market-data snapshot,
 - produces a deterministic intent envelope for capsule peers and runtime execution,
-- preserves Hivra laws: modularity, determinism, dependencies strictly downward.
+- preserves the three laws owned by `docs/product-axis.md` and the additional
+  deterministic strategy contract defined here.
 
 This document describes the full v1 runtime path:
 
@@ -21,17 +22,21 @@ This document describes the full v1 runtime path:
 
 ---
 
-## 2. Architecture Contract (Hivra Laws)
+## 2. Architecture Contract
 
-1. Modularity:
-   - Drone logic lives in plugin/application boundary.
-   - Core invariants/events are untouched.
-2. Determinism:
-   - Same normalized snapshot + same config => same TVH output hash.
-   - Non-deterministic sources (wall clock, random, mutable globals) are forbidden in evaluation.
-3. Downward dependencies only:
-   - UI -> App services -> plugin host API -> transport adapter.
-   - Drone must not create reverse dependency into Core/Engine internals.
+The canonical laws are not redefined by this capability:
+
+1. Market observations, provider evidence, and Trading journals remain outside
+   Core and Ledger truth.
+2. Dependencies point downward from UI through the capability boundary to
+   effect ports and provider adapters; no reverse dependency into Core or
+   Engine internals is allowed.
+3. One Trading action converges on one owner, stable identity, and canonical
+   result path across local, remote, retry, restart, and reconciliation flows.
+
+Trading additionally requires deterministic evaluation: the same normalized
+snapshot and configuration produce the same TVH output hash. Wall clock,
+randomness, and mutable globals are forbidden hidden inputs.
 
 ### 2.1 Operation Modes (mandatory)
 

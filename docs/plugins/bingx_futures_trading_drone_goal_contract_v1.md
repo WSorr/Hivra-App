@@ -10,23 +10,23 @@ criteria for Trading Drone work. It is not a progress journal. Current work is
 selected in `docs/development-control.md`; completed implementation history
 belongs to Git, tests, and release evidence.
 
-## 2. Three Hivra Laws (Mandatory)
+## 2. Canonical Laws And Trading Consequences
 
-1. Modularity
-   - decision, risk, authority, execution, and reconciliation remain in their
-     named owners;
-   - UI projects state and dispatches intent only.
-2. Determinism
-   - identical normalized market input and policy produce the same decision
-     payload and hash;
-   - replay of one exact authorized intent cannot produce a second effect.
-3. Dependencies strictly downward
-   - UI calls the application module;
-   - the module composes existing owners;
-   - adapters implement provider effects without acquiring product authority.
+The three laws are defined only in `docs/product-axis.md`. For Trading they
+require:
 
-One effect has one use case and one owner. Local, remote, manual, and scheduled
-entry paths may differ only as adapters into that use case.
+- market observations, account evidence, operational journals, and exchange
+  receipts never become Core or Ledger truth;
+- UI calls the capability module, use cases depend on bounded ports, and
+  provider adapters execute requests without acquiring product authority;
+- decision, risk, authority, execution, and reconciliation converge on one
+  named owner and one canonical result path for each action.
+
+Deterministic strategy evaluation is an additional Trading contract: identical
+normalized market input and policy produce the same decision payload and hash.
+Replay of one exact authorized intent cannot produce a second effect. Local,
+remote, manual, and scheduled triggers may differ only before they converge on
+the same effect owner.
 
 ## 3. Source-of-Truth Stack (Order of Authority)
 
