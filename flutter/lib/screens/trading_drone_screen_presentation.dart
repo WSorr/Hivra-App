@@ -437,9 +437,10 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       onPressed:
                           _runningIntent ||
                                   !_tradingControlLoaded ||
-                                  _savingTradingControl
+                                  _savingTradingControl ||
+                                  _exportingRemoteRevocation
                               ? null
-                              : () => unawaited(_changeDroneEnabled(false)),
+                              : () => unawaited(_emergencyPauseTrading()),
                       icon: const Icon(Icons.pause_circle_outline_rounded),
                       label: const Text('Emergency pause'),
                     ),

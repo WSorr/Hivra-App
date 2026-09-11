@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-10
+Status date: 2026-09-11
 
 ## Current State
 
@@ -24,7 +24,10 @@ Status date: 2026-09-10
   directly from one selected market and obtains replacement bounded authority
   in the same action when selection changes; signal scan remains optional.
   Local and remote sessions are mutually exclusive and reuse the existing
-  execution, effect, reconciliation, credential, and mandate owners.
+  execution, effect, reconciliation, credential, and mandate owners. Remote
+  authorization now fits the selected notional to the current risk budget
+  before signing; packaged macOS evidence produced exactly one bounded live
+  VPS effect while the application was closed, then stopped at its effect cap.
 - Trading Remote Runner acceptance remains complete at `b88a886`. Exact
   managed-position restart reconciliation is proven on macOS; Android evidence
   for that path remains open.

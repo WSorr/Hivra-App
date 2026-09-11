@@ -204,6 +204,53 @@ class BingxFuturesOrderSizingService {
     );
   }
 
+  Future<
+    ({
+      num authorizedNotionalQuote,
+      num riskFittedNotionalQuote,
+      num safeNotionalQuote,
+      BingxFuturesOrderSizingResult? sizing,
+    })
+  >
+  fitAuthorizedMaximumNotional({
+    required String symbol,
+    required num selectedMaximumNotionalQuote,
+    required num accountEquityQuote,
+    required num maximumRiskPercent,
+    required num stopLossPercent,
+    String? referencePriceDecimal,
+  }) async {
+    if (selectedMaximumNotionalQuote <= 0) {
+      throw ArgumentError('Selected maximum notional must be positive');
+    }
+    final riskFit = await fitMaximumNotional(
+      symbol: symbol,
+      accountEquityQuote: accountEquityQuote,
+      maximumRiskPercent: maximumRiskPercent,
+      stopLossPercent: stopLossPercent,
+      referencePriceDecimal: referencePriceDecimal,
+    );
+    final authorizedNotionalQuote = math.min(
+      selectedMaximumNotionalQuote,
+      riskFit.fittedNotionalQuote,
+    );
+    final usesRiskFit = authorizedNotionalQuote == riskFit.fittedNotionalQuote;
+    final sizing =
+        usesRiskFit
+            ? riskFit.sizing
+            : await size(
+              symbol: symbol,
+              maximumNotionalQuote: authorizedNotionalQuote,
+              referencePriceDecimal: referencePriceDecimal,
+            );
+    return (
+      authorizedNotionalQuote: authorizedNotionalQuote,
+      riskFittedNotionalQuote: riskFit.fittedNotionalQuote,
+      safeNotionalQuote: riskFit.safeNotionalQuote,
+      sizing: sizing,
+    );
+  }
+
   Future<BingxFuturesOrderSizingResult> size({
     required String symbol,
     required num maximumNotionalQuote,
