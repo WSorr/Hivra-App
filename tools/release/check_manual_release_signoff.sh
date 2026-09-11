@@ -68,17 +68,27 @@ check_platform() {
   row="$(find_row "$platform")"
   [ -n "$row" ] || die "missing $platform signoff row for $BUILD_TAG in $LOG_FILE"
 
-  local date artifact manual trading moltbook lifetime ai_surface signer
+  local field_count
+  field_count="$(awk -F'|' '{ print NF }' <<< "$row")"
+  [ "$field_count" -eq 18 ] ||
+    die "$platform signoff row has a malformed or retired field layout"
+
+  local date artifact manual trading_decision trading_risk trading_receipt
+  local trading_restart trading_dedupe moltbook lifetime ai_surface signer
   local artifact_sha256
   date="$(field_value "$row" 3)"
   artifact="$(field_value "$row" 5)"
   artifact_sha256="$(field_value "$row" 6)"
   manual="$(field_value "$row" 7)"
-  trading="$(field_value "$row" 8)"
-  moltbook="$(field_value "$row" 9)"
-  lifetime="$(field_value "$row" 10)"
-  ai_surface="$(field_value "$row" 11)"
-  signer="$(field_value "$row" 12)"
+  trading_decision="$(field_value "$row" 8)"
+  trading_risk="$(field_value "$row" 9)"
+  trading_receipt="$(field_value "$row" 10)"
+  trading_restart="$(field_value "$row" 11)"
+  trading_dedupe="$(field_value "$row" 12)"
+  moltbook="$(field_value "$row" 13)"
+  lifetime="$(field_value "$row" 14)"
+  ai_surface="$(field_value "$row" 15)"
+  signer="$(field_value "$row" 16)"
 
   [ -n "$date" ] || die "$platform signoff row has empty date"
   [ -n "$artifact" ] || die "$platform signoff row has empty artifact"
@@ -88,7 +98,16 @@ check_platform() {
     die "$platform signoff date must be UTC ISO-8601 seconds: $date"
 
   status_is_pass "$manual" || die "$platform Manual Smoke must be PASS"
-  status_is_pass "$trading" || die "$platform Trading Smoke must be PASS"
+  status_is_pass "$trading_decision" ||
+    die "$platform Trading READY/BLOCKED must be PASS"
+  status_is_pass "$trading_risk" ||
+    die "$platform Trading Risk Rejection must be PASS"
+  status_is_pass "$trading_receipt" ||
+    die "$platform Trading Provider Receipt must be PASS"
+  status_is_pass "$trading_restart" ||
+    die "$platform Trading Restart Reconciliation must be PASS"
+  status_is_pass "$trading_dedupe" ||
+    die "$platform Trading Duplicate Suppression must be PASS"
   status_is_pass "$moltbook" || die "$platform Moltbook Smoke must be PASS"
   status_is_pass "$lifetime" || die "$platform User Lifetime must be PASS"
 
@@ -126,11 +145,12 @@ self_test() {
   cat > "$tmp" <<'EOF'
 # Release Manual Signoff Log
 
-| Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | PASS | PASS | PASS | PASS | codex | self-test |
-| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | PASS | PASS | PASS | N/A | codex | self-test |
-| v-invalid | 2026-01-01T00:00:02Z | macOS | hivra_app-v-invalid-macos-universal.zip | 1111111111111111111111111111111111111111111111111111111111111111 | INVALID | INVALID | INVALID | INVALID | INVALID | codex | invalidated historical evidence |
+| Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading READY/BLOCKED | Trading Risk Rejection | Trading Provider Receipt | Trading Restart Reconciliation | Trading Duplicate Suppression | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | codex | self-test |
+| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | N/A | codex | self-test |
+| v-invalid | 2026-01-01T00:00:02Z | macOS | hivra_app-v-invalid-macos-universal.zip | 1111111111111111111111111111111111111111111111111111111111111111 | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | codex | invalidated historical evidence |
+| v-retired | 2026-01-01T00:00:03Z | macOS | hivra_app-v-retired-macos-universal.zip | 2222222222222222222222222222222222222222222222222222222222222222 | PASS | PASS | PASS | PASS | PASS | codex | retired broad Trading Smoke layout |
 EOF
 
   HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
@@ -150,6 +170,30 @@ EOF
     rm -f "$tmp"
     die "self-test expected invalidated evidence to fail"
   fi
+
+  if HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
+    --build-tag v-retired \
+    --platform macOS >/dev/null 2>&1; then
+    rm -f "$tmp"
+    die "self-test expected retired broad Trading Smoke layout to fail"
+  fi
+
+  local field mutated
+  for field in 8 9 10 11 12; do
+    mutated="$(mktemp)"
+    awk -F'|' -v OFS='|' -v field="$field" '
+      $2 ~ /^[[:space:]]*v-selftest[[:space:]]*$/ &&
+      $4 ~ /^[[:space:]]*macOS[[:space:]]*$/ { $field = " INVALID " }
+      { print }
+    ' "$tmp" > "$mutated"
+    if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
+      --build-tag v-selftest \
+      --platform macOS >/dev/null 2>&1; then
+      rm -f "$tmp" "$mutated"
+      die "self-test expected Trading field $field mutation to fail"
+    fi
+    rm -f "$mutated"
+  done
 
   rm -f "$tmp"
   echo "PASS manual-signoff: self-test"

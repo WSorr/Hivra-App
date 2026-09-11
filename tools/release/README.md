@@ -50,6 +50,10 @@ This directory contains deterministic release helpers for Hivra.
 - `check_manual_release_signoff.sh`
   - Verifies the canonical manual signoff log for one build tag.
   - GitHub publication requires signed-off rows for both macOS and Android.
+  - Trading acceptance is fail-closed across five separate fields: packaged
+    READY/BLOCKED behavior, risk rejection, provider receipt, restart
+    reconciliation, and duplicate suppression. A broad Trading `PASS` from
+    the retired table format is rejected.
     - `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform all`
 
 - `publish_github_release.sh`
