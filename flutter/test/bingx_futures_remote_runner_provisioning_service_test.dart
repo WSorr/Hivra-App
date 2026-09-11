@@ -34,7 +34,7 @@ void main() {
     );
   });
 
-  test('bundle upgrade refreshes evidence before exporting its anchor', () {
+  test('bundle upgrade pauses inactive boot-enabled session first', () {
     final script = const DartSshBingxFuturesRemoteRunnerHostPort()
         .buildBootstrapScriptForTesting(
           profileId: 'a' * 64,
@@ -42,13 +42,27 @@ void main() {
           controlBytes: Uint8List.fromList(utf8.encode('#!/bin/sh\n')),
         );
 
+    final activeCheck = script.indexOf(
+      'systemctl show -p ActiveState --value '
+      'hivra-trading-deterministic-session.service',
+    );
+    final pause = script.indexOf('--pause-prepared-session-service');
     final upgrade = script.indexOf('--upgrade-disabled');
     final initialize = script.indexOf('--initialize-disabled', upgrade);
     final export = script.indexOf('--export-anchor', initialize);
 
+    expect(activeCheck, greaterThanOrEqualTo(0));
+    expect(pause, greaterThan(activeCheck));
+    expect(upgrade, greaterThan(pause));
     expect(upgrade, greaterThanOrEqualTo(0));
     expect(initialize, greaterThan(upgrade));
     expect(export, greaterThan(initialize));
+    expect(
+      script,
+      contains(
+        'Remote Runner update requires the current session to be paused or finished',
+      ),
+    );
   });
 
   test(

@@ -972,6 +972,19 @@ print(runner_key_id)
 PY
 )"
   if ! cmp -s "\$bundle/ARTIFACT-MANIFEST.v2" /opt/hivra/trading-public-shadow/ARTIFACT-MANIFEST.v2; then
+    installed_active="\$(systemctl show -p ActiveState --value hivra-trading-deterministic-session.service)"
+    case "\$installed_active" in
+      inactive) ;;
+      *) echo "Remote Runner update requires the current session to be paused or finished" >&2; exit 1 ;;
+    esac
+    installed_enabled="\$(systemctl is-enabled hivra-trading-deterministic-session.service 2>/dev/null || true)"
+    case "\$installed_enabled" in
+      enabled)
+        /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --pause-prepared-session-service /opt/hivra/trading-public-shadow >/dev/null
+        ;;
+      linked|disabled) ;;
+      *) echo "Remote Runner update refused unexpected session enablement" >&2; exit 1 ;;
+    esac
     "\$bundle/hivra-trading-runner-lifecycle" --upgrade-disabled "\$bundle" --expected-runner-key-id "\$runner_key_id"
     /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --initialize-disabled /opt/hivra/trading-public-shadow >/dev/null
   fi
