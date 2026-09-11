@@ -320,6 +320,55 @@ void main() {
       isFalse,
     );
     expect(tradingRemoteRunnerCanResume('$paused active=inactive'), isFalse);
+
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: true,
+        hasVerifiedSession: true,
+        statusWire: running,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: true,
+        hasVerifiedSession: true,
+        statusWire: paused,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: true,
+        hasVerifiedSession: true,
+        statusWire: terminal,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: true,
+        hasVerifiedSession: true,
+        statusWire: 'malformed',
+      ),
+      isTrue,
+    );
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: false,
+        hasVerifiedSession: true,
+        statusWire: running,
+      ),
+      isFalse,
+    );
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: true,
+        hasVerifiedSession: false,
+        statusWire: running,
+      ),
+      isFalse,
+    );
   });
 
   test('verified Runner session summary names exact market and limits', () {

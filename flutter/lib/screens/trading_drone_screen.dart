@@ -1101,9 +1101,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       final credentials = await _ensureCredentialsLoaded();
       final capsuleRootHex = _module.orderTrackingStore.activeCapsuleRootHex;
       final symbol = _symbolController.text.trim().toUpperCase();
-      final maxNotional = double.tryParse(
-        _maxNotionalUsdtController.text.trim(),
-      );
+      var maxNotional = double.tryParse(_maxNotionalUsdtController.text.trim());
       if (credentials == null || capsuleRootHex == null) {
         await _showSnack('Capsule and BingX credentials are required.');
         return false;
@@ -1112,9 +1110,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         await _showSnack('Symbol and positive max notional are required.');
         return false;
       }
+      final requestedMaxNotional = maxNotional;
+      final authorizedMaxNotional = await _fitMandateMaxNotional(
+        credentials: credentials,
+        symbol: symbol,
+        selectedMaxNotional: requestedMaxNotional,
+      );
+      if (authorizedMaxNotional == null) return false;
+      maxNotional = authorizedMaxNotional;
       final confirmed = await _confirmTradingMandate(
         symbol: symbol,
         maxNotional: maxNotional,
+        requestedMaxNotional: requestedMaxNotional,
       );
       if (!confirmed) return false;
       final now = DateTime.now().toUtc();
@@ -1162,7 +1169,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Future<bool> _confirmTradingMandate({
     required String symbol,
     required double maxNotional,
+    required double requestedMaxNotional,
   }) async {
+    final wasReduced = maxNotional < requestedMaxNotional;
     final result = await showDialog<bool>(
       context: context,
       builder:
@@ -1174,6 +1183,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               'Symbol: $symbol\n'
               'Mode: ${_useTestOrderEndpoint ? "test" : "live"}\n'
               'Max order: ${maxNotional.toStringAsFixed(2)} USDT\n'
+              '${wasReduced ? "Risk fit: reduced from ${requestedMaxNotional.toStringAsFixed(2)} USDT to the current account limit.\n" : "Risk fit: verified against the current account snapshot.\n"}'
               'Risk: ${_executionRiskPolicy.maxRiskPerTradePercent}% per trade, '
               '${_executionRiskPolicy.maxDailyLossPercent}% daily\n'
               'Maximum orders: ${tradingOrderBudgetLabel(_maxEffects)}\n'
@@ -1195,6 +1205,82 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           ),
     );
     return result == true;
+  }
+
+  Future<double?> _fitMandateMaxNotional({
+    required BingxFuturesApiCredentials credentials,
+    required String symbol,
+    required double selectedMaxNotional,
+  }) async {
+    try {
+      final riskInput = await _module.exchangeRiskInput.read(
+        exchangeService: _module.exchangeService,
+        riskHistoryService: _module.riskHistory,
+        credentials: credentials,
+        nowUtc: DateTime.now().toUtc(),
+      );
+      final equity = num.tryParse(
+        riskInput.accountEquityQuoteDecimal?.trim() ?? '',
+      );
+      if (equity == null || !equity.isFinite || equity <= 0) {
+        final reason = riskInput.firstUnavailableReason;
+        await _module.uiLog.log(
+          'bingx.risk.authorization_fit.blocked',
+          'symbol=$symbol reason=account_risk_unavailable '
+              'exchange_reason=${reason ?? "-"} effect=false',
+        );
+        await _showSnack(
+          reason == null
+              ? 'Cannot authorize trading: BingX account risk is unavailable.'
+              : 'Cannot authorize trading: BingX account risk is unavailable ($reason).',
+          seconds: 5,
+        );
+        return null;
+      }
+      final fit = await _module.orderSizing.fitAuthorizedMaximumNotional(
+        symbol: symbol,
+        selectedMaximumNotionalQuote: selectedMaxNotional,
+        accountEquityQuote: equity,
+        maximumRiskPercent: _executionRiskPolicy.maxRiskPerTradePercent,
+        stopLossPercent: _stopLossPercent,
+      );
+      final sizing = fit.sizing;
+      if (sizing == null ||
+          sizing.status != BingxFuturesOrderSizingStatus.sized ||
+          sizing.quantityDecimal == null) {
+        final reason = sizing?.reasonMessage ?? 'Order sizing is unavailable.';
+        await _module.uiLog.log(
+          'bingx.risk.authorization_fit.blocked',
+          'symbol=$symbol reason=${sizing?.reasonCode ?? "sizing_unavailable"} '
+              'selected_max=${_formatDecimal(selectedMaxNotional, scale: 4)} '
+              'risk_max=${_formatDecimal(fit.riskFittedNotionalQuote, scale: 4)} '
+              'effect=false',
+        );
+        await _showSnack('Cannot authorize trading: $reason', seconds: 5);
+        return null;
+      }
+      final authorized = fit.authorizedNotionalQuote.toDouble();
+      final authorizedText = authorized.toString();
+      _maxNotionalUsdtController.text = authorizedText;
+      _quantityController.text = sizing.quantityDecimal!;
+      await _module.uiLog.log(
+        'bingx.risk.authorization_fit',
+        'symbol=$symbol '
+            'selected_max=${_formatDecimal(selectedMaxNotional, scale: 4)} '
+            'authorized_max=$authorizedText '
+            'risk_max=${_formatDecimal(fit.riskFittedNotionalQuote, scale: 4)} '
+            'safe_max=${_formatDecimal(fit.safeNotionalQuote, scale: 4)} '
+            'effect=false',
+      );
+      return double.parse(authorizedText);
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.risk.authorization_fit.error',
+        'symbol=$symbol error=$error effect=false',
+      );
+      await _showSnack('Cannot authorize trading: $error', seconds: 5);
+      return null;
+    }
   }
 
   Future<void> _restoreTradingWorkspaceState() async {

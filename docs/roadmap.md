@@ -29,6 +29,8 @@ The following product foundations are implemented and retained:
   and Chat module;
 - Trading decision, bounded execution, reconciliation, and Remote Runner
   acceptance;
+- risk-fitted Remote Runner authorization proven by one bounded live effect
+  while the packaged application was closed, with no duplicate effect;
 - exact managed-position post-trade reconciliation with durable net PnL;
 - dedicated Trading capability ownership with one Capsule-local pending-intent
   cycle, direct symbol-to-local-runner start, and no peer-selected or

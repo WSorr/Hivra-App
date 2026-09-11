@@ -1,6 +1,18 @@
 part of 'trading_drone_screen.dart';
 
 @visibleForTesting
+bool tradingRemoteRunnerMayHoldAuthority({
+  required bool configured,
+  required bool hasVerifiedSession,
+  required String? statusWire,
+}) {
+  if (!configured || !hasVerifiedSession) return false;
+  final fields = _tradingRemoteRunnerStatusFields(statusWire ?? '');
+  if (fields == null) return true;
+  return !{'completed', 'stopped', 'expired'}.contains(fields['session_state']);
+}
+
+@visibleForTesting
 String? tradingRemoteSessionStopLossNotice({
   required double stopLossPercent,
   required bool leverageVerified,
@@ -23,6 +35,61 @@ String? tradingRemoteSessionStopLossNotice({
 }
 
 extension _TradingDroneRemoteSession on _TradingDroneScreenState {
+  Future<void> _emergencyPauseTrading() async {
+    if (_savingTradingControl || _exportingRemoteRevocation) return;
+    final remoteMayHoldAuthority = tradingRemoteRunnerMayHoldAuthority(
+      configured: _remoteRunnerConfigured,
+      hasVerifiedSession: _remoteRunnerSession != null,
+      statusWire: _remoteRunnerStatusWire,
+    );
+    _updateState(() => _exportingRemoteRevocation = true);
+    Object? localError;
+    Object? remoteError;
+    try {
+      try {
+        await _changeDroneEnabled(false, requirePersistence: true);
+      } catch (error) {
+        localError = error;
+      }
+      if (remoteMayHoldAuthority) {
+        try {
+          final profiles =
+              await _module.remoteRunnerProvisioning.loadProfiles();
+          if (profiles.length != 1) {
+            throw StateError('Exactly one Capsule Runner is required.');
+          }
+          await _revokeRemoteSession(profiles.single);
+          await _refreshRemoteRunnerSummary();
+        } catch (error) {
+          remoteError = error;
+        }
+      }
+
+      if (localError == null && remoteError == null) {
+        await _showSnack(
+          remoteMayHoldAuthority
+              ? 'Trading authority revoked on this computer and VPS.'
+              : 'Trading authority revoked on this computer.',
+          seconds: 5,
+        );
+      } else {
+        await _module.uiLog.log(
+          'bingx.remote_session.emergency_pause.error',
+          'local_error=${localError ?? "-"} '
+              'remote_error=${remoteError ?? "-"} effect=false',
+        );
+        await _showSnack(
+          remoteError == null
+              ? 'Trading is paused, but local persistence was not confirmed: $localError'
+              : 'Trading is paused locally, but the VPS stop was not confirmed: $remoteError',
+          seconds: 6,
+        );
+      }
+    } finally {
+      if (mounted) _updateState(() => _exportingRemoteRevocation = false);
+    }
+  }
+
   Future<BingxFuturesRemoteMandateAdmission?> _loadVerifiedRemoteSession(
     BingxFuturesRemoteRunnerProfile profile,
   ) async {

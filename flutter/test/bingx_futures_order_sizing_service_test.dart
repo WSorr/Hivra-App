@@ -358,6 +358,59 @@ void main() {
       );
       expect(quoteCalls, 0);
     });
+
+    test(
+      'authorization reduces a selected cap to the current risk fit',
+      () async {
+        final service = BingxFuturesOrderSizingService(
+          exchange: _exchangeWithRules(
+            price: '100',
+            minimumQuantity: '0.01',
+            minimumNotional: '2',
+            quantityPrecision: 2,
+          ),
+        );
+
+        final result = await service.fitAuthorizedMaximumNotional(
+          symbol: 'BTC-USDT',
+          selectedMaximumNotionalQuote: 100,
+          accountEquityQuote: 40.4995,
+          maximumRiskPercent: 2,
+          stopLossPercent: 1,
+          referencePriceDecimal: '100',
+        );
+
+        expect(result.safeNotionalQuote, closeTo(80.999, 0.0000001));
+        expect(result.riskFittedNotionalQuote, closeTo(79.37902, 0.0000001));
+        expect(result.authorizedNotionalQuote, closeTo(79.37902, 0.0000001));
+        expect(result.sizing?.status, BingxFuturesOrderSizingStatus.sized);
+        expect(result.sizing?.quantityDecimal, '0.79');
+      },
+    );
+
+    test('authorization never increases a smaller selected cap', () async {
+      final service = BingxFuturesOrderSizingService(
+        exchange: _exchangeWithRules(
+          price: '100',
+          minimumQuantity: '0.01',
+          minimumNotional: '2',
+          quantityPrecision: 2,
+        ),
+      );
+
+      final result = await service.fitAuthorizedMaximumNotional(
+        symbol: 'BTC-USDT',
+        selectedMaximumNotionalQuote: 25,
+        accountEquityQuote: 40.4995,
+        maximumRiskPercent: 2,
+        stopLossPercent: 1,
+        referencePriceDecimal: '100',
+      );
+
+      expect(result.authorizedNotionalQuote, 25);
+      expect(result.sizing?.status, BingxFuturesOrderSizingStatus.sized);
+      expect(result.sizing?.quantityDecimal, '0.25');
+    });
   });
 }
 
