@@ -596,6 +596,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
       required String side,
       String? orderId,
       String? clientOrderId,
+      bool expectedTriggerLimit = false,
     }) async {
       final normalizedOrderId = orderId?.trim() ?? '';
       final normalizedClientOrderId = clientOrderId?.trim() ?? '';
@@ -665,6 +666,16 @@ class BingxFuturesExchangeExecutionUseCaseService {
         );
       }
       final providerStatus = order.status.trim().toUpperCase();
+      if (providerStatus == 'FILLED' &&
+          (expectedTriggerLimit ||
+              order.orderType.trim().toUpperCase() == 'TRIGGER_LIMIT') &&
+          !_hasPositiveExecution(order)) {
+        return (
+          status: BingxManagedOrderLifecycleStatus.unresolved,
+          order: order,
+          diagnostic: 'provider_trigger_activated_without_fill_evidence',
+        );
+      }
       final lifecycle = switch (providerStatus) {
         'NEW' || 'PARTIALLY_FILLED' => BingxManagedOrderLifecycleStatus.active,
         'FILLED' => BingxManagedOrderLifecycleStatus.filled,
@@ -916,6 +927,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
         side: record.side,
         orderId: record.orderId,
         clientOrderId: record.clientOrderId,
+        expectedTriggerLimit: _isTriggerLimitIntent(record.canonicalIntentJson),
       );
       var reconciledRecord = record.withLifecycle(
         status: evidence.status,
@@ -983,6 +995,9 @@ class BingxFuturesExchangeExecutionUseCaseService {
                 side: claim.side,
                 orderId: knownOrderId.isEmpty ? null : knownOrderId,
                 clientOrderId: claim.clientOrderId,
+                expectedTriggerLimit: _isTriggerLimitIntent(
+                  claim.canonicalIntentJson,
+                ),
               );
       final recoveredOrderId = evidence.order?.orderId.trim();
       claims[entry.key] = claim.withLifecycle(
@@ -1095,6 +1110,24 @@ class BingxFuturesExchangeExecutionUseCaseService {
   static bool _hasExactZeroExecution(BingxFuturesOpenOrder order) {
     final executed = double.tryParse(order.executedQuantityDecimal ?? '');
     return executed != null && executed.isFinite && executed == 0;
+  }
+
+  static bool _hasPositiveExecution(BingxFuturesOpenOrder order) {
+    final executed = double.tryParse(order.executedQuantityDecimal ?? '');
+    return executed != null && executed.isFinite && executed > 0;
+  }
+
+  static bool _isTriggerLimitIntent(String? canonicalIntentJson) {
+    try {
+      final decoded = jsonDecode(canonicalIntentJson ?? '');
+      if (decoded is! Map) return false;
+      final intent = Map<String, dynamic>.from(decoded);
+      return intent['entry_mode']?.toString().trim().toLowerCase() ==
+              'zone_pending' &&
+          intent['order_type']?.toString().trim().toLowerCase() == 'limit';
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<BingxFuturesRiskEvaluationResult> evaluateRisk({
