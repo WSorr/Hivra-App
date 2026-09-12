@@ -89,10 +89,10 @@ class MoltbookPublicChangeFeedStore {
   }) : _fileStore = fileStore,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
 
-  Future<List<MoltbookPublicChange>> load() async {
+  Future<List<MoltbookPublicChange>> load() => _serialized(() async {
     final ownerHex = _requireOwnerHex();
     return _loadForOwner(ownerHex);
-  }
+  });
 
   Future<MoltbookPublicChange?> nextPending() async {
     final changes = await load();
@@ -383,21 +383,73 @@ class MoltbookPublicChangeFeedStore {
         decoded['changes'] is! List) {
       throw const FormatException('Invalid Moltbook public change feed');
     }
-    final changes =
-        (decoded['changes'] as List).map((value) {
-          if (value is! Map) {
-            throw const FormatException('Invalid public change entry');
-          }
-          return MoltbookPublicChange.fromJson(
-            Map<String, dynamic>.from(value),
-          );
-        }).toList();
-    if (changes.length > maxChanges) {
+    final rawChanges = decoded['changes'] as List;
+    if (rawChanges.length > maxChanges) {
       throw const FormatException(
         'Moltbook public change feed exceeds its limit',
       );
     }
+    final changes = <MoltbookPublicChange>[];
+    var sealedLegacyEntry = false;
+    for (final value in rawChanges) {
+      if (value is! Map) {
+        throw const FormatException('Invalid public change entry');
+      }
+      final json = Map<String, dynamic>.from(value);
+      try {
+        changes.add(MoltbookPublicChange.fromJson(json));
+      } on FormatException {
+        if (!_isSealableLegacyNonSemanticChange(json)) rethrow;
+        sealedLegacyEntry = true;
+      }
+    }
+    if (sealedLegacyEntry) {
+      await _writeForOwner(ownerHex, changes);
+    }
     return changes;
+  }
+
+  static bool _isSealableLegacyNonSemanticChange(Map<String, dynamic> json) {
+    final facts = json['facts'];
+    final recordedAt = DateTime.tryParse(
+      json['recorded_at_utc']?.toString() ?? '',
+    );
+    final draftHash = json['draft_hash_hex'];
+    if (json.length != 7 ||
+        json['schema_version'] != 1 ||
+        json['source_id'] is! String ||
+        json['category'] is! String ||
+        facts is! List ||
+        facts.any((value) => value is! String) ||
+        json['commitment_hash_hex'] is! String ||
+        recordedAt == null ||
+        !recordedAt.isUtc ||
+        (draftHash != null && draftHash is! String)) {
+      return false;
+    }
+    final sourceId = json['source_id'] as String;
+    final category = json['category'] as String;
+    final normalizedFacts = facts.cast<String>();
+    return RegExp(r'^[a-zA-Z0-9._-]{1,128}$').hasMatch(sourceId) &&
+        RegExp(r'^[a-z0-9-]{1,64}$').hasMatch(category) &&
+        normalizedFacts.isNotEmpty &&
+        normalizedFacts.length <= maxFacts &&
+        normalizedFacts.toSet().length == normalizedFacts.length &&
+        normalizedFacts.every(
+          (fact) =>
+              fact.isNotEmpty &&
+              fact.length <= maxFactCharacters &&
+              fact.trim() == fact &&
+              !_semanticFactCharacter.hasMatch(fact) &&
+              !_containsSensitivePublicMaterial(fact),
+        ) &&
+        commitmentFor(
+              sourceId: sourceId,
+              category: category,
+              facts: normalizedFacts,
+            ) ==
+            json['commitment_hash_hex'] &&
+        (draftHash == null || RegExp(r'^[0-9a-f]{64}$').hasMatch(draftHash));
   }
 
   Future<void> _writeForOwner(

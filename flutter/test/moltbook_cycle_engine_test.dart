@@ -440,6 +440,41 @@ void main() {
   );
 
   test(
+    'bounded public change waits for the durable write interval after restart',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      final now = DateTime.now().toUtc();
+      publications.operations = <ExternalEffectOperation>[
+        _committedPost(
+          'recent-public-change',
+          now.subtract(const Duration(minutes: 5)),
+        ),
+      ];
+      final change = await publicChanges.record(
+        sourceId: 'capsule-change-during-provider-cooldown',
+        category: 'hivra',
+        facts: const <String>[
+          'A later Capsule change remains queued during the write interval.',
+        ],
+      );
+      final restarted = buildModule(MoltbookCycleTriggerService());
+
+      final summary = await restarted.runMoltbookCycle();
+
+      expect(summary.blockedCount, 1);
+      expect(ai.bulletinProposalCount, 0);
+      expect(publications.preparedPostDestinations, isEmpty);
+      expect(publications.postApprovalCount, 0);
+      expect(publications.processedPostIds, isEmpty);
+      final retained = (await publicChanges.load()).singleWhere(
+        (item) => item.sourceId == change.sourceId,
+      );
+      expect(retained.isPending, isTrue);
+    },
+  );
+
+  test(
     'bounded cycle publishes to configured community without ownership',
     () async {
       configuration.approvalMode =
@@ -1790,6 +1825,31 @@ ExternalEffectOperation _committedReply(
   requiredAction: null,
   receipt: null,
 );
+
+ExternalEffectOperation _committedPost(String operationId, DateTime updated) =>
+    ExternalEffectOperation(
+      ownerCapsuleHex: _rootA,
+      operationId: operationId,
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: 'moltbook',
+      accountBindingId: 'agent-1',
+      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+      canonicalPayloadJson: '{}',
+      payloadHashHex:
+          'abababababababababababababababababababababababababababababababab',
+      state: ExternalEffectState.succeeded,
+      approvalEvidenceHashHex:
+          'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+      attemptCount: 1,
+      revision: 2,
+      createdAtUtc:
+          updated.subtract(const Duration(minutes: 1)).toIso8601String(),
+      updatedAtUtc: updated.toIso8601String(),
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      requiredAction: null,
+      receipt: null,
+    );
 
 class _RecordingDraftStore implements MoltbookDraftStore {
   final Set<String> deletedHashes = <String>{};
