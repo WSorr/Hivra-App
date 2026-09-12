@@ -28,16 +28,19 @@ void main() {
   });
 
   test('publishes exact payload and returns a bound receipt', () async {
-    late MoltbookHttpRequest captured;
+    final requests = <MoltbookHttpRequest>[];
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
       provider: MoltbookProviderAdapter(
         send: (request) async {
-          captured = request;
-          return _jsonResponse(<String, dynamic>{
-            'success': true,
-            'post': <String, dynamic>{'id': 'post-123'},
-          });
+          requests.add(request);
+          if (request.method == 'POST') {
+            return _jsonResponse(<String, dynamic>{
+              'success': true,
+              'post': <String, dynamic>{'id': 'post-123'},
+            });
+          }
+          return _postResponse('post-123');
         },
       ),
       clock: () => DateTime.utc(2026, 7, 26, 14),
@@ -47,6 +50,8 @@ void main() {
 
     expect(result.status, ExternalEffectAdapterStatus.succeeded);
     expect(result.receipt?.providerReceiptId, 'post-123');
+    expect(requests, hasLength(2));
+    final captured = requests.first;
     expect(captured.method, 'POST');
     expect(captured.headers['authorization'], 'Bearer secret-1');
     final body = jsonDecode(utf8.decode(captured.bodyBytes!));
@@ -57,7 +62,56 @@ void main() {
       'Public fact\n\n[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
     );
     expect(body['content'], isNot(contains('hivra-effect:')));
+    expect(requests.last.method, 'GET');
+    expect(requests.last.uri.path, '/api/v1/posts/post-123');
   });
+
+  test(
+    'keeps a mismatched immediate post response unresolved without reposting',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            if (request.method == 'POST') {
+              return _jsonResponse(<String, dynamic>{
+                'success': true,
+                'post': <String, dynamic>{'id': 'existing-post'},
+              });
+            }
+            return _postResponse(
+              'existing-post',
+              content: 'Previously published content.',
+            );
+          },
+        ),
+      );
+
+      final delivery = await adapter.deliver(_request());
+
+      expect(delivery.status, ExternalEffectAdapterStatus.unresolved);
+      expect(delivery.errorCode, 'receipt_not_observed');
+      expect(delivery.providerReferenceId, 'existing-post');
+      expect(delivery.receipt, isNull);
+      expect(requests.map((request) => request.method), <String>[
+        'POST',
+        'GET',
+      ]);
+
+      final reconciliation = await adapter.reconcile(
+        _request(providerReferenceId: delivery.providerReferenceId),
+      );
+
+      expect(reconciliation.status, ExternalEffectAdapterStatus.unresolved);
+      expect(reconciliation.receipt, isNull);
+      expect(
+        requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+    },
+  );
 
   test('publishes exact reviewed reply through comment effect', () async {
     late MoltbookHttpRequest captured;
@@ -292,14 +346,23 @@ void main() {
   test(
     'keeps legacy operation markers readable for existing effects',
     () async {
+      final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
         provider: MoltbookProviderAdapter(
-          send:
-              (_) async => _jsonResponse(<String, dynamic>{
+          send: (request) async {
+            requests.add(request);
+            if (request.method == 'POST') {
+              return _jsonResponse(<String, dynamic>{
                 'success': true,
                 'post': <String, dynamic>{'id': 'legacy-post'},
-              }),
+              });
+            }
+            return _postResponse(
+              'legacy-post',
+              content: 'Public fact\n\n[hivra-effect:post-1]',
+            );
+          },
         ),
       );
 
@@ -307,6 +370,10 @@ void main() {
 
       expect(result.status, ExternalEffectAdapterStatus.succeeded);
       expect(result.receipt?.providerReceiptId, 'legacy-post');
+      expect(requests.map((request) => request.method), <String>[
+        'POST',
+        'GET',
+      ]);
     },
   );
 
@@ -1022,6 +1089,9 @@ MoltbookHttpResponse _submoltResponse() => _jsonResponse(_submoltBody());
 MoltbookHttpResponse _postResponse(
   String postId, {
   String title = 'Release note',
+  String content =
+      'Public fact\n\n'
+          '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
   String verificationStatus = 'verified',
   bool isSpam = false,
 }) {
@@ -1030,9 +1100,7 @@ MoltbookHttpResponse _postResponse(
     'post': <String, dynamic>{
       'id': postId,
       'title': title,
-      'content':
-          'Public fact\n\n'
-          '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+      'content': content,
       'verification_status': verificationStatus,
       'is_spam': isSpam,
       'is_locked': false,

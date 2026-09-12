@@ -70,6 +70,21 @@ void main() {
     );
   });
 
+  test('canonical post attribution is appended exactly once', () {
+    final attribution = MoltbookPublicationContract.attribution();
+
+    expect(
+      MoltbookPublicationContract.attributedContent('Public fact'),
+      'Public fact\n\n$attribution',
+    );
+    expect(
+      MoltbookPublicationContract.attributedContent(
+        'Public fact\n\n$attribution\n\n$attribution',
+      ),
+      'Public fact\n\n$attribution',
+    );
+  });
+
   test('terminal reconciliation priority requires a retained reference', () {
     final unresolved = _operation(
       state: ExternalEffectState.unresolved,

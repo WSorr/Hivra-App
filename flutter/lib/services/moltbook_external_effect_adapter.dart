@@ -72,6 +72,23 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
               'Moltbook accepted the request without a verifiable content id',
         );
       }
+      if (payload case final _MoltbookPostPayload post) {
+        try {
+          final reconciliation = await _reconcilePostById(
+            request,
+            apiKey,
+            post,
+            contentId,
+          );
+          return _withProviderReference(reconciliation, contentId);
+        } on MoltbookProviderException catch (error) {
+          return _withProviderReference(
+            _providerFailure(error),
+            contentId,
+            forceUnresolved: true,
+          );
+        }
+      }
       return _success(request, contentId);
     } on MoltbookProviderException catch (error) {
       return _providerFailure(error);
@@ -451,10 +468,29 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     ExternalEffectAdapterResult result, {
     required String providerReferenceId,
   }) {
+    return _withProviderReference(
+      result,
+      providerReferenceId,
+      forceUnresolved: true,
+      requiredActionResolved: true,
+    );
+  }
+
+  static ExternalEffectAdapterResult _withProviderReference(
+    ExternalEffectAdapterResult result,
+    String providerReferenceId, {
+    bool forceUnresolved = false,
+    bool requiredActionResolved = false,
+  }) {
     if (result.status == ExternalEffectAdapterStatus.succeeded) return result;
     return ExternalEffectAdapterResult(
-      status: ExternalEffectAdapterStatus.unresolved,
-      requiredActionResolved: true,
+      status:
+          forceUnresolved
+              ? ExternalEffectAdapterStatus.unresolved
+              : result.status,
+      requiredAction: requiredActionResolved ? null : result.requiredAction,
+      requiredActionResolved:
+          requiredActionResolved || result.requiredActionResolved,
       providerReferenceId: result.providerReferenceId ?? providerReferenceId,
       errorCode: result.errorCode,
       errorMessage: result.errorMessage,

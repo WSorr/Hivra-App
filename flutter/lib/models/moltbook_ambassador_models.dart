@@ -666,6 +666,16 @@ class MoltbookPublicationContract {
     return '[Hivra on GitHub]($repositoryUrl)';
   }
 
+  static String attributedContent(String body) {
+    final suffix = attribution();
+    var content = body.trimRight();
+    while (content.endsWith(suffix)) {
+      content =
+          content.substring(0, content.length - suffix.length).trimRight();
+    }
+    return '$content\n\n$suffix';
+  }
+
   static String legacyAttribution(String operationId) {
     final marker = operationMarker(operationId);
     return '[Hivra on GitHub]($repositoryUrl#$marker)';
