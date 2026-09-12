@@ -527,6 +527,7 @@ void main() {
           },
         ),
         clock: () => DateTime.utc(2026, 7, 26, 14, 1),
+        verificationReceiptDelay: (_) async {},
       );
       const action = ExternalEffectRequiredAction(
         kind: 'numeric_challenge',
@@ -550,9 +551,131 @@ void main() {
       expect(requests.map((request) => request.uri.path), <String>[
         '/api/v1/verify',
         '/api/v1/posts/hidden-post-123',
+        '/api/v1/posts/hidden-post-123',
+        '/api/v1/posts/hidden-post-123',
+        '/api/v1/posts/hidden-post-123',
+        '/api/v1/posts/hidden-post-123',
       ]);
       final verifyBody = jsonDecode(utf8.decode(requests.first.bodyBytes!));
       expect(verifyBody['answer'], '4.00');
+    },
+  );
+
+  test(
+    'accepted verification observes the exact receipt without another post',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final delays = <Duration>[];
+      var postReads = 0;
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            if (request.uri.path.endsWith('/verify')) {
+              return _jsonResponse(<String, dynamic>{
+                'success': true,
+                'content_type': 'post',
+                'content_id': 'hidden-post-123',
+              });
+            }
+            if (request.uri.path.endsWith('/posts/hidden-post-123')) {
+              postReads += 1;
+              return _postResponse(
+                'hidden-post-123',
+                verificationStatus: postReads < 3 ? 'pending' : 'verified',
+              );
+            }
+            throw StateError('Unexpected request: ${request.uri}');
+          },
+        ),
+        clock: () => DateTime.utc(2026, 7, 26, 14, 1),
+        verificationReceiptDelay: (delay) async => delays.add(delay),
+      );
+      const action = ExternalEffectRequiredAction(
+        kind: 'numeric_challenge',
+        providerReferenceId: 'hidden-post-123',
+        actionToken: 'verify-123',
+        prompt: 'two plus two',
+        expiresAtUtc: '2026-07-26T14:05:00.000Z',
+      );
+
+      final result = await adapter.resolveRequiredAction(
+        _request(),
+        action,
+        '4',
+      );
+
+      expect(result.status, ExternalEffectAdapterStatus.succeeded);
+      expect(result.receipt?.providerReceiptId, 'hidden-post-123');
+      expect(delays, const <Duration>[
+        Duration(seconds: 5),
+        Duration(seconds: 15),
+      ]);
+      expect(
+        requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+      expect(
+        requests.where(
+          (request) => request.uri.path == '/api/v1/posts/hidden-post-123',
+        ),
+        hasLength(3),
+      );
+    },
+  );
+
+  test(
+    'accepted verification closes a provider-marked spam post immediately',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            if (request.uri.path.endsWith('/verify')) {
+              return _jsonResponse(<String, dynamic>{
+                'success': true,
+                'content_type': 'post',
+                'content_id': 'hidden-post-123',
+              });
+            }
+            if (request.uri.path.endsWith('/posts/hidden-post-123')) {
+              return _postResponse('hidden-post-123', isSpam: true);
+            }
+            throw StateError('Unexpected request: ${request.uri}');
+          },
+        ),
+        clock: () => DateTime.utc(2026, 7, 26, 14, 1),
+        verificationReceiptDelay: (_) async {
+          fail('Terminal spam evidence must not be retried');
+        },
+      );
+      const action = ExternalEffectRequiredAction(
+        kind: 'numeric_challenge',
+        providerReferenceId: 'hidden-post-123',
+        actionToken: 'verify-123',
+        prompt: 'two plus two',
+        expiresAtUtc: '2026-07-26T14:05:00.000Z',
+      );
+
+      final result = await adapter.resolveRequiredAction(
+        _request(),
+        action,
+        '4',
+      );
+
+      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+      expect(result.errorCode, 'provider_marked_spam');
+      expect(result.providerReferenceId, 'hidden-post-123');
+      expect(result.requiredAction, isNull);
+      expect(result.requiredActionResolved, isTrue);
+      expect(result.receipt, isNull);
+      expect(requests.map((request) => request.method), <String>[
+        'POST',
+        'GET',
+      ]);
     },
   );
 

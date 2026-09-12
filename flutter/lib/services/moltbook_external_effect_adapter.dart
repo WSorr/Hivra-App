@@ -18,14 +18,25 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   final CapsuleScopedSecretVault _secretVault;
   final MoltbookProviderAdapter _provider;
   final DateTime Function() _clock;
+  final Future<void> Function(Duration) _verificationReceiptDelay;
 
-  const MoltbookExternalEffectAdapter({
+  static const List<Duration> _verificationReceiptRetryDelays = <Duration>[
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+    Duration(seconds: 40),
+    Duration(seconds: 60),
+  ];
+
+  MoltbookExternalEffectAdapter({
     required CapsuleScopedSecretVault secretVault,
     required MoltbookProviderAdapter provider,
     DateTime Function() clock = DateTime.now,
+    Future<void> Function(Duration) verificationReceiptDelay =
+        Future<void>.delayed,
   }) : _secretVault = secretVault,
        _provider = provider,
-       _clock = clock;
+       _clock = clock,
+       _verificationReceiptDelay = verificationReceiptDelay;
 
   @override
   Future<ExternalEffectAdapterResult> deliver(
@@ -191,23 +202,12 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       // A successful challenge response is not proof that the content became
       // publicly visible. Re-observe the provider before minting a receipt.
       try {
-        final reconciliation = switch (payload) {
-          _MoltbookPostPayload post => await _reconcilePostById(
-            request,
-            apiKey,
-            post,
-            verifiedContentId,
-          ),
-          _MoltbookCommentPayload comment => await _reconcileComment(
-            request,
-            apiKey,
-            comment,
-          ),
-          _MoltbookSubmoltPayload() =>
-            throw const FormatException(
-              'Moltbook community creation has no verification challenge',
-            ),
-        };
+        final reconciliation = await _reconcileAfterAcceptedVerification(
+          request: request,
+          apiKey: apiKey,
+          payload: payload,
+          providerReferenceId: verifiedContentId,
+        );
         return _afterResolvedRequiredAction(
           reconciliation,
           providerReferenceId: verifiedContentId,
@@ -243,6 +243,42 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         errorMessage: error.message,
       );
     }
+  }
+
+  Future<ExternalEffectAdapterResult> _reconcileAfterAcceptedVerification({
+    required ExternalEffectAdapterRequest request,
+    required String apiKey,
+    required _MoltbookPayload payload,
+    required String providerReferenceId,
+  }) async {
+    Future<ExternalEffectAdapterResult> observe() => switch (payload) {
+      _MoltbookPostPayload post => _reconcilePostById(
+        request,
+        apiKey,
+        post,
+        providerReferenceId,
+      ),
+      _MoltbookCommentPayload comment => _reconcileComment(
+        request,
+        apiKey,
+        comment,
+      ),
+      _MoltbookSubmoltPayload() =>
+        throw const FormatException(
+          'Moltbook community creation has no verification challenge',
+        ),
+    };
+
+    var result = await observe();
+    for (final delay in _verificationReceiptRetryDelays) {
+      if (result.status != ExternalEffectAdapterStatus.unresolved ||
+          result.errorCode != 'receipt_not_observed') {
+        return result;
+      }
+      await _verificationReceiptDelay(delay);
+      result = await observe();
+    }
+    return result;
   }
 
   Future<String> _loadCredential(ExternalEffectAdapterRequest request) async {
@@ -471,7 +507,8 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     return _withProviderReference(
       result,
       providerReferenceId,
-      forceUnresolved: true,
+      forceUnresolved:
+          result.status != ExternalEffectAdapterStatus.terminalFailure,
       requiredActionResolved: true,
     );
   }
