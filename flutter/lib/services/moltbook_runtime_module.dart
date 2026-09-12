@@ -886,14 +886,23 @@ class MoltbookRuntimeModule {
 
   Future<void> stopMoltbookCyclesAndDisable() async {
     stopMoltbookCycles();
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) return;
+    if (ownerHex == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(ownerHex) ||
+        !_isStillOwnedBy(ownerHex)) {
+      throw StateError(
+        'Moltbook configuration was not changed because the active Capsule changed',
+      );
+    }
     await _ambassadorConfiguration.save(
       MoltbookAmbassadorConfiguration(
         agentName: configuration.agentName,
         agentDescription: configuration.agentDescription,
         personaSummary: configuration.personaSummary,
         allowedTopics: configuration.allowedTopics,
+        primaryCommunity: configuration.primaryCommunity,
         approvalMode: configuration.approvalMode,
         triggerPolicy: configuration.triggerPolicy,
         enabled: false,

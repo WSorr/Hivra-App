@@ -999,14 +999,33 @@ void main() {
   test('persistent stop disables future configured cycles', () async {
     configuration.triggerPolicy =
         MoltbookAmbassadorConfiguration.triggerSession;
+    configuration.primaryCommunity = 'capsule-build-notes';
 
     await module.stopMoltbookCyclesAndDisable();
     final summary = await module.startConfiguredMoltbookCycles();
 
     expect(configuration.enabled, isFalse);
+    expect(configuration.primaryCommunity, 'capsule-build-notes');
     expect(summary, isNull);
     expect(connection.observeCount, 0);
   });
+
+  test(
+    'Capsule switch while stopping cannot overwrite configuration',
+    () async {
+      configuration.primaryCommunity = 'capsule-build-notes';
+      configuration.afterLoad = () => activeRoot = _rootB;
+
+      await expectLater(
+        module.stopMoltbookCyclesAndDisable(),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(configuration.saveCount, 0);
+      expect(configuration.enabled, isTrue);
+      expect(configuration.primaryCommunity, 'capsule-build-notes');
+    },
+  );
 }
 
 class _CycleConnection implements MoltbookConnectionService {
@@ -1399,22 +1418,28 @@ class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
   String primaryCommunity =
       MoltbookPublicationService.personFirstRuntimeSubmoltName;
   bool enabled = true;
+  int saveCount = 0;
+  void Function()? afterLoad;
 
   @override
-  Future<MoltbookAmbassadorConfiguration> load() async =>
-      MoltbookAmbassadorConfiguration(
-        agentName: 'Hivra Agent',
-        agentDescription: 'Capsule ambassador',
-        personaSummary: 'Technical Hivra updates',
-        allowedTopics: const <String>['hivra', 'general'],
-        primaryCommunity: primaryCommunity,
-        approvalMode: approvalMode,
-        triggerPolicy: triggerPolicy,
-        enabled: enabled,
-      );
+  Future<MoltbookAmbassadorConfiguration> load() async {
+    final configuration = MoltbookAmbassadorConfiguration(
+      agentName: 'Hivra Agent',
+      agentDescription: 'Capsule ambassador',
+      personaSummary: 'Technical Hivra updates',
+      allowedTopics: const <String>['hivra', 'general'],
+      primaryCommunity: primaryCommunity,
+      approvalMode: approvalMode,
+      triggerPolicy: triggerPolicy,
+      enabled: enabled,
+    );
+    afterLoad?.call();
+    return configuration;
+  }
 
   @override
   Future<void> save(MoltbookAmbassadorConfiguration configuration) async {
+    saveCount++;
     approvalMode = configuration.approvalMode;
     triggerPolicy = configuration.triggerPolicy;
     primaryCommunity = configuration.primaryCommunity;
