@@ -93,11 +93,13 @@ void main() {
     );
     expect(duplicate.revision, first.revision);
 
-    await service.approve(
+    final approved = await service.approve(
       pluginId: moltbookAmbassadorPluginId,
       operationId: 'post-1',
       approvalEvidenceHashHex: _approvalHash,
     );
+    expect(approved.approvedAtUtc, isNotNull);
+    final approvedAtUtc = approved.approvedAtUtc;
     await service.enqueue(
       pluginId: moltbookAmbassadorPluginId,
       operationId: 'post-1',
@@ -114,15 +116,88 @@ void main() {
           'code=${completed.lastErrorCode} message=${completed.lastErrorMessage}',
     );
     expect(completed.attemptCount, 1);
+    expect(completed.approvedAtUtc, approvedAtUtc);
     expect(adapter.deliverCount, 1);
 
     final restartedAdapter = _FakeExternalEffectAdapter();
     final restarted = build(restartedAdapter);
     final restored = await restarted.list(pluginId: moltbookAmbassadorPluginId);
     expect(restored.single.state, ExternalEffectState.succeeded);
+    expect(restored.single.approvedAtUtc, approvedAtUtc);
     expect(restartedAdapter.deliverCount, 0);
     expect(restartedAdapter.reconcileCount, 0);
   });
+
+  test(
+    'legacy approved operation backfills one stable approval time',
+    () async {
+      final service = build(_FakeExternalEffectAdapter());
+      final queued = await prepareApprovedQueued(service);
+      final capsuleDir = await files.capsuleDirForHex(_rootA);
+      final raw = await files.readPluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+      );
+      final journal = Map<String, dynamic>.from(
+        jsonDecode(raw!) as Map<dynamic, dynamic>,
+      );
+      final operation = Map<String, dynamic>.from(
+        (journal['operations'] as List).single as Map<dynamic, dynamic>,
+      );
+      operation.remove('approved_at_utc');
+      journal['operations'] = <dynamic>[operation];
+      await files.writePluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+        jsonEncode(journal),
+      );
+
+      final restored = await build(
+        _FakeExternalEffectAdapter(),
+      ).list(pluginId: moltbookAmbassadorPluginId);
+
+      expect(restored.single.approvedAtUtc, queued.updatedAtUtc);
+      expect(restored.single.toJson()['approved_at_utc'], queued.updatedAtUtc);
+    },
+  );
+
+  test(
+    'journal rejects approval time outside the operation lifetime',
+    () async {
+      final service = build(_FakeExternalEffectAdapter());
+      final queued = await prepareApprovedQueued(service);
+      final capsuleDir = await files.capsuleDirForHex(_rootA);
+      final raw = await files.readPluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+      );
+      final journal = Map<String, dynamic>.from(
+        jsonDecode(raw!) as Map<dynamic, dynamic>,
+      );
+      final operation = Map<String, dynamic>.from(
+        (journal['operations'] as List).single as Map<dynamic, dynamic>,
+      );
+      operation['approved_at_utc'] =
+          DateTime.parse(
+            queued.updatedAtUtc,
+          ).add(const Duration(minutes: 1)).toIso8601String();
+      journal['operations'] = <dynamic>[operation];
+      await files.writePluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+        jsonEncode(journal),
+      );
+
+      expect(
+        service.list(pluginId: moltbookAmbassadorPluginId),
+        throwsFormatException,
+      );
+    },
+  );
 
   test(
     'timeout remains unresolved and restart reconciles before retry',
