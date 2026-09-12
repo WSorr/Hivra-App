@@ -424,6 +424,52 @@ void main() {
     expect(result['content_id'], 'post-123');
   });
 
+  test('preserves a bounded HTTP 400 verification rejection', () async {
+    final adapter = MoltbookProviderAdapter(
+      send:
+          (_) async => _jsonResponse(<String, dynamic>{
+            'success': false,
+            'error': 'Incorrect answer',
+            'content_type': 'post',
+            'content_id': 'post-123',
+          }, statusCode: 400),
+    );
+
+    await expectLater(
+      adapter.verifyContent(
+        apiKey: 'moltbook_secret',
+        verificationCode: 'verify-123',
+        answer: '4.00',
+      ),
+      throwsA(
+        isA<MoltbookProviderException>()
+            .having((error) => error.code, 'code', 'provider_rejected')
+            .having((error) => error.retryable, 'retryable', isFalse)
+            .having((error) => error.message, 'message', 'Incorrect answer'),
+      ),
+    );
+  });
+
+  test('does not accept a successful payload with HTTP 400', () async {
+    final adapter = MoltbookProviderAdapter(
+      send:
+          (_) async => _jsonResponse(<String, dynamic>{
+            'success': true,
+            'content_type': 'post',
+            'content_id': 'post-123',
+          }, statusCode: 400),
+    );
+
+    await expectLater(
+      adapter.verifyContent(
+        apiKey: 'moltbook_secret',
+        verificationCode: 'verify-123',
+        answer: '4.00',
+      ),
+      throwsA(_providerError('http_400', retryable: false)),
+    );
+  });
+
   test('rejects credentials before making a request', () async {
     var calls = 0;
     final adapter = MoltbookProviderAdapter(

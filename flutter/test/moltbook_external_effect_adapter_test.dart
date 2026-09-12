@@ -502,6 +502,49 @@ void main() {
   });
 
   test(
+    'incorrect provider answer remains challenged without automatic retry',
+    () async {
+      var verifyRequests = 0;
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            verifyRequests++;
+            return _httpResponse(400, <String, dynamic>{
+              'success': false,
+              'error': 'Incorrect answer',
+              'content_type': 'post',
+              'content_id': 'hidden-post-123',
+            });
+          },
+        ),
+        clock: () => DateTime.utc(2026, 7, 26, 14, 1),
+      );
+      const action = ExternalEffectRequiredAction(
+        kind: 'numeric_challenge',
+        providerReferenceId: 'hidden-post-123',
+        actionToken: 'verify-123',
+        prompt: 'two plus two',
+        expiresAtUtc: '2026-07-26T14:05:00.000Z',
+      );
+
+      final result = await adapter.resolveRequiredAction(
+        _request(),
+        action,
+        '5',
+      );
+
+      expect(verifyRequests, 1);
+      expect(result.status, ExternalEffectAdapterStatus.unresolved);
+      expect(result.errorCode, 'verification_rejected');
+      expect(result.errorMessage, 'Incorrect answer');
+      expect(result.requiredAction, action);
+      expect(result.requiredActionResolved, isFalse);
+      expect(result.receipt, isNull);
+    },
+  );
+
+  test(
     'accepted verification clears challenge while receipt visibility catches up',
     () async {
       final requests = <MoltbookHttpRequest>[];

@@ -84,6 +84,24 @@ void main() {
     },
   );
 
+  test(
+    'public changes reject punctuation-only facts without writing',
+    () async {
+      for (final fact in <String>['.', '---', '… ! ?']) {
+        await expectLater(
+          store.record(
+            sourceId: 'empty-${fact.hashCode.abs()}',
+            category: 'hivra-development',
+            facts: <String>[fact],
+          ),
+          throwsFormatException,
+        );
+      }
+
+      expect(await store.load(), isEmpty);
+    },
+  );
+
   test('bundled manifest is atomic, idempotent, and Capsule scoped', () async {
     final inserted = await store.ingestManifest(
       _manifest(),
