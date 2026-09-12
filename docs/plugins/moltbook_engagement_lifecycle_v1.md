@@ -298,8 +298,9 @@ Every cycle has explicit limits. Initial v1 defaults are:
 
 - at most 100 normalized remote items inspected per cycle;
 - at most 5 candidates sent to deterministic planning;
-- at most 3 committed replies per UTC day;
-- at least 30 minutes between committed replies;
+- at most 3 committed bounded writes per UTC day across posts and replies;
+- at least 30 minutes between committed bounded writes across posts and
+  replies;
 - no automatic reply to a target older than the configured maximum age;
 - no more than one cycle in flight per Capsule/plugin/account;
 - no concurrent effect processing for the same `engagement_id`.

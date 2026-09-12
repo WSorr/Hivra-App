@@ -102,6 +102,77 @@ void main() {
     },
   );
 
+  test(
+    'restart atomically seals commitment-valid punctuation-only legacy state',
+    () async {
+      final capsuleDir = await files.capsuleDirForHex(_rootA, create: true);
+      final legacyCommitment = MoltbookPublicChangeFeedStore.commitmentFor(
+        sourceId: 'legacy-empty-change',
+        category: 'hivra-development',
+        facts: const <String>['.'],
+      );
+      await files.writePluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'public_change_feed.v1.json',
+        jsonEncode(<String, dynamic>{
+          'schema_version': 1,
+          'plugin_id': moltbookAmbassadorPluginId,
+          'changes': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'schema_version': 1,
+              'source_id': 'legacy-empty-change',
+              'category': 'hivra-development',
+              'facts': <String>['.'],
+              'commitment_hash_hex': legacyCommitment,
+              'recorded_at_utc': '2026-09-12T18:00:00.000Z',
+              'draft_hash_hex': null,
+            },
+          ],
+        }),
+      );
+
+      expect(await store.load(), isEmpty);
+      final restarted = MoltbookPublicChangeFeedStore(
+        fileStore: files,
+        readActiveCapsuleRootHex: () => activeRoot,
+      );
+      expect(await restarted.load(), isEmpty);
+      final rewritten = await files.readPluginState(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+        'public_change_feed.v1.json',
+      );
+      expect(rewritten, isNot(contains('legacy-empty-change')));
+    },
+  );
+
+  test('legacy cleanup never masks a conflicting commitment', () async {
+    final capsuleDir = await files.capsuleDirForHex(_rootA, create: true);
+    await files.writePluginState(
+      capsuleDir,
+      moltbookAmbassadorPluginId,
+      'public_change_feed.v1.json',
+      jsonEncode(<String, dynamic>{
+        'schema_version': 1,
+        'plugin_id': moltbookAmbassadorPluginId,
+        'changes': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'schema_version': 1,
+            'source_id': 'legacy-empty-change',
+            'category': 'hivra-development',
+            'facts': <String>['.'],
+            'commitment_hash_hex': 'a' * 64,
+            'recorded_at_utc': '2026-09-12T18:00:00.000Z',
+            'draft_hash_hex': null,
+          },
+        ],
+      }),
+    );
+
+    await expectLater(store.load(), throwsFormatException);
+  });
+
   test('bundled manifest is atomic, idempotent, and Capsule scoped', () async {
     final inserted = await store.ingestManifest(
       _manifest(),

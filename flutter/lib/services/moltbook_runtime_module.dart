@@ -21,6 +21,8 @@ import 'ui_event_log_service.dart';
 
 class MoltbookRuntimeModule {
   static const String _automaticMoltbookReleaseTag = 'development';
+  static const int _maxDailyWrites = 3;
+  static const int _minIntervalMinutes = 30;
   static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles =
       <String, Future<MoltbookCycleSummary>>{};
   static final Map<String, int> _moltbookCycleEpochs = <String, int>{};
@@ -181,6 +183,10 @@ class MoltbookRuntimeModule {
     final change = await moltbookPublicChanges.nextPending();
     if (change == null) return null;
     final configuration = await _ambassadorConfiguration.load();
+    if (configuration.approvalMode ==
+        MoltbookAmbassadorConfiguration.approvalBounded) {
+      await _requireBoundedMoltbookWriteAvailable(DateTime.now().toUtc());
+    }
     final proposal = await proposeMoltbookPublicBulletin(
       change.sourceNotes,
       category: change.category,
@@ -586,11 +592,9 @@ class MoltbookRuntimeModule {
       throw StateError('Active capsule identity is unavailable');
     }
     final now = (nowUtc ?? DateTime.now()).toUtc();
-    final usage = await _moltbookDelegationUsage(now);
+    final usage = await _moltbookBoundedWriteUsage(now);
     final writesToday = usage.writesToday;
     final minutesSinceLastWrite = usage.minutesSinceLastWrite;
-    const maxDailyWrites = 3;
-    const minIntervalMinutes = 30;
     final response = await pluginHostApi.executeWithRuntimeHook(
       PluginHostApiRequest(
         schemaVersion: pluginHostApiSchemaVersion,
@@ -605,9 +609,9 @@ class MoltbookRuntimeModule {
           'engagement_plan_hash_hex': draft.engagementPlanHashHex,
           'reply_draft_hash_hex': draft.draftHashHex,
           'policy_version': 1,
-          'max_daily_writes': maxDailyWrites,
+          'max_daily_writes': _maxDailyWrites,
           'writes_today': writesToday,
-          'min_interval_minutes': minIntervalMinutes,
+          'min_interval_minutes': _minIntervalMinutes,
           'minutes_since_last_write': minutesSinceLastWrite,
           'observed_at_utc': now.toIso8601String(),
         },
@@ -636,7 +640,7 @@ class MoltbookRuntimeModule {
     await uiLog.log(
       'moltbook.reply.delegate',
       'authorized draft=${draft.draftHashHex.substring(0, 12)}.. '
-          'budget=$writesToday/$maxDailyWrites',
+          'budget=$writesToday/$_maxDailyWrites',
     );
     return authorization;
   }
@@ -1491,7 +1495,7 @@ class MoltbookRuntimeModule {
         authorizationAge > const Duration(minutes: 10)) {
       throw StateError('Delegated reply authorization is stale');
     }
-    final usage = await _moltbookDelegationUsage(now);
+    final usage = await _moltbookBoundedWriteUsage(now);
     if (usage.writesToday != authorization.writesToday ||
         usage.writesToday >= authorization.maxDailyWrites ||
         (usage.minutesSinceLastWrite != null &&
@@ -1511,16 +1515,30 @@ class MoltbookRuntimeModule {
     return queued;
   }
 
+  Future<void> _requireBoundedMoltbookWriteAvailable(DateTime nowUtc) async {
+    final usage = await _moltbookBoundedWriteUsage(nowUtc);
+    if (usage.writesToday >= _maxDailyWrites) {
+      throw StateError('Moltbook bounded daily write budget is exhausted');
+    }
+    final minutesSinceLastWrite = usage.minutesSinceLastWrite;
+    if (minutesSinceLastWrite != null &&
+        minutesSinceLastWrite < _minIntervalMinutes) {
+      throw StateError('Moltbook bounded write interval has not elapsed');
+    }
+  }
+
   Future<({int writesToday, int? minutesSinceLastWrite})>
-  _moltbookDelegationUsage(DateTime nowUtc) async {
+  _moltbookBoundedWriteUsage(DateTime nowUtc) async {
     final now = nowUtc.toUtc();
     final dayStart = DateTime.utc(now.year, now.month, now.day);
-    final committedReplies =
+    final committedWrites =
         (await moltbookPublications.list())
             .where(
               (operation) =>
-                  operation.effectKind ==
-                      MoltbookExternalEffectAdapter.commentEffectKind &&
+                  const <String>{
+                    MoltbookExternalEffectAdapter.commentEffectKind,
+                    MoltbookExternalEffectAdapter.postEffectKind,
+                  }.contains(operation.effectKind) &&
                   const <ExternalEffectState>{
                     ExternalEffectState.approved,
                     ExternalEffectState.queued,
@@ -1540,7 +1558,7 @@ class MoltbookRuntimeModule {
             return bCommittedAt.compareTo(aCommittedAt);
           });
     final writesToday =
-        committedReplies.where((operation) {
+        committedWrites.where((operation) {
           final committedAt =
               DateTime.tryParse(
                 operation.approvedAtUtc ?? operation.updatedAtUtc,
@@ -1548,11 +1566,11 @@ class MoltbookRuntimeModule {
           return committedAt != null && !committedAt.isBefore(dayStart);
         }).length;
     final lastWriteAt =
-        committedReplies.isEmpty
+        committedWrites.isEmpty
             ? null
             : DateTime.tryParse(
-              committedReplies.first.approvedAtUtc ??
-                  committedReplies.first.updatedAtUtc,
+              committedWrites.first.approvedAtUtc ??
+                  committedWrites.first.updatedAtUtc,
             )?.toUtc();
     final minutesSinceLastWrite =
         lastWriteAt == null
