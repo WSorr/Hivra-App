@@ -152,6 +152,7 @@ class ExternalEffectOperation {
   final String payloadHashHex;
   final ExternalEffectState state;
   final String? approvalEvidenceHashHex;
+  final String? approvedAtUtc;
   final int attemptCount;
   final int revision;
   final String createdAtUtc;
@@ -173,6 +174,7 @@ class ExternalEffectOperation {
     required this.payloadHashHex,
     required this.state,
     required this.approvalEvidenceHashHex,
+    this.approvedAtUtc,
     required this.attemptCount,
     required this.revision,
     required this.createdAtUtc,
@@ -190,6 +192,12 @@ class ExternalEffectOperation {
     }
     final rawRequiredAction = json['required_action'];
     final rawReceipt = json['receipt'];
+    final approvalEvidenceHashHex =
+        json['approval_evidence_hash_hex']?.toString();
+    final updatedAtUtc = json['updated_at_utc']?.toString() ?? '';
+    final approvedAtUtc =
+        json['approved_at_utc']?.toString() ??
+        (approvalEvidenceHashHex == null ? null : updatedAtUtc);
     final operation = ExternalEffectOperation(
       ownerCapsuleHex: json['owner_capsule_hex']?.toString() ?? '',
       operationId: json['operation_id']?.toString() ?? '',
@@ -200,12 +208,13 @@ class ExternalEffectOperation {
       canonicalPayloadJson: json['canonical_payload_json']?.toString() ?? '',
       payloadHashHex: json['payload_hash_hex']?.toString() ?? '',
       state: ExternalEffectState.fromWire(json['state']?.toString() ?? ''),
-      approvalEvidenceHashHex: json['approval_evidence_hash_hex']?.toString(),
+      approvalEvidenceHashHex: approvalEvidenceHashHex,
+      approvedAtUtc: approvedAtUtc,
       attemptCount:
           json['attempt_count'] is int ? json['attempt_count'] as int : -1,
       revision: json['revision'] is int ? json['revision'] as int : -1,
       createdAtUtc: json['created_at_utc']?.toString() ?? '',
-      updatedAtUtc: json['updated_at_utc']?.toString() ?? '',
+      updatedAtUtc: updatedAtUtc,
       lastErrorCode: json['last_error_code']?.toString(),
       lastErrorMessage: json['last_error_message']?.toString(),
       providerReferenceId: json['provider_reference_id']?.toString(),
@@ -238,6 +247,7 @@ class ExternalEffectOperation {
     'payload_hash_hex': payloadHashHex,
     'state': state.wireName,
     'approval_evidence_hash_hex': approvalEvidenceHashHex,
+    'approved_at_utc': approvedAtUtc,
     'attempt_count': attemptCount,
     'revision': revision,
     'created_at_utc': createdAtUtc,
@@ -261,13 +271,28 @@ class ExternalEffectOperation {
     if (approvalEvidenceHashHex != null) {
       _validateHash('approval_evidence_hash_hex', approvalEvidenceHashHex!);
     }
+    _validateUtc('created_at_utc', createdAtUtc);
+    _validateUtc('updated_at_utc', updatedAtUtc);
+    if (approvedAtUtc != null) {
+      _validateUtc('approved_at_utc', approvedAtUtc!);
+      if (approvalEvidenceHashHex == null) {
+        throw const FormatException(
+          'approved_at_utc requires approval evidence',
+        );
+      }
+      final approvedAt = DateTime.parse(approvedAtUtc!);
+      if (approvedAt.isBefore(DateTime.parse(createdAtUtc)) ||
+          approvedAt.isAfter(DateTime.parse(updatedAtUtc))) {
+        throw const FormatException(
+          'approved_at_utc must be within the operation lifetime',
+        );
+      }
+    }
     if (attemptCount < 0 || revision < 0) {
       throw const FormatException(
         'attempt_count and revision must be non-negative',
       );
     }
-    _validateUtc('created_at_utc', createdAtUtc);
-    _validateUtc('updated_at_utc', updatedAtUtc);
     if (lastErrorCode != null) {
       _validateIdentifier('last_error_code', lastErrorCode!);
     }

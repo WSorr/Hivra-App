@@ -1530,16 +1530,30 @@ class MoltbookRuntimeModule {
                   }.contains(operation.state),
             )
             .toList()
-          ..sort((a, b) => b.updatedAtUtc.compareTo(a.updatedAtUtc));
+          ..sort((a, b) {
+            final aCommittedAt =
+                DateTime.tryParse(a.approvedAtUtc ?? a.updatedAtUtc)?.toUtc();
+            final bCommittedAt =
+                DateTime.tryParse(b.approvedAtUtc ?? b.updatedAtUtc)?.toUtc();
+            if (aCommittedAt == null) return 1;
+            if (bCommittedAt == null) return -1;
+            return bCommittedAt.compareTo(aCommittedAt);
+          });
     final writesToday =
         committedReplies.where((operation) {
-          final updated = DateTime.tryParse(operation.updatedAtUtc)?.toUtc();
-          return updated != null && !updated.isBefore(dayStart);
+          final committedAt =
+              DateTime.tryParse(
+                operation.approvedAtUtc ?? operation.updatedAtUtc,
+              )?.toUtc();
+          return committedAt != null && !committedAt.isBefore(dayStart);
         }).length;
     final lastWriteAt =
         committedReplies.isEmpty
             ? null
-            : DateTime.tryParse(committedReplies.first.updatedAtUtc)?.toUtc();
+            : DateTime.tryParse(
+              committedReplies.first.approvedAtUtc ??
+                  committedReplies.first.updatedAtUtc,
+            )?.toUtc();
     final minutesSinceLastWrite =
         lastWriteAt == null
             ? null

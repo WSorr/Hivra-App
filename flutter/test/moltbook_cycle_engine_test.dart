@@ -876,6 +876,30 @@ void main() {
   );
 
   test(
+    'later reconciliation does not restart the delegated reply interval',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      final now = DateTime.now().toUtc();
+      publications.operations = <ExternalEffectOperation>[
+        _committedReply(
+          'reconciled-old-reply',
+          now.subtract(const Duration(minutes: 5)),
+          approvedAt: now.subtract(const Duration(hours: 2)),
+        ),
+      ];
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(heartbeatHost.authorizationCount, 1);
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test(
     'Capsule switch after bounded authorization creates no effect',
     () async {
       configuration.approvalMode =
@@ -1739,30 +1763,33 @@ ExternalEffectOperation _operation({
   receipt: null,
 );
 
-ExternalEffectOperation _committedReply(String operationId, DateTime updated) =>
-    ExternalEffectOperation(
-      ownerCapsuleHex: _rootA,
-      operationId: operationId,
-      pluginId: moltbookAmbassadorPluginId,
-      providerId: 'moltbook',
-      accountBindingId: 'agent-1',
-      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
-      canonicalPayloadJson: '{}',
-      payloadHashHex:
-          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-      state: ExternalEffectState.succeeded,
-      approvalEvidenceHashHex:
-          'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-      attemptCount: 1,
-      revision: 2,
-      createdAtUtc:
-          updated.subtract(const Duration(minutes: 1)).toIso8601String(),
-      updatedAtUtc: updated.toIso8601String(),
-      lastErrorCode: null,
-      lastErrorMessage: null,
-      requiredAction: null,
-      receipt: null,
-    );
+ExternalEffectOperation _committedReply(
+  String operationId,
+  DateTime updated, {
+  DateTime? approvedAt,
+}) => ExternalEffectOperation(
+  ownerCapsuleHex: _rootA,
+  operationId: operationId,
+  pluginId: moltbookAmbassadorPluginId,
+  providerId: 'moltbook',
+  accountBindingId: 'agent-1',
+  effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+  canonicalPayloadJson: '{}',
+  payloadHashHex:
+      'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+  state: ExternalEffectState.succeeded,
+  approvalEvidenceHashHex:
+      'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+  approvedAtUtc: approvedAt?.toIso8601String(),
+  attemptCount: 1,
+  revision: 2,
+  createdAtUtc: updated.subtract(const Duration(minutes: 1)).toIso8601String(),
+  updatedAtUtc: updated.toIso8601String(),
+  lastErrorCode: null,
+  lastErrorMessage: null,
+  requiredAction: null,
+  receipt: null,
+);
 
 class _RecordingDraftStore implements MoltbookDraftStore {
   final Set<String> deletedHashes = <String>{};

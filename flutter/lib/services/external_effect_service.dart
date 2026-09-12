@@ -126,6 +126,7 @@ class ExternalEffectService {
           current,
           state: ExternalEffectState.approved,
           approvalEvidenceHashHex: approvalEvidenceHashHex,
+          approvedAtUtc: current.approvedAtUtc ?? _now(),
           clearError: true,
         );
       },
@@ -883,6 +884,7 @@ class ExternalEffectService {
     ExternalEffectOperation current, {
     required ExternalEffectState state,
     String? approvalEvidenceHashHex,
+    String? approvedAtUtc,
     int? attemptCount,
     String? lastErrorCode,
     String? lastErrorMessage,
@@ -904,6 +906,7 @@ class ExternalEffectService {
       state: state,
       approvalEvidenceHashHex:
           approvalEvidenceHashHex ?? current.approvalEvidenceHashHex,
+      approvedAtUtc: approvedAtUtc ?? current.approvedAtUtc,
       attemptCount: attemptCount ?? current.attemptCount,
       revision: current.revision + 1,
       createdAtUtc: current.createdAtUtc,
