@@ -74,6 +74,10 @@ class MoltbookPublicChangeFeedStore {
   static const int maxManifestCharacters = 32768;
   static const int maxFacts = 8;
   static const int maxFactCharacters = 280;
+  static final RegExp _semanticFactCharacter = RegExp(
+    r'[\p{L}\p{N}]',
+    unicode: true,
+  );
 
   final CapsuleFileStore _fileStore;
   final String? Function() _readActiveCapsuleRootHex;
@@ -329,6 +333,7 @@ class MoltbookPublicChangeFeedStore {
               fact.isEmpty ||
               fact.length > maxFactCharacters ||
               fact.trim() != fact ||
+              !_semanticFactCharacter.hasMatch(fact) ||
               _containsSensitivePublicMaterial(fact),
         ) ||
         commitmentFor(

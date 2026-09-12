@@ -448,6 +448,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
       method: 'POST',
       relativePath: 'verify',
       apiKey: apiKey,
+      decodeProviderFailure: true,
       body: <String, dynamic>{
         'verification_code': verificationCode,
         'answer': answer,
@@ -455,6 +456,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     );
     final json = _decodeObject(response);
     _rejectProviderFailure(json, response);
+    _rejectHttpFailure(response);
     return json;
   }
 
@@ -631,6 +633,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     required String relativePath,
     required String apiKey,
     Map<String, dynamic>? body,
+    bool decodeProviderFailure = false,
   }) async {
     final normalizedKey = apiKey.trim();
     if (normalizedKey.isEmpty || normalizedKey.length > 1024) {
@@ -688,7 +691,9 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         retryable: false,
       );
     }
-    _rejectHttpFailure(response);
+    if (!decodeProviderFailure || response.statusCode != 400) {
+      _rejectHttpFailure(response);
+    }
     return response;
   }
 
