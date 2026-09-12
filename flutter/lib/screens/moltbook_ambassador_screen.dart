@@ -27,6 +27,18 @@ void bindMoltbookPublicChangeProposal({
   factsController.text = change.facts.join('\n');
 }
 
+String newMoltbookPublicChangeSourceId(DateTime recordedAt) =>
+    'change-${recordedAt.toUtc().microsecondsSinceEpoch}';
+
+void resetMoltbookPublicChangeInput({
+  required TextEditingController bulletinIdController,
+  required TextEditingController publicSourceNotesController,
+  required DateTime recordedAt,
+}) {
+  bulletinIdController.text = newMoltbookPublicChangeSourceId(recordedAt);
+  publicSourceNotesController.clear();
+}
+
 String moltbookAiSessionTitle({
   required bool busy,
   required bool unlocked,
@@ -67,7 +79,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   final TextEditingController _topicsController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _bulletinIdController = TextEditingController(
-    text: 'development-note',
+    text: newMoltbookPublicChangeSourceId(DateTime.now()),
   );
   final TextEditingController _releaseTagController = TextEditingController(
     text: 'development',
@@ -985,6 +997,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       if (!mounted) return;
       setState(() {
         _publicChanges = changes;
+        resetMoltbookPublicChangeInput(
+          bulletinIdController: _bulletinIdController,
+          publicSourceNotesController: _publicSourceNotesController,
+          recordedAt: DateTime.now(),
+        );
       });
       _showNotice('Confirmed public change added to this Capsule');
     } catch (error) {

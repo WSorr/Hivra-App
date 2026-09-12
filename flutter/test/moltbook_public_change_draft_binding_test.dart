@@ -5,6 +5,22 @@ import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
 import 'package:hivra_app/services/moltbook_public_change_feed_store.dart';
 
 void main() {
+  test('recorded public change resets manual input to a fresh source id', () {
+    final bulletinId = TextEditingController(text: 'development-note');
+    final sourceNotes = TextEditingController(text: 'One confirmed fact.');
+    addTearDown(bulletinId.dispose);
+    addTearDown(sourceNotes.dispose);
+
+    resetMoltbookPublicChangeInput(
+      bulletinIdController: bulletinId,
+      publicSourceNotesController: sourceNotes,
+      recordedAt: DateTime.utc(2026, 9, 12, 14, 2, 16, 104, 926),
+    );
+
+    expect(bulletinId.text, 'change-1789221736104926');
+    expect(sourceNotes.text, isEmpty);
+  });
+
   test('queued public change replaces stale manual draft identity', () {
     final bulletinId = TextEditingController(text: 'development-note');
     final category = TextEditingController(text: 'general');

@@ -63,8 +63,7 @@ class MoltbookPublicationService {
             .toString();
     final operationId = 'moltbook-post-$semanticId';
     final marker = MoltbookPublicationContract.operationMarker(operationId);
-    final attribution = MoltbookPublicationContract.attribution();
-    final content = '${draft.body.trimRight()}\n\n$attribution';
+    final content = MoltbookPublicationContract.attributedContent(draft.body);
     final ownerHex = _effects.activeOwnerCapsuleHex;
     final publicEffectKey = _postEffectKey(
       accountBindingId: binding.accountId,
