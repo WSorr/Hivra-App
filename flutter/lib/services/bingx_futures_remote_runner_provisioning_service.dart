@@ -1216,10 +1216,25 @@ class BingxFuturesRemoteRunnerProvisioningService {
         ExternalEffectOperation.fromJson(Map<String, dynamic>.from(value)),
       );
     }
-    if (jsonEncode(operations.map((value) => value.toJson()).toList()) != raw) {
-      throw const FormatException(
-        'Remote Runner effect evidence is not canonical.',
-      );
+    final canonical = jsonEncode(
+      operations.map((value) => value.toJson()).toList(),
+    );
+    if (canonical != raw) {
+      final legacy = <Map<String, dynamic>>[];
+      for (var index = 0; index < operations.length; index += 1) {
+        final wire = decoded[index] as Map;
+        if (wire.containsKey('approved_at_utc')) {
+          throw const FormatException(
+            'Remote Runner effect evidence is not canonical.',
+          );
+        }
+        legacy.add(operations[index].toJson()..remove('approved_at_utc'));
+      }
+      if (jsonEncode(legacy) != raw) {
+        throw const FormatException(
+          'Remote Runner effect evidence is not canonical.',
+        );
+      }
     }
     return List<ExternalEffectOperation>.unmodifiable(operations);
   }

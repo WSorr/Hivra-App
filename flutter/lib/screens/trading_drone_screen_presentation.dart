@@ -350,7 +350,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                     icon: const Icon(Icons.candlestick_chart_rounded, size: 18),
                     label: Text(tradingRunnerMarketActionLabel(selectedSymbol)),
                   ),
-                  _statusChip('${tradingOrderBudgetLabel(_maxEffects)} / 24h'),
+                  _statusChip(
+                    '${tradingOrderBudgetLabel(_maxEffects)} max / session',
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -389,6 +391,8 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                               configured: _remoteRunnerConfigured,
                               unavailable: _remoteRunnerStatusUnavailable,
                               statusWire: _remoteRunnerStatusWire,
+                              authorizedMaxEffects:
+                                  _remoteRunnerSession?.mandate.maxEffects,
                             ),
                             style: const TextStyle(color: Color(0xFF97A3B5)),
                           ),
@@ -541,6 +545,11 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                   running: remoteSessionRunning,
                   resumable: remoteSessionResumable,
                 ),
+                style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                tradingOrderBudgetNotice(_maxEffects),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
             ],
@@ -875,7 +884,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                           (value) => DropdownMenuItem<int>(
                             value: value,
                             child: Text(
-                              '${tradingOrderBudgetLabel(value)} / 24h',
+                              '${tradingOrderBudgetLabel(value)} max / session',
                             ),
                           ),
                         )
@@ -959,6 +968,12 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 10),
+              const Text(
+                'One-time diagnostic only. To keep waiting for a fresh zone, '
+                'use Run on this computer or authorize a VPS session above.',
+                style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+              ),
+              const SizedBox(height: 8),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,

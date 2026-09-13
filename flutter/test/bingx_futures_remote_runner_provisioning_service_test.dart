@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/services/bingx_futures_remote_runner_identity_service.dart';
 import 'package:hivra_app/services/bingx_futures_remote_runner_provisioning_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
@@ -153,17 +154,46 @@ void main() {
       await expectLater(service.resume(profile), throwsStateError);
       expect(host.resumeCalls, 0);
 
+      const sessionOperationId =
+          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+      final canonicalSessionJson = jsonEncode(<String, dynamic>{
+        'operation_id': sessionOperationId,
+        'runner_key_id': profile.runnerKeyId,
+      });
       await service.deploySession(
         profile: profile,
         accountBindingHashHex: accountHash,
-        canonicalSessionJson: '{"signed":"session"}',
+        canonicalSessionJson: canonicalSessionJson,
         apiKey: 'key',
         apiSecret: 'secret',
       );
-      expect(await service.loadActiveSession(profile), '{"signed":"session"}');
+      expect(await service.loadActiveSession(profile), canonicalSessionJson);
       expect(await service.resume(profile), 'resumed');
       expect(host.resumeCalls, 1);
       expect(secureStorage.readKeys, isEmpty);
+
+      final operation = _completedEffectOperation();
+      final legacyWire = operation.toJson()..remove('approved_at_utc');
+      host.completedEffectsRaw = jsonEncode(<dynamic>[legacyWire]);
+      final restored = await service.completedSessionEffects(
+        profile: profile,
+        sessionOperationId: sessionOperationId,
+      );
+      expect(restored, hasLength(1));
+      expect(restored.single.operationId, operation.operationId);
+      expect(restored.single.approvedAtUtc, operation.updatedAtUtc);
+
+      host.completedEffectsRaw = jsonEncode(<dynamic>[
+        <String, dynamic>{...legacyWire, 'unexpected': true},
+      ]);
+      await expectLater(
+        service.completedSessionEffects(
+          profile: profile,
+          sessionOperationId: sessionOperationId,
+        ),
+        throwsFormatException,
+      );
+
       expect(
         await service.revokeSession(
           profile: profile,
@@ -274,6 +304,47 @@ void main() {
   );
 }
 
+ExternalEffectOperation _completedEffectOperation() {
+  const operationId =
+      'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  const providerId = 'bingx-futures';
+  const updatedAtUtc = '2026-09-11T12:00:01.000Z';
+  const canonicalPayloadJson = '{}';
+  return ExternalEffectOperation(
+    ownerCapsuleHex:
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    operationId: operationId,
+    pluginId: 'hivra.contract.bingx-futures-trading.v1',
+    providerId: providerId,
+    accountBindingId:
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    effectKind: 'place-exact-order',
+    canonicalPayloadJson: canonicalPayloadJson,
+    payloadHashHex:
+        sha256.convert(utf8.encode(canonicalPayloadJson)).toString(),
+    state: ExternalEffectState.succeeded,
+    approvalEvidenceHashHex:
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+    approvedAtUtc: updatedAtUtc,
+    attemptCount: 1,
+    revision: 1,
+    createdAtUtc: '2026-09-11T12:00:00.000Z',
+    updatedAtUtc: updatedAtUtc,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    providerReferenceId: 'provider-order-1',
+    requiredAction: null,
+    receipt: const ExternalEffectReceipt(
+      operationId: operationId,
+      providerId: providerId,
+      providerReceiptId: 'provider-order-1',
+      evidenceHashHex:
+          '1111111111111111111111111111111111111111111111111111111111111111',
+      receivedAtUtc: updatedAtUtc,
+    ),
+  )..validate();
+}
+
 class _MemoryAssetBundle extends CachingAssetBundle {
   Uint8List archive;
   Uint8List control;
@@ -332,13 +403,14 @@ class _FakeHostPort implements BingxFuturesRemoteRunnerHostPort {
   int resumeCalls = 0;
   int revokeCalls = 0;
   int statusCalls = 0;
+  String completedEffectsRaw = '[]';
 
   @override
   Future<String> completedSessionEffects({
     required BingxFuturesRemoteRunnerProfile profile,
     required String privateKeyPem,
     required String sessionOperationId,
-  }) async => '[]';
+  }) async => completedEffectsRaw;
 
   _FakeHostPort({
     this.rejectWhenConfirmationFails = false,

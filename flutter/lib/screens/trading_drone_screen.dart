@@ -274,7 +274,16 @@ String tradingSignalScanActionLabel({required bool scanning}) =>
 
 @visibleForTesting
 String tradingOrderBudgetLabel(int value) =>
-    '$value exchange order${value == 1 ? '' : 's'}';
+    '$value exchange request${value == 1 ? '' : 's'}';
+
+@visibleForTesting
+String tradingOrderBudgetNotice(int value) =>
+    value == 1
+        ? 'The Runner stops after its first exchange request. Increase the '
+            'session budget before authorization if it should keep watching '
+            'after one request.'
+        : 'The Runner stops after $value exchange requests or when the '
+            '24-hour session expires.';
 
 @visibleForTesting
 int tradingRestoredEffectBudget(BingxFuturesTradingMandate mandate) =>
@@ -364,6 +373,14 @@ String? tradingLocalRunnerOutcomeLabel(String? outcome) {
   final normalized = outcome?.trim();
   if (normalized == null || normalized.isEmpty) return null;
   return switch (normalized) {
+    'blocked:liquidity_anchor_unavailable' =>
+      'waiting for a fresh liquidity zone',
+    'blocked:momentum_gate_short_missed_retest' ||
+    'blocked:momentum_gate_long_missed_retest' =>
+      'waiting for the next bounded retest',
+    'blocked:trend_gate_short_far_retest' ||
+    'blocked:trend_gate_long_far_retest' =>
+      'waiting for price to approach the retest',
     'blocked:session_stream_unavailable' =>
       'BingX market connection unavailable',
     'blocked:market_volume_activation_unavailable' =>
@@ -379,7 +396,18 @@ String? tradingLocalRunnerOutcomeLabel(String? outcome) {
 String tradingMarketCheckActionLabel({
   required bool running,
   required String progress,
-}) => running ? progress : 'Check market now';
+}) => running ? progress : 'Inspect current setup';
+
+@visibleForTesting
+String? tradingMarketInspectionMessage({
+  required bool prepared,
+  required bool autonomous,
+  required String reason,
+}) {
+  if (prepared || autonomous) return null;
+  return 'No setup is ready now. A running watcher keeps checking for the '
+      'next fresh zone.\n\n$reason';
+}
 
 @visibleForTesting
 String tradingOrderActionLabel({
@@ -388,7 +416,7 @@ String tradingOrderActionLabel({
   required bool testOrder,
 }) {
   if (executing) return 'Sending to BingX';
-  if (!hasExecutableIntent) return 'Check market to prepare order';
+  if (!hasExecutableIntent) return 'No order prepared';
   return testOrder ? 'Validate Without Order' : 'Review and Place Order';
 }
 
@@ -1186,7 +1214,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               '${wasReduced ? "Risk fit: reduced from ${requestedMaxNotional.toStringAsFixed(2)} USDT to the current account limit.\n" : "Risk fit: verified against the current account snapshot.\n"}'
               'Risk: ${_executionRiskPolicy.maxRiskPerTradePercent}% per trade, '
               '${_executionRiskPolicy.maxDailyLossPercent}% daily\n'
-              'Maximum orders: ${tradingOrderBudgetLabel(_maxEffects)}\n'
+              'Session budget: ${tradingOrderBudgetLabel(_maxEffects)}\n'
               'Expires: 24 hours\n\n'
               'This authority can be used by manual execution, this computer, '
               'or one VPS session, but local and VPS automation cannot overlap. '
@@ -2001,7 +2029,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           _strategyTagController.clear();
         }
         _lastIntentResponse = response;
-        _intentBlockingMessage = cycle.isPrepared ? null : cycle.reasonMessage;
+        _intentBlockingMessage = tradingMarketInspectionMessage(
+          prepared: cycle.isPrepared,
+          autonomous: silent,
+          reason: cycle.reasonMessage,
+        );
       });
     }
     await _module.uiLog.log(

@@ -527,19 +527,22 @@ External HTF levels MUST have an explicit deterministic lifecycle:
   liquidity;
 - `consumed`: a confirmed pivot breached by a later candle.
 
-`fresh` HTF pivots are observation and opposite-target candidates only. They
-MUST NOT authorize pending entry without a confirmed directional sweep/reclaim.
+An untouched `fresh` HTF pivot with a stable source timestamp may authorize
+one pending counter-directional retest entry when no current directional
+sweep/reclaim is available. A missing timestamp, breach, or consumption keeps
+the pivot observation-only.
 The `4h` lifecycle window MUST cover at least 80 days of closed candles so a
 level cannot appear fresh merely because an older sweep fell outside a short
 runtime lookback.
 Raw candle highs/lows MUST NOT be treated as executable liquidity levels.
 `sweep_origin`, `post_sweep_reaction`, and `consumed` levels MUST NOT become
-fresh again merely because price moved away from them. A trade after a sweep
-requires the separate current microstructure path
+fresh again merely because price moved away from them. A trade that claims
+sweep/reclaim semantics requires the separate current microstructure path
 (`sweep -> reclaim -> displacement`) and a new live decision.
 Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
 `internal_diagnostic`, but MUST NOT authorize a pending order. If no
-current confirmed micro sweep/reclaim exists, the live
+current confirmed micro sweep/reclaim or eligible untouched HTF pivot exists,
+the live
 decision MUST emit `liquidity_anchor_unavailable`.
 
 The Trading UI MUST present executable HTF bounds as a **pending liquidity
@@ -602,7 +605,8 @@ available indicator:
 2. Maintain each pool lifecycle as `fresh`, `sweep_origin`,
    `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
 3. Use recent aggressive-volume imbalance to activate exactly one direction.
-4. Require a bounded sweep/reclaim event for that side before preparing entry.
+4. Prefer a bounded sweep/reclaim event for that side; otherwise permit one
+   untouched, confirmed, timestamped HTF pivot as a pending retest anchor.
 5. Rank valid structural candidates with liquidation-proxy confluence.
 6. Apply hard freshness, funding, structural, risk, claim, and effect guards.
 7. Use trend, OI, session, and large-flow evidence as context for explanation
@@ -617,7 +621,9 @@ contract.
 
 1. Recent aggressive-volume imbalance activates `buy`.
 2. A current sellside-liquidity sweep and bullish closed-candle reclaim supply
-   the executable entry anchor; an untouched structural low does not.
+   the preferred executable entry anchor. Without one, an untouched confirmed
+   HTF sellside pivot with a stable source timestamp may supply a pending
+   retest anchor.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
@@ -631,7 +637,9 @@ Entry anchor:
 
 1. Recent aggressive-volume imbalance activates `sell`.
 2. A current buyside-liquidity sweep and bearish closed-candle reclaim supply
-   the executable entry anchor; an untouched structural high does not.
+   the preferred executable entry anchor. Without one, an untouched confirmed
+   HTF buyside pivot with a stable source timestamp may supply a pending
+   retest anchor.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
