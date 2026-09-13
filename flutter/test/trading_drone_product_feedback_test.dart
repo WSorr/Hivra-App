@@ -62,6 +62,58 @@ void main() {
     );
   });
 
+  test('remote receipt replaces stale screen tracking before persistence', () {
+    final managedOrderIds = <String>{'sol-order'};
+    final managedOrderSymbols = <String, String>{'sol-order': 'SOL-USDT'};
+    final managedOrderProvenance = <String, BingxManagedOrderProvenance>{
+      'sol-order': _managedOrderProvenance(
+        orderId: 'sol-order',
+        symbol: 'SOL-USDT',
+      ),
+    };
+    final retained = BingxFuturesOrderTrackingState(
+      trackedSymbol: 'SOL-USDT',
+      trackedOrderId: 'sol-order',
+      managedOrderIds: const <String>['sol-order'],
+      managedOrderSymbols: const <String, String>{'sol-order': 'SOL-USDT'},
+      managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+        'sol-order': managedOrderProvenance['sol-order']!,
+        'ach-order': _managedOrderProvenance(
+          orderId: 'ach-order',
+          symbol: 'ACH-USDT',
+          diagnostic: 'remote_effect_receipt_imported',
+        ),
+      },
+      stopLossPercent: 1,
+      takeProfitRiskReward: 2,
+    );
+
+    tradingSynchronizeManagedOrderState(
+      state: retained,
+      managedOrderIds: managedOrderIds,
+      managedOrderSymbols: managedOrderSymbols,
+      managedOrderProvenance: managedOrderProvenance,
+    );
+
+    final nextPersisted = BingxFuturesOrderTrackingState(
+      trackedSymbol: retained.trackedSymbol,
+      trackedOrderId: retained.trackedOrderId,
+      managedOrderIds: managedOrderIds.toList(growable: false),
+      managedOrderSymbols: Map<String, String>.of(managedOrderSymbols),
+      managedOrderProvenance: Map<String, BingxManagedOrderProvenance>.of(
+        managedOrderProvenance,
+      ),
+      stopLossPercent: retained.stopLossPercent,
+      takeProfitRiskReward: retained.takeProfitRiskReward,
+    );
+    expect(nextPersisted.managedOrderIds, <String>['sol-order']);
+    expect(nextPersisted.managedOrderProvenance, contains('ach-order'));
+    expect(
+      nextPersisted.managedOrderProvenance['ach-order']!.lifecycleDiagnostic,
+      'remote_effect_receipt_imported',
+    );
+  });
+
   test('signal rank input is bounded and keeps ready candidates first', () {
     final candidates = <BingxFuturesSignalRankCandidate>[
       for (var index = 0; index < 14; index += 1)
@@ -1363,3 +1415,23 @@ BingxFuturesSignalRankCandidate _rankCandidate(
     ),
   );
 }
+
+BingxManagedOrderProvenance _managedOrderProvenance({
+  required String orderId,
+  required String symbol,
+  String? diagnostic,
+}) => BingxManagedOrderProvenance(
+  orderId: orderId,
+  symbol: symbol,
+  side: 'sell',
+  testOrder: false,
+  intentHashHex: 'intent-$orderId',
+  canonicalIntentJson: '{}',
+  lifecycleStatus: BingxManagedOrderLifecycleStatus.unresolved,
+  lifecycleDiagnostic: diagnostic,
+  marketSnapshotHashHex: null,
+  featureHashHex: null,
+  tvhDecisionHashHex: null,
+  liveDecisionHashHex: null,
+  recordedAtUtc: '2026-09-13T19:45:06.470566Z',
+);

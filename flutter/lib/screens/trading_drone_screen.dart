@@ -67,6 +67,24 @@ List<BingxFuturesSignalRankCandidate> tradingBoundedSignalRankCandidates(
 }
 
 @visibleForTesting
+void tradingSynchronizeManagedOrderState({
+  required BingxFuturesOrderTrackingState state,
+  required Set<String> managedOrderIds,
+  required Map<String, String> managedOrderSymbols,
+  required Map<String, BingxManagedOrderProvenance> managedOrderProvenance,
+}) {
+  managedOrderIds
+    ..clear()
+    ..addAll(state.managedOrderIds);
+  managedOrderSymbols
+    ..clear()
+    ..addAll(state.managedOrderSymbols);
+  managedOrderProvenance
+    ..clear()
+    ..addAll(state.managedOrderProvenance);
+}
+
+@visibleForTesting
 String? tradingReconciliationNotice(
   BingxFuturesManagedOrderReconciliationResult? result,
   String? activeCapsuleRootHex,
@@ -1345,15 +1363,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     try {
       final state = await _module.orderTrackingStore.load();
       if (state == null) return;
-      _managedOrderIds
-        ..clear()
-        ..addAll(state.managedOrderIds);
-      _managedOrderSymbols
-        ..clear()
-        ..addAll(state.managedOrderSymbols);
-      _managedOrderProvenance
-        ..clear()
-        ..addAll(state.managedOrderProvenance);
+      tradingSynchronizeManagedOrderState(
+        state: state,
+        managedOrderIds: _managedOrderIds,
+        managedOrderSymbols: _managedOrderSymbols,
+        managedOrderProvenance: _managedOrderProvenance,
+      );
       _droneEnabled = state.droneEnabled == true;
       _tradingMandate = state.tradingMandate;
       final mandateActive = restoreTradingMandateSelection(
