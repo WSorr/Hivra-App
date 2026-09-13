@@ -1007,7 +1007,7 @@ Map<String, String>? _tradingRemoteRunnerStatusFields(String raw) {
   return fields;
 }
 
-String tradingRemoteRunnerStatusLabel(String raw) {
+String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
   const unknown = 'Runner status unknown. Refresh to retry.';
   final fields = _tradingRemoteRunnerStatusFields(raw);
   if (fields == null) return unknown;
@@ -1041,6 +1041,13 @@ String tradingRemoteRunnerStatusLabel(String raw) {
   }
   final cycles = int.parse(fields['cycles']!);
   final effects = int.parse(fields['effects']!);
+  final validEffectLimit =
+      authorizedMaxEffects != null &&
+      authorizedMaxEffects > 0 &&
+      authorizedMaxEffects <= 256 &&
+      effects <= authorizedMaxEffects;
+  final remainingEffects =
+      validEffectLimit ? authorizedMaxEffects - effects : null;
   final outcome = fields['last_outcome']!;
   final result = switch (outcome) {
     'none' => 'No completed check yet',
@@ -1059,8 +1066,16 @@ String tradingRemoteRunnerStatusLabel(String raw) {
   return [
     '$process · Session $state',
     startup,
-    'Checks: $cycles · Exchange attempts: $effects',
+    if (remainingEffects == null)
+      'Checks: $cycles · Exchange attempts: $effects'
+    else
+      'Checks: $cycles · Exchange requests used: $effects of '
+          '$authorizedMaxEffects · '
+          'Remaining: $remainingEffects',
     'Last retained result: $result',
+    if (terminal && remainingEffects == 0)
+      'Session ended because its exchange-request limit was reached. '
+          'Authorize a new session to continue.',
     if (cycles > 0) 'Last completed check slot: $last',
     if (state == 'active' && fields['active'] == 'active')
       'Next scheduled check: $next (not guaranteed execution)',
@@ -1144,7 +1159,7 @@ String tradingRemoteRunnerSessionDetailsLabel(
   return <String>[
     '${session.mandate.symbol} · ${session.mandate.testOrder ? "TEST" : "LIVE"}',
     'Limit ${session.mandate.maxOrderNotionalQuoteDecimal} USDT · '
-        'Up to ${session.mandate.maxEffects} order${session.mandate.maxEffects == 1 ? "" : "s"}',
+        'Up to ${session.mandate.maxEffects} exchange request${session.mandate.maxEffects == 1 ? "" : "s"}',
     'SL ${number(strategy['stop_loss_percent'])}% · '
         'Minimum R:R ${number(strategy['minimum_risk_reward'])}',
     'Checks every ${intervalSeconds ~/ 60} min · '
@@ -1162,6 +1177,7 @@ String tradingRemoteRunnerSummaryLabel({
   required bool configured,
   required bool unavailable,
   required String? statusWire,
+  int? authorizedMaxEffects,
 }) {
   if (loading) return 'Checking the 24/7 Runner…';
   if (!configured && !unavailable) {
@@ -1173,7 +1189,10 @@ String tradingRemoteRunnerSummaryLabel({
   if (statusWire == null || statusWire.trim().isEmpty) {
     return 'Runner configured. Refresh to unlock and check status.';
   }
-  return tradingRemoteRunnerStatusLabel(statusWire);
+  return tradingRemoteRunnerStatusLabel(
+    statusWire,
+    authorizedMaxEffects: authorizedMaxEffects,
+  );
 }
 
 @visibleForTesting

@@ -405,7 +405,7 @@ void main() {
 
     final summary = tradingRemoteRunnerSessionDetailsLabel(session);
     expect(summary, contains('SOL-USDT · LIVE'));
-    expect(summary, contains('Limit 17 USDT · Up to 1 order'));
+    expect(summary, contains('Limit 17 USDT · Up to 1 exchange request'));
     expect(summary, contains('SL 2% · Minimum R:R 2.5'));
     expect(summary, contains('Checks every 5 min · Up to 24 checks'));
     expect(summary, contains('Capsule aaaaaaaa · Account bbbbbbbb'));
@@ -419,6 +419,10 @@ void main() {
     expect(tradingRemoteRunnerStatusLabel(wire), contains('Checks: 1'));
     expect(tradingRemoteRunnerStatusLabel(wire), contains('No order:'));
     expect(tradingRemoteRunnerStatusLabel(wire), contains('Next scheduled'));
+    expect(
+      tradingRemoteRunnerStatusLabel(wire, authorizedMaxEffects: 4),
+      contains('Exchange requests used: 0 of 4 · Remaining: 4'),
+    );
     expect(
       tradingRemoteRunnerStatusLabel(
         wire.replaceFirst('active=active', 'active=inactive'),
@@ -474,6 +478,24 @@ void main() {
       ),
       contains('Provider receipt confirmed'),
     );
+    expect(
+      tradingRemoteRunnerStatusLabel(
+        terminal.replaceFirst(
+          'blocked:market_proposal_blocked',
+          'effect:succeeded:test=false',
+        ),
+        authorizedMaxEffects: 1,
+      ),
+      allOf(
+        contains('Exchange requests used: 1 of 1 · Remaining: 0'),
+        contains('exchange-request limit was reached'),
+      ),
+    );
+  });
+
+  test('order budget copy explains the finite Runner session', () {
+    expect(tradingOrderBudgetNotice(1), contains('stops after its first'));
+    expect(tradingOrderBudgetNotice(4), contains('stops after 4'));
   });
 
   test('runner summary distinguishes configuration and live status', () {
@@ -738,8 +760,8 @@ void main() {
   });
 
   test('order budget label is explicit and grammatical', () {
-    expect(tradingOrderBudgetLabel(1), '1 exchange order');
-    expect(tradingOrderBudgetLabel(8), '8 exchange orders');
+    expect(tradingOrderBudgetLabel(1), '1 exchange request');
+    expect(tradingOrderBudgetLabel(8), '8 exchange requests');
   });
 
   test('unsupported restored effect budget falls back fail-closed', () {
@@ -786,7 +808,23 @@ void main() {
     );
     expect(
       tradingMarketCheckActionLabel(running: false, progress: 'ignored'),
-      'Check market now',
+      'Inspect current setup',
+    );
+    expect(
+      tradingMarketInspectionMessage(
+        prepared: false,
+        autonomous: true,
+        reason: 'The market has already moved beyond the bounded retest.',
+      ),
+      isNull,
+    );
+    expect(
+      tradingMarketInspectionMessage(
+        prepared: false,
+        autonomous: false,
+        reason: 'The market has already moved beyond the bounded retest.',
+      ),
+      contains('A running watcher keeps checking for the next fresh zone.'),
     );
     expect(
       tradingOrderActionLabel(
@@ -794,7 +832,7 @@ void main() {
         hasExecutableIntent: false,
         testOrder: false,
       ),
-      'Check market to prepare order',
+      'No order prepared',
     );
     expect(
       tradingOrderActionLabel(
@@ -855,6 +893,27 @@ void main() {
       ),
       'Watching on this computer · 1 attempt · '
       'waiting for clearer market volume',
+    );
+    expect(
+      tradingLocalRunnerStatusLabel(
+        const BingxFuturesInteractiveRunnerSnapshot(
+          capsuleScope:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          phase: BingxFuturesInteractiveRunnerPhase.waiting,
+          completedCycles: 2,
+          lastOutcome: 'blocked:liquidity_anchor_unavailable',
+          nextCycleAtUtc: null,
+          lastError: null,
+        ),
+      ),
+      'Watching on this computer · 2 attempts · '
+      'waiting for a fresh liquidity zone',
+    );
+    expect(
+      tradingLocalRunnerOutcomeLabel(
+        'blocked:momentum_gate_short_missed_retest',
+      ),
+      'waiting for the next bounded retest',
     );
   });
 
@@ -1022,8 +1081,8 @@ void main() {
         nowUtc: now,
       ),
       contains(
-        '32 exchange orders. Selected XRP-USDT TEST at max 100 USDT and '
-        '1 exchange order',
+        '32 exchange requests. Selected XRP-USDT TEST at max 100 USDT and '
+        '1 exchange request',
       ),
     );
   });
