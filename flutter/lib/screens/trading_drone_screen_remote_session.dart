@@ -202,15 +202,30 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             sessionOperationId: session.operationId,
           );
       if (operations.isEmpty) return false;
-      await _module.executionUseCase.retainRemoteCompletedEffects(
-        session: session,
-        operations: operations,
-        expectedAccountBindingHashHex: profile.accountBindingHashHex,
-      );
+      final retained = await _module.executionUseCase
+          .retainRemoteCompletedEffects(
+            session: session,
+            operations: operations,
+            expectedAccountBindingHashHex: profile.accountBindingHashHex,
+          );
+      if (!mounted ||
+          _module.activeCapsuleRootHex() != session.mandate.capsuleRootHex) {
+        return false;
+      }
+      _updateState(() {
+        tradingSynchronizeManagedOrderState(
+          state: retained,
+          managedOrderIds: _managedOrderIds,
+          managedOrderSymbols: _managedOrderSymbols,
+          managedOrderProvenance: _managedOrderProvenance,
+        );
+      });
       await _module.uiLog.log(
         'bingx.remote_session.effects_restored',
         'session_operation_id=${session.operationId} '
-            'count=${operations.length} effect=false',
+            'count=${operations.length} '
+            'provenance_count=${retained.managedOrderProvenance.length} '
+            'effect=false',
       );
       return true;
     } catch (error) {
