@@ -1784,10 +1784,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                         _MoltbookWorkspaceSection(
                           icon: Icons.drafts_outlined,
                           title: 'Local drafts',
-                          subtitle:
-                              '${_storedDrafts.length} waiting for review',
+                          subtitle: '${_storedDrafts.length} saved locally',
                           child: _MoltbookDraftHistoryCard(
                             drafts: _storedDrafts,
+                            publications: _publications,
+                            binding: _binding,
                             busy: _draftBusy || _publicationBusy,
                             submoltController: _submoltController,
                             onDelete: _deleteDraft,
@@ -2444,6 +2445,8 @@ class _CycleMetric extends StatelessWidget {
 
 class _MoltbookDraftHistoryCard extends StatelessWidget {
   final List<MoltbookStoredDraft> drafts;
+  final List<ExternalEffectOperation> publications;
+  final MoltbookConnectionBinding? binding;
   final bool busy;
   final TextEditingController submoltController;
   final Future<void> Function(MoltbookStoredDraft draft) onDelete;
@@ -2451,6 +2454,8 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
 
   const _MoltbookDraftHistoryCard({
     required this.drafts,
+    required this.publications,
+    required this.binding,
     required this.busy,
     required this.submoltController,
     required this.onDelete,
@@ -2484,23 +2489,61 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            ...drafts.map(
-              (draft) => ListTile(
+            ...drafts.map((draft) {
+              final connection = binding;
+              ExternalEffectOperation? existingOperation;
+              String? publicationGuidance;
+              if (connection != null) {
+                try {
+                  existingOperation =
+                      MoltbookPublicationService.retainedPostOperationForDraft(
+                        operations: publications,
+                        accountBindingId: connection.accountId,
+                        accountName: connection.accountName,
+                        submoltName: submoltController.text,
+                        draft: draft.preview,
+                      );
+                  if (existingOperation?.state ==
+                      ExternalEffectState.terminalFailure) {
+                    publicationGuidance =
+                        'delivery unresolved · resolve in Publication history';
+                  } else if (existingOperation != null) {
+                    final payload = MoltbookPublicationService.decodePayload(
+                      existingOperation,
+                    );
+                    final retainedDestination = payload['submolt_name'];
+                    if (retainedDestination != submoltController.text.trim()) {
+                      publicationGuidance =
+                          'bound to m/$retainedDestination · resolve in Publication history';
+                    }
+                  }
+                } on StateError {
+                  publicationGuidance =
+                      'publication history conflict · resolve in Publication history';
+                } on FormatException {
+                  publicationGuidance =
+                      'publication history invalid · resolve in Publication history';
+                }
+              }
+              final reviewBlocked = publicationGuidance != null;
+              return ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(draft.preview.title),
                 subtitle: Text(
-                  '${draft.status.replaceAll("_", " ")} · '
+                  '${publicationGuidance ?? draft.status.replaceAll("_", " ")} · '
                   '${draft.createdAtUtc.toLocal()} · '
                   '${draft.preview.draftHashHex.substring(0, 12)}..',
                 ),
                 trailing: Wrap(
                   spacing: 4,
                   children: [
-                    FilledButton.tonalIcon(
-                      onPressed: busy ? null : () => onReviewPublication(draft),
-                      icon: const Icon(Icons.rate_review_outlined),
-                      label: const Text('Review'),
-                    ),
+                    if (!reviewBlocked)
+                      FilledButton.tonalIcon(
+                        onPressed:
+                            busy ? null : () => onReviewPublication(draft),
+                        icon: const Icon(Icons.rate_review_outlined),
+                        label: const Text('Review'),
+                      ),
                     IconButton(
                       tooltip: 'Delete local draft',
                       onPressed: busy ? null : () => onDelete(draft),
@@ -2508,8 +2551,8 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-            ),
+              );
+            }),
           ],
         ),
       ),

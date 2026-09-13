@@ -150,6 +150,37 @@ void main() {
     );
   });
 
+  test('projects the exact retained post owner for a local draft', () {
+    final draft = _postDraft('1');
+    final failed = _postOperation(
+      operationId: 'moltbook-post-failed',
+      state: ExternalEffectState.terminalFailure,
+      draftHashHex: draft.draftHashHex,
+      lastErrorCode: 'http_400',
+      withReceipt: false,
+    );
+
+    final existing = MoltbookPublicationService.retainedPostOperationForDraft(
+      operations: <ExternalEffectOperation>[failed],
+      accountBindingId: 'account-test',
+      accountName: 'agent',
+      submoltName: MoltbookPublicationService.defaultSubmolt,
+      draft: draft,
+    );
+
+    expect(existing?.operationId, failed.operationId);
+    expect(
+      MoltbookPublicationService.retainedPostOperationForDraft(
+        operations: <ExternalEffectOperation>[failed],
+        accountBindingId: 'another-account',
+        accountName: 'agent',
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+        draft: draft,
+      ),
+      isNull,
+    );
+  });
+
   test(
     'only confirmed authorization rejection permits exact reauthorization',
     () {
@@ -762,6 +793,49 @@ void main() {
       );
       expect(await publications.list(), hasLength(1));
     });
+
+    test(
+      'one source draft cannot create concurrent effects in two communities',
+      () async {
+        final draft = _postDraft('4');
+        final outcomes = await Future.wait<Object>(<Future<Object>>[
+          publications
+              .prepare(
+                draft: draft,
+                submoltName: MoltbookPublicationService.defaultSubmolt,
+              )
+              .then<Object>((operation) => operation)
+              .catchError((Object error) => error),
+          publications
+              .prepare(draft: draft, submoltName: 'another-community')
+              .then<Object>((operation) => operation)
+              .catchError((Object error) => error),
+        ]);
+
+        expect(outcomes.whereType<ExternalEffectOperation>(), hasLength(1));
+        expect(
+          outcomes.whereType<StateError>().single.message,
+          contains('already bound to another exact publication'),
+        );
+        expect(await publications.list(), hasLength(1));
+
+        final restarted = _publications(
+          _effects(files, () => activeRoot),
+          binding,
+        );
+        await expectLater(
+          restarted.prepare(draft: draft, submoltName: 'third-community'),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains('already bound to another exact publication'),
+            ),
+          ),
+        );
+        expect(await restarted.list(), hasLength(1));
+      },
+    );
   });
 }
 
