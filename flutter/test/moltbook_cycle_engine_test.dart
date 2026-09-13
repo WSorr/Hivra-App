@@ -20,6 +20,7 @@ import 'package:hivra_app/services/moltbook_feed_checkpoint_store.dart';
 import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/moltbook_public_bulletin_ai_service.dart';
 import 'package:hivra_app/services/moltbook_public_change_feed_store.dart';
+import 'package:hivra_app/services/moltbook_public_repository_source_adapter.dart';
 import 'package:hivra_app/services/moltbook_runtime_module.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/ui_event_log_service.dart';
@@ -35,6 +36,7 @@ void main() {
   late _RecordingDraftStore drafts;
   late _RecordingLog log;
   late MoltbookPublicChangeFeedStore publicChanges;
+  late _PublicRepositorySource publicRepositorySource;
   late MoltbookCycleTriggerService triggers;
   late MoltbookRuntimeModule module;
 
@@ -49,6 +51,7 @@ void main() {
       moltbookPublicBulletinAi: ai,
       moltbookPublicChanges: publicChanges,
       moltbookCycleTriggers: cycleTriggers,
+      publicRepositorySource: publicRepositorySource,
       ambassadorConfiguration: configuration,
       readActiveCapsuleRootHex: () => activeRoot,
     );
@@ -68,6 +71,7 @@ void main() {
       fileStore: _MemoryFileStore(),
       readActiveCapsuleRootHex: () => activeRoot,
     );
+    publicRepositorySource = _PublicRepositorySource();
     triggers = MoltbookCycleTriggerService();
     module = buildModule(triggers);
   });
@@ -369,6 +373,91 @@ void main() {
 
     expect(publications.preparedPostDestinations, isEmpty);
   });
+
+  test(
+    'each cycle observes the configured public repository without duplicating its commit',
+    () async {
+      ai.unlocked = true;
+      publicRepositorySource.observation = (
+        sourceId: 'github-${'a' * 40}',
+        facts: const <String>[
+          'Public repository WSorr/Hivra-App recorded a bounded commit.',
+        ],
+      );
+
+      await module.runMoltbookCycle();
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+
+      expect(publicRepositorySource.observedUrls, <String>[
+        MoltbookPublicationContract.repositoryUrl,
+        MoltbookPublicationContract.repositoryUrl,
+      ]);
+      expect(await publicChanges.load(), hasLength(1));
+      expect(ai.bulletinProposalCount, 1);
+      expect(drafts.stored, hasLength(1));
+    },
+  );
+
+  test(
+    'unrelated local draft does not block a bounded repository publication',
+    () async {
+      ai.unlocked = true;
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      final unrelatedDraft = _draftPreview('9' * 64);
+      await drafts.save(unrelatedDraft);
+      publicRepositorySource.observation = (
+        sourceId: 'github-${'c' * 40}',
+        facts: const <String>[
+          'Public repository WSorr/Hivra-App recorded a newer commit.',
+        ],
+      );
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(summary.blockedCount, 0);
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.postApprovalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(drafts.stored.map((draft) => draft.preview.draftHashHex), <String>[
+        unrelatedDraft.draftHashHex,
+      ]);
+      expect((await publicChanges.load()).single.isPending, isFalse);
+    },
+  );
+
+  test('public repository failure does not block the Moltbook cycle', () async {
+    publicRepositorySource.error = const FormatException('invalid response');
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(summary.blockedCount, 0);
+    expect(
+      log.entries.any(
+        (entry) =>
+            entry.source == 'moltbook.public_repository.observe' &&
+            entry.message.startsWith('deferred '),
+      ),
+      isTrue,
+    );
+  });
+
+  test(
+    'Capsule switch after public repository read aborts the cycle',
+    () async {
+      publicRepositorySource.observation = (
+        sourceId: 'github-${'b' * 40}',
+        facts: const <String>['A public commit was observed.'],
+      );
+      publicRepositorySource.afterObservation = () => activeRoot = _rootB;
+
+      await expectLater(module.runMoltbookCycle(), throwsStateError);
+
+      activeRoot = _rootA;
+      expect(await publicChanges.load(), isEmpty);
+      expect(ai.bulletinProposalCount, 0);
+    },
+  );
 
   test(
     'bounded cycle publishes one exact change to the default community',
@@ -1503,6 +1592,27 @@ class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
     triggerPolicy = configuration.triggerPolicy;
     primaryCommunity = configuration.primaryCommunity;
     enabled = configuration.enabled;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _PublicRepositorySource implements MoltbookPublicRepositorySourceAdapter {
+  final List<String> observedUrls = <String>[];
+  ({String sourceId, List<String> facts})? observation;
+  Object? error;
+  void Function()? afterObservation;
+
+  @override
+  Future<({String sourceId, List<String> facts})?> observeLatestCommit(
+    String repositoryUrl,
+  ) async {
+    observedUrls.add(repositoryUrl);
+    final failure = error;
+    if (failure != null) throw failure;
+    afterObservation?.call();
+    return observation;
   }
 
   @override

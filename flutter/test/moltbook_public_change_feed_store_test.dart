@@ -8,6 +8,7 @@ import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/moltbook_public_change_feed_store.dart';
+import 'package:hivra_app/services/moltbook_public_repository_source_adapter.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
@@ -34,6 +35,100 @@ void main() {
   tearDown(() async {
     if (await home.exists()) await home.delete(recursive: true);
   });
+
+  test('public GitHub commit becomes bounded change-feed facts', () async {
+    final requested = <Uri>[];
+    final source = MoltbookPublicRepositorySourceAdapter(
+      readJson: (uri) async {
+        requested.add(uri);
+        if (requested.length == 1) {
+          return <Object?>[
+            <String, Object?>{'sha': 'a' * 40},
+          ];
+        }
+        return <String, Object?>{
+          'sha': 'a' * 40,
+          'commit': <String, Object?>{
+            'message': 'Seal duplicate Moltbook drafts\n\nDetails.',
+            'author': <String, Object?>{'date': '2026-09-13T12:00:00Z'},
+          },
+          'stats': <String, Object?>{'additions': 24, 'deletions': 12},
+          'files': <Object?>[
+            <String, Object?>{'filename': 'flutter/lib/example.dart'},
+            <String, Object?>{'filename': 'flutter/test/example_test.dart'},
+          ],
+        };
+      },
+    );
+
+    final observation = await source.observeLatestCommit(
+      'https://github.com/WSorr/Hivra-App',
+    );
+    expect(observation?.sourceId, 'github-${'a' * 40}');
+    expect(observation?.facts, hasLength(3));
+    expect(observation?.facts.join('\n'), contains('Seal duplicate'));
+    expect(requested.map((uri) => uri.toString()), <String>[
+      'https://api.github.com/repos/WSorr/Hivra-App/commits?per_page=1',
+      'https://api.github.com/repos/WSorr/Hivra-App/commits/${'a' * 40}',
+    ]);
+
+    final retained = await store.record(
+      sourceId: observation!.sourceId,
+      category: 'hivra-development',
+      facts: observation.facts,
+    );
+    final replay = await store.record(
+      sourceId: observation.sourceId,
+      category: 'hivra-development',
+      facts: observation.facts,
+    );
+    expect(replay.commitmentHashHex, retained.commitmentHashHex);
+    expect(await store.load(), hasLength(1));
+  });
+
+  test(
+    'public repository source rejects redirects and identity mutation',
+    () async {
+      for (final value in <String>[
+        'http://github.com/WSorr/Hivra-App',
+        'https://github.com/WSorr/Hivra-App/issues',
+        'https://user@github.com/WSorr/Hivra-App',
+        'https://example.com/WSorr/Hivra-App',
+      ]) {
+        expect(
+          () => MoltbookAmbassadorConfiguration.parsePublicRepositoryUrl(value),
+          throwsFormatException,
+        );
+      }
+
+      var requestCount = 0;
+      final source = MoltbookPublicRepositorySourceAdapter(
+        readJson: (uri) async {
+          requestCount++;
+          return requestCount == 1
+              ? <Object?>[
+                <String, Object?>{'sha': 'a' * 40},
+              ]
+              : <String, Object?>{
+                'sha': 'b' * 40,
+                'commit': <String, Object?>{
+                  'message': 'Mutated identity',
+                  'author': <String, Object?>{'date': '2026-09-13T12:00:00Z'},
+                },
+                'stats': <String, Object?>{'additions': 1, 'deletions': 0},
+                'files': <Object?>[
+                  <String, Object?>{'filename': 'README.md'},
+                ],
+              };
+        },
+      );
+      await expectLater(
+        source.observeLatestCommit(MoltbookPublicationContract.repositoryUrl),
+        throwsFormatException,
+      );
+      expect(requestCount, 2);
+    },
+  );
 
   test(
     'exact source replay is idempotent and conflicting facts fail closed',

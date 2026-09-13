@@ -77,6 +77,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _personaController = TextEditingController();
   final TextEditingController _topicsController = TextEditingController();
+  final TextEditingController _publicRepositoryController =
+      TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _bulletinIdController = TextEditingController(
     text: newMoltbookPublicChangeSourceId(DateTime.now()),
@@ -185,6 +187,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     _descriptionController.dispose();
     _personaController.dispose();
     _topicsController.dispose();
+    _publicRepositoryController.dispose();
     _apiKeyController.dispose();
     _bulletinIdController.dispose();
     _releaseTagController.dispose();
@@ -223,6 +226,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       _descriptionController.text = configuration.agentDescription;
       _personaController.text = configuration.personaSummary;
       _topicsController.text = configuration.allowedTopics.join(', ');
+      _publicRepositoryController.text = configuration.publicRepositoryUrl;
       _categoryController.text = configuration.allowedTopics.first;
       _submoltController.text = configuration.primaryCommunity;
       _audienceController.text = configuration.primaryCommunity;
@@ -827,6 +831,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               .map((topic) => topic.trim())
               .where((topic) => topic.isNotEmpty)
               .toList(),
+      publicRepositoryUrl: _publicRepositoryController.text.trim(),
       primaryCommunity: _submoltController.text.trim(),
       approvalMode: _approvalMode,
       triggerPolicy: _triggerPolicy,
@@ -1849,6 +1854,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                 labelText: 'Allowed topics',
                                 helperText:
                                     'What the agent may discuss. Comma-separated ids, for example capsule-runtime.',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _publicRepositoryController,
+                              keyboardType: TextInputType.url,
+                              decoration: const InputDecoration(
+                                labelText: 'Public repository',
+                                helperText:
+                                    'Optional exact GitHub repository URL. Each cycle observes its latest public commit without credentials.',
                               ),
                             ),
                             const SizedBox(height: 20),
