@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
 import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
 import 'package:hivra_app/models/bingx_futures_signal_rank_models.dart';
@@ -113,6 +114,89 @@ void main() {
       'remote_effect_receipt_imported',
     );
   });
+
+  test('active remote authority keeps local order refresh observation-only', () {
+    const running =
+        'active=active enabled=linked session_state=active cycles=2 effects=1 '
+        'last_scheduled_check=2026-09-14T02:00:00Z '
+        'next_check=2026-09-14T02:05:00Z '
+        'last_outcome=effect:succeeded:test=false';
+    const paused =
+        'active=inactive enabled=linked session_state=active cycles=2 effects=1 '
+        'last_scheduled_check=2026-09-14T02:00:00Z '
+        'next_check=2026-09-14T02:05:00Z '
+        'last_outcome=effect:succeeded:test=false';
+    const terminal =
+        'active=inactive enabled=linked session_state=completed cycles=2 effects=1 '
+        'last_scheduled_check=2026-09-14T02:00:00Z '
+        'next_check=none last_outcome=effect:succeeded:test=false';
+
+    for (final status in <String?>[running, paused, null, 'malformed']) {
+      expect(
+        tradingMayMutateManagedOrdersLocally(
+          remoteRunnerConfigured: true,
+          hasVerifiedRemoteSession: true,
+          remoteRunnerStatusWire: status,
+        ),
+        isFalse,
+      );
+    }
+    expect(
+      tradingMayMutateManagedOrdersLocally(
+        remoteRunnerConfigured: true,
+        hasVerifiedRemoteSession: true,
+        remoteRunnerStatusWire: terminal,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingMayMutateManagedOrdersLocally(
+        remoteRunnerConfigured: false,
+        hasVerifiedRemoteSession: false,
+        remoteRunnerStatusWire: null,
+      ),
+      isTrue,
+    );
+  });
+
+  test(
+    'successful local cancellation disappears from stale provider snapshot',
+    () {
+      final visible = tradingOpenOrdersAfterLifecycleChanges(
+        providerSnapshot: const <BingxFuturesOpenOrder>[
+          BingxFuturesOpenOrder(
+            orderId: 'managed-canceled',
+            symbol: 'ACH-USDT',
+            side: 'BUY',
+            positionSide: 'BOTH',
+            orderType: 'TRIGGER_LIMIT',
+            status: 'NEW',
+            priceDecimal: '0.004680',
+            triggerPriceDecimal: '0.004685',
+            quantityDecimal: '1696',
+            executedQuantityDecimal: '0',
+            createdAtMs: 1,
+          ),
+          BingxFuturesOpenOrder(
+            orderId: 'manual-open',
+            symbol: 'SOL-USDT',
+            side: 'SELL',
+            positionSide: 'BOTH',
+            orderType: 'LIMIT',
+            status: 'NEW',
+            priceDecimal: '250',
+            triggerPriceDecimal: null,
+            quantityDecimal: '1',
+            executedQuantityDecimal: '0',
+            createdAtMs: 2,
+          ),
+        ],
+        canceledOrderIds: const <String>{'managed-canceled'},
+      );
+
+      expect(visible.map((order) => order.orderId), <String>['manual-open']);
+    },
+  );
 
   test('signal rank input is bounded and keeps ready candidates first', () {
     final candidates = <BingxFuturesSignalRankCandidate>[

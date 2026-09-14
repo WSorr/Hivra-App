@@ -379,22 +379,45 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
           .toList(growable: false);
       final lifecycleRevisionBeforeRevalidation =
           _managedOrderLifecycleRevision;
-      if (result.isSuccess && managedOrders.isNotEmpty) {
-        await _revalidateManagedOpenOrders(
+      var canceledOrderIds = const <String>{};
+      final mayMutateManagedOrders = tradingMayMutateManagedOrdersLocally(
+        remoteRunnerConfigured: _remoteRunnerConfigured,
+        hasVerifiedRemoteSession: _remoteRunnerSession != null,
+        remoteRunnerStatusWire: _remoteRunnerStatusWire,
+      );
+      if (result.isSuccess &&
+          managedOrders.isNotEmpty &&
+          mayMutateManagedOrders) {
+        canceledOrderIds = await _revalidateManagedOpenOrders(
           credentials: credentials,
           managedOrders: managedOrders,
           silent: silent,
         );
+      } else if (result.isSuccess &&
+          managedOrders.isNotEmpty &&
+          !mayMutateManagedOrders) {
+        await _module.uiLog.log(
+          'bingx.exchange.revalidate.skip',
+          'reason=remote_session_owns_effect_lifecycle '
+              'orders=${managedOrders.length}',
+        );
       }
+      final visibleOrders = tradingOpenOrdersAfterLifecycleChanges(
+        providerSnapshot: allOrders,
+        canceledOrderIds: canceledOrderIds,
+      );
+      final visibleManagedOrders = visibleOrders
+          .where((order) => _managedOrderIds.contains(order.orderId))
+          .toList(growable: false);
       final snapshotInvalidatedByLifecycle =
           lifecycleRevisionBeforeRevalidation != _managedOrderLifecycleRevision;
       _updateState(() {
         _lastOpenOrdersRead = result;
         if (result.isSuccess) {
-          _openOrders = allOrders;
+          _openOrders = visibleOrders;
         }
-        if (result.isSuccess && managedOrders.isNotEmpty) {
-          _cancelOrderIdController.text = managedOrders.first.orderId;
+        if (result.isSuccess && visibleManagedOrders.isNotEmpty) {
+          _cancelOrderIdController.text = visibleManagedOrders.first.orderId;
         }
       });
       final trackedOrderId = _trackedOrderId;
@@ -408,21 +431,22 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
             );
             return;
           }
-          final trackedStillOpen = allOrders.any(
+          final trackedStillOpen = visibleOrders.any(
             (order) => order.orderId == trackedOrderId,
           );
           await _module.uiLog.log(
             'bingx.exchange.tracking.check',
             'symbol=${result.symbol} orderId=$trackedOrderId '
                 'open=${trackedStillOpen ? "yes" : "no"} '
-                'managedCount=${managedOrders.length} totalCount=${allOrders.length}',
+                'managedCount=${visibleManagedOrders.length} '
+                'totalCount=${visibleOrders.length}',
           );
           if (!trackedStillOpen) {
             _managedOrderIds.remove(trackedOrderId);
             _managedOrderSymbols.remove(trackedOrderId);
             _managedOrderProvenance.remove(trackedOrderId);
             _managedOrderLifecycleRevision += 1;
-            final remainingManagedOrders = allOrders
+            final remainingManagedOrders = visibleOrders
                 .where((order) => _managedOrderIds.contains(order.orderId))
                 .toList(growable: false);
             if (remainingManagedOrders.isNotEmpty) {
@@ -456,7 +480,8 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       if (!silent) {
         await _showSnack(
           result.isSuccess
-              ? 'Open orders: ${allOrders.length} · drone: ${managedOrders.length}'
+              ? 'Open orders: ${visibleOrders.length} · '
+                  'drone: ${visibleManagedOrders.length}'
               : 'Open orders failed: ${result.exchangeCode}',
           seconds: result.isSuccess ? 2 : 4,
         );
@@ -511,7 +536,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     }
   }
 
-  Future<void> _revalidateManagedOpenOrders({
+  Future<Set<String>> _revalidateManagedOpenOrders({
     required BingxFuturesApiCredentials credentials,
     required List<BingxFuturesOpenOrder> managedOrders,
     required bool silent,
@@ -523,7 +548,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       bySymbol.putIfAbsent(symbol, () => <BingxFuturesOpenOrder>[]).add(order);
     }
 
-    var canceled = 0;
+    final canceledOrderIds = <String>{};
     final replacementLifecycleKeys = <String>{};
     for (final entry in bySymbol.entries) {
       final actionableDecision = await _computeLiveDecision(
@@ -590,7 +615,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
               'reason=${verdict.reasonCode}',
         );
         if (!cancel.isSuccess) continue;
-        canceled += 1;
+        canceledOrderIds.add(order.orderId);
         _managedOrderIds.remove(order.orderId);
         _managedOrderSymbols.remove(order.orderId);
         _managedOrderProvenance.remove(order.orderId);
@@ -632,12 +657,15 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       }
     }
 
-    if (canceled > 0) {
+    if (canceledOrderIds.isNotEmpty) {
       await _persistOpenOrdersTrackingState(source: 'revalidate_cancel');
       if (!silent && mounted) {
-        await _showSnack('Canceled stale drone orders: $canceled');
+        await _showSnack(
+          'Canceled stale drone orders: ${canceledOrderIds.length}',
+        );
       }
     }
+    return Set<String>.unmodifiable(canceledOrderIds);
   }
 
   Future<void> _replaceCanceledManagedOrder({

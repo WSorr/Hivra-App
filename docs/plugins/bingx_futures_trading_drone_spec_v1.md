@@ -695,6 +695,7 @@ Symmetric long-side rule applies when the market already continued upward and th
 Runtime implication:
 
 - already-open managed drone orders must be revalidated against a fresh live decision snapshot during order tracking,
+- while a verified non-terminal VPS session retains authority, local open-order refresh is observation and reconciliation only; automatic cancel or replacement remains with the remote session lifecycle,
 - each managed order must persist capsule-scoped provenance (canonical intent and decision hash lineage) before it can participate in replacement lifecycle,
 - only capsule-managed drone orders may be auto-canceled,
 - manual exchange orders must not be touched by this lifecycle,
