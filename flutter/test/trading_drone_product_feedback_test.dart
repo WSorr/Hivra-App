@@ -474,6 +474,25 @@ void main() {
     );
   });
 
+  test('failed Runner does not present retained authority as execution', () {
+    const failed =
+        'active=failed enabled=enabled session_state=active cycles=14 effects=0 '
+        'last_scheduled_check=2026-09-14T08:25:00Z '
+        'next_check=2026-09-14T08:30:00Z '
+        'last_outcome=blocked:active_order_exists';
+
+    final label = tradingRemoteRunnerStatusLabel(
+      failed,
+      authorizedMaxEffects: 2,
+    );
+
+    expect(label, contains('Runner failed · Authorization remains active'));
+    expect(label, contains('The Runner is stopped'));
+    expect(label, contains('No checks or orders can occur'));
+    expect(label, isNot(contains('Session active')));
+    expect(label, isNot(contains('Next scheduled check')));
+  });
+
   test('Runner actions preserve one retained session lifecycle', () {
     const running =
         'active=active enabled=linked session_state=active cycles=1 effects=0 '

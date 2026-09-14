@@ -5,11 +5,13 @@ Future<void> main(List<String> arguments) async {
   final directory = Directory(arguments[0]);
   await directory.create(recursive: true);
   final lock = File('${directory.path}/stream.lock.v2');
-  await lock.create(exclusive: true);
+  final handle = await lock.open(mode: FileMode.writeOnlyAppend);
+  await handle.lock(FileLock.exclusive);
   await File(arguments[1]).writeAsString('ready', flush: true);
   try {
     await Future<void>.delayed(const Duration(seconds: 4));
   } finally {
-    await lock.delete();
+    await handle.unlock();
+    await handle.close();
   }
 }

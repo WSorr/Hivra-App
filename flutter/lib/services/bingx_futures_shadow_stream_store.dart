@@ -69,10 +69,9 @@ class BingxFuturesShadowStreamStore {
     await _prepareRootDirectory();
     final lockFile = File('${directory.path}/$_lockTokenFileName');
     await _rejectLink(lockFile.path);
-    var lockAcquired = false;
+    RandomAccessFile? lockHandle;
     try {
-      await _acquireLock(lockFile);
-      lockAcquired = true;
+      lockHandle = await _acquireLock(lockFile);
       await _prepareStreamDirectories();
       await _ensureKnownRootEntries();
       await _bindIdentity(runnerKeyId);
@@ -106,8 +105,9 @@ class BingxFuturesShadowStreamStore {
       await _commitEvidence(evidence);
       return evidence;
     } finally {
-      if (lockAcquired) {
-        await lockFile.delete();
+      if (lockHandle != null) {
+        await lockHandle.unlock();
+        await lockHandle.close();
       }
     }
   }
@@ -132,21 +132,36 @@ class BingxFuturesShadowStreamStore {
     return completer.future;
   }
 
-  Future<void> _acquireLock(File lockFile) async {
+  Future<RandomAccessFile> _acquireLock(File lockFile) async {
     for (var attempt = 1; attempt <= _lockAttemptLimit; attempt++) {
+      RandomAccessFile? handle;
       try {
-        await lockFile.create(exclusive: true);
-        return;
+        final lockType = await FileSystemEntity.type(
+          lockFile.path,
+          followLinks: false,
+        );
+        if (lockType == FileSystemEntityType.link) {
+          throw const FileSystemException('shadow stream lock is a link');
+        }
+        if (lockType != FileSystemEntityType.notFound &&
+            lockType != FileSystemEntityType.file) {
+          throw const FileSystemException(
+            'shadow stream lock is not a regular file',
+          );
+        }
+        handle = await lockFile.open(mode: FileMode.writeOnlyAppend);
+        await handle.lock(FileLock.exclusive);
+        return handle;
       } on FileSystemException {
+        await handle?.close();
         if (attempt == _lockAttemptLimit) rethrow;
       }
       if (attempt == _lockAttemptLimit) {
-        throw const FileSystemException(
-          'shadow stream lock budget exhausted',
-        );
+        throw const FileSystemException('shadow stream lock budget exhausted');
       }
       await Future<void>.delayed(_lockRetryDelay);
     }
+    throw const FileSystemException('shadow stream lock budget exhausted');
   }
 
   Future<void> _prepareRootDirectory() async {

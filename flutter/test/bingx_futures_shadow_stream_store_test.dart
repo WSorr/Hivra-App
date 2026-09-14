@@ -48,6 +48,19 @@ void main() {
       expect(await _evidenceFiles(temp), hasLength(2));
     });
 
+    test('recovers a lock token retained by a crashed process', () async {
+      final retainedLock = File('${temp.path}/stream.lock.v2');
+      await retainedLock.create();
+
+      final evidence = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+
+      expect(evidence.sequence, 1);
+      expect(await retainedLock.exists(), isTrue);
+      expect(await _evidenceFiles(temp), hasLength(1));
+    });
+
     test('commits a flushed pending identity after restart', () async {
       await _prepareEmptyStream(temp);
       const owner = BingxFuturesDeterministicReplayHarnessService();
@@ -676,10 +689,7 @@ Future<void> _prepareEmptyStream(Directory directory) async {
   await Directory('${directory.path}/pending').create();
 }
 
-Future<Process> _startSupportScript(
-  String scriptPath,
-  List<String> arguments,
-) {
+Future<Process> _startSupportScript(String scriptPath, List<String> arguments) {
   return Process.start('dart', <String>[
     '--packages=.dart_tool/package_config.json',
     scriptPath,

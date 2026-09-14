@@ -35,7 +35,7 @@ void main() {
     );
   });
 
-  test('bundle upgrade pauses inactive boot-enabled session first', () {
+  test('bundle upgrade normalizes failed or boot-enabled session first', () {
     final script = const DartSshBingxFuturesRemoteRunnerHostPort()
         .buildBootstrapScriptForTesting(
           profileId: 'a' * 64,
@@ -63,6 +63,11 @@ void main() {
       contains(
         'Remote Runner update requires the current session to be paused or finished',
       ),
+    );
+    expect(script, contains('failed)'));
+    expect(
+      script.indexOf('failed)'),
+      lessThan(script.indexOf('--pause-prepared-session-service')),
     );
   });
 
