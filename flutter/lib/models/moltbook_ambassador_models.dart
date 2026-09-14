@@ -58,7 +58,10 @@ class MoltbookPublicBulletinProposal {
       );
     }
     if (body.contains(
-      RegExp(r'https?://|#\w|\[hivra-effect:', caseSensitive: false),
+      RegExp(
+        r'https?://|#[a-z_]|\[hivra-effect:',
+        caseSensitive: false,
+      ),
     )) {
       throw const FormatException(
         'AI public bulletin body contains unsupported formatting',
