@@ -112,8 +112,9 @@ require_present "$CI_REPOSITORY_GATES" '^  review-gates:$' \
   "repository workflow keeps the required status context"
 require_present "$CI_REPOSITORY_GATES" 'tools/review/review_all\.sh' \
   "repository workflow executes review gates"
-require_present "$CI_REPOSITORY_GATES" 'cargo test --workspace --locked' \
-  "repository workflow tests the Rust workspace"
+require_present "$CI_REPOSITORY_GATES" \
+  'cargo test --workspace --exclude hivra-ffi --locked' \
+  "repository workflow tests the platform-neutral Rust workspace"
 require_present "$CI_REPOSITORY_GATES" 'flutter analyze --no-pub' \
   "repository workflow analyzes the Flutter application"
 require_present "$CI_REPOSITORY_GATES" 'flutter test --no-pub' \

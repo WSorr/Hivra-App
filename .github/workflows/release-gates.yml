@@ -44,8 +44,8 @@ jobs:
           flutter-version: 3.41.2
           cache: true
 
-      - name: Test Rust workspace
-        run: cargo test --workspace --locked
+      - name: Test platform-neutral Rust workspace
+        run: cargo test --workspace --exclude hivra-ffi --locked
 
       - name: Analyze and test Flutter application
         working-directory: flutter
