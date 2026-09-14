@@ -1399,12 +1399,13 @@ class MoltbookRuntimeModule {
     required String submoltName,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
-    if (!configuration.enabled ||
-        !const <String>{
-          MoltbookAmbassadorConfiguration.approvalAssisted,
-          MoltbookAmbassadorConfiguration.approvalBounded,
-        }.contains(configuration.approvalMode)) {
-      throw StateError('Assisted Moltbook publication is not enabled');
+    if (!const <String>{
+      MoltbookAmbassadorConfiguration.approvalAssisted,
+      MoltbookAmbassadorConfiguration.approvalBounded,
+    }.contains(configuration.approvalMode)) {
+      throw StateError(
+        'Moltbook publication review requires Assisted or Bounded write policy',
+      );
     }
     final matchingPublicChanges = (await moltbookPublicChanges.load())
         .where((change) => change.draftHashHex == draft.draftHashHex)

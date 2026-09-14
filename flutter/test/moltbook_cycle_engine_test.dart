@@ -324,6 +324,40 @@ void main() {
     ]);
   });
 
+  test('stopping cycles does not block review of a retained draft', () async {
+    configuration.enabled = false;
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+
+    await module.prepareMoltbookPublication(
+      draft: _draftPreview('8' * 64),
+      submoltName: MoltbookPublicationService.defaultSubmolt,
+    );
+
+    expect(publications.preparedPostDestinations, <String>[
+      MoltbookPublicationService.defaultSubmolt,
+    ]);
+  });
+
+  test('draft-only policy cannot prepare a publication for review', () async {
+    configuration.approvalMode = MoltbookAmbassadorConfiguration.approvalDraft;
+
+    await expectLater(
+      module.prepareMoltbookPublication(
+        draft: _draftPreview('8' * 64),
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Moltbook publication review requires Assisted or Bounded write policy',
+        ),
+      ),
+    );
+    expect(publications.preparedPostDestinations, isEmpty);
+  });
+
   test('mutated public-change draft binding creates no post effect', () async {
     final change = await publicChanges.record(
       sourceId: 'another-public-change',
