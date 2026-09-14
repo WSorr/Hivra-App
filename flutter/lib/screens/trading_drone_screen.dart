@@ -85,6 +85,34 @@ void tradingSynchronizeManagedOrderState({
 }
 
 @visibleForTesting
+bool tradingMayMutateManagedOrdersLocally({
+  required bool remoteRunnerConfigured,
+  required bool hasVerifiedRemoteSession,
+  required String? remoteRunnerStatusWire,
+}) {
+  return !tradingRemoteRunnerMayHoldAuthority(
+    configured: remoteRunnerConfigured,
+    hasVerifiedSession: hasVerifiedRemoteSession,
+    statusWire: remoteRunnerStatusWire,
+  );
+}
+
+@visibleForTesting
+List<BingxFuturesOpenOrder> tradingOpenOrdersAfterLifecycleChanges({
+  required List<BingxFuturesOpenOrder> providerSnapshot,
+  required Set<String> canceledOrderIds,
+}) {
+  if (canceledOrderIds.isEmpty) {
+    return List<BingxFuturesOpenOrder>.unmodifiable(providerSnapshot);
+  }
+  return List<BingxFuturesOpenOrder>.unmodifiable(
+    providerSnapshot.where(
+      (order) => !canceledOrderIds.contains(order.orderId),
+    ),
+  );
+}
+
+@visibleForTesting
 String? tradingReconciliationNotice(
   BingxFuturesManagedOrderReconciliationResult? result,
   String? activeCapsuleRootHex,
