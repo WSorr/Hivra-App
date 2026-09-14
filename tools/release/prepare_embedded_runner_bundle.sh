@@ -49,7 +49,6 @@ fi
 command -v git >/dev/null 2>&1 || die "Required command not found: git"
 command -v python3 >/dev/null 2>&1 || die "Required command not found: python3"
 command -v shasum >/dev/null 2>&1 || die "Required command not found: shasum"
-command -v tar >/dev/null 2>&1 || die "Required command not found: tar"
 
 git -C "$ROOT" diff --quiet || die "runner embedding requires a clean tracked worktree"
 git -C "$ROOT" diff --cached --quiet || die "runner embedding requires a clean index"
@@ -58,12 +57,49 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT INT TERM
 bundle="$work/linux-x64"
 archive="$work/runner-bundle-linux-x64.tar.gz"
+archive_check="$work/runner-bundle-linux-x64.check.tar.gz"
 
 bash "$ROOT/tools/trading/public_shadow_runner_artifact.sh" \
   --build "$bundle" --target-os linux --target-arch x64
 bash "$ROOT/tools/trading/public_shadow_runner_artifact.sh" --verify "$bundle"
 
-tar -C "$work" -czf "$archive" linux-x64
+create_canonical_archive() {
+  local output="$1"
+  python3 - "$bundle" "$output" <<'PY'
+import gzip
+import os
+from pathlib import Path
+import tarfile
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+
+with target.open("wb") as raw:
+    with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+            paths = [source, *sorted(source.rglob("*"), key=lambda path: path.as_posix())]
+            for path in paths:
+                info = archive.gettarinfo(str(path), arcname=path.relative_to(source.parent).as_posix())
+                info.uid = 0
+                info.gid = 0
+                info.uname = "root"
+                info.gname = "root"
+                info.mtime = 0
+                if path.is_dir():
+                    info.mode = 0o755
+                    archive.addfile(info)
+                else:
+                    info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
+                    with path.open("rb") as handle:
+                        archive.addfile(info, handle)
+PY
+}
+
+create_canonical_archive "$archive"
+create_canonical_archive "$archive_check"
+cmp -s "$archive" "$archive_check" ||
+  die "embedded runner archive is not reproducible"
 archive_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
 archive_size="$(wc -c < "$archive" | tr -d ' ')"
 control_sha="$(shasum -a 256 "$CONTROL_SOURCE" | awk '{print $1}')"
