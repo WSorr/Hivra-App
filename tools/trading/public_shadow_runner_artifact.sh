@@ -32,6 +32,7 @@ STATE_DIRECTORY="/var/lib/hivra-trading-public-shadow"
 ACCOUNT_READ_SCOPE_WIRE="balance,positions,open_orders"
 ACCOUNT_READ_MAX_USES="1"
 DETERMINISTIC_HISTORY_LIMIT="4096"
+TRANSIENT_TASKS_MAX="32"
 MODE=""
 ARTIFACT_DIR=""
 TARGET_OS=""
@@ -3424,7 +3425,7 @@ probe_exchange_account_once() {
     --property=OOMPolicy=stop \
     --property=MemoryMax=128M \
     --property=MemorySwapMax=0 \
-    --property=TasksMax=16 \
+    --property="TasksMax=$TRANSIENT_TASKS_MAX" \
     --property=CPUWeight=10 \
     --property=IOWeight=10 \
     --property=Nice=10 \
@@ -3711,7 +3712,7 @@ execute_exact_order_once() {
     --property=OOMPolicy=stop \
     --property=MemoryMax=128M \
     --property=MemorySwapMax=0 \
-    --property=TasksMax=16 \
+    --property="TasksMax=$TRANSIENT_TASKS_MAX" \
     --property=NoNewPrivileges=yes \
     --property=PrivateTmp=yes \
     --property=PrivateDevices=yes \
@@ -3823,7 +3824,7 @@ PY
     --property=OOMPolicy=stop \
     --property=MemoryMax=128M \
     --property=MemorySwapMax=0 \
-    --property=TasksMax=16 \
+    --property="TasksMax=$TRANSIENT_TASKS_MAX" \
     --property=CPUWeight=10 \
     --property=IOWeight=10 \
     --property=Nice=10 \
@@ -4105,7 +4106,7 @@ PY
     --property=OOMPolicy=stop \
     --property=MemoryMax=160M \
     --property=MemorySwapMax=0 \
-    --property=TasksMax=16 \
+    --property="TasksMax=$TRANSIENT_TASKS_MAX" \
     --property=NoNewPrivileges=yes \
     --property=PrivateTmp=yes \
     --property=PrivateDevices=yes \
@@ -4264,7 +4265,7 @@ recover_deterministic_session_once() {
     --property=OOMPolicy=stop \
     --property=MemoryMax=160M \
     --property=MemorySwapMax=0 \
-    --property=TasksMax=16 \
+    --property="TasksMax=$TRANSIENT_TASKS_MAX" \
     --property=NoNewPrivileges=yes \
     --property=PrivateTmp=yes \
     --property=PrivateDevices=yes \

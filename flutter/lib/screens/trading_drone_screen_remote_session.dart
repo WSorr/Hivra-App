@@ -1075,6 +1075,10 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
   final remainingEffects =
       validEffectLimit ? authorizedMaxEffects - effects : null;
   final outcome = fields['last_outcome']!;
+  final authorization =
+      state == 'active' && fields['active'] == 'failed'
+          ? 'Authorization remains active'
+          : 'Session $state';
   final result = switch (outcome) {
     'none' => 'No completed check yet',
     _ when outcome.startsWith('blocked:') =>
@@ -1090,7 +1094,7 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
   final last = fields['last_scheduled_check'];
   final next = fields['next_check'];
   return [
-    '$process · Session $state',
+    '$process · $authorization',
     startup,
     if (remainingEffects == null)
       'Checks: $cycles · Exchange attempts: $effects'
@@ -1105,8 +1109,10 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
     if (cycles > 0) 'Last completed check slot: $last',
     if (state == 'active' && fields['active'] == 'active')
       'Next scheduled check: $next (not guaranteed execution)',
-    if (state == 'active' && fields['active'] != 'active')
-      'No checks run while the Runner is paused or failed.',
+    if (state == 'active' && fields['active'] == 'failed')
+      'The Runner is stopped. No checks or orders can occur until it is updated or resumed.',
+    if (state == 'active' && fields['active'] == 'inactive')
+      'No checks run while the Runner is paused.',
   ].join('\n');
 }
 

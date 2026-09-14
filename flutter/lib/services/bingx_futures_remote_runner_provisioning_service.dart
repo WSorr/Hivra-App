@@ -975,6 +975,9 @@ PY
     installed_active="\$(systemctl show -p ActiveState --value hivra-trading-deterministic-session.service)"
     case "\$installed_active" in
       inactive) ;;
+      failed)
+        /opt/hivra/trading-public-shadow/hivra-trading-runner-lifecycle --pause-prepared-session-service /opt/hivra/trading-public-shadow >/dev/null
+        ;;
       *) echo "Remote Runner update requires the current session to be paused or finished" >&2; exit 1 ;;
     esac
     installed_enabled="\$(systemctl is-enabled hivra-trading-deterministic-session.service 2>/dev/null || true)"
