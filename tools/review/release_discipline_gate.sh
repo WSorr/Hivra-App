@@ -59,6 +59,7 @@ PRECHECK="$ROOT/tools/release/preflight.sh"
 MAC_RELEASE_SCRIPT="$ROOT/tools/release/macos_release.sh"
 ANDROID_RELEASE_SCRIPT="$ROOT/tools/release/android_release.sh"
 RELEASE_VERSION_GUARD="$ROOT/tools/release/release_version_guard.sh"
+UNMERGED_POST_RELEASE_WORK="$ROOT/tools/release/check_unmerged_post_release_work.sh"
 DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
 DRONE_EVIDENCE_FIXTURE="$ROOT/tools/release/trading_drone_evidence_fixture.json"
 MANUAL_SIGNOFF_CHECK="$ROOT/tools/release/check_manual_release_signoff.sh"
@@ -74,6 +75,7 @@ for path in \
   "$MAC_RELEASE_SCRIPT" \
   "$ANDROID_RELEASE_SCRIPT" \
   "$RELEASE_VERSION_GUARD" \
+  "$UNMERGED_POST_RELEASE_WORK" \
   "$DRONE_EVIDENCE_CHECK" \
   "$DRONE_EVIDENCE_FIXTURE" \
   "$MANUAL_SIGNOFF_CHECK" \
@@ -121,6 +123,8 @@ require_present "$CI_REPOSITORY_GATES" 'tools/release/check_manual_release_signo
 
 run_self_test "$RELEASE_VERSION_GUARD" \
   "release version guard self-test passes"
+run_self_test "$UNMERGED_POST_RELEASE_WORK" \
+  "unmerged post-release work mutation self-test passes"
 run_self_test "$DRONE_EVIDENCE_CHECK" \
   "trading evidence mutation self-test passes"
 run_self_test "$MANUAL_SIGNOFF_CHECK" \
@@ -138,6 +142,8 @@ fi
 
 require_present "$PRECHECK" 'tools/review/review_all\.sh' \
   "preflight executes review gates"
+require_present "$PRECHECK" 'check_unmerged_post_release_work\.sh' \
+  "preflight rejects missing local post-release work"
 require_present "$PRECHECK" 'tools/toolchain/verify_environment\.sh' \
   "preflight verifies the pinned toolchain"
 require_present "$PRECHECK" 'flutter pub get --enforce-lockfile' \
