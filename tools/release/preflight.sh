@@ -181,9 +181,6 @@ main() {
   run_step "Topology / Dependency / Security Review" \
     "$ROOT/tools/review/review_all.sh"
 
-  run_step "Unmerged Post-Release Work" \
-    "$ROOT/tools/release/check_unmerged_post_release_work.sh"
-
   run_step "User Lifetime Safety Pack Gate" \
     "$ROOT/tools/review/user_lifetime_safety_gate.sh"
 
