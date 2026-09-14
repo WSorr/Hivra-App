@@ -142,6 +142,52 @@ void main() {
     );
   });
 
+  test('accepts a numeric pull request reference in a public fact', () async {
+    final service = MoltbookPublicBulletinAiService(
+      runtime: _RecordingRuntime(
+        responseText:
+            '{"title":"Moltbook repository news restored",'
+            '"body":"The public commit restored Moltbook repository news before test20 (#302).",'
+            '"supporting_facts":["The public commit restored Moltbook repository news before test20 (#302)."]}',
+      ),
+    );
+
+    final proposal = await service.propose(
+      sourceNotes:
+          'The public commit restored Moltbook repository news before test20 (#302).',
+      category: 'hivra-development',
+      personaSummary: 'Explain facts.',
+    );
+
+    expect(proposal.body, contains('(#302)'));
+  });
+
+  test('still rejects public bulletin hashtags', () async {
+    final service = MoltbookPublicBulletinAiService(
+      runtime: _RecordingRuntime(
+        responseText:
+            '{"title":"One change",'
+            '"body":"One public fact. #Hivra",'
+            '"supporting_facts":["One public fact."]}',
+      ),
+    );
+
+    await expectLater(
+      service.propose(
+        sourceNotes: 'One public fact.',
+        category: 'hivra-development',
+        personaSummary: 'Explain facts.',
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('unsupported formatting'),
+        ),
+      ),
+    );
+  });
+
   test('rejects provider fields beyond the bulletin contract', () async {
     final service = MoltbookPublicBulletinAiService(
       runtime: _RecordingRuntime(
