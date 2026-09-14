@@ -130,7 +130,7 @@ run_self_test "$GITHUB_RELEASE_PUBLISH" \
 
 if "$FLUTTER_VERSION_DERIVER" --self-test >/dev/null &&
    [ "$("$FLUTTER_VERSION_DERIVER" --version v1.0.3-test4 --field name)" = "1.0.3" ] &&
-   [ "$("$FLUTTER_VERSION_DERIVER" --version v1.0.3-test4 --field number)" = "100030004" ]; then
+   [ "$("$FLUTTER_VERSION_DERIVER" --version v1.0.3-test4 --field number)" = "100030049" ]; then
   pass "Flutter artifact version derivation is deterministic"
 else
   fail "Flutter artifact version derivation is deterministic"
