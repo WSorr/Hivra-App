@@ -1093,6 +1093,11 @@ EOF
 
 verify_artifact() {
   local directory="$1"
+  local compatibility="${2:-current}"
+  case "$compatibility" in
+    current|upgrade-source-v5) ;;
+    *) die "unknown artifact verification compatibility mode" ;;
+  esac
   local binary="$directory/$BINARY_NAME"
   local effect_binary="$directory/$EFFECT_BINARY_NAME"
   local unit="$directory/$UNIT_NAME"
@@ -1362,6 +1367,10 @@ PY
     grep -aFq "$marker" "$effect_binary" ||
       die "artifact effect binary is missing exact-order marker: $marker"
   done
+  if [ "$compatibility" = current ]; then
+    grep -aFq 'trading-remote-mandate-admission-v6' "$effect_binary" ||
+      die "artifact effect binary is missing exact-order marker: trading-remote-mandate-admission-v6"
+  fi
   if grep -aEq \
     -- '--(cancel-order|switch-leverage|switch-margin-type|withdraw|transfer)(=|[^a-z-])' \
     "$effect_binary"; then
@@ -1554,7 +1563,7 @@ require_exact_installed_bundle() {
     die "host lifecycle requires the canonical real bundle directory"
   runtime_bundle_is_dynamic_user_executable "$BUNDLE_INSTALL_PATH" ||
     die "host lifecycle requires a traversable bundle directory"
-  verify_artifact "$BUNDLE_INSTALL_PATH" >/dev/null
+  verify_artifact "$BUNDLE_INSTALL_PATH" upgrade-source-v5 >/dev/null
   cmp -s "$BINARY_INSTALL_PATH" "$directory/$BINARY_NAME" ||
     die "host lifecycle refused a drifted runner binary"
   cmp -s "$EFFECT_BINARY_INSTALL_PATH" "$directory/$EFFECT_BINARY_NAME" ||
@@ -1933,7 +1942,11 @@ version = value.get("contract_version") if isinstance(value, dict) else None
 is_account_read = version == "trading-remote-mandate-admission-v2"
 is_exact_order = version == "trading-remote-mandate-admission-v3"
 is_deterministic_order = version == "trading-remote-mandate-admission-v4"
-is_deterministic_session = version == "trading-remote-mandate-admission-v5"
+is_legacy_deterministic_session = version == "trading-remote-mandate-admission-v5"
+is_deterministic_session = version in (
+    "trading-remote-mandate-admission-v5",
+    "trading-remote-mandate-admission-v6",
+)
 if not is_account_read and not is_exact_order and not is_deterministic_order and not is_deterministic_session:
     raise SystemExit("mandate contract version mismatch")
 expected_root = [
@@ -2016,9 +2029,12 @@ else:
     ]
     if not isinstance(policy, dict) or list(policy) != expected_policy:
         raise SystemExit("deterministic strategy policy is not canonical")
-    if "account_read_scope" in policy and policy["account_read_scope"] != [
-        "balance", "positions", "realized_pnl", "symbol_leverage", "symbol_margin_type"
-    ]:
+    expected_exposure_scope = [
+        "balance", "positions", "realized_pnl", "symbol_leverage",
+        "symbol_margin_type",
+        *([] if is_legacy_deterministic_session or is_deterministic_order else ["open_orders"]),
+    ]
+    if "account_read_scope" in policy and policy["account_read_scope"] != expected_exposure_scope:
         raise SystemExit("deterministic account-read scope mismatch")
     policy_text = re.compile(r"[A-Za-z0-9._:-]{1,128}")
     for key in ("runner_build_id", "plugin_id", "plugin_version", "host_abi"):
@@ -2107,7 +2123,7 @@ commitment_semantic = {
     "mandate": mandate,
 }
 commitment = hashlib.sha256(
-    (b"hivra:bingx-futures-remote-mandate-admission:v2\n" if is_account_read else b"hivra:bingx-futures-remote-mandate-admission:v3\n" if is_exact_order else b"hivra:bingx-futures-remote-mandate-admission:v5\n" if is_deterministic_session else b"hivra:bingx-futures-remote-mandate-admission:v4\n") +
+    (b"hivra:bingx-futures-remote-mandate-admission:v2\n" if is_account_read else b"hivra:bingx-futures-remote-mandate-admission:v3\n" if is_exact_order else f"hivra:bingx-futures-remote-mandate-admission:{'v5' if is_legacy_deterministic_session else 'v6'}\n".encode("ascii") if is_deterministic_session else b"hivra:bingx-futures-remote-mandate-admission:v4\n") +
     json.dumps(commitment_semantic, separators=(",", ":")).encode("utf-8")
 ).hexdigest()
 if value["commitment_hash_hex"] != commitment:
@@ -5179,6 +5195,7 @@ PY
     'hivra-trading-exact-order-evidence-v1' \
     'trading-remote-mandate-admission-v4' \
     'trading-remote-mandate-admission-v5' \
+    'trading-remote-mandate-admission-v6' \
     'one_deterministic_order' \
     'bounded_deterministic_session' \
     'hivra-trading-deterministic-cycle-evidence-v1' \
@@ -5193,6 +5210,41 @@ PY
   chmod 700 "$artifact/$LIFECYCLE_NAME"
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   verify_artifact "$artifact" >/dev/null
+  local legacy_upgrade_source="$root/legacy-upgrade-source"
+  cp -R "$artifact" "$legacy_upgrade_source"
+  python3 - "$legacy_upgrade_source/$EFFECT_BINARY_NAME" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+marker = b"trading-remote-mandate-admission-v6\n"
+value = path.read_bytes()
+if value.count(marker) != 1:
+    raise SystemExit("legacy upgrade fixture did not contain one v6 marker")
+path.write_bytes(value.replace(marker, b""))
+PY
+  write_manifest "$legacy_upgrade_source" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
+  verify_artifact "$legacy_upgrade_source" upgrade-source-v5 >/dev/null
+  if (verify_artifact "$legacy_upgrade_source") >/dev/null 2>&1; then
+    die "self-test accepted a legacy v5 bundle as a current release bundle"
+  fi
+  python3 - "$legacy_upgrade_source/$EFFECT_BINARY_NAME" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+marker = b"trading-remote-mandate-admission-v5\n"
+value = path.read_bytes()
+if value.count(marker) != 1:
+    raise SystemExit("legacy upgrade fixture did not contain one v5 marker")
+path.write_bytes(value.replace(marker, b""))
+PY
+  write_manifest "$legacy_upgrade_source" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
+  if (verify_artifact "$legacy_upgrade_source" upgrade-source-v5) \
+    >/dev/null 2>&1; then
+    die "self-test accepted an unsupported pre-v5 upgrade source"
+  fi
+  echo "PASS trading-runner-artifact: bounded v5-to-v6 upgrade compatibility"
   chmod 755 "$artifact"
   runtime_bundle_is_dynamic_user_executable "$artifact" ||
     die "self-test rejected a DynamicUser-executable bundle"
@@ -5619,12 +5671,12 @@ starts = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="millis
 strategy = {
     "runner_build_id": "systemd-public-shadow-v1",
     "plugin_id": "hivra.bingx-futures-trading",
-    "plugin_version": "0.2.3",
-    "package_digest_hex": "2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889",
+    "plugin_version": "0.2.4",
+    "package_digest_hex": "0e1eb93a9f53d3da9b4ec914e9841bc11355d08a59fdf8eb2b67994dd496bfda",
     "host_abi": "wasm32-wasi-preview1",
     "stop_loss_percent": 5.0,
     "minimum_risk_reward": 2.0,
-    "account_read_scope": ["balance", "positions", "realized_pnl", "symbol_leverage", "symbol_margin_type"],
+    "account_read_scope": ["balance", "positions", "realized_pnl", "symbol_leverage", "symbol_margin_type", "open_orders"],
 }
 session = {
     "starts_at_utc": starts,
@@ -5633,7 +5685,7 @@ session = {
     "stop_on_failure": True,
 }
 semantic = {
-    "contract_version": "trading-remote-mandate-admission-v5",
+    "contract_version": "trading-remote-mandate-admission-v6",
     "runner_key_id": metadata["runner"],
     "operation_kind": "bounded_deterministic_session",
     "strategy_policy": strategy,
@@ -5642,7 +5694,7 @@ semantic = {
     "mandate": metadata["mandate"],
 }
 commitment = hashlib.sha256(
-    b"hivra:bingx-futures-remote-mandate-admission:v5\n" +
+    b"hivra:bingx-futures-remote-mandate-admission:v6\n" +
     json.dumps(semantic, separators=(",", ":")).encode()
 ).hexdigest()
 (root / "session-digest.bin").write_bytes(bytes.fromhex(commitment))

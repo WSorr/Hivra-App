@@ -1029,6 +1029,18 @@ the canonical candidate owner, and pass the derived cycle identity to the
 existing effect journal. A replay or a different candidate under the same cycle
 cannot produce a second provider POST.
 
+Current session admission is `trading-remote-mandate-admission-v6`. Its signed
+runner identity is pinned to the immutable BingX plugin `0.2.4` package and its
+catalog digest; active historical `v5` sessions retain their exact `0.2.3`
+identity. Its signed account-read scope also includes open orders. Before a new provider POST, the
+Runner must read the mandated symbol's current open orders and fail closed when
+that read is unavailable or any active order already exists for the symbol.
+The existing position limit independently blocks a new effect while a filled
+position remains open. Consequently, a multi-effect session budget is strictly
+sequential: it is a lifetime ceiling, not permission to place a batch or retain
+multiple pending orders. Unrelated provider orders are never adopted as
+Capsule-owned state.
+
 The host owns one canonical atomic session journal. It records the next cycle,
 completed-cycle count, consumed effect count, terminal state, and exact last
 cycle identity. A retained result is committed before the journal advances, so
@@ -1062,6 +1074,11 @@ signed session operation id, revalidates the canonical effect journal, and
 returns only succeeded child operations bound to that session. It receives no
 exchange credential, issues no provider request, and cannot prepare, approve,
 queue, retry, or reconcile an effect.
+When an open-order refresh observes an unknown `hivra-*` provider identity
+during a verified active session, the App Shell first requests this read-only
+export and then runs the existing managed-order reconciliation. Ownership is
+granted only by the verified retained receipt; the provider prefix alone never
+adopts an order. Repeated refresh remains idempotent.
 
 The Capsule independently verifies the retained signed session, Runner,
 Capsule, account, derived cycle operation, canonical exact-order payload, and
@@ -1155,11 +1172,12 @@ prices, independent of the editable percentage, and rejects it at or beyond `100
 before maintenance margin and costs; the ratio is only a conservative nominal
 buffer, never a liquidation-price estimate. Cap-only estimates label this
 condition without pretending an order exists. New deterministic authorities
-commit to `account_read_scope`: balance, positions, realized PnL, and the mandated
-symbol's leverage and margin type. Scope removal, mutation, or expansion invalidates
-the commitment. Historical authorities remain parseable for retained evidence,
-but absent scope blocks new execution without provider requests. Legacy exact-only
-authority likewise cannot initiate delivery; reconciliation remains available.
+commit to `account_read_scope`: balance, positions, realized PnL, the mandated
+symbol's leverage and margin type, and open orders. Scope removal, mutation, or
+expansion invalidates the commitment. Historical `v5` session authorities remain
+parseable for stop, retained evidence export, and recovery, but cannot authorize
+a new effect after a Runner upgrade. Legacy exact-only authority likewise cannot
+initiate delivery; reconciliation remains available.
 The existing remote effect owner rereads exposure before first delivery, not
 on completed replay or reconciliation. Unknown evidence, nominal SL loss at or
 above initial margin, and insufficient available margin fail closed. This is
@@ -1218,6 +1236,15 @@ the generated private SSH identity in the Capsule secret vault; retrying the
 same `(Capsule, account, host, port)` tuple reuses that identity and exact-replays
 an already installed matching bundle. A changed host key, account, SSH key, or
 runner build fails closed.
+
+A disabled Runner upgrade verifies the installed bundle against its own
+retained hashes and the supported v5 session markers before replacement. The
+incoming and staged bundle must satisfy the current v6 contract. This bounded
+compatibility permits the canonical v5-to-v6 replacement without allowing a
+pre-v5, mutated, active, or partially installed Runner to become an upgrade
+source.
+The Capsule-scoped Runner manager keeps this existing upgrade action reachable
+even when a legacy Runner cannot report the current session-status fields.
 
 The 1.x runtime supports exactly one `(Capsule, exchange account, VPS Runner)`
 binding per Capsule and exactly one Runner installation per VPS. The profile,

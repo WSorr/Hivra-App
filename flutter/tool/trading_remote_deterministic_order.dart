@@ -185,9 +185,30 @@ Future<String> runOneDeterministicOrder({
     fileStore: fileStore,
   );
   final riskObservedAt = now;
+  if (admission.isLegacyDeterministicSession) {
+    return _blocked(cycleOperationId, 'session_contract_upgrade_required');
+  }
+  final requiredExposureScope =
+      admission.isDeterministicSession
+          ? BingxFuturesRemoteMandateAdmission.exposureReadScope
+          : BingxFuturesRemoteMandateAdmission.legacyExposureReadScope;
   if (jsonEncode(admission.strategyPolicy?['account_read_scope']) !=
-      jsonEncode(BingxFuturesRemoteMandateAdmission.exposureReadScope)) {
+      jsonEncode(requiredExposureScope)) {
     return _blocked(cycleOperationId, 'exposure_read_authority_missing');
+  }
+  if (admission.isDeterministicSession) {
+    final openOrders = await exchange.getOpenOrders(
+      credentials: credentials,
+      symbol: admission.mandate.symbol,
+    );
+    if (!openOrders.isSuccess) {
+      return _blocked(cycleOperationId, 'open_orders_unavailable');
+    }
+    if (openOrders.orders.any(
+      (order) => order.symbol.toUpperCase() == admission.mandate.symbol,
+    )) {
+      return _blocked(cycleOperationId, 'active_order_exists');
+    }
   }
   final risk = await const BingxFuturesExchangeRiskInputService().read(
     exposureSymbol: admission.mandate.symbol,

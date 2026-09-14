@@ -276,6 +276,16 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                     ...profiles.map(
                       (profile) => _RemoteRunnerProfileTile(
                         profile: profile,
+                        update: () async {
+                          final updated = await _configureRemoteRunner(
+                            accountBindingHashHex:
+                                profile.accountBindingHashHex,
+                            currentProfile: profile,
+                          );
+                          return updated == null
+                              ? 'Runner update cancelled'
+                              : 'Runner updated';
+                        },
                         loadStatus:
                             () => _module.remoteRunnerProvisioning.status(
                               profile,
@@ -507,6 +517,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
               BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
                 stopLossPercent: _stopLossPercent,
                 minimumRiskReward: _takeProfitRiskReward,
+                includeOpenOrders: true,
               ),
           startsAtUtc: startsAtUtc,
           intervalSeconds: intervalSeconds,
@@ -1255,6 +1266,7 @@ String tradingRemoteRunnerControlNotice({
 
 class _RemoteRunnerProfileTile extends StatefulWidget {
   final BingxFuturesRemoteRunnerProfile profile;
+  final Future<String> Function() update;
   final Future<String> Function() loadStatus;
   final Future<String> Function() pause;
   final Future<String> Function() resume;
@@ -1263,6 +1275,7 @@ class _RemoteRunnerProfileTile extends StatefulWidget {
 
   const _RemoteRunnerProfileTile({
     required this.profile,
+    required this.update,
     required this.loadStatus,
     required this.pause,
     required this.resume,
@@ -1355,6 +1368,14 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
             Wrap(
               spacing: 8,
               children: [
+                FilledButton.tonalIcon(
+                  onPressed:
+                      _pausing || _removed
+                          ? null
+                          : () => _runAction(widget.update),
+                  icon: const Icon(Icons.system_update_alt_rounded),
+                  label: const Text('Update Runner'),
+                ),
                 OutlinedButton.icon(
                   onPressed:
                       _pausing

@@ -159,6 +159,81 @@ void main() {
     );
   });
 
+  test('unknown Runner order restores receipt before reconciliation', () {
+    const remoteOrder = BingxFuturesOpenOrder(
+      orderId: 'remote-order',
+      clientOrderId: 'hivra-liquidity-event',
+      symbol: 'DOGE-USDT',
+      side: 'SELL',
+      positionSide: 'SHORT',
+      orderType: 'TRIGGER_LIMIT',
+      status: 'NEW',
+      priceDecimal: '0.09159',
+      triggerPriceDecimal: '0.09151',
+      quantityDecimal: '946',
+      executedQuantityDecimal: '0',
+      createdAtMs: 1,
+    );
+
+    expect(
+      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
+        remoteRunnerConfigured: true,
+        hasVerifiedRemoteSession: true,
+        providerSnapshot: const <BingxFuturesOpenOrder>[remoteOrder],
+        managedOrderProvenance: const <String, BingxManagedOrderProvenance>{},
+      ),
+      isTrue,
+    );
+    expect(
+      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
+        remoteRunnerConfigured: true,
+        hasVerifiedRemoteSession: true,
+        providerSnapshot: const <BingxFuturesOpenOrder>[remoteOrder],
+        managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+          'remote-order': _managedOrderProvenance(
+            orderId: 'remote-order',
+            symbol: 'DOGE-USDT',
+            diagnostic: 'remote_effect_receipt_imported',
+          ),
+        },
+      ),
+      isFalse,
+    );
+    expect(
+      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
+        remoteRunnerConfigured: true,
+        hasVerifiedRemoteSession: true,
+        providerSnapshot: const <BingxFuturesOpenOrder>[
+          BingxFuturesOpenOrder(
+            orderId: 'manual-order',
+            clientOrderId: 'manual-order',
+            symbol: 'DOGE-USDT',
+            side: 'SELL',
+            positionSide: 'SHORT',
+            orderType: 'LIMIT',
+            status: 'NEW',
+            priceDecimal: '0.09159',
+            triggerPriceDecimal: null,
+            quantityDecimal: '946',
+            executedQuantityDecimal: '0',
+            createdAtMs: 2,
+          ),
+        ],
+        managedOrderProvenance: const <String, BingxManagedOrderProvenance>{},
+      ),
+      isFalse,
+    );
+    expect(
+      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
+        remoteRunnerConfigured: false,
+        hasVerifiedRemoteSession: true,
+        providerSnapshot: const <BingxFuturesOpenOrder>[remoteOrder],
+        managedOrderProvenance: const <String, BingxManagedOrderProvenance>{},
+      ),
+      isFalse,
+    );
+  });
+
   test(
     'successful local cancellation disappears from stale provider snapshot',
     () {
@@ -532,6 +607,7 @@ void main() {
               BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
                 stopLossPercent: 2,
                 minimumRiskReward: 2.5,
+                includeOpenOrders: true,
               ),
           startsAtUtc: issuedAt.add(const Duration(minutes: 15)),
           intervalSeconds: 300,

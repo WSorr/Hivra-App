@@ -713,11 +713,14 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'effectOperationId: cycleOperationId' "$2" &&
     rg -q 'isDeterministicOrder' "$3" &&
     rg -q 'isDeterministicSession' "$3" &&
+    rg -q 'isLegacyDeterministicSession' "$3" &&
+    rg -q "'trading-remote-mandate-admission-v6'" "$3" &&
+    rg -q "'open_orders'" "$3" &&
     rg -q "deterministicSessionOperationKind =" "$3" &&
     rg -q "deterministicOrderOperationKind =" "$3" &&
     rg -q "deterministicRunnerBuildId =" "$3" &&
     rg -q "'systemd-public-shadow-v1'" "$3" &&
-    rg -q "deterministicPluginVersion = '0.2.3'" "$3" &&
+    rg -q "deterministicPluginVersion = '0.2.4'" "$3" &&
     rg -q "deterministicHostAbi = 'wasm32-wasi-preview1'" "$3" &&
     rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
     rg -q 'stale market evidence blocks without an exchange effect' "$4" &&
@@ -728,8 +731,8 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'Future<String> revokeSession' "$7" &&
     rg -q "operation: 'revoke:" "$7" &&
     rg -q -- '--runner-build-id systemd-public-shadow-v1' "$6" &&
-    rg -q -- '--plugin-version 0.2.3' "$6" &&
-    rg -q -- '--package-digest-hex 2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889' "$6" &&
+    rg -q -- '--plugin-version 0.2.4' "$6" &&
+    rg -q -- '--package-digest-hex 0e1eb93a9f53d3da9b4ec914e9841bc11355d08a59fdf8eb2b67994dd496bfda' "$6" &&
     rg -q -- '--host-abi wasm32-wasi-preview1' "$6"
 }
 
@@ -959,8 +962,8 @@ expected = [
     "--symbol", "BTC-USDT",
     "--runner-build-id", "systemd-public-shadow-v1",
     "--plugin-id", "hivra.bingx-futures-trading",
-    "--plugin-version", "0.2.3",
-    "--package-digest-hex", "2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889",
+    "--plugin-version", "0.2.4",
+    "--package-digest-hex", "0e1eb93a9f53d3da9b4ec914e9841bc11355d08a59fdf8eb2b67994dd496bfda",
     "--host-abi", "wasm32-wasi-preview1",
     "--stream-dir", "/var/lib/hivra-trading-public-shadow/stream",
     "--run-count", "8928",

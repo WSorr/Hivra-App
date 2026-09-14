@@ -365,6 +365,16 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       );
       if (!mounted) return;
       final allOrders = result.orders;
+      if (result.isSuccess &&
+          tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
+            remoteRunnerConfigured: _remoteRunnerConfigured,
+            hasVerifiedRemoteSession: _remoteRunnerSession != null,
+            providerSnapshot: allOrders,
+            managedOrderProvenance: _managedOrderProvenance,
+          )) {
+        await _restoreRemoteCompletedEffects();
+        if (!mounted) return;
+      }
       final reconciliation = await _module.executionUseCase
           .reconcileManagedOrders(credentials: credentials, openOrders: result);
       if (!mounted) return;

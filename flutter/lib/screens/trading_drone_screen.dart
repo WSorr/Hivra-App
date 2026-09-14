@@ -98,6 +98,23 @@ bool tradingMayMutateManagedOrdersLocally({
 }
 
 @visibleForTesting
+bool tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation({
+  required bool remoteRunnerConfigured,
+  required bool hasVerifiedRemoteSession,
+  required List<BingxFuturesOpenOrder> providerSnapshot,
+  required Map<String, BingxManagedOrderProvenance> managedOrderProvenance,
+}) {
+  if (!remoteRunnerConfigured || !hasVerifiedRemoteSession) {
+    return false;
+  }
+  return providerSnapshot.any((order) {
+    final clientOrderId = order.clientOrderId?.trim().toLowerCase() ?? '';
+    return clientOrderId.startsWith('hivra-') &&
+        !managedOrderProvenance.containsKey(order.orderId);
+  });
+}
+
+@visibleForTesting
 List<BingxFuturesOpenOrder> tradingOpenOrdersAfterLifecycleChanges({
   required List<BingxFuturesOpenOrder> providerSnapshot,
   required Set<String> canceledOrderIds,
