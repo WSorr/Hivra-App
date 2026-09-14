@@ -47,10 +47,18 @@ INSTALLED_BUNDLE_MODE=0
 
 effect_state_directory() {
   case "$1" in
-    exact) echo "hivra-trading-public-shadow/exact-order-runtime" ;;
-    deterministic) echo "hivra-trading-public-shadow/deterministic-order-runtime" ;;
+    exact) echo "hivra-trading-exact-order-runtime" ;;
+    deterministic) echo "hivra-trading-deterministic-order-runtime" ;;
     *) return 1 ;;
   esac
+}
+
+effect_state_home() {
+  printf '/var/lib/%s\n' "$(effect_state_directory "$1")"
+}
+
+effect_state_private_home() {
+  printf '/var/lib/private/%s\n' "$(effect_state_directory "$1")"
 }
 
 enable_exact_self_contained_bundle_mode() {
@@ -870,12 +878,40 @@ tree_digest() {
   ) | sha256_stdin
 }
 
+effect_state_digest() {
+  local scope="$1"
+  local home private_home
+  home="$(effect_state_home "$scope")"
+  private_home="$(effect_state_private_home "$scope")"
+  if [ ! -e "$home" ] && [ ! -L "$home" ] &&
+    [ ! -e "$private_home" ] && [ ! -L "$private_home" ]; then
+    echo absent
+    return
+  fi
+  if [ -L "$home" ]; then
+    [ "$(readlink -f -- "$home")" = "$private_home" ] &&
+      [ -d "$private_home" ] && [ ! -L "$private_home" ] ||
+      die "effect state refused a foreign private mapping"
+  else
+    [ -d "$home" ] && [ ! -L "$home" ] &&
+      [ ! -e "$private_home" ] && [ ! -L "$private_home" ] ||
+      die "effect state refused a foreign directory"
+  fi
+  tree_digest "$home"
+}
+
 assert_upgrade_state_preserved() {
   local expected_state="$1"
-  local expected_runner_credential="$2"
-  local expected_exchange_credential="$3"
+  local expected_exact_state="$2"
+  local expected_deterministic_state="$3"
+  local expected_runner_credential="$4"
+  local expected_exchange_credential="$5"
   [ "$(tree_digest "$STATE_DIRECTORY")" = "$expected_state" ] ||
     die "disabled upgrade changed Runner state"
+  [ "$(effect_state_digest exact)" = "$expected_exact_state" ] &&
+    [ "$(effect_state_digest deterministic)" = \
+      "$expected_deterministic_state" ] ||
+    die "disabled upgrade changed effect state"
   [ "$(sha256_file "$CREDENTIAL_INSTALL_PATH")" = \
     "$expected_runner_credential" ] ||
     die "disabled upgrade changed the Runner credential"
@@ -3102,7 +3138,7 @@ export_completed_session_effects() {
       --mode completed-session-effects \
       --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
       --deterministic-admission-file "$mandate" \
-      --deterministic-state-home "$STATE_DIRECTORY/deterministic-order-runtime"
+      --deterministic-state-home "$(effect_state_home deterministic)"
   )" || die "completed effect export failed"
   [ "${#output}" -le 65536 ] || die "completed effect export is oversized"
   trap - EXIT INT TERM
@@ -3748,7 +3784,7 @@ execute_exact_order_once() {
       --runner-seed-file "$credential_dir/runner-seed" \
       --exact-order-credential-file "$credential_dir/bingx-exchange" \
       --exact-order-admission-file "$credential_dir/exact-order-admission" \
-      --exact-order-state-home "$STATE_DIRECTORY/exact-order-runtime" \
+      --exact-order-state-home "$(effect_state_home exact)" \
       --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
       >"$work/stdout" 2>"$work/stderr"; then
     die "exact order failed without exposing provider output"
@@ -4143,7 +4179,7 @@ PY
       --deterministic-credential-file "$credential_dir/bingx-exchange" \
       --deterministic-admission-file "$credential_dir/deterministic-admission" \
       --market-evidence-file "$credential_dir/market-evidence" \
-      --deterministic-state-home "$STATE_DIRECTORY/deterministic-order-runtime" \
+      --deterministic-state-home "$(effect_state_home deterministic)" \
       --last-accepted-sequence "$last_sequence" \
       --last-accepted-evidence-hash "$last_hash" \
       "${session_cycle_args[@]}" \
@@ -4301,7 +4337,7 @@ recover_deterministic_session_once() {
       --runner-seed-file "$credential_dir/runner-seed" \
       --deterministic-credential-file "$credential_dir/bingx-exchange" \
       --deterministic-admission-file "$credential_dir/deterministic-admission" \
-      --deterministic-state-home "$STATE_DIRECTORY/deterministic-order-runtime" \
+      --deterministic-state-home "$(effect_state_home deterministic)" \
       --session-cycle-index "$cycle_index" \
       >"$work/stdout" 2>"$work/stderr"; then
     die "deterministic recovery failed without exposing provider output"
@@ -4553,10 +4589,12 @@ upgrade_disabled() {
     [ ! -e "$session_wants_path" ] && [ ! -L "$session_wants_path" ] ||
     die "disabled upgrade refused boot enablement"
 
-  local state_before
+  local state_before exact_state_before deterministic_state_before
   local runner_credential_before
   local exchange_credential_before=""
   state_before="$(tree_digest "$STATE_DIRECTORY")"
+  exact_state_before="$(effect_state_digest exact)"
+  deterministic_state_before="$(effect_state_digest deterministic)"
   runner_credential_before="$(sha256_file "$CREDENTIAL_INSTALL_PATH")"
   if [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ]; then
     exchange_credential_before="$(sha256_file "$EXCHANGE_CREDENTIAL_INSTALL_PATH")"
@@ -4600,7 +4638,8 @@ upgrade_disabled() {
     fi
     systemctl daemon-reload
     assert_upgrade_state_preserved \
-      "$state_before" "$runner_credential_before" "$exchange_credential_before"
+      "$state_before" "$exact_state_before" "$deterministic_state_before" \
+      "$runner_credential_before" "$exchange_credential_before"
     trap - EXIT INT TERM
     rm -f "$lock_path"
     exec 9>&-
@@ -4623,7 +4662,8 @@ upgrade_disabled() {
   require_exact_installed_bundle "$directory"
   systemctl daemon-reload
   assert_upgrade_state_preserved \
-    "$state_before" "$runner_credential_before" "$exchange_credential_before"
+    "$state_before" "$exact_state_before" "$deterministic_state_before" \
+    "$runner_credential_before" "$exchange_credential_before"
   rm -rf "$staged_path"
   exchanged=0
   trap - EXIT INT TERM
@@ -4696,6 +4736,8 @@ uninstall_disabled() {
   elif [ -e "$STATE_DIRECTORY" ]; then
     [ -d "$STATE_DIRECTORY" ] || die "uninstall refused foreign state"
   fi
+  effect_state_digest exact >/dev/null
+  effect_state_digest deterministic >/dev/null
 
   if systemctl cat "$UNIT_NAME" >/dev/null 2>&1; then
     systemctl stop "$UNIT_NAME"
@@ -4709,6 +4751,11 @@ uninstall_disabled() {
   rm -f "$CREDENTIAL_INSTALL_PATH"
   rm -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH"
   rm -rf "$STATE_DIRECTORY" "$state_private"
+  rm -rf \
+    "$(effect_state_home exact)" \
+    "$(effect_state_private_home exact)" \
+    "$(effect_state_home deterministic)" \
+    "$(effect_state_private_home deterministic)"
   rm -rf "$BUNDLE_INSTALL_PATH"
 
   for target in \
@@ -4719,6 +4766,10 @@ uninstall_disabled() {
     "$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
     "$STATE_DIRECTORY" \
     "$state_private" \
+    "$(effect_state_home exact)" \
+    "$(effect_state_private_home exact)" \
+    "$(effect_state_home deterministic)" \
+    "$(effect_state_private_home deterministic)" \
     "$wants_path"; do
     [ ! -e "$target" ] && [ ! -L "$target" ] ||
       die "disabled uninstall retained: $target"
@@ -4809,10 +4860,21 @@ self_test() {
   trap "rm -rf '$root'" EXIT
 
   [ "$(effect_state_directory exact)" = \
-    "hivra-trading-public-shadow/exact-order-runtime" ] &&
+    "hivra-trading-exact-order-runtime" ] &&
     [ "$(effect_state_directory deterministic)" = \
-      "hivra-trading-public-shadow/deterministic-order-runtime" ] ||
+      "hivra-trading-deterministic-order-runtime" ] &&
+    [ "$(effect_state_home exact)" = \
+      "/var/lib/hivra-trading-exact-order-runtime" ] &&
+    [ "$(effect_state_home deterministic)" = \
+      "/var/lib/hivra-trading-deterministic-order-runtime" ] &&
+    [ "$(effect_state_private_home exact)" = \
+      "/var/lib/private/hivra-trading-exact-order-runtime" ] &&
+    [ "$(effect_state_private_home deterministic)" = \
+      "/var/lib/private/hivra-trading-deterministic-order-runtime" ] ||
     die "self-test effect state is not isolated from supervisor state"
+  case "$(effect_state_directory exact)$(effect_state_directory deterministic)" in
+    */*) die "self-test effect StateDirectory must be top-level" ;;
+  esac
   if effect_state_directory unknown >/dev/null 2>&1; then
     die "self-test accepted an unknown effect state owner"
   fi
