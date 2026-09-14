@@ -397,8 +397,8 @@ String tradingRunnerMarketActionLabel(String symbol) {
 bool tradingLocalRunnerActionEnabled({
   required bool starting,
   required bool running,
-  required bool remoteRunning,
-}) => !starting && (running || !remoteRunning);
+  required bool remoteMayHoldAuthority,
+}) => !starting && (running || !remoteMayHoldAuthority);
 
 @visibleForTesting
 String tradingLocalRunnerStatusLabel(
@@ -1559,9 +1559,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       return;
     }
-    if (tradingRemoteRunnerIsRunning(_remoteRunnerStatusWire ?? '')) {
+    if (tradingRemoteRunnerMayHoldAuthority(
+      configured: _remoteRunnerConfigured,
+      hasVerifiedSession: _remoteRunnerSession != null,
+      statusWire: _remoteRunnerStatusWire,
+    )) {
       await _showSnack(
-        'The VPS session is already running. Pause it before running here.',
+        'The VPS session retains trading authority. End it before running here.',
         seconds: 5,
       );
       return;
@@ -1678,8 +1682,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         );
       }
     }
-    if (tradingRemoteRunnerIsRunning(_remoteRunnerStatusWire ?? '')) {
-      throw StateError('VPS session became active; local trading stopped.');
+    if (tradingRemoteRunnerMayHoldAuthority(
+      configured: _remoteRunnerConfigured,
+      hasVerifiedSession: _remoteRunnerSession != null,
+      statusWire: _remoteRunnerStatusWire,
+    )) {
+      throw StateError(
+        'VPS session retains trading authority; local trading stopped.',
+      );
     }
     if (_resolveCredentials() == null &&
         await _ensureCredentialsLoaded(silent: true) == null) {

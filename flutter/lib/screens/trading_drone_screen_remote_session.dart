@@ -6,10 +6,17 @@ bool tradingRemoteRunnerMayHoldAuthority({
   required bool hasVerifiedSession,
   required String? statusWire,
 }) {
-  if (!configured || !hasVerifiedSession) return false;
+  if (!configured) return false;
   final fields = _tradingRemoteRunnerStatusFields(statusWire ?? '');
   if (fields == null) return true;
-  return !{'completed', 'stopped', 'expired'}.contains(fields['session_state']);
+  final sessionState = fields['session_state'];
+  if ({'completed', 'stopped', 'expired'}.contains(sessionState) &&
+      fields['active'] == 'inactive') {
+    return false;
+  }
+  return hasVerifiedSession ||
+      sessionState == 'active' ||
+      fields['active'] == 'active';
 }
 
 @visibleForTesting
@@ -321,7 +328,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   Future<String> _resumeRemoteRunnerSession(
     BingxFuturesRemoteRunnerProfile profile,
   ) async {
-    if (_localRunnerRunning) {
+    if (_startingLocalRunner || _localRunnerRunning) {
       throw StateError(
         'Stop trading on this computer before resuming the VPS session.',
       );
@@ -351,7 +358,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
 
   Future<void> _resumeConfiguredRemoteRunnerSession() async {
     if (_exportingRemoteMandate) return;
-    if (_localRunnerRunning) {
+    if (_startingLocalRunner || _localRunnerRunning) {
       await _showSnack(
         'Stop trading on this computer before resuming the VPS session.',
         seconds: 5,
@@ -379,7 +386,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
 
   Future<void> _exportSignedRemoteDeterministicSession() async {
     if (_exportingRemoteMandate) return;
-    if (_localRunnerRunning) {
+    if (_startingLocalRunner || _localRunnerRunning) {
       await _showSnack(
         'Stop trading on this computer before authorizing the VPS session.',
         seconds: 5,
@@ -1245,7 +1252,9 @@ bool tradingRemoteRunnerPrimaryActionEnabled({
   required bool running,
   required bool resumable,
   required bool canStart,
+  required bool localActive,
 }) {
+  if (localActive) return false;
   if (!configured) return true;
   if (running) return false;
   if (resumable) return true;

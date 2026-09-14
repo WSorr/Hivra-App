@@ -110,8 +110,13 @@ class _ScreenService extends CapsuleSelectorService {
 }
 
 class _NoopUiLog implements UiEventLogService {
+  final List<({String source, String message})> entries =
+      <({String source, String message})>[];
+
   @override
-  Future<void> log(String source, String message) async {}
+  Future<void> log(String source, String message) async {
+    entries.add((source: source, message: message));
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -366,19 +371,37 @@ void main() {
     expect(() => service.activateCapsule('aa'), throwsA(isA<StateError>()));
   });
 
-  test('times out a stalled activation instead of hanging selector', () async {
-    final service = CapsuleSelectorService(
-      _ActivationRuntime(activationCompleter: Completer<void>()),
-      _NoopUiLog(),
-      null,
-      const Duration(milliseconds: 1),
-    );
+  test(
+    'slow activation reports diagnostics without orphaning its future',
+    () async {
+      final activation = Completer<void>();
+      final log = _NoopUiLog();
+      final service = CapsuleSelectorService(
+        _ActivationRuntime(activationCompleter: activation),
+        log,
+        null,
+        const Duration(milliseconds: 1),
+      );
 
-    expect(
-      () => service.activateCapsule('aa'),
-      throwsA(isA<TimeoutException>()),
-    );
-  });
+      var completed = false;
+      final result = service.activateCapsule('aa').then((value) {
+        completed = true;
+        return value;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(completed, isFalse);
+      expect(
+        log.entries,
+        contains((
+          source: 'capsule.selector.service',
+          message: 'activate.slow aa seconds=0',
+        )),
+      );
+      activation.complete();
+      expect(await result, isTrue);
+    },
+  );
 
   test('deleting a capsule clears its process chat projection', () async {
     const capsuleHex =

@@ -241,18 +241,22 @@ class CapsuleSelectorService {
   bool seedExists() => _runtime.seedExists();
 
   Future<bool> activateCapsule(String pubKeyHex) async {
+    final slowDiagnostic = Timer(_activationTimeout, () {
+      unawaited(
+        _uiLog.log(
+          'capsule.selector.service',
+          'activate.slow ${_shortHex(pubKeyHex)} '
+              'seconds=${_activationTimeout.inSeconds}',
+        ),
+      );
+    });
     try {
-      await _runtime.activateCapsule(pubKeyHex).timeout(_activationTimeout);
+      await _runtime.activateCapsule(pubKeyHex);
       return true;
     } on CapsuleSeedRequiredException {
       return false;
-    } on TimeoutException {
-      await _uiLog.log(
-        'capsule.selector.service',
-        'activate.timeout ${_shortHex(pubKeyHex)} '
-            'seconds=${_activationTimeout.inSeconds}',
-      );
-      rethrow;
+    } finally {
+      slowDiagnostic.cancel();
     }
   }
 

@@ -579,6 +579,15 @@ void main() {
       tradingRemoteRunnerMayHoldAuthority(
         configured: true,
         hasVerifiedSession: true,
+        statusWire: terminal.replaceFirst('active=inactive', 'active=active'),
+      ),
+      isTrue,
+      reason: 'an inconsistent live process must fail closed',
+    );
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: true,
+        hasVerifiedSession: true,
         statusWire: 'malformed',
       ),
       isTrue,
@@ -597,7 +606,7 @@ void main() {
         hasVerifiedSession: false,
         statusWire: running,
       ),
-      isFalse,
+      isTrue,
     );
   });
 
@@ -795,6 +804,7 @@ void main() {
         running: false,
         resumable: false,
         canStart: false,
+        localActive: false,
       ),
       isTrue,
     );
@@ -820,6 +830,7 @@ void main() {
         running: false,
         resumable: false,
         canStart: true,
+        localActive: false,
       ),
       isTrue,
     );
@@ -837,8 +848,20 @@ void main() {
         running: false,
         resumable: true,
         canStart: false,
+        localActive: false,
       ),
       isTrue,
+    );
+    expect(
+      tradingRemoteRunnerPrimaryActionEnabled(
+        configured: true,
+        running: false,
+        resumable: true,
+        canStart: false,
+        localActive: true,
+      ),
+      isFalse,
+      reason: 'local startup owns the automation lane until it stops',
     );
     expect(
       tradingRemoteRunnerControlNotice(
@@ -1172,12 +1195,12 @@ void main() {
     );
   });
 
-  test('local automation cannot overlap a running VPS session', () {
+  test('local automation cannot overlap retained VPS authority', () {
     expect(
       tradingLocalRunnerActionEnabled(
         starting: false,
         running: false,
-        remoteRunning: true,
+        remoteMayHoldAuthority: true,
       ),
       isFalse,
     );
@@ -1185,7 +1208,7 @@ void main() {
       tradingLocalRunnerActionEnabled(
         starting: false,
         running: false,
-        remoteRunning: false,
+        remoteMayHoldAuthority: false,
       ),
       isTrue,
     );
@@ -1193,7 +1216,7 @@ void main() {
       tradingLocalRunnerActionEnabled(
         starting: false,
         running: true,
-        remoteRunning: true,
+        remoteMayHoldAuthority: true,
       ),
       isTrue,
       reason: 'the stop action must remain available',
