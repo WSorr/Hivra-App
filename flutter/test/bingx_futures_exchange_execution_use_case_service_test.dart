@@ -2449,6 +2449,7 @@ _remoteCompletedEffectFixture() {
             BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
               stopLossPercent: 5,
               minimumRiskReward: 2,
+              includeOpenOrders: true,
             ),
         startsAtUtc: now,
         intervalSeconds: 300,

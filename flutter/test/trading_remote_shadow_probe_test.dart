@@ -547,70 +547,114 @@ void main() {
     final fixture = await _exactOrderFixture(testOrder: true);
     addTearDown(fixture.dispose);
     var requests = 0;
-    await expectLater(runMandateBoundExactOrder(
-      options: fixture.options,
-      runnerSeedBytes: fixture.runnerSeedBytes,
-      nowUtc: () => fixture.nowUtc,
-      requestSender: (_) async {
-        requests++;
-        throw StateError('unauthorized provider read');
-      },
-    ), throwsA(isA<FormatException>().having(
-      (error) => error.message, 'reason', 'exposure_read_authority_missing')));
+    await expectLater(
+      runMandateBoundExactOrder(
+        options: fixture.options,
+        runnerSeedBytes: fixture.runnerSeedBytes,
+        nowUtc: () => fixture.nowUtc,
+        requestSender: (_) async {
+          requests++;
+          throw StateError('unauthorized provider read');
+        },
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'reason',
+          'exposure_read_authority_missing',
+        ),
+      ),
+    );
     expect(requests, 0);
   });
 
-  test('legacy completed effect remains readable without provider access', () async {
-    final fixture = await _exactOrderFixture(testOrder: true);
-    addTearDown(fixture.dispose);
-    final admission = BingxFuturesRemoteMandateAdmission.parseAndVerify(
-      untrustedWireBytes: await File(fixture.options['exact-order-admission-file']!).readAsBytes(),
-      verifySignature: ({required messageHashHex, required participantIdHex,
-        required signatureHex}) => true,
-    )!;
-    final credentials = await readExchangeCredentialFile(
-      fixture.options['exact-order-credential-file']!);
-    final adapter = BingxFuturesExternalEffectAdapter(
-      exchange: BingxFuturesExchangeService(requestSender: (_) async =>
-        const BingxHttpResponse(statusCode: 200,
-          body: '{"code":0,"data":{"order":{"orderID":"retained-test-order"}}}')),
-      credentials: credentials,
-      accountBindingId: admission.mandate.accountBindingHashHex,
-      clock: () => fixture.nowUtc,
-    );
-    final effects = ExternalEffectService(
-      readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
-      resolveAdapter: (_) => adapter,
-      fileStore: CapsuleFileStore(dirs: UserVisibleDataDirectoryService(
-        homeOverride: fixture.options['exact-order-state-home']!)),
-      clock: () => fixture.nowUtc,
-    );
-    final operationId = admission.exactOrder!['intent_hash_hex'] as String;
-    await effects.prepare(operationId: operationId,
-      pluginId: bingxFuturesTradingPluginId,
-      providerId: BingxFuturesExternalEffectAdapter.providerId,
-      accountBindingId: admission.mandate.accountBindingHashHex,
-      effectKind: BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
-      canonicalPayloadJson: jsonEncode(admission.exactOrder));
-    await effects.approve(pluginId: bingxFuturesTradingPluginId,
-      operationId: operationId, approvalEvidenceHashHex: admission.commitmentHashHex);
-    await effects.enqueue(pluginId: bingxFuturesTradingPluginId, operationId: operationId);
-    final retained = await effects.process(pluginId: bingxFuturesTradingPluginId,
-      operationId: operationId);
-    var requests = 0;
-    final replay = jsonDecode(await runMandateBoundExactOrder(
-      options: fixture.options, runnerSeedBytes: fixture.runnerSeedBytes,
-      nowUtc: () => fixture.nowUtc,
-      requestSender: (_) async {
-        requests++;
-        throw StateError('completed effect must not query provider');
-      },
-    ));
-    expect(replay['state'], 'succeeded');
-    expect(replay['receipt_evidence_hash_hex'], retained.receipt!.evidenceHashHex);
-    expect(replay['attempt_count'], 1);
-    expect(requests, 0);
-  });
+  test(
+    'legacy completed effect remains readable without provider access',
+    () async {
+      final fixture = await _exactOrderFixture(testOrder: true);
+      addTearDown(fixture.dispose);
+      final admission =
+          BingxFuturesRemoteMandateAdmission.parseAndVerify(
+            untrustedWireBytes:
+                await File(
+                  fixture.options['exact-order-admission-file']!,
+                ).readAsBytes(),
+            verifySignature:
+                ({
+                  required messageHashHex,
+                  required participantIdHex,
+                  required signatureHex,
+                }) => true,
+          )!;
+      final credentials = await readExchangeCredentialFile(
+        fixture.options['exact-order-credential-file']!,
+      );
+      final adapter = BingxFuturesExternalEffectAdapter(
+        exchange: BingxFuturesExchangeService(
+          requestSender:
+              (_) async => const BingxHttpResponse(
+                statusCode: 200,
+                body:
+                    '{"code":0,"data":{"order":{"orderID":"retained-test-order"}}}',
+              ),
+        ),
+        credentials: credentials,
+        accountBindingId: admission.mandate.accountBindingHashHex,
+        clock: () => fixture.nowUtc,
+      );
+      final effects = ExternalEffectService(
+        readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
+        resolveAdapter: (_) => adapter,
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(
+            homeOverride: fixture.options['exact-order-state-home']!,
+          ),
+        ),
+        clock: () => fixture.nowUtc,
+      );
+      final operationId = admission.exactOrder!['intent_hash_hex'] as String;
+      await effects.prepare(
+        operationId: operationId,
+        pluginId: bingxFuturesTradingPluginId,
+        providerId: BingxFuturesExternalEffectAdapter.providerId,
+        accountBindingId: admission.mandate.accountBindingHashHex,
+        effectKind: BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
+        canonicalPayloadJson: jsonEncode(admission.exactOrder),
+      );
+      await effects.approve(
+        pluginId: bingxFuturesTradingPluginId,
+        operationId: operationId,
+        approvalEvidenceHashHex: admission.commitmentHashHex,
+      );
+      await effects.enqueue(
+        pluginId: bingxFuturesTradingPluginId,
+        operationId: operationId,
+      );
+      final retained = await effects.process(
+        pluginId: bingxFuturesTradingPluginId,
+        operationId: operationId,
+      );
+      var requests = 0;
+      final replay = jsonDecode(
+        await runMandateBoundExactOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeedBytes,
+          nowUtc: () => fixture.nowUtc,
+          requestSender: (_) async {
+            requests++;
+            throw StateError('completed effect must not query provider');
+          },
+        ),
+      );
+      expect(replay['state'], 'succeeded');
+      expect(
+        replay['receipt_evidence_hash_hex'],
+        retained.receipt!.evidenceHashHex,
+      );
+      expect(replay['attempt_count'], 1);
+      expect(requests, 0);
+    },
+  );
 
   test('one deterministic authority cannot execute a second candidate', () async {
     final fixture = await _exactOrderFixture(testOrder: true);
@@ -640,7 +684,8 @@ void main() {
             'host_abi': 'dart-headless-v1',
             'stop_loss_percent': 5,
             'minimum_risk_reward': 2,
-            'account_read_scope': BingxFuturesRemoteMandateAdmission.exposureReadScope,
+            'account_read_scope':
+                BingxFuturesRemoteMandateAdmission.legacyExposureReadScope,
           },
           signCommitment: (_) => '8' * 128,
         )!;
@@ -652,10 +697,14 @@ void main() {
       requests.add(request);
       if (request.method == 'GET') {
         final body = switch (request.uri.path) {
-          '/openApi/swap/v3/user/balance' => '{"code":0,"data":[{"asset":"USDT","equity":"1000","availableMargin":"1000"}]}',
-          '/openApi/swap/v2/trade/leverage' => '{"code":0,"data":{"longLeverage":2,"shortLeverage":2}}',
-          '/openApi/swap/v2/trade/marginType' => '{"code":0,"data":{"marginType":"ISOLATED"}}',
-          '/openApi/swap/v2/user/positions' || '/openApi/swap/v2/user/income' => '{"code":0,"data":[]}',
+          '/openApi/swap/v3/user/balance' =>
+            '{"code":0,"data":[{"asset":"USDT","equity":"1000","availableMargin":"1000"}]}',
+          '/openApi/swap/v2/trade/leverage' =>
+            '{"code":0,"data":{"longLeverage":2,"shortLeverage":2}}',
+          '/openApi/swap/v2/trade/marginType' =>
+            '{"code":0,"data":{"marginType":"ISOLATED"}}',
+          '/openApi/swap/v2/user/positions' ||
+          '/openApi/swap/v2/user/income' => '{"code":0,"data":[]}',
           _ => throw StateError('unexpected read'),
         };
         return BingxHttpResponse(statusCode: 200, body: body);

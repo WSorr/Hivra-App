@@ -290,6 +290,154 @@ void main() {
     },
   );
 
+  test(
+    'active symbol order blocks the next session effect before POST',
+    () async {
+      final fixture = await _fixture(sessionCycleIndex: 0, testOrder: false);
+      addTearDown(fixture.dispose);
+      var posts = 0;
+      Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+        if (request.method == 'POST') posts += 1;
+        if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"orders":[{"orderId":"existing-order","clientOrderId":"manual-or-runner","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","type":"TRIGGER_LIMIT","status":"NEW","price":"100","stopPrice":"99","origQty":"0.01","executedQty":"0","time":1}]}}',
+          );
+        }
+        return _providerResponse(request);
+      }
+
+      final result = jsonDecode(
+        await runOneDeterministicOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          requestSender: sender,
+          nowUtc: () => fixture.now,
+        ),
+      );
+
+      expect(result['state'], 'blocked');
+      expect(result['reason_code'], 'active_order_exists');
+      expect(posts, 0);
+    },
+  );
+
+  test('two session cycles can create at most one active order', () async {
+    final fixture = await _fixture(
+      sessionCycleIndex: 0,
+      testOrder: false,
+      maxEffects: 2,
+    );
+    addTearDown(fixture.dispose);
+    var posts = 0;
+    var orderIsActive = false;
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+        return BingxHttpResponse(
+          statusCode: 200,
+          body:
+              orderIsActive
+                  ? '{"code":0,"msg":"ok","data":{"orders":[{"orderId":"first-order","clientOrderId":"hivra-first-event","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","type":"TRIGGER_LIMIT","status":"NEW","price":"100","stopPrice":"99","origQty":"0.01","executedQty":"0","time":1}]}}'
+                  : '{"code":0,"msg":"ok","data":{"orders":[]}}',
+        );
+      }
+      if (request.method == 'POST') {
+        posts += 1;
+        orderIsActive = true;
+      }
+      return _providerResponse(request);
+    }
+
+    final first = jsonDecode(
+      await runOneDeterministicOrder(
+        options: fixture.options,
+        runnerSeedBytes: fixture.runnerSeed,
+        executeExactOrder: runAuthorizedExactOrder,
+        requestSender: sender,
+        nowUtc: () => fixture.now,
+      ),
+    );
+    final second = jsonDecode(
+      await runOneDeterministicOrder(
+        options: <String, String>{
+          ...fixture.options,
+          'session-cycle-index': '1',
+        },
+        runnerSeedBytes: fixture.runnerSeed,
+        executeExactOrder: runAuthorizedExactOrder,
+        requestSender: sender,
+        nowUtc: () => fixture.now,
+      ),
+    );
+
+    expect(first['state'], 'succeeded');
+    expect(second['state'], 'blocked');
+    expect(second['reason_code'], 'active_order_exists');
+    expect(posts, 1);
+  });
+
+  test('unavailable open orders blocks the session before POST', () async {
+    final fixture = await _fixture(sessionCycleIndex: 0, testOrder: false);
+    addTearDown(fixture.dispose);
+    var posts = 0;
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      if (request.method == 'POST') posts += 1;
+      if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+        return const BingxHttpResponse(
+          statusCode: 503,
+          body: '{"code":503,"msg":"temporarily unavailable"}',
+        );
+      }
+      return _providerResponse(request);
+    }
+
+    final result = jsonDecode(
+      await runOneDeterministicOrder(
+        options: fixture.options,
+        runnerSeedBytes: fixture.runnerSeed,
+        executeExactOrder: runAuthorizedExactOrder,
+        requestSender: sender,
+        nowUtc: () => fixture.now,
+      ),
+    );
+
+    expect(result['state'], 'blocked');
+    expect(result['reason_code'], 'open_orders_unavailable');
+    expect(posts, 0);
+  });
+
+  test(
+    'legacy v5 session remains verifiable but cannot create a new effect',
+    () async {
+      final fixture = await _fixture(
+        sessionCycleIndex: 0,
+        testOrder: false,
+        legacySession: true,
+      );
+      addTearDown(fixture.dispose);
+      var requests = 0;
+
+      final result = jsonDecode(
+        await runOneDeterministicOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          requestSender: (request) async {
+            requests += 1;
+            return _providerResponse(request);
+          },
+          nowUtc: () => fixture.now,
+        ),
+      );
+
+      expect(result['state'], 'blocked');
+      expect(result['reason_code'], 'session_contract_upgrade_required');
+      expect(requests, 0);
+    },
+  );
+
   test('one signed deterministic cycle composes and executes once', () async {
     final fixture = await _fixture();
     addTearDown(fixture.dispose);
@@ -721,6 +869,8 @@ BingxHttpResponse _providerResponse(BingxHttpRequest request) {
     '/openApi/swap/v2/trade/marginType' =>
       '{"code":0,"data":{"marginType":"ISOLATED"}}',
     '/openApi/swap/v2/user/positions' => '{"code":0,"data":[]}',
+    '/openApi/swap/v2/trade/openOrders' =>
+      '{"code":0,"msg":"ok","data":{"orders":[]}}',
     '/openApi/swap/v2/user/income' => '{"code":0,"data":[]}',
     '/openApi/swap/v2/quote/contracts' =>
       '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":1,"quantityPrecision":3,"pricePrecision":2}]}',
@@ -747,11 +897,16 @@ _fixture({
   int? sessionCycleIndex,
   bool testOrder = true,
   bool includeExposureScope = true,
+  bool legacySession = false,
+  int maxEffects = 1,
   BingxFuturesReplayRunResult? publicRun,
   DateTime? evidenceAtUtc,
   int evidenceSequence = 1,
   String previousEvidenceHash = _zeroHash,
 }) async {
+  if (legacySession && sessionCycleIndex == null) {
+    throw ArgumentError('legacySession requires a deterministic session');
+  }
   final directory = await Directory.systemTemp.createTemp(
     'hivra-deterministic-cycle.',
   );
@@ -779,7 +934,7 @@ _fixture({
     maxConcurrentPositions: 1,
     cooldownAfterLossStreak: 2,
     cooldownMinutes: 10,
-    maxEffects: 1,
+    maxEffects: maxEffects,
   );
   final policy = <String, dynamic>{
     'runner_build_id': 'runner-build',
@@ -791,7 +946,9 @@ _fixture({
     'minimum_risk_reward': 2,
     if (includeExposureScope)
       'account_read_scope':
-          BingxFuturesRemoteMandateAdmission.exposureReadScope,
+          sessionCycleIndex == null
+              ? BingxFuturesRemoteMandateAdmission.legacyExposureReadScope
+              : BingxFuturesRemoteMandateAdmission.exposureReadScope,
   };
   BingxFuturesRemoteMandateAdmission issue(String? Function(String) signer) =>
       sessionCycleIndex == null
@@ -811,11 +968,66 @@ _fixture({
             signCommitment: signer,
           )!;
   final unsignedAdmission = issue((_) => '0' * 128);
-  final admissionSignature = await Ed25519().sign(
-    _decodeHex(unsignedAdmission.commitmentHashHex),
-    keyPair: capsuleKeyPair,
-  );
-  final admission = issue((_) => _hex(admissionSignature.bytes));
+  late BingxFuturesRemoteMandateAdmission admission;
+  if (legacySession) {
+    final wire = unsignedAdmission.toJson();
+    wire['contract_version'] =
+        BingxFuturesRemoteMandateAdmission
+            .legacyDeterministicSessionContractVersion;
+    (wire['strategy_policy']! as Map<String, dynamic>)['account_read_scope'] =
+        BingxFuturesRemoteMandateAdmission.legacyExposureReadScope;
+    final semantic = <String, dynamic>{
+      'contract_version': wire['contract_version'],
+      'runner_key_id': wire['runner_key_id'],
+      'operation_kind': wire['operation_kind'],
+      'strategy_policy': wire['strategy_policy'],
+      'session_policy': wire['session_policy'],
+      'max_uses': wire['max_uses'],
+      'mandate': wire['mandate'],
+    };
+    final commitment =
+        sha256
+            .convert(
+              utf8.encode(
+                'hivra:bingx-futures-remote-mandate-admission:v5\n'
+                '${jsonEncode(semantic)}',
+              ),
+            )
+            .toString();
+    final signature = await Ed25519().sign(
+      _decodeHex(commitment),
+      keyPair: capsuleKeyPair,
+    );
+    wire['operation_id'] = commitment;
+    wire['commitment_hash_hex'] = commitment;
+    wire['signature_hex'] = _hex(signature.bytes);
+    admission =
+        await BingxFuturesRemoteMandateAdmission.parseAndVerifyAsync(
+          untrustedWireBytes: utf8.encode(jsonEncode(wire)),
+          verifySignature:
+              ({
+                required messageHashHex,
+                required participantIdHex,
+                required signatureHex,
+              }) async => Ed25519().verify(
+                _decodeHex(messageHashHex),
+                signature: Signature(
+                  _decodeHex(signatureHex),
+                  publicKey: SimplePublicKey(
+                    _decodeHex(participantIdHex),
+                    type: KeyPairType.ed25519,
+                  ),
+                ),
+              ),
+        ) ??
+        (throw StateError('legacy session fixture did not verify'));
+  } else {
+    final admissionSignature = await Ed25519().sign(
+      _decodeHex(unsignedAdmission.commitmentHashHex),
+      keyPair: capsuleKeyPair,
+    );
+    admission = issue((_) => _hex(admissionSignature.bytes));
+  }
   final admissionFile = File('${directory.path}/admission.json');
   await admissionFile.writeAsString(admission.canonicalJson, flush: true);
 

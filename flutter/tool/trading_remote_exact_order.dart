@@ -349,8 +349,13 @@ Future<String> runAuthorizedExactOrder({
         ExternalEffectState.approved,
         ExternalEffectState.queued,
       }.contains(existing.state)) {
+    final requiredExposureScope =
+        admission.isDeterministicSession &&
+                !admission.isLegacyDeterministicSession
+            ? BingxFuturesRemoteMandateAdmission.exposureReadScope
+            : BingxFuturesRemoteMandateAdmission.legacyExposureReadScope;
     if (jsonEncode(admission.strategyPolicy?['account_read_scope']) !=
-        jsonEncode(BingxFuturesRemoteMandateAdmission.exposureReadScope)) {
+        jsonEncode(requiredExposureScope)) {
       throw const FormatException('exposure_read_authority_missing');
     }
     if (!admission.mandate.isActiveAt(now().toUtc())) {

@@ -90,17 +90,19 @@ void main() {
           BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
             stopLossPercent: 5,
             minimumRiskReward: 2,
+            includeOpenOrders: false,
           );
       expect(canonicalPolicy, <String, dynamic>{
         'runner_build_id': 'systemd-public-shadow-v1',
         'plugin_id': 'hivra.bingx-futures-trading',
-        'plugin_version': '0.2.3',
+        'plugin_version': '0.2.4',
         'package_digest_hex':
-            '2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889',
+            '0e1eb93a9f53d3da9b4ec914e9841bc11355d08a59fdf8eb2b67994dd496bfda',
         'host_abi': 'wasm32-wasi-preview1',
         'stop_loss_percent': 5.0,
         'minimum_risk_reward': 2.0,
-        'account_read_scope': BingxFuturesRemoteMandateAdmission.exposureReadScope,
+        'account_read_scope':
+            BingxFuturesRemoteMandateAdmission.legacyExposureReadScope,
       });
       final admission =
           BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
@@ -127,18 +129,29 @@ void main() {
             }) => true,
       );
       expect(reparsed?.canonicalJson, admission.canonicalJson);
-      for (final replacement in [null, ['balance'], [...BingxFuturesRemoteMandateAdmission.exposureReadScope, 'withdraw']]) {
+      for (final replacement in [
+        null,
+        ['balance'],
+        [...BingxFuturesRemoteMandateAdmission.exposureReadScope, 'withdraw'],
+      ]) {
         final scopeMutation = jsonDecode(admission.canonicalJson);
         if (replacement == null) {
           scopeMutation['strategy_policy'].remove('account_read_scope');
         } else {
           scopeMutation['strategy_policy']['account_read_scope'] = replacement;
         }
-        expect(BingxFuturesRemoteMandateAdmission.parseAndVerify(
-          untrustedWireBytes: utf8.encode(jsonEncode(scopeMutation)),
-          verifySignature: ({required messageHashHex, required participantIdHex,
-            required signatureHex}) => true,
-        ), isNull);
+        expect(
+          BingxFuturesRemoteMandateAdmission.parseAndVerify(
+            untrustedWireBytes: utf8.encode(jsonEncode(scopeMutation)),
+            verifySignature:
+                ({
+                  required messageHashHex,
+                  required participantIdHex,
+                  required signatureHex,
+                }) => true,
+          ),
+          isNull,
+        );
       }
 
       final mutated = jsonDecode(admission.canonicalJson);
@@ -167,6 +180,7 @@ void main() {
                 BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
                   stopLossPercent: 5,
                   minimumRiskReward: 2,
+                  includeOpenOrders: true,
                 ),
             startsAtUtc: fixture.now,
             intervalSeconds: 300,
@@ -218,6 +232,7 @@ void main() {
               BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
                 stopLossPercent: 5,
                 minimumRiskReward: 2,
+                includeOpenOrders: true,
               ),
           startsAtUtc: fixture.now,
           intervalSeconds: 30,
@@ -238,6 +253,7 @@ void main() {
                 BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
                   stopLossPercent: 5,
                   minimumRiskReward: 2,
+                  includeOpenOrders: true,
                 ),
             startsAtUtc: fixture.now,
             intervalSeconds: 300,
@@ -305,6 +321,7 @@ void main() {
                     BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
                       stopLossPercent: 5,
                       minimumRiskReward: 2,
+                      includeOpenOrders: false,
                     ),
                 signCommitment: (_) => '8' * 128,
               )!,
