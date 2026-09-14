@@ -93,7 +93,13 @@ allowed_next_test_versions() {
 is_allowed_next_test_version() {
   local latest="$1"
   local candidate="$2"
-  allowed_next_test_versions "$latest" | rg -Fxq "$candidate"
+  local allowed
+  while IFS= read -r allowed; do
+    if [ "$allowed" = "$candidate" ]; then
+      return 0
+    fi
+  done < <(allowed_next_test_versions "$latest")
+  return 1
 }
 
 self_test() {
