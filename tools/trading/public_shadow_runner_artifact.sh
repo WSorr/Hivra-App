@@ -45,6 +45,14 @@ SESSION_OPERATION_ID=""
 SCHEDULER_SESSION_OPERATION_ID=""
 INSTALLED_BUNDLE_MODE=0
 
+effect_state_directory() {
+  case "$1" in
+    exact) echo "hivra-trading-public-shadow/exact-order-runtime" ;;
+    deterministic) echo "hivra-trading-public-shadow/deterministic-order-runtime" ;;
+    *) return 1 ;;
+  esac
+}
+
 enable_exact_self_contained_bundle_mode() {
   [ -n "$ARTIFACT_DIR" ] || return 0
   [ -d "$ARTIFACT_DIR" ] || return 0
@@ -3700,7 +3708,7 @@ execute_exact_order_once() {
     --service-type=exec \
     --wait --pipe --collect --quiet \
     --property=DynamicUser=yes \
-    --property=StateDirectory=hivra-trading-public-shadow \
+    --property="StateDirectory=$(effect_state_directory exact)" \
     --property=StateDirectoryMode=0700 \
     --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
     --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
@@ -4093,7 +4101,7 @@ PY
     --service-type=exec \
     --wait --pipe --collect --quiet \
     --property=DynamicUser=yes \
-    --property=StateDirectory=hivra-trading-public-shadow \
+    --property="StateDirectory=$(effect_state_directory deterministic)" \
     --property=StateDirectoryMode=0700 \
     --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
     --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
@@ -4253,7 +4261,7 @@ recover_deterministic_session_once() {
     --service-type=exec \
     --wait --pipe --collect --quiet \
     --property=DynamicUser=yes \
-    --property=StateDirectory=hivra-trading-public-shadow \
+    --property="StateDirectory=$(effect_state_directory deterministic)" \
     --property=StateDirectoryMode=0700 \
     --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
     --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
@@ -4799,6 +4807,15 @@ self_test() {
   local root
   root="$(mktemp -d)"
   trap "rm -rf '$root'" EXIT
+
+  [ "$(effect_state_directory exact)" = \
+    "hivra-trading-public-shadow/exact-order-runtime" ] &&
+    [ "$(effect_state_directory deterministic)" = \
+      "hivra-trading-public-shadow/deterministic-order-runtime" ] ||
+    die "self-test effect state is not isolated from supervisor state"
+  if effect_state_directory unknown >/dev/null 2>&1; then
+    die "self-test accepted an unknown effect state owner"
+  fi
 
   local unit_target="$root/session-unit"
   local unit_link="$root/session-unit-link"
