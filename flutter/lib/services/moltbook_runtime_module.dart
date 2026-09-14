@@ -950,15 +950,17 @@ class MoltbookRuntimeModule {
       accountBindingId,
       cycleEpoch: cycleEpoch,
     );
-    await _ingestConfiguredPublicRepository(
-      ownerHex: ownerHex,
-      accountBindingId: accountBindingId,
-      cycleEpoch: cycleEpoch,
-    );
+    var blockedCount = 0;
+    final repositoryObservationSucceeded =
+        await _ingestConfiguredPublicRepository(
+          ownerHex: ownerHex,
+          accountBindingId: accountBindingId,
+          cycleEpoch: cycleEpoch,
+        );
+    if (!repositoryObservationSucceeded) blockedCount++;
     final before = await moltbookFeedCheckpoint.load();
     var reconciledCount = 0;
     var challengedCount = 0;
-    var blockedCount = 0;
     final unresolved = (await moltbookPublications.list())
         .where((operation) => operation.state == ExternalEffectState.unresolved)
         .toList(growable: false);
@@ -1255,13 +1257,13 @@ class MoltbookRuntimeModule {
     return summary;
   }
 
-  Future<void> _ingestConfiguredPublicRepository({
+  Future<bool> _ingestConfiguredPublicRepository({
     required String ownerHex,
     required String accountBindingId,
     required int cycleEpoch,
   }) async {
     final source = _publicRepositorySource;
-    if (source == null) return;
+    if (source == null) return true;
     final configuration = await _ambassadorConfiguration.load();
     ({String sourceId, List<String> facts})? observation;
     try {
@@ -1273,9 +1275,9 @@ class MoltbookRuntimeModule {
         'moltbook.public_repository.observe',
         'deferred ${_safeError(error)}',
       );
-      return;
+      return false;
     }
-    if (observation == null) return;
+    if (observation == null) return true;
     await _ensureMoltbookCycleScope(
       ownerHex,
       accountBindingId,
@@ -1292,11 +1294,13 @@ class MoltbookRuntimeModule {
         'retained source=${_safeLogValue(change.sourceId)} '
             'facts=${change.facts.length}',
       );
+      return true;
     } on FormatException catch (error) {
       await uiLog.log(
         'moltbook.public_repository.observe',
         'deferred ${_safeError(error)}',
       );
+      return false;
     }
   }
 

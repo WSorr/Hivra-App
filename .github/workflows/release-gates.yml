@@ -37,6 +37,23 @@ jobs:
           bash tools/trading/public_shadow_runner_artifact.sh --build "$artifact" --target-os linux --target-arch x64
           bash tools/trading/public_shadow_runner_artifact.sh --runtime-smoke "$artifact"
 
+      - name: Install pinned Flutter SDK
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: 3.41.2
+          cache: true
+
+      - name: Test platform-neutral Rust workspace
+        run: cargo test --workspace --exclude hivra-ffi --locked
+
+      - name: Analyze and test Flutter application
+        working-directory: flutter
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub
+          flutter test --no-pub
+
       - name: Review gates
         run: bash tools/review/review_all.sh
 

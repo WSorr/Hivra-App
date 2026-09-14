@@ -426,21 +426,24 @@ void main() {
     },
   );
 
-  test('public repository failure does not block the Moltbook cycle', () async {
-    publicRepositorySource.error = const FormatException('invalid response');
+  test(
+    'public repository failure is visible without stopping the cycle',
+    () async {
+      publicRepositorySource.error = const FormatException('invalid response');
 
-    final summary = await module.runMoltbookCycle();
+      final summary = await module.runMoltbookCycle();
 
-    expect(summary.blockedCount, 0);
-    expect(
-      log.entries.any(
-        (entry) =>
-            entry.source == 'moltbook.public_repository.observe' &&
-            entry.message.startsWith('deferred '),
-      ),
-      isTrue,
-    );
-  });
+      expect(summary.blockedCount, 1);
+      expect(
+        log.entries.any(
+          (entry) =>
+              entry.source == 'moltbook.public_repository.observe' &&
+              entry.message.startsWith('deferred '),
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test(
     'Capsule switch after public repository read aborts the cycle',

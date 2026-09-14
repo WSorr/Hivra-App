@@ -282,6 +282,11 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
     );
     final remoteStatusWire = _remoteRunnerStatusWire ?? '';
     final remoteSessionRunning = tradingRemoteRunnerIsRunning(remoteStatusWire);
+    final remoteMayHoldAuthority = tradingRemoteRunnerMayHoldAuthority(
+      configured: _remoteRunnerConfigured,
+      hasVerifiedSession: _remoteRunnerSession != null,
+      statusWire: _remoteRunnerStatusWire,
+    );
     final remoteSessionResumable =
         _remoteRunnerSession?.mandate.isActiveAt(nowUtc) == true &&
         tradingRemoteRunnerCanResume(remoteStatusWire);
@@ -291,6 +296,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           raw: remoteStatusWire,
           hasVerifiedSession: _remoteRunnerSession != null,
         );
+    final localRunnerRunning = _localRunnerRunning;
     final remoteSessionActionLabel = tradingRemoteRunnerPrimaryActionLabel(
       configured: _remoteRunnerConfigured,
       running: remoteSessionRunning,
@@ -301,8 +307,8 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
       running: remoteSessionRunning,
       resumable: remoteSessionResumable,
       canStart: remoteSessionCanStart,
+      localActive: _startingLocalRunner || localRunnerRunning,
     );
-    final localRunnerRunning = _localRunnerRunning;
     final localRunnerSnapshot =
         _localRunnerSnapshot?.capsuleScope == _localRunnerScope
             ? _localRunnerSnapshot
@@ -455,7 +461,8 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                                 !tradingLocalRunnerActionEnabled(
                                   starting: _startingLocalRunner,
                                   running: localRunnerRunning,
-                                  remoteRunning: remoteSessionRunning,
+                                  remoteMayHoldAuthority:
+                                      remoteMayHoldAuthority,
                                 )
                             ? null
                             : _toggleLocalRunner,
@@ -509,7 +516,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                                 _savingTradingControl ||
                                 _exportingRemoteMandate ||
                                 _loadingRemoteRunnerSummary ||
-                                localRunnerRunning ||
                                 !remoteSessionActionEnabled
                             ? null
                             : !_remoteRunnerConfigured
