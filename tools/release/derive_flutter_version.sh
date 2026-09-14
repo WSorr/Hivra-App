@@ -13,7 +13,7 @@ Usage:
   tools/release/derive_flutter_version.sh --self-test
 
 Examples:
-  v1.0.3-test4 -> name 1.0.3, number 100030004
+  v1.0.3-test4 -> name 1.0.3, number 100030049
   v1.0.3       -> name 1.0.3, number 100039999
 EOF
 }
@@ -24,19 +24,21 @@ die() {
 }
 
 self_test() {
-  local test16 stable next_patch maximum
+  local test16 test17 stable next_patch maximum
   test16="$("$SCRIPT_PATH" --version v1.0.3-test16 --field number)"
+  test17="$("$SCRIPT_PATH" --version v1.0.3-test17 --field number)"
   stable="$("$SCRIPT_PATH" --version v1.0.3 --field number)"
   next_patch="$("$SCRIPT_PATH" --version v1.0.4-test1 --field number)"
   maximum="$("$SCRIPT_PATH" --version v20.99.99 --field number)"
 
   [ "$test16" -gt 100000331 ] || die "test16 must upgrade the last verified development build"
+  [ "$((test17 - test16))" -eq 10 ] || die "test releases must retain build-number headroom"
   [ "$stable" -gt "$test16" ] || die "stable must upgrade every prerelease in the same patch"
   [ "$next_patch" -gt "$stable" ] || die "the next patch prerelease must upgrade the prior stable"
   [ "$maximum" -le 2100000000 ] || die "maximum version exceeds Android versionCode"
 
-  if "$SCRIPT_PATH" --version v1.0.3-test9999 --field number >/dev/null 2>&1; then
-    die "test9999 must remain reserved for stable"
+  if "$SCRIPT_PATH" --version v1.0.3-test999 --field number >/dev/null 2>&1; then
+    die "test999 must remain reserved for stable"
   fi
   if "$SCRIPT_PATH" --version v1.100.0-test1 --field number >/dev/null 2>&1; then
     die "minor 100 must exceed the supported versionCode layout"
@@ -96,12 +98,16 @@ test_number="${BASH_REMATCH[5]:-9999}"
 [ "$minor" -le 99 ] || die "minor version must be <= 99"
 [ "$patch" -le 99 ] || die "patch version must be <= 99"
 if [ -n "$is_test" ]; then
-  [ "$test_number" -le 9998 ] || die "test iteration must be <= 9998"
+  [ "$test_number" -le 998 ] || die "test iteration must be <= 998"
 fi
 
 if [ "$FIELD" = "name" ]; then
   printf '%s.%s.%s\n' "$major" "$minor" "$patch"
   exit 0
+fi
+
+if [ -n "$is_test" ]; then
+  test_number="$((test_number * 10 + 9))"
 fi
 
 printf '%d\n' "$((major * 100000000 + minor * 1000000 + patch * 10000 + test_number))"

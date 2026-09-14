@@ -29,6 +29,9 @@ This directory contains deterministic release helpers for Hivra.
 
 - `derive_flutter_version.sh`
   - Owns the monotonic cross-platform build number layout.
+  - Allocates ten build-number positions per test iteration and emits the
+    terminal position; rebuilt candidates reuse it instead of inventing an
+    ad-hoc number that can overtake the next test release.
   - Reserves slot `9999` for a stable patch, so stable always upgrades every
     `testN` of the same patch and the next patch remains greater.
   - Keeps the maximum supported version below Android's versionCode ceiling.
