@@ -16,6 +16,7 @@ import 'moltbook_feed_checkpoint_store.dart';
 import 'moltbook_publication_service.dart';
 import 'moltbook_public_bulletin_ai_service.dart';
 import 'moltbook_public_change_feed_store.dart';
+import 'moltbook_public_repository_source_adapter.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
 
@@ -37,6 +38,7 @@ class MoltbookRuntimeModule {
   final MoltbookPublicBulletinAiService moltbookPublicBulletinAi;
   final MoltbookPublicChangeFeedStore moltbookPublicChanges;
   final MoltbookCycleTriggerService moltbookCycleTriggers;
+  final MoltbookPublicRepositorySourceAdapter? _publicRepositorySource;
   final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
   final String? Function() _readActiveCapsuleRootHex;
   final Future<String> Function() _loadMoltbookPublicChangeManifest;
@@ -50,10 +52,12 @@ class MoltbookRuntimeModule {
     required this.moltbookPublicBulletinAi,
     required this.moltbookPublicChanges,
     required this.moltbookCycleTriggers,
+    MoltbookPublicRepositorySourceAdapter? publicRepositorySource,
     required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
     required String? Function() readActiveCapsuleRootHex,
     Future<String> Function()? loadMoltbookPublicChangeManifest,
-  }) : _ambassadorConfiguration = ambassadorConfiguration,
+  }) : _publicRepositorySource = publicRepositorySource,
+       _ambassadorConfiguration = ambassadorConfiguration,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
        _loadMoltbookPublicChangeManifest =
            loadMoltbookPublicChangeManifest ??
@@ -175,7 +179,17 @@ class MoltbookRuntimeModule {
     required String accountBindingId,
     required int cycleEpoch,
   }) async {
-    if ((await moltbookDrafts.load()).isNotEmpty) return null;
+    final drafts = await moltbookDrafts.load();
+    if (drafts.isNotEmpty) {
+      final draftedSourceIds =
+          drafts.map((draft) => draft.preview.bulletinId).toSet();
+      final publicChanges = await moltbookPublicChanges.load();
+      if (publicChanges.any(
+        (change) => draftedSourceIds.contains(change.sourceId),
+      )) {
+        return null;
+      }
+    }
     final publications = await moltbookPublications.list();
     if (publications.any((operation) => !operation.state.isTerminal)) {
       return null;
@@ -906,6 +920,7 @@ class MoltbookRuntimeModule {
         agentDescription: configuration.agentDescription,
         personaSummary: configuration.personaSummary,
         allowedTopics: configuration.allowedTopics,
+        publicRepositoryUrl: configuration.publicRepositoryUrl,
         primaryCommunity: configuration.primaryCommunity,
         approvalMode: configuration.approvalMode,
         triggerPolicy: configuration.triggerPolicy,
@@ -933,6 +948,11 @@ class MoltbookRuntimeModule {
     await _ensureMoltbookCycleScope(
       ownerHex,
       accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    await _ingestConfiguredPublicRepository(
+      ownerHex: ownerHex,
+      accountBindingId: accountBindingId,
       cycleEpoch: cycleEpoch,
     );
     final before = await moltbookFeedCheckpoint.load();
@@ -1233,6 +1253,51 @@ class MoltbookRuntimeModule {
           'blocked=${summary.blockedCount}',
     );
     return summary;
+  }
+
+  Future<void> _ingestConfiguredPublicRepository({
+    required String ownerHex,
+    required String accountBindingId,
+    required int cycleEpoch,
+  }) async {
+    final source = _publicRepositorySource;
+    if (source == null) return;
+    final configuration = await _ambassadorConfiguration.load();
+    ({String sourceId, List<String> facts})? observation;
+    try {
+      observation = await source.observeLatestCommit(
+        configuration.publicRepositoryUrl,
+      );
+    } catch (error) {
+      await uiLog.log(
+        'moltbook.public_repository.observe',
+        'deferred ${_safeError(error)}',
+      );
+      return;
+    }
+    if (observation == null) return;
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    try {
+      final change = await moltbookPublicChanges.record(
+        sourceId: observation.sourceId,
+        category: configuration.allowedTopics.first,
+        facts: observation.facts,
+      );
+      await uiLog.log(
+        'moltbook.public_repository.observe',
+        'retained source=${_safeLogValue(change.sourceId)} '
+            'facts=${change.facts.length}',
+      );
+    } on FormatException catch (error) {
+      await uiLog.log(
+        'moltbook.public_repository.observe',
+        'deferred ${_safeError(error)}',
+      );
+    }
   }
 
   Future<void> _ensureMoltbookCycleScope(

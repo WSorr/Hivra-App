@@ -77,6 +77,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _personaController = TextEditingController();
   final TextEditingController _topicsController = TextEditingController();
+  final TextEditingController _publicRepositoryController =
+      TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _bulletinIdController = TextEditingController(
     text: newMoltbookPublicChangeSourceId(DateTime.now()),
@@ -185,6 +187,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     _descriptionController.dispose();
     _personaController.dispose();
     _topicsController.dispose();
+    _publicRepositoryController.dispose();
     _apiKeyController.dispose();
     _bulletinIdController.dispose();
     _releaseTagController.dispose();
@@ -223,6 +226,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       _descriptionController.text = configuration.agentDescription;
       _personaController.text = configuration.personaSummary;
       _topicsController.text = configuration.allowedTopics.join(', ');
+      _publicRepositoryController.text = configuration.publicRepositoryUrl;
       _categoryController.text = configuration.allowedTopics.first;
       _submoltController.text = configuration.primaryCommunity;
       _audienceController.text = configuration.primaryCommunity;
@@ -827,6 +831,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               .map((topic) => topic.trim())
               .where((topic) => topic.isNotEmpty)
               .toList(),
+      publicRepositoryUrl: _publicRepositoryController.text.trim(),
       primaryCommunity: _submoltController.text.trim(),
       approvalMode: _approvalMode,
       triggerPolicy: _triggerPolicy,
@@ -1784,10 +1789,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                         _MoltbookWorkspaceSection(
                           icon: Icons.drafts_outlined,
                           title: 'Local drafts',
-                          subtitle:
-                              '${_storedDrafts.length} waiting for review',
+                          subtitle: '${_storedDrafts.length} saved locally',
                           child: _MoltbookDraftHistoryCard(
                             drafts: _storedDrafts,
+                            publications: _publications,
+                            binding: _binding,
                             busy: _draftBusy || _publicationBusy,
                             submoltController: _submoltController,
                             onDelete: _deleteDraft,
@@ -1848,6 +1854,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                 labelText: 'Allowed topics',
                                 helperText:
                                     'What the agent may discuss. Comma-separated ids, for example capsule-runtime.',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _publicRepositoryController,
+                              keyboardType: TextInputType.url,
+                              decoration: const InputDecoration(
+                                labelText: 'Public repository',
+                                helperText:
+                                    'Optional exact GitHub repository URL. Each cycle observes its latest public commit without credentials.',
                               ),
                             ),
                             const SizedBox(height: 20),
@@ -2444,6 +2460,8 @@ class _CycleMetric extends StatelessWidget {
 
 class _MoltbookDraftHistoryCard extends StatelessWidget {
   final List<MoltbookStoredDraft> drafts;
+  final List<ExternalEffectOperation> publications;
+  final MoltbookConnectionBinding? binding;
   final bool busy;
   final TextEditingController submoltController;
   final Future<void> Function(MoltbookStoredDraft draft) onDelete;
@@ -2451,6 +2469,8 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
 
   const _MoltbookDraftHistoryCard({
     required this.drafts,
+    required this.publications,
+    required this.binding,
     required this.busy,
     required this.submoltController,
     required this.onDelete,
@@ -2484,23 +2504,61 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            ...drafts.map(
-              (draft) => ListTile(
+            ...drafts.map((draft) {
+              final connection = binding;
+              ExternalEffectOperation? existingOperation;
+              String? publicationGuidance;
+              if (connection != null) {
+                try {
+                  existingOperation =
+                      MoltbookPublicationService.retainedPostOperationForDraft(
+                        operations: publications,
+                        accountBindingId: connection.accountId,
+                        accountName: connection.accountName,
+                        submoltName: submoltController.text,
+                        draft: draft.preview,
+                      );
+                  if (existingOperation?.state ==
+                      ExternalEffectState.terminalFailure) {
+                    publicationGuidance =
+                        'delivery unresolved · resolve in Publication history';
+                  } else if (existingOperation != null) {
+                    final payload = MoltbookPublicationService.decodePayload(
+                      existingOperation,
+                    );
+                    final retainedDestination = payload['submolt_name'];
+                    if (retainedDestination != submoltController.text.trim()) {
+                      publicationGuidance =
+                          'bound to m/$retainedDestination · resolve in Publication history';
+                    }
+                  }
+                } on StateError {
+                  publicationGuidance =
+                      'publication history conflict · resolve in Publication history';
+                } on FormatException {
+                  publicationGuidance =
+                      'publication history invalid · resolve in Publication history';
+                }
+              }
+              final reviewBlocked = publicationGuidance != null;
+              return ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(draft.preview.title),
                 subtitle: Text(
-                  '${draft.status.replaceAll("_", " ")} · '
+                  '${publicationGuidance ?? draft.status.replaceAll("_", " ")} · '
                   '${draft.createdAtUtc.toLocal()} · '
                   '${draft.preview.draftHashHex.substring(0, 12)}..',
                 ),
                 trailing: Wrap(
                   spacing: 4,
                   children: [
-                    FilledButton.tonalIcon(
-                      onPressed: busy ? null : () => onReviewPublication(draft),
-                      icon: const Icon(Icons.rate_review_outlined),
-                      label: const Text('Review'),
-                    ),
+                    if (!reviewBlocked)
+                      FilledButton.tonalIcon(
+                        onPressed:
+                            busy ? null : () => onReviewPublication(draft),
+                        icon: const Icon(Icons.rate_review_outlined),
+                        label: const Text('Review'),
+                      ),
                     IconButton(
                       tooltip: 'Delete local draft',
                       onPressed: busy ? null : () => onDelete(draft),
@@ -2508,8 +2566,8 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-            ),
+              );
+            }),
           ],
         ),
       ),

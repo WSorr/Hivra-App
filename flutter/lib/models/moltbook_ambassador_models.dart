@@ -471,8 +471,9 @@ class MoltbookStoredDraft {
 }
 
 class MoltbookAmbassadorConfiguration {
-  static const int schemaVersion = 4;
-  static const int previousSchemaVersion = 3;
+  static const int schemaVersion = 5;
+  static const int previousSchemaVersion = 4;
+  static const int communitySchemaVersion = 3;
   static const int triggerSchemaVersion = 2;
   static const int legacySchemaVersion = 1;
   static const String approvalDraft = 'draft';
@@ -486,6 +487,7 @@ class MoltbookAmbassadorConfiguration {
   final String agentDescription;
   final String personaSummary;
   final List<String> allowedTopics;
+  final String publicRepositoryUrl;
   final String primaryCommunity;
   final String approvalMode;
   final String triggerPolicy;
@@ -496,6 +498,7 @@ class MoltbookAmbassadorConfiguration {
     required this.agentDescription,
     required this.personaSummary,
     required this.allowedTopics,
+    this.publicRepositoryUrl = MoltbookPublicationContract.repositoryUrl,
     this.primaryCommunity = moltbookPersonFirstRuntimeSubmoltName,
     required this.approvalMode,
     this.triggerPolicy = triggerSession,
@@ -513,6 +516,7 @@ class MoltbookAmbassadorConfiguration {
         'capsule-runtime',
         'wasm-drones',
       ],
+      publicRepositoryUrl: MoltbookPublicationContract.repositoryUrl,
       primaryCommunity: moltbookPersonFirstRuntimeSubmoltName,
       approvalMode: approvalAssisted,
       enabled: true,
@@ -523,6 +527,7 @@ class MoltbookAmbassadorConfiguration {
     final sourceSchemaVersion = json['schema_version'];
     if (sourceSchemaVersion != legacySchemaVersion &&
         sourceSchemaVersion != triggerSchemaVersion &&
+        sourceSchemaVersion != communitySchemaVersion &&
         sourceSchemaVersion != previousSchemaVersion &&
         sourceSchemaVersion != schemaVersion) {
       throw const FormatException('Unsupported Moltbook configuration schema');
@@ -548,6 +553,10 @@ class MoltbookAmbassadorConfiguration {
         json['primary_community'] is! String) {
       throw const FormatException('primary_community must be a string');
     }
+    if (sourceSchemaVersion == schemaVersion &&
+        json['public_repository_url'] is! String) {
+      throw const FormatException('public_repository_url must be a string');
+    }
     final config = MoltbookAmbassadorConfiguration(
       agentName:
           json['agent_name'] is String ? json['agent_name'] as String : '',
@@ -560,8 +569,13 @@ class MoltbookAmbassadorConfiguration {
               ? json['persona_summary'] as String
               : '',
       allowedTopics: topics,
+      publicRepositoryUrl:
+          sourceSchemaVersion == schemaVersion
+              ? json['public_repository_url'] as String
+              : MoltbookPublicationContract.repositoryUrl,
       primaryCommunity:
-          sourceSchemaVersion == schemaVersion &&
+          (sourceSchemaVersion == schemaVersion ||
+                      sourceSchemaVersion == previousSchemaVersion) &&
                   json['primary_community'] is String
               ? json['primary_community'] as String
               : moltbookPersonFirstRuntimeSubmoltName,
@@ -579,6 +593,7 @@ class MoltbookAmbassadorConfiguration {
     );
     if (sourceSchemaVersion != schemaVersion &&
         sourceSchemaVersion != previousSchemaVersion &&
+        sourceSchemaVersion != communitySchemaVersion &&
         config.approvalMode == approvalBounded) {
       throw const FormatException(
         'bounded approval requires configuration schema v3 or newer',
@@ -595,6 +610,7 @@ class MoltbookAmbassadorConfiguration {
     'agent_description': agentDescription,
     'persona_summary': personaSummary,
     'allowed_topics': allowedTopics,
+    'public_repository_url': publicRepositoryUrl,
     'primary_community': primaryCommunity,
     'approval_mode': approvalMode,
     'trigger_policy': triggerPolicy,
@@ -617,6 +633,7 @@ class MoltbookAmbassadorConfiguration {
         throw const FormatException('allowed_topics contains an invalid value');
       }
     }
+    parsePublicRepositoryUrl(publicRepositoryUrl);
     if (primaryCommunity.trim() != primaryCommunity ||
         primaryCommunity.length < 2 ||
         primaryCommunity.length > 30 ||
@@ -641,6 +658,45 @@ class MoltbookAmbassadorConfiguration {
         'trigger_policy must be on_demand, session, or continuous_while_running',
       );
     }
+  }
+
+  static ({String owner, String name})? parsePublicRepositoryUrl(String value) {
+    final normalized = value.trim();
+    if (normalized.isEmpty) return null;
+    final uri = Uri.tryParse(normalized);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host != 'github.com' ||
+        uri.hasPort ||
+        uri.userInfo.isNotEmpty ||
+        uri.query.isNotEmpty ||
+        uri.fragment.isNotEmpty) {
+      throw const FormatException(
+        'public_repository_url must be an exact https://github.com/owner/repository URL',
+      );
+    }
+    final segments =
+        uri.pathSegments.where((segment) => segment.isNotEmpty).toList();
+    if (segments.length != 2) {
+      throw const FormatException(
+        'public_repository_url must be an exact https://github.com/owner/repository URL',
+      );
+    }
+    final owner = segments[0];
+    final name =
+        segments[1].endsWith('.git')
+            ? segments[1].substring(0, segments[1].length - 4)
+            : segments[1];
+    final component = RegExp(r'^[A-Za-z0-9_.-]{1,100}$');
+    if (!component.hasMatch(owner) ||
+        !component.hasMatch(name) ||
+        owner == '.' ||
+        owner == '..' ||
+        name == '.' ||
+        name == '..') {
+      throw const FormatException('public_repository_url path is invalid');
+    }
+    return (owner: owner, name: name);
   }
 
   void _bounded(String field, String value, int min, int max) {

@@ -81,49 +81,42 @@ class MoltbookPublicationService {
       'operation_marker': marker,
       'source_draft_hash_hex': draft.draftHashHex,
     });
-    return _withEngagementLock('$ownerHex::post::$publicEffectKey', () async {
-      _requireSameOwner(ownerHex);
-      final existing = (await list())
-          .where(
-            (operation) =>
-                operation.state != ExternalEffectState.cancelled &&
-                _postEffectKeyForOperation(operation) == publicEffectKey,
-          )
-          .toList(growable: false);
-      final succeeded = existing
-          .where(
-            (operation) => operation.state == ExternalEffectState.succeeded,
-          )
-          .toList(growable: false);
-      if (succeeded.length > 1) {
-        throw StateError(
-          'Moltbook post has conflicting succeeded publication effects',
+    return _withEngagementLock(
+      '$ownerHex::post::${binding.accountId}',
+      () async {
+        _requireSameOwner(ownerHex);
+        final operation = retainedPostOperationForDraft(
+          operations: await list(),
+          accountBindingId: binding.accountId,
+          accountName: binding.accountName,
+          submoltName: submolt,
+          draft: draft,
         );
-      }
-      if (succeeded.isNotEmpty) return succeeded.single;
-      if (existing.length > 1) {
-        throw StateError('Moltbook post has conflicting publication effects');
-      }
-      if (existing.isNotEmpty) {
-        final operation = existing.single;
-        if (operation.state == ExternalEffectState.terminalFailure) {
-          throw StateError(
-            'The exact Moltbook post has an unresolved delivery history; '
-            'change the reviewed text before preparing another effect',
-          );
+        if (operation != null) {
+          if (_postEffectKeyForOperation(operation) != publicEffectKey) {
+            throw StateError(
+              'The Moltbook draft is already bound to another exact publication',
+            );
+          }
+          if (operation.state == ExternalEffectState.terminalFailure) {
+            throw StateError(
+              'The exact Moltbook post has an unresolved delivery history; '
+              'change the reviewed text before preparing another effect',
+            );
+          }
+          return operation;
         }
-        return operation;
-      }
-      _requireSameOwner(ownerHex);
-      return _effects.prepare(
-        operationId: operationId,
-        pluginId: moltbookAmbassadorPluginId,
-        providerId: MoltbookConnectionService.providerId,
-        accountBindingId: binding.accountId,
-        effectKind: MoltbookExternalEffectAdapter.effectKind,
-        canonicalPayloadJson: canonicalPayload,
-      );
-    });
+        _requireSameOwner(ownerHex);
+        return _effects.prepare(
+          operationId: operationId,
+          pluginId: moltbookAmbassadorPluginId,
+          providerId: MoltbookConnectionService.providerId,
+          accountBindingId: binding.accountId,
+          effectKind: MoltbookExternalEffectAdapter.effectKind,
+          canonicalPayloadJson: canonicalPayload,
+        );
+      },
+    );
   }
 
   Future<ExternalEffectOperation> prepareCommunity({
@@ -583,6 +576,55 @@ class MoltbookPublicationService {
       );
     }
     return value;
+  }
+
+  static ExternalEffectOperation? retainedPostOperationForDraft({
+    required Iterable<ExternalEffectOperation> operations,
+    required String accountBindingId,
+    required String accountName,
+    required String submoltName,
+    required MoltbookDraftPreview draft,
+  }) {
+    final publicEffectKey = _postEffectKey(
+      accountBindingId: accountBindingId,
+      accountName: accountName,
+      submoltName: submoltName.trim(),
+      title: draft.title,
+      content: MoltbookPublicationContract.attributedContent(draft.body),
+    );
+    final activePosts = operations
+        .where(
+          (operation) =>
+              operation.state != ExternalEffectState.cancelled &&
+              isPostPublication(operation) &&
+              operation.accountBindingId == accountBindingId,
+        )
+        .toList(growable: false);
+    final sourceBound = activePosts
+        .where((operation) => postDraftHash(operation) == draft.draftHashHex)
+        .toList(growable: false);
+    final existing =
+        sourceBound.isNotEmpty
+            ? sourceBound
+            : activePosts
+                .where(
+                  (operation) =>
+                      _postEffectKeyForOperation(operation) == publicEffectKey,
+                )
+                .toList(growable: false);
+    final succeeded = existing
+        .where((operation) => operation.state == ExternalEffectState.succeeded)
+        .toList(growable: false);
+    if (succeeded.length > 1) {
+      throw StateError(
+        'Moltbook post has conflicting succeeded publication effects',
+      );
+    }
+    if (succeeded.isNotEmpty) return succeeded.single;
+    if (existing.length > 1) {
+      throw StateError('Moltbook post has conflicting publication effects');
+    }
+    return existing.singleOrNull;
   }
 
   static String replyEngagementId({

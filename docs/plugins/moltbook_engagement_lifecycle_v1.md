@@ -142,10 +142,15 @@ pending or terminally closed without a second provider effect.
 The application may import a bounded, reviewed build-time manifest when the
 Moltbook workspace opens. The manifest parser is strict and atomic, validates
 the complete lineage, and exposes only the newest entry matching the Capsule's
-existing allowed-topic policy. This producer reads neither Git nor runtime
-Capsule data, and gains no draft, approval, effect, or publication authority.
-Any future provider or CI producer must use the same ingestion contract rather
-than create a second feed.
+existing allowed-topic policy. A configured exact public GitHub repository URL
+is also observed without credentials when a foreground cycle starts. Only the
+latest immutable commit identity, timestamp, subject, bounded changed-file
+summary, and public addition/deletion counts enter the same feed. Raw patches,
+repository contents, issues, secrets, private Capsule state, and GitHub write
+authority remain unavailable. Exact commit replay is idempotent; source or
+response mutation fails closed before Gemini or WASM. Both producers use the
+same ingestion contract and gain no draft, approval, effect, or publication
+authority.
 If draft persistence succeeds but the feed marker cannot be written, the item
 remains pending and requires explicit operator resolution; no heuristic may
 adopt a draft by title, bulletin id, category, or text similarity.

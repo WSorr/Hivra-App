@@ -23,6 +23,7 @@ import 'moltbook_external_effect_adapter.dart';
 import 'moltbook_feed_checkpoint_store.dart';
 import 'moltbook_public_bulletin_ai_service.dart';
 import 'moltbook_public_change_feed_store.dart';
+import 'moltbook_public_repository_source_adapter.dart';
 import 'moltbook_publication_service.dart';
 import 'moltbook_provider_adapter.dart';
 import 'moltbook_runtime_module.dart';
@@ -361,6 +362,7 @@ class PluginRuntimeModuleService {
         readActiveCapsuleRootHex: activeCapsuleRootHex,
       ),
       moltbookCycleTriggers: _moltbookCycleTriggers,
+      publicRepositorySource: MoltbookPublicRepositorySourceAdapter(),
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
         fileStore: fileStore,
         readActiveCapsuleRootHex: activeCapsuleRootHex,

@@ -6,6 +6,8 @@ This directory contains deterministic release helpers for Hivra.
 
 - `preflight.sh`
   - Runs review gates, tests, analyze, and artifact sanity checks.
+  - Refuses packaging while a local branch retains unique release-bearing
+    post-release work that is not patch-equivalent to `main`.
   - Requires evidence coverage for the exact release tag:
     - `tools/release/preflight.sh --trading-evidence-build-tag <version-tag>`
 
