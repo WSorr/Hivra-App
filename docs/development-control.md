@@ -1,87 +1,100 @@
 # Hivra Development Control
 
-Status date: 2026-09-11
+Status date: 2026-09-16
 
 ## Current State
 
-- Maintained runtime: Hivra 1.x.
-- Current runtime source checkpoint is the protected `main` HEAD; Git and the
-  required repository gate retain the exact integration identity.
-- Published prerelease: `v1.0.3-test19` at `dabeaa7`; its published macOS and
-  Android digests match the retained artifact rows. A documentation audit
-  invalidated the Trading Smoke field for both platforms because the retained
-  evidence proves a paused scan, not the complete Trading acceptance contract.
-- The runtime is a modular monolith around the Rust Core, append-only Ledger,
-  FFI boundary, WASM sandbox, and one Flutter App Shell. Installed manifest
-  profiles select Chat, Moltbook, and Trading workspaces without a direct
-  Settings or product-route bypass.
-- Chat has cross-platform delivery evidence and remains guarded by the existing
-  pair-consensus, transport, durable inbox, and acknowledgement owners.
-- Moltbook owns observation, AI proposal, exact publication, receipt,
-  reconciliation, and restart handling. Assisted publication is release-proven;
-  Bounded mode remains non-reference-grade under its lifecycle contract.
-- Trading supports the same canonical bounded cycle locally or through the
-  Remote Runner. Ranked market entries are observations only; exact order
-  fields appear only after fresh market validation. The local runner starts
-  directly from one selected market and obtains replacement bounded authority
-  in the same action when selection changes; signal scan remains optional.
-  Local and remote sessions are mutually exclusive and reuse the existing
-  execution, effect, reconciliation, credential, and mandate owners. Remote
-  authorization now fits the selected notional to the current risk budget
-  before signing; packaged macOS evidence produced exactly one bounded live
-  VPS effect while the application was closed, then stopped at its effect cap.
-- Trading Remote Runner acceptance at `b88a886` remains historical evidence for
-  that source state. Current `main` includes later Trading lifecycle changes and
-  is not release-qualified by the `test19` Trading evidence. Exact
-  managed-position restart reconciliation is proven on macOS; Android evidence
-  for that path remains open.
-- Capsule-scoped secret owners retain credentials. AI unlock remains
-  process-scoped. Legacy split BingX credentials migrate once and are removed.
-- Hivra 2.0 remains design-only. No 2.0 runtime or UI implementation is
-  authorized.
+- Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
+- Current source is protected `main`. Prerelease `v1.0.3-test20` points to
+  `7ed28cd`; exact macOS and Android packages built from `d418329` passed
+  digest-bound packaged signoff.
+- Core, Ledger, FFI, the WASM host, and one Flutter App Shell remain the runtime.
+  Chat, Moltbook, and Trading are installed capabilities, but substantial
+  orchestration still lives in Flutter.
+- Architecture `READY` means canonical ownership is closed, not that the user
+  journey is product-complete.
+- Chat delivery is cross-platform and restart-safe; conversation UX,
+  notifications, and attachments remain incomplete.
+- Moltbook Assisted publication is release-proven; Bounded autonomous operation
+  is not reference-grade.
+- Trading reuses one execution use case, effect journal, order-tracking store,
+  execution queue, revalidation service, and replacement service. `test20`
+  proves packaged risk rejection and macOS reconciliation without a duplicate
+  effect. No-terminal VPS onboarding and the pending-order lifecycle remain
+  incomplete.
+- Capsule-scoped credential stores remain authoritative. AI unlock is
+  process-scoped.
 
-## Product Direction
+## Product Recovery Mode
 
-The maintained convergence target is:
+Until the next accepted prerelease:
+
+1. Freeze V2 implementation, new gates/process documents, universal frameworks,
+   speculative DTOs, and optional dependencies.
+2. Deliver one complete user outcome per pull request. Do not split it into
+   named passes or a separate status pull request.
+3. Use focused tests while developing; run full repository verification once
+   on the final candidate before pull request, then rely on required CI.
+4. Refactor only the active journey. Owner and execution-path counts must not
+   increase; replacements remove or seal their predecessors.
+5. Product acceptance requires no-terminal operation, restart/offline
+   continuity, duplicate suppression, useful diagnostics, and packaged
+   macOS/Android evidence where supported. Green gates alone are insufficient.
+6. A fresh task receives this file plus actual Git state, completes only the
+   selected outcome, and does not select the next one.
+
+This is the final status-only reset. Later status updates ship with the product
+outcome they attest.
+
+## Active Outcome: Trading 24/7
 
 ```text
-Core + Ledger
-  -> Person Runtime API / Plugin Host
-  -> installed Chat, Moltbook, and Trading capabilities
-  -> thin App Shell
+one Capsule -> one configured VPS -> one signed session
+            -> at most one external effect per market event
 ```
 
-The current product still compiles substantial capability logic into Flutter.
-Migration work must follow an active product journey, preserve the three laws,
-reuse proven implementation, and remove or seal the host path it replaces.
-V2 must not become a second runtime.
+The application must configure and provision the VPS and let the user authorize,
+start, pause, resume, and inspect the runner without Git or terminal work.
+Restart or reconnect must recover the same session and managed-order state
+without another provider effect.
 
-## Open Product Evidence
+Pending orders stay on the existing path:
 
-1. Qualify the next release source with complete packaged Trading evidence on
-   macOS and Android: deterministic ready/blocked paths, provider receipt,
-   restart reconciliation, and duplicate suppression.
-2. Complete Moltbook Bounded-mode restart, deduplication, limit, Capsule-scope,
-   and macOS/Android evidence required by its lifecycle contract.
-3. Reduce hardcoded capability activation and Flutter compatibility surfaces
-   only while migrating a proven product capability into the Person Runtime
-   boundary; no standalone architecture cleanup is selected.
+- `BingxFuturesExecutionQueueService`: pending tracking and TTL;
+- `BingxFuturesOrderRevalidationService`: keep or cancel from current market;
+- `BingxFuturesOrderReplacementService`: fresh same-side replacement through
+  the existing execution use case;
+- existing tracking store and effect journal: durable state, receipt,
+  reconciliation, and duplicate suppression.
 
-No plugin ABI change, universal agent runtime, new Core fact, V2 runtime or UI,
-release, VPS mutation, or live financial effect is authorized by this status.
+A terminal or stopped-out intent cannot resurrect; re-entry requires a fresh
+market event and new bounded intent. No new daemon, effect route, Core/Ledger
+fact, generic mandate layer, parallel order store, or V2 runtime is authorized.
+Change code only for a reproduced defect or missing user-facing step.
+
+Exit evidence is one packaged bounded session that continues with the app
+closed and proves pause/resume, restart/reconnect, invalidation, reconciliation,
+duplicate suppression, and useful diagnostics on supported platforms.
+
+## Queued Outcomes
+
+1. Moltbook: bounded observation, AI proposal, publication, comment/reply,
+   limits, restart recovery, and Capsule isolation through the existing effect
+   lifecycle.
+2. Chat: conversation UX, notifications, attachments, offline history, and
+   recovery without another delivery or consensus path.
 
 ## Authority
 
-1. `product-axis.md` owns the three permanent laws and target runtime shape.
-2. `specification.md` owns the maintained 1.x protocol.
-3. Focused architecture and plugin contracts own capability semantics.
-4. This file owns only current state and the next decision boundary.
-5. `roadmap.md` owns the milestone index and retained debt; Git, pull requests,
-   releases, tests, and evidence logs retain detailed history.
+1. `product-axis.md`: permanent laws and target runtime shape.
+2. `specification.md`: maintained 1.x protocol.
+3. Focused contracts: capability semantics.
+4. This file: current state and the single selected product outcome.
+5. `roadmap.md`: milestone/debt index; Git, pull requests, releases, tests, and
+   evidence logs retain history.
 
 ## Integration Boundary
 
-`main` changes only through a pull request with the required `review-gates`
-check. Repository validation and product release remain separate. No tag,
-Release, packaged smoke, VPS change, or external effect is implied by a green
-repository gate.
+`main` changes only through a pull request with required `review-gates`.
+Repository validation does not authorize a tag, Release, packaged smoke, VPS
+mutation, or external effect.
