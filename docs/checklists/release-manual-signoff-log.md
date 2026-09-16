@@ -10,7 +10,9 @@ artifact for that exact platform and completing the platform release checklist.
 Required status values:
 
 - `PASS`: gate was manually completed for this exact build tag and artifact.
-- `N/A`: gate is intentionally not applicable to this platform.
+- `N/A`: gate is intentionally not applicable to this platform. For Trading
+  provider receipt, restart reconciliation, and duplicate suppression, it is
+  valid only when the same field is `PASS` on the other packaged platform.
 - `LEGACY`: historical broad evidence predates the split Trading acceptance
   fields and cannot satisfy a new publication or promotion.
 - `INVALID`: the historical exercise is retained, but it does not prove the
@@ -22,11 +24,12 @@ retain the digest of the bytes that were actually exercised and mark the row
 may return to `PASS` only after the exact published bytes are exercised again.
 
 For publication, macOS and Android must each have one row for the build tag.
-`Manual Smoke`, all five Trading fields, `Moltbook Smoke`, and `User Lifetime`
-must be `PASS` on both platforms. The Trading fields separately attest the
-packaged artifact's READY/BLOCKED decision path, risk rejection, provider
-receipt, restart reconciliation, and duplicate suppression; a paused scan or
-deterministic fixture cannot satisfy them. `AI Surface` records the release's canonical AI
+`Manual Smoke`, Trading READY/BLOCKED, Trading Risk Rejection,
+`Moltbook Smoke`, and `User Lifetime` must be `PASS` on both platforms.
+Provider receipt, restart reconciliation, and duplicate suppression attest the
+single canonical effect lifecycle: each field must be `PASS` on at least one
+packaged platform and may be `N/A` on the other. A paused scan or deterministic
+fixture cannot satisfy them. `AI Surface` records the release's canonical AI
 product surface: current candidates must complete the Capsule Analyst smoke on
 macOS and may use `PASS` or `N/A` on Android. Historical rows retain the result
 for the AI surface that existed in that artifact; they do not authorize its
