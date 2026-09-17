@@ -291,7 +291,7 @@ void main() {
   );
 
   test(
-    'active symbol order blocks the next session effect before POST',
+    'external symbol order blocks the next session effect before POST',
     () async {
       final fixture = await _fixture(sessionCycleIndex: 0, testOrder: false);
       addTearDown(fixture.dispose);
@@ -319,7 +319,7 @@ void main() {
       );
 
       expect(result['state'], 'blocked');
-      expect(result['reason_code'], 'active_order_exists');
+      expect(result['reason_code'], 'external_order_active');
       expect(posts, 0);
     },
   );
@@ -333,18 +333,42 @@ void main() {
     addTearDown(fixture.dispose);
     var posts = 0;
     var orderIsActive = false;
+    String? activeClientOrderId;
     Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
       if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
         return BingxHttpResponse(
           statusCode: 200,
           body:
               orderIsActive
-                  ? '{"code":0,"msg":"ok","data":{"orders":[{"orderId":"first-order","clientOrderId":"hivra-first-event","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","type":"TRIGGER_LIMIT","status":"NEW","price":"100","stopPrice":"99","origQty":"0.01","executedQty":"0","time":1}]}}'
+                  ? jsonEncode(<String, dynamic>{
+                    'code': 0,
+                    'msg': 'ok',
+                    'data': <String, dynamic>{
+                      'orders': <Map<String, dynamic>>[
+                        <String, dynamic>{
+                          'orderId': 'first-order',
+                          'clientOrderId': activeClientOrderId,
+                          'symbol': 'BTC-USDT',
+                          'side': 'BUY',
+                          'positionSide': 'LONG',
+                          'type': 'TRIGGER_LIMIT',
+                          'status': 'NEW',
+                          'price': '100',
+                          'stopPrice': '99',
+                          'origQty': '0.01',
+                          'executedQty': '0',
+                          'time': 1,
+                        },
+                      ],
+                    },
+                  })
                   : '{"code":0,"msg":"ok","data":{"orders":[]}}',
         );
       }
       if (request.method == 'POST') {
         posts += 1;
+        activeClientOrderId =
+            Uri.splitQueryString(request.body)['clientOrderId'];
         orderIsActive = true;
       }
       return _providerResponse(request);
@@ -374,7 +398,7 @@ void main() {
 
     expect(first['state'], 'succeeded');
     expect(second['state'], 'blocked');
-    expect(second['reason_code'], 'active_order_exists');
+    expect(second['reason_code'], 'managed_order_active');
     expect(posts, 1);
   });
 
