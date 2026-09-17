@@ -367,8 +367,12 @@ String tradingControlStateLabel({
   required bool loaded,
   required bool saving,
   required bool enabled,
+  bool remoteSessionRunning = false,
+  bool remoteMayHoldAuthority = false,
 }) {
   if (!loaded || saving) return 'Loading trading control';
+  if (remoteSessionRunning) return 'VPS authority active';
+  if (remoteMayHoldAuthority) return 'VPS authority retained';
   return enabled ? 'Bounded authority active' : 'No active authority';
 }
 
@@ -388,7 +392,12 @@ bool tradingLocalRunnerRequiresAuthorization({
 }) => !droneEnabled || selectionNotice != null;
 
 @visibleForTesting
-String tradingRunnerMarketActionLabel(String symbol) {
+String tradingRunnerMarketActionLabel(
+  String symbol, {
+  String? remoteSessionSymbol,
+}) {
+  final normalizedRemote = remoteSessionSymbol?.trim().toUpperCase() ?? '';
+  if (normalizedRemote.isNotEmpty) return 'VPS market: $normalizedRemote';
   final normalized = symbol.trim().toUpperCase();
   return normalized.isEmpty ? 'Choose market' : 'Market: $normalized';
 }
@@ -1377,9 +1386,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Future<void> _restoreTradingWorkspaceState() async {
     var remoteRunnerConfigured = true;
     var remoteRunnerProfileUnavailable = false;
+    BingxFuturesRemoteMandateAdmission? remoteRunnerSession;
     try {
-      remoteRunnerConfigured =
-          (await _module.remoteRunnerProvisioning.loadProfiles()).isNotEmpty;
+      final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+      remoteRunnerConfigured = profiles.isNotEmpty;
+      if (profiles.length == 1) {
+        remoteRunnerSession = await _loadVerifiedRemoteSession(profiles.single);
+      }
     } catch (error) {
       remoteRunnerProfileUnavailable = true;
       await _module.uiLog.log(
@@ -1392,7 +1405,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _loadingRemoteRunnerSummary = false;
         _remoteRunnerConfigured = remoteRunnerConfigured;
         _remoteRunnerStatusWire = null;
-        _remoteRunnerSession = null;
+        _remoteRunnerSession = remoteRunnerSession;
         _remoteRunnerStatusUnavailable = remoteRunnerProfileUnavailable;
       });
     }

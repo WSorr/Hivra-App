@@ -20,13 +20,15 @@ Status date: 2026-09-17
 - Trading reuses one execution use case, effect journal, order-tracking store,
   execution queue, revalidation service, and replacement service. `test20`
   proves packaged risk rejection and macOS reconciliation without a duplicate
-  effect. No-terminal VPS onboarding and the pending-order lifecycle remain
+  effect. Opening the workspace restores the verified retained VPS mandate and
+  projects its exact market, mode, and effect budget before remote secrets are
+  unlocked. No-terminal VPS onboarding and the pending-order lifecycle remain
   incomplete.
 - Capsule-scoped credential stores remain authoritative. AI unlock is
   process-scoped.
 - The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager
-  migration has passed local packaged macOS and Android smoke. Repository CI
-  and merge remain before the baseline becomes authoritative.
+  baseline is authoritative after packaged macOS and Android smoke, PR `#315`,
+  and its successful post-merge repository run.
 
 ## Product Recovery Mode
 

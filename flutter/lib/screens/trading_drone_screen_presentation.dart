@@ -260,13 +260,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
       testOrder: _useTestOrderEndpoint,
       nowUtc: nowUtc,
     );
-    final tradingControlSubtitle =
-        !_tradingControlLoaded || _savingTradingControl
-            ? 'Loading Capsule trading control.'
-            : mandateSelectionNotice ??
-                (_droneEnabled
-                    ? 'The active Capsule may use the displayed bounded limits.'
-                    : 'Choose a market, then run on this computer or VPS. Bounded authority is requested during start.');
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
     final intentHashLabel =
@@ -275,11 +268,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
             : (shortIntentHash.length > 12
                 ? '${shortIntentHash.substring(0, 12)}..'
                 : shortIntentHash);
-    final controlStateLabel = tradingControlStateLabel(
-      loaded: _tradingControlLoaded,
-      saving: _savingTradingControl,
-      enabled: _droneEnabled,
-    );
     final remoteStatusWire = _remoteRunnerStatusWire ?? '';
     final remoteSessionRunning = tradingRemoteRunnerIsRunning(remoteStatusWire);
     final remoteMayHoldAuthority = tradingRemoteRunnerMayHoldAuthority(
@@ -287,6 +275,29 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
       hasVerifiedSession: _remoteRunnerSession != null,
       statusWire: _remoteRunnerStatusWire,
     );
+    final remoteMandate =
+        remoteMayHoldAuthority ? _remoteRunnerSession?.mandate : null;
+    final displayedMaxEffects = remoteMandate?.maxEffects ?? _maxEffects;
+    final displayedTestOrder =
+        remoteMandate?.testOrder ?? _useTestOrderEndpoint;
+    final controlStateLabel = tradingControlStateLabel(
+      loaded: _tradingControlLoaded,
+      saving: _savingTradingControl,
+      enabled: _droneEnabled,
+      remoteSessionRunning: remoteSessionRunning,
+      remoteMayHoldAuthority: remoteMayHoldAuthority,
+    );
+    final tradingControlSubtitle =
+        !_tradingControlLoaded || _savingTradingControl
+            ? 'Loading Capsule trading control.'
+            : remoteMandate != null
+            ? remoteSessionRunning
+                ? 'The VPS is watching ${remoteMandate.symbol} under the retained signed limits.'
+                : 'The VPS retains signed authority for ${remoteMandate.symbol}. Manage the VPS Runner to resume or revoke it.'
+            : mandateSelectionNotice ??
+                (_droneEnabled
+                    ? 'The active Capsule may use the displayed bounded limits.'
+                    : 'Choose a market, then run on this computer or VPS. Bounded authority is requested during start.');
     final remoteSessionResumable =
         _remoteRunnerSession?.mandate.isActiveAt(nowUtc) == true &&
         tradingRemoteRunnerCanResume(remoteStatusWire);
@@ -334,14 +345,14 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                   _statusChip(
                     controlStateLabel,
                     accent:
-                        _droneEnabled
+                        _droneEnabled || remoteMayHoldAuthority
                             ? const Color(0xFF75D98A)
                             : const Color(0xFFFFC76A),
                   ),
                   _statusChip(
-                    _useTestOrderEndpoint ? 'Simulation' : 'Live orders',
+                    displayedTestOrder ? 'Simulation' : 'Live orders',
                     accent:
-                        _useTestOrderEndpoint
+                        displayedTestOrder
                             ? const Color(0xFF8DC2FF)
                             : const Color(0xFFFFC76A),
                   ),
@@ -350,14 +361,19 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                         _runningIntent ||
                                 _startingLocalRunner ||
                                 localRunnerRunning ||
-                                remoteSessionRunning
+                                remoteMayHoldAuthority
                             ? null
                             : _openPerpetualSymbolPicker,
                     icon: const Icon(Icons.candlestick_chart_rounded, size: 18),
-                    label: Text(tradingRunnerMarketActionLabel(selectedSymbol)),
+                    label: Text(
+                      tradingRunnerMarketActionLabel(
+                        selectedSymbol,
+                        remoteSessionSymbol: remoteMandate?.symbol,
+                      ),
+                    ),
                   ),
                   _statusChip(
-                    '${tradingOrderBudgetLabel(_maxEffects)} max / session',
+                    '${tradingOrderBudgetLabel(displayedMaxEffects)} max / session',
                   ),
                 ],
               ),
@@ -442,7 +458,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  if (_droneEnabled)
+                  if (_droneEnabled || remoteMayHoldAuthority)
                     FilledButton.tonalIcon(
                       onPressed:
                           _runningIntent ||
@@ -555,7 +571,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
               ),
               const SizedBox(height: 4),
               Text(
-                tradingOrderBudgetNotice(_maxEffects),
+                tradingOrderBudgetNotice(displayedMaxEffects),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
             ],

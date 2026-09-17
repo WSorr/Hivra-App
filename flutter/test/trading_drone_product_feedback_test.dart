@@ -1061,6 +1061,25 @@ void main() {
       'No active authority',
     );
     expect(
+      tradingControlStateLabel(
+        loaded: true,
+        saving: false,
+        enabled: false,
+        remoteSessionRunning: true,
+        remoteMayHoldAuthority: true,
+      ),
+      'VPS authority active',
+    );
+    expect(
+      tradingControlStateLabel(
+        loaded: true,
+        saving: false,
+        enabled: false,
+        remoteMayHoldAuthority: true,
+      ),
+      'VPS authority retained',
+    );
+    expect(
       tradingMarketCheckActionLabel(running: false, progress: 'ignored'),
       'Inspect current setup',
     );
@@ -1113,6 +1132,13 @@ void main() {
       'Stop on this computer',
     );
     expect(tradingRunnerMarketActionLabel(' sol-usdt '), 'Market: SOL-USDT');
+    expect(
+      tradingRunnerMarketActionLabel(
+        'DOGE-USDT',
+        remoteSessionSymbol: ' ach-usdt ',
+      ),
+      'VPS market: ACH-USDT',
+    );
     expect(tradingRunnerMarketActionLabel(''), 'Choose market');
     expect(
       tradingLocalRunnerStatusLabel(null),
