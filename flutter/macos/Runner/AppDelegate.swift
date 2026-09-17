@@ -10,12 +10,15 @@ class AppDelegate: FlutterAppDelegate {
   }
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    return false
+    return true
   }
 
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if !flag {
       for window in sender.windows {
+        if window.isMiniaturized {
+          window.deminiaturize(self)
+        }
         window.makeKeyAndOrderFront(self)
       }
     }

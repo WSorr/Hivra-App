@@ -386,6 +386,15 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
 
   Future<void> _exportSignedRemoteDeterministicSession() async {
     if (_exportingRemoteMandate) return;
+    _updateState(() => _exportingRemoteMandate = true);
+    try {
+      await _exportSignedRemoteDeterministicSessionOnce();
+    } finally {
+      if (mounted) _updateState(() => _exportingRemoteMandate = false);
+    }
+  }
+
+  Future<void> _exportSignedRemoteDeterministicSessionOnce() async {
     if (_startingLocalRunner || _localRunnerRunning) {
       await _showSnack(
         'Stop trading on this computer before authorizing the VPS session.',
@@ -549,7 +558,6 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       await _showSnack('Capsule could not sign the remote session.');
       return;
     }
-    _updateState(() => _exportingRemoteMandate = true);
     try {
       await _module.remoteRunnerProvisioning.deploySession(
         profile: runner,
@@ -574,8 +582,6 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         'operation_id=${admission.operationId} error=$error effect=false',
       );
       await _showSnack('Remote Runner activation failed: $error', seconds: 5);
-    } finally {
-      if (mounted) _updateState(() => _exportingRemoteMandate = false);
     }
   }
 
