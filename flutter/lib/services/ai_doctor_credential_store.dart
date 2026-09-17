@@ -152,7 +152,7 @@ class AiDoctorCredentialStore {
         }
         return _cachePreferredProvider(decoded['provider_id']);
       }
-      return _migrateLegacyPreferredProvider();
+      return await _migrateLegacyPreferredProvider();
     } catch (error) {
       throw StateError('AI provider preference load failed: $error');
     }

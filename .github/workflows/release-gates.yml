@@ -27,7 +27,7 @@ jobs:
       - name: Install pinned Dart SDK
         uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
         with:
-          sdk: 3.11.0
+          sdk: 3.13.3
 
       - name: Prove Linux x64 runner startup boundary
         run: |
@@ -41,7 +41,7 @@ jobs:
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
-          flutter-version: 3.41.2
+          flutter-version: 3.47.4
           cache: true
 
       - name: Test platform-neutral Rust workspace

@@ -123,7 +123,7 @@ source_property() {
 }
 
 verify_baseline_shape() {
-  local required_keys='SCHEMA_VERSION FLUTTER_CHANNEL FLUTTER_VERSION FLUTTER_FRAMEWORK_REVISION DART_VERSION RUST_VERSION CARGO_VERSION RUST_PROFILE RUST_COMPONENTS RUST_TARGETS ANDROID_PLATFORM ANDROID_BUILD_TOOLS ANDROID_COMPILE_SDK ANDROID_TARGET_SDK ANDROID_MIN_SDK ANDROID_NDK ANDROID_GRADLE_PLUGIN GRADLE_VERSION KOTLIN_PLUGIN JDK_MAJOR XCODE_VERSION XCODE_BUILD MACOS_SDK COCOAPODS_VERSION'
+  local required_keys='SCHEMA_VERSION FLUTTER_CHANNEL FLUTTER_VERSION FLUTTER_FRAMEWORK_REVISION DART_VERSION RUST_VERSION CARGO_VERSION RUST_PROFILE RUST_COMPONENTS RUST_TARGETS ANDROID_PLATFORM ANDROID_BUILD_TOOLS ANDROID_COMPILE_SDK ANDROID_TARGET_SDK ANDROID_MIN_SDK ANDROID_NDK ANDROID_GRADLE_PLUGIN GRADLE_VERSION KOTLIN_PLUGIN JDK_MAJOR XCODE_VERSION XCODE_BUILD MACOS_SDK'
   local key
   local line
 
@@ -201,6 +201,20 @@ verify_static_contract() {
   expect_contains "$ROOT/flutter/android/app/build.gradle.kts" \
     "minSdk = flutter.minSdkVersion" \
     "Android min SDK remains owned by the pinned Flutter toolchain"
+  if /usr/bin/python3 - "$ROOT/flutter/macos/Runner/Info.plist" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    values = plistlib.load(handle)
+if values.get("FLTEnableImpeller") is not False:
+    raise SystemExit(1)
+PY
+  then
+    pass "macOS uses stable Skia while upstream Impeller P1 crash remains open"
+  else
+    fail "macOS must disable the upstream-crashing Impeller renderer"
+  fi
 }
 
 verify_flutter_and_dart() {
@@ -330,21 +344,18 @@ verify_apple() {
   local actual_xcode
   local actual_xcode_build
   local actual_macos_sdk
-  local actual_pods
   local doctor_output
 
   if [ "$(uname -s)" != "Darwin" ]; then
-    fail "full verification requires macOS for Xcode and CocoaPods evidence"
+    fail "full verification requires macOS for Xcode evidence"
     return
   fi
   actual_xcode="$(xcodebuild -version 2>/dev/null | sed -n '1s/^Xcode //p')"
   actual_xcode_build="$(xcodebuild -version 2>/dev/null | sed -n '2s/^Build version //p')"
   actual_macos_sdk="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || true)"
-  actual_pods="$(pod --version 2>/dev/null || true)"
   expect_equal "Xcode" "$(baseline_value XCODE_VERSION)" "$actual_xcode"
   expect_equal "Xcode build" "$(baseline_value XCODE_BUILD)" "$actual_xcode_build"
   expect_equal "macOS SDK" "$(baseline_value MACOS_SDK)" "$actual_macos_sdk"
-  expect_equal "CocoaPods" "$(baseline_value COCOAPODS_VERSION)" "$actual_pods"
 
   doctor_output="$(flutter doctor -v 2>&1 || true)"
   if printf '%s\n' "$doctor_output" | grep -Fq 'Unable to get list of installed Simulator runtimes'; then
@@ -395,7 +406,7 @@ if [ -f "$BASELINE" ] && [ -f "$RUST_TOOLCHAIN" ]; then
 fi
 
 if [ "$MODE" = "full" ]; then
-  for command_name in flutter dart rustc cargo rustup xcodebuild xcrun pod; do
+  for command_name in flutter dart rustc cargo rustup xcodebuild xcrun; do
     require_command "$command_name"
   done
   if [ "$STATUS" -eq 0 ]; then

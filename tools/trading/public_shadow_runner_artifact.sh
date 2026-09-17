@@ -5288,7 +5288,7 @@ PY
   chmod 600 "$artifact/$SESSION_UNIT_NAME"
   cp "$LIFECYCLE_SOURCE" "$artifact/$LIFECYCLE_NAME"
   chmod 700 "$artifact/$LIFECYCLE_NAME"
-  write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
+  write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "$(baseline_value DART_VERSION)" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   verify_artifact "$artifact" >/dev/null
   local legacy_upgrade_source="$root/legacy-upgrade-source"
   cp -R "$artifact" "$legacy_upgrade_source"
@@ -5303,7 +5303,7 @@ if value.count(marker) != 1:
     raise SystemExit("legacy upgrade fixture did not contain one v6 marker")
 path.write_bytes(value.replace(marker, b""))
 PY
-  write_manifest "$legacy_upgrade_source" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
+  write_manifest "$legacy_upgrade_source" "$(git -C "$ROOT" rev-parse HEAD)" "$(baseline_value DART_VERSION)" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   verify_artifact "$legacy_upgrade_source" upgrade-source-v5 >/dev/null
   if (verify_artifact "$legacy_upgrade_source") >/dev/null 2>&1; then
     die "self-test accepted a legacy v5 bundle as a current release bundle"
@@ -5319,7 +5319,7 @@ if value.count(marker) != 1:
     raise SystemExit("legacy upgrade fixture did not contain one v5 marker")
 path.write_bytes(value.replace(marker, b""))
 PY
-  write_manifest "$legacy_upgrade_source" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
+  write_manifest "$legacy_upgrade_source" "$(git -C "$ROOT" rev-parse HEAD)" "$(baseline_value DART_VERSION)" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   if (verify_artifact "$legacy_upgrade_source" upgrade-source-v5) \
     >/dev/null 2>&1; then
     die "self-test accepted an unsupported pre-v5 upgrade source"
@@ -5484,7 +5484,7 @@ PY
   mv "$artifact/$MANIFEST_NAME.bak" "$artifact/$MANIFEST_NAME"
 
   printf '\n--cancel-order forbidden\n' >> "$artifact/$EFFECT_BINARY_NAME"
-  write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
+  write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "$(baseline_value DART_VERSION)" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
     die "self-test accepted a widened-authority option"
   fi

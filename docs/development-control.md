@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-16
+Status date: 2026-09-17
 
 ## Current State
 
@@ -24,6 +24,9 @@ Status date: 2026-09-16
   incomplete.
 - Capsule-scoped credential stores remain authoritative. AI unlock is
   process-scoped.
+- The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager
+  migration has passed local packaged macOS and Android smoke. Repository CI
+  and merge remain before the baseline becomes authoritative.
 
 ## Product Recovery Mode
 

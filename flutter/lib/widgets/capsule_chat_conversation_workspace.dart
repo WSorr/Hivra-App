@@ -604,23 +604,26 @@ class _TechnicalDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hash = response.result?['envelope_hash_hex']?.toString() ?? '';
-    return ExpansionTile(
-      key: const Key('capsule-chat-technical-details'),
-      dense: true,
-      title: const Text(
-        'Technical details',
-        style: TextStyle(fontSize: 12, color: Color(0xFF96A2B2)),
-      ),
-      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      children: [
-        SelectableText(
-          'Status: ${response.status.name}\n'
-          'Method: ${response.method}\n'
-          'Source: ${response.executionSource}'
-          '${hash.isEmpty ? '' : '\nEnvelope: $hash'}',
-          style: const TextStyle(fontSize: 11, color: Color(0xFF96A2B2)),
+    return Material(
+      type: MaterialType.transparency,
+      child: ExpansionTile(
+        key: const Key('capsule-chat-technical-details'),
+        dense: true,
+        title: const Text(
+          'Technical details',
+          style: TextStyle(fontSize: 12, color: Color(0xFF96A2B2)),
         ),
-      ],
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: [
+          SelectableText(
+            'Status: ${response.status.name}\n'
+            'Method: ${response.method}\n'
+            'Source: ${response.executionSource}'
+            '${hash.isEmpty ? '' : '\nEnvelope: $hash'}',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF96A2B2)),
+          ),
+        ],
+      ),
     );
   }
 }
