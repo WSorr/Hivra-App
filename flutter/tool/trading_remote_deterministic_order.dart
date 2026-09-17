@@ -5,12 +5,14 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
+import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_risk_input_service.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_order_sizing_service.dart';
 import 'package:hivra_app/services/bingx_futures_remote_order_candidate_service.dart';
 import 'package:hivra_app/services/bingx_futures_risk_history_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/external_effect_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 import 'trading_remote_shadow_probe.dart' show readExchangeCredentialFile;
@@ -204,10 +206,20 @@ Future<String> runOneDeterministicOrder({
     if (!openOrders.isSuccess) {
       return _blocked(cycleOperationId, 'open_orders_unavailable');
     }
-    if (openOrders.orders.any(
-      (order) => order.symbol.toUpperCase() == admission.mandate.symbol,
-    )) {
-      return _blocked(cycleOperationId, 'active_order_exists');
+    final activeOrders = openOrders.orders
+        .where(
+          (order) => order.symbol.toUpperCase() == admission.mandate.symbol,
+        )
+        .toList(growable: false);
+    if (activeOrders.isNotEmpty) {
+      return _blocked(
+        cycleOperationId,
+        await _activeOrderReasonCode(
+          admission: admission,
+          activeOrders: activeOrders,
+          stateHome: stateHome,
+        ),
+      );
     }
   }
   final risk = await const BingxFuturesExchangeRiskInputService().read(
@@ -278,6 +290,58 @@ String _blocked(String operationId, String reasonCode) =>
       'reason_code': reasonCode,
       'effect': false,
     });
+
+Future<String> _activeOrderReasonCode({
+  required BingxFuturesRemoteMandateAdmission admission,
+  required List<BingxFuturesOpenOrder> activeOrders,
+  required String stateHome,
+}) async {
+  try {
+    final effects = ExternalEffectService(
+      readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
+      resolveAdapter: (_) => null,
+      fileStore: CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: stateHome),
+      ),
+    );
+    final cycleOperationIds = <String>{
+      for (var index = 0; index < admission.authorizedUses; index += 1)
+        admission.deterministicCycleOperationId(index)!,
+    };
+    final managedClientOrderIds = <String>{};
+    for (final operation in await effects.list(
+      pluginId: bingxFuturesTradingPluginId,
+    )) {
+      if (!cycleOperationIds.contains(operation.operationId) ||
+          operation.ownerCapsuleHex != admission.mandate.capsuleRootHex ||
+          operation.providerId !=
+              BingxFuturesExternalEffectAdapter.providerId ||
+          operation.accountBindingId !=
+              admission.mandate.accountBindingHashHex ||
+          operation.effectKind !=
+              BingxFuturesExternalEffectAdapter.exactOrderEffectKind ||
+          operation.approvalEvidenceHashHex != admission.commitmentHashHex) {
+        continue;
+      }
+      final decoded = jsonDecode(operation.canonicalPayloadJson);
+      if (decoded is! Map<String, dynamic>) {
+        return 'order_ownership_unavailable';
+      }
+      final payload = BingxFuturesIntentPayload.fromPluginResult(decoded);
+      if (payload.symbol == admission.mandate.symbol) {
+        managedClientOrderIds.add(payload.clientOrderId);
+      }
+    }
+    final allManaged = activeOrders.every((order) {
+      final clientOrderId = order.clientOrderId?.trim() ?? '';
+      return clientOrderId.isNotEmpty &&
+          managedClientOrderIds.contains(clientOrderId);
+    });
+    return allManaged ? 'managed_order_active' : 'external_order_active';
+  } on Object {
+    return 'order_ownership_unavailable';
+  }
+}
 
 Future<List<int>> _readBoundedFile(String path, int maxBytes) async {
   final file = File(path);

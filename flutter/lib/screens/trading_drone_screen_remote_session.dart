@@ -1094,6 +1094,19 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
           : 'Session $state';
   final result = switch (outcome) {
     'none' => 'No completed check yet',
+    'blocked:managed_order_active' =>
+      'No new order: this Runner already has a pending order for the VPS '
+          'market. It will not create a duplicate.',
+    'blocked:external_order_active' =>
+      'No new order: the exchange already has an order for this VPS market '
+          'that is not owned by this session. Review it before the Runner can '
+          'trade this market.',
+    'blocked:order_ownership_unavailable' =>
+      'No new order: ownership of the existing market order could not be '
+          'verified.',
+    'blocked:active_order_exists' =>
+      'No new order: this VPS market already has an open order. '
+          'The Runner is waiting to avoid a duplicate.',
     _ when outcome.startsWith('blocked:') =>
       'No order: ${outcome.substring(8).replaceAll('_', ' ')}',
     _ when outcome.contains('succeeded') =>

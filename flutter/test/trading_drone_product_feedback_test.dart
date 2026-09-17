@@ -493,6 +493,47 @@ void main() {
     expect(label, isNot(contains('Next scheduled check')));
   });
 
+  test('Runner explains an existing market order as duplicate protection', () {
+    const running =
+        'active=active enabled=linked session_state=active cycles=12 effects=0 '
+        'last_scheduled_check=2026-09-17T12:40:00Z '
+        'next_check=2026-09-17T12:45:00Z '
+        'last_outcome=blocked:active_order_exists';
+
+    final label = tradingRemoteRunnerStatusLabel(
+      running,
+      authorizedMaxEffects: 2,
+    );
+
+    expect(label, contains('already has an open order'));
+    expect(label, contains('waiting to avoid a duplicate'));
+    expect(label, isNot(contains('active order exists')));
+  });
+
+  test('Runner distinguishes managed and external pending orders', () {
+    const prefix =
+        'active=active enabled=linked session_state=active cycles=12 effects=0 '
+        'last_scheduled_check=2026-09-17T12:40:00Z '
+        'next_check=2026-09-17T12:45:00Z last_outcome=';
+
+    final managed = tradingRemoteRunnerStatusLabel(
+      '${prefix}blocked:managed_order_active',
+      authorizedMaxEffects: 2,
+    );
+    final external = tradingRemoteRunnerStatusLabel(
+      '${prefix}blocked:external_order_active',
+      authorizedMaxEffects: 2,
+    );
+    final unknown = tradingRemoteRunnerStatusLabel(
+      '${prefix}blocked:order_ownership_unavailable',
+      authorizedMaxEffects: 2,
+    );
+
+    expect(managed, contains('this Runner already has a pending order'));
+    expect(external, contains('not owned by this session'));
+    expect(unknown, contains('could not be verified'));
+  });
+
   test('Runner actions preserve one retained session lifecycle', () {
     const running =
         'active=active enabled=linked session_state=active cycles=1 effects=0 '
