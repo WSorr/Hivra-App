@@ -30,7 +30,7 @@ change. It must not be smuggled into feature work or a release candidate.
 
 ## 2. Current Verified Baseline
 
-Audit date: 2026-08-03.
+Audit date: 2026-09-17.
 
 The baseline below is the currently exercised development environment. It is a
 compatibility matrix, not permission to distribute a manually built artifact.
@@ -38,26 +38,26 @@ Release scripts remain the authority for embedded app version and packaging.
 
 | Surface | Verified baseline | Hivra ownership |
 | --- | --- | --- |
-| Flutter | 3.41.2 stable | App shell and platform embedding |
-| Dart | 3.11.0 | Flutter application code |
+| Flutter | 3.47.4 stable | App shell and platform embedding |
+| Dart | 3.13.3 | Flutter application code and standalone runner |
 | Rust / Cargo | 1.93.0 | Core, engine, adapters, FFI, WASM runtime |
 | Rust Android targets | `aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android` | Android FFI artifacts |
 | Android SDK | platform 36.1 / build tools 36.1.0 | Android build environment |
 | App SDK contract | compile 36, target 36, min 24 | `flutter/android/app/build.gradle.kts` via Flutter defaults |
 | Android Gradle Plugin | 8.13.2 | Android build graph |
-| Gradle wrapper | 8.13 | Android build graph |
+| Gradle wrapper | 8.14 | Android build graph |
 | Kotlin plugin | 2.2.20 | Android embedding and keystore bridge |
 | JDK | Android Studio JBR 21 resolved through Flutter | Canonical Android build execution environment; plain shell Gradle JDK selection is noncanonical diagnostic evidence |
 | Android NDK | 28.2.13676358 | `cargo ndk` Rust FFI build |
-| Xcode | 26.6 | macOS packaging and native loading |
-| CocoaPods | 1.16.2 | macOS Flutter plugins |
+| Xcode | 27.0 / macOS SDK 27.0 | macOS packaging and native loading; Skia remains selected while Flutter Impeller issue #185394 is open |
+| Swift Package Manager | Flutter-generated local package | macOS Flutter plugins |
 
 Observed host evidence:
 
-- macOS `26.5.2` on Apple Silicon;
+- macOS `27.0` on Apple Silicon;
 - Flutter doctor resolves JBR `21.0.9` and Android SDK `36.1.0`;
 - `./gradlew --version` from a plain shell resolves OpenJDK `17.0.18`;
-- Xcode `26.6` is selected and can package macOS, but simulator-runtime
+- Xcode `27.0` is selected and can package macOS, but simulator-runtime
   discovery remains unhealthy;
 - the connected Android device runs Android 16 / API 36;
 - all required Android Rust targets plus `wasm32-unknown-unknown` are installed.
@@ -91,11 +91,11 @@ that “current” does not silently become “approved”.
 
 | Surface | Stable available on audit date | Decision |
 | --- | --- | --- |
-| Flutter / Dart | Flutter 3.44.8 / Dart 3.12.2 | Candidate for T1 after T0; not adopted |
+| Flutter / Dart | Flutter 3.47.4 / Dart 3.13.3 | Adopted by the active T1/T3 migration |
 | Rust / Cargo | Rust 1.97.1 | Separate post-T0 toolchain unit; not adopted |
-| Android NDK | r29 available; r28.2 remains Flutter 3.41.2 default | Keep r28.2 baseline until a dedicated compatibility pass |
-| AGP / Gradle | AGP 8.13.2 with Gradle 8.13 is an official compatible pair for API 36.1 | Keep baseline; AGP 9 remains a separate migration |
-| Xcode | Xcode 26.6 | Current exercised baseline; repair simulator discovery separately if iOS evidence is required |
+| Android NDK | r29 available; r28.2 remains Flutter 3.47.4 default | Keep r28.2 baseline until a dedicated compatibility pass |
+| AGP / Gradle | AGP 8.13.2 with Gradle 8.14 satisfies Flutter 3.47.4 | Keep baseline; AGP 9 remains a separate migration |
+| Xcode | Xcode 27.0 | Adopted by the active T1/T3 migration; repair simulator discovery separately if iOS evidence is required |
 
 Primary audit sources:
 
@@ -110,8 +110,8 @@ Primary audit sources:
   `https://docs.gradle.org/current/userguide/compatibility.html`;
 - Android NDK history:
   `https://developer.android.com/ndk/downloads/revision_history`;
-- Xcode 26.6 release notes:
-  `https://developer.apple.com/documentation/xcode-release-notes/xcode-26_6-release-notes`.
+- Xcode 27 release notes:
+  `https://developer.apple.com/documentation/xcode-release-notes/xcode-27-release-notes`.
 
 `flutter pub outdated` also reports dependency drift. Patch-compatible updates
 and major constraint changes are not toolchain T0 work: each must be selected
@@ -202,8 +202,8 @@ Goal:
 - update Flutter and Dart only after T0 locks the prior baseline.
 
 Current candidate:
-- Flutter 3.44.8 / Dart 3.12.2 is newer than the verified 3.41.2 / 3.11.0
-  baseline. It is not adopted by default.
+- Flutter 3.47.4 / Dart 3.13.3 replaces the verified 3.41.2 / 3.11.0
+  baseline as one bounded migration unit.
 
 Required evidence:
 - `flutter analyze`, full Flutter tests, Rust tests, and review gates;
@@ -214,8 +214,9 @@ Required evidence:
 - explicit comparison of generated platform files and a documented rollback to
   the prior baseline.
 
-Status: deferred until T0 is complete and the active 1.x integrity pass is not
-in flight.
+Status: active. Static analysis, dependency resolution, full environment
+verification, clean universal macOS and Android builds, and packaged smoke on
+both platforms pass. Repository CI and merge remain before adoption.
 
 ### T2: Android build-stack update
 
@@ -234,13 +235,13 @@ Rules:
   a dedicated release/upload key. Debug signing is allowed only for the
   explicit `test` channel.
 
-Status: deferred. The current AGP 8.13.2 / Gradle 8.13 / Kotlin 2.2.20 / NDK
+Status: deferred. The current AGP 8.13.2 / Gradle 8.14 / Kotlin 2.2.20 / NDK
 28.2 set is internally compatible and supports API 36.1.
 
 ### T3: macOS/Xcode update
 
 Goal:
-- update Xcode, macOS deployment settings, or CocoaPods without breaking
+- update Xcode, macOS deployment settings, or Swift Package Manager without breaking
   universal FFI packaging, Keychain access, signing, or notarization.
 
 Rules:
@@ -249,8 +250,12 @@ Rules:
 - missing simulator runtimes are not a macOS release blocker, but block any
   future iOS test claim until repaired.
 
-Status: monitoring. Xcode 26.6 packages macOS today; simulator runtime
-discovery is currently unhealthy.
+Status: active. Xcode 27 packages a signed universal macOS application through
+one Swift Package Manager plugin path. The packaged app explicitly uses Skia
+because Flutter's open P1 issue #185394 crashes the macOS Impeller raster
+thread; the exact failure was reproduced before the opt-out and rejected by
+packaged smoke afterwards. Repository CI and merge remain. Simulator runtime
+discovery remains unhealthy and outside the maintained macOS/Android claim.
 
 ## 5. Required Upgrade Record
 

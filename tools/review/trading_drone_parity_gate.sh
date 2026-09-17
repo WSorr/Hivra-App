@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TOOLCHAIN_BASELINE="$ROOT/toolchains/hivra-baseline.conf"
 CHECKLIST="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 PUBLIC_SNAPSHOT="$ROOT/flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart"
 PUBLIC_SESSION_ACCUMULATOR="$ROOT/flutter/lib/services/bingx_futures_public_session_accumulator.dart"
@@ -54,6 +55,14 @@ pass() {
 fail() {
   printf 'FAIL trading-drone-parity: %s\n' "$1"
   STATUS=1
+}
+
+baseline_value() {
+  local key="$1"
+  local count
+  count="$(grep -c "^${key}=" "$TOOLCHAIN_BASELINE" || true)"
+  [ "$count" -eq 1 ] || return 1
+  sed -n "s/^${key}=//p" "$TOOLCHAIN_BASELINE"
 }
 
 public_pipeline_has_authority() {
@@ -739,19 +748,23 @@ runner_deterministic_order_is_bounded_session() {
 }
 
 runner_package_is_pinned() {
-  [ -f "$1" ] && [ -f "$2" ] &&
-    rg -q '^  sdk: 3\.11\.0$' "$1" &&
+  local expected_dart
+  expected_dart="$(baseline_value DART_VERSION)"
+  [ -n "$expected_dart" ] && [ -f "$1" ] && [ -f "$2" ] &&
+    rg -Fq "  sdk: $expected_dart" "$1" &&
     rg -q '^  crypto: 3\.0\.7$' "$1" &&
     rg -q '^  cryptography: 2\.9\.0$' "$1" &&
     rg -q '^    version: "3\.0\.7"$' "$2" &&
     rg -q '^    version: "2\.9\.0"$' "$2" &&
-    rg -q '^  dart: "3\.11\.0"$' "$2"
+    rg -Fq "  dart: \"$expected_dart\"" "$2"
 }
 
 runner_linux_smoke_is_fail_closed() {
   local build_line
   local review_line
   local clean_line
+  local expected_dart
+  expected_dart="$(baseline_value DART_VERSION)"
   build_line="$(rg -n 'name: Prove Linux x64 runner startup boundary' "$2" | cut -d: -f1)"
   review_line="$(rg -n 'name: Review gates' "$2" | cut -d: -f1)"
   clean_line="$(rg -n 'name: Verify review gates preserve clean checkout' "$2" | cut -d: -f1)"
@@ -761,7 +774,8 @@ runner_linux_smoke_is_fail_closed() {
     rg -q 'env -u HIVRA_SHADOW_RUNNER_SEED_HEX' "$1" &&
     rg -q 'runtime smoke did not reach the fail-closed probe boundary' "$1" &&
     rg -q 'dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260' "$2" &&
-    rg -q 'sdk: 3\.11\.0' "$2" &&
+    [ -n "$expected_dart" ] &&
+    rg -Fq "sdk: $expected_dart" "$2" &&
     rg -q 'public_shadow_runner_artifact\.sh --build "\$artifact" --target-os linux --target-arch x64' "$2" &&
     rg -q 'public_shadow_runner_artifact\.sh --runtime-smoke "\$artifact"' "$2" &&
     rg -q 'git status --porcelain' "$2" &&
