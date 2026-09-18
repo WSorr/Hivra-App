@@ -22,8 +22,10 @@ Status date: 2026-09-17
   proves packaged risk rejection and macOS reconciliation without a duplicate
   effect. Opening the workspace restores the verified retained VPS mandate and
   projects its exact market, mode, and effect budget before remote secrets are
-  unlocked. No-terminal VPS onboarding and the pending-order lifecycle remain
-  incomplete.
+  unlocked. Capsule-managed VPS onboarding requires no Git or terminal work.
+  A conflicting external order now pauses the Runner after one retained check
+  instead of exhausting the signed session; revalidation and replacement of a
+  Runner-managed pending order remain incomplete.
 - Capsule-scoped credential stores remain authoritative. AI unlock is
   process-scoped.
 - The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager
@@ -71,6 +73,13 @@ Pending orders stay on the existing path:
   the existing execution use case;
 - existing tracking store and effect journal: durable state, receipt,
   reconciliation, and duplicate suppression.
+
+An order not owned by the signed Runner session is never canceled or replaced.
+The Runner records the conflict once, persists an operator hold in its bounded
+state, and preserves the same resumable authority for explicit review. A boot
+may start the hardened service, but the hold stops it before market or exchange
+access until explicit Resume. An ownership-verification failure follows the
+same fail-closed path.
 
 A terminal or stopped-out intent cannot resurrect; re-entry requires a fresh
 market event and new bounded intent. No new daemon, effect route, Core/Ledger
