@@ -87,12 +87,10 @@ void tradingSynchronizeManagedOrderState({
 @visibleForTesting
 bool tradingMayMutateManagedOrdersLocally({
   required bool remoteRunnerConfigured,
-  required bool hasVerifiedRemoteSession,
   required String? remoteRunnerStatusWire,
 }) {
   return !tradingRemoteRunnerMayHoldAuthority(
     configured: remoteRunnerConfigured,
-    hasVerifiedSession: hasVerifiedRemoteSession,
     statusWire: remoteRunnerStatusWire,
   );
 }
@@ -1388,13 +1386,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Future<void> _restoreTradingWorkspaceState() async {
     var remoteRunnerConfigured = true;
     var remoteRunnerProfileUnavailable = false;
-    BingxFuturesRemoteMandateAdmission? remoteRunnerSession;
     try {
       final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
       remoteRunnerConfigured = profiles.isNotEmpty;
-      if (profiles.length == 1) {
-        remoteRunnerSession = await _loadVerifiedRemoteSession(profiles.single);
-      }
     } catch (error) {
       remoteRunnerProfileUnavailable = true;
       await _module.uiLog.log(
@@ -1404,10 +1398,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     if (mounted) {
       _updateState(() {
-        _loadingRemoteRunnerSummary = false;
+        _loadingRemoteRunnerSummary = remoteRunnerConfigured;
         _remoteRunnerConfigured = remoteRunnerConfigured;
         _remoteRunnerStatusWire = null;
-        _remoteRunnerSession = remoteRunnerSession;
+        _remoteRunnerSession = null;
         _remoteRunnerStatusUnavailable = remoteRunnerProfileUnavailable;
       });
     }
@@ -1415,6 +1409,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       remoteRunnerConfigured: remoteRunnerConfigured,
       restoreOpenOrdersTrackingState: _restoreOpenOrdersTrackingState,
     );
+    if (remoteRunnerConfigured && !remoteRunnerProfileUnavailable) {
+      await _refreshRemoteRunnerSummary();
+    }
   }
 
   Future<void> _restoreOpenOrdersTrackingState({
@@ -1576,7 +1573,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     if (tradingRemoteRunnerMayHoldAuthority(
       configured: _remoteRunnerConfigured,
-      hasVerifiedSession: _remoteRunnerSession != null,
       statusWire: _remoteRunnerStatusWire,
     )) {
       await _showSnack(
@@ -1699,7 +1695,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     if (tradingRemoteRunnerMayHoldAuthority(
       configured: _remoteRunnerConfigured,
-      hasVerifiedSession: _remoteRunnerSession != null,
       statusWire: _remoteRunnerStatusWire,
     )) {
       throw StateError(

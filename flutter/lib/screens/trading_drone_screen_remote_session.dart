@@ -3,20 +3,47 @@ part of 'trading_drone_screen.dart';
 @visibleForTesting
 bool tradingRemoteRunnerMayHoldAuthority({
   required bool configured,
-  required bool hasVerifiedSession,
   required String? statusWire,
 }) {
   if (!configured) return false;
   final fields = _tradingRemoteRunnerStatusFields(statusWire ?? '');
   if (fields == null) return true;
   final sessionState = fields['session_state'];
-  if ({'completed', 'stopped', 'expired'}.contains(sessionState) &&
+  if ({'absent', 'completed', 'stopped', 'expired'}.contains(sessionState) &&
       fields['active'] == 'inactive') {
     return false;
   }
-  return hasVerifiedSession ||
-      sessionState == 'active' ||
-      fields['active'] == 'active';
+  return true;
+}
+
+@visibleForTesting
+bool tradingRemoteRunnerStatusMatchesSession({
+  required String statusWire,
+  required BingxFuturesRemoteMandateAdmission? session,
+}) {
+  final fields = _tradingRemoteRunnerStatusFields(statusWire);
+  return fields != null &&
+      session != null &&
+      fields['session_operation_id'] == session.operationId;
+}
+
+@visibleForTesting
+String? tradingRemoteRunnerSessionOperationId(String statusWire) =>
+    _tradingRemoteRunnerStatusFields(statusWire)?['session_operation_id'];
+
+@visibleForTesting
+BingxFuturesRemoteMandateAdmission? tradingRemoteRunnerCurrentSession({
+  required String statusWire,
+  required BingxFuturesRemoteMandateAdmission? retainedSession,
+}) {
+  final fields = _tradingRemoteRunnerStatusFields(statusWire);
+  if (fields == null || fields['session_state'] != 'active') return null;
+  return tradingRemoteRunnerStatusMatchesSession(
+        statusWire: statusWire,
+        session: retainedSession,
+      )
+      ? retainedSession
+      : null;
 }
 
 @visibleForTesting
@@ -46,7 +73,6 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     if (_savingTradingControl || _exportingRemoteRevocation) return;
     final remoteMayHoldAuthority = tradingRemoteRunnerMayHoldAuthority(
       configured: _remoteRunnerConfigured,
-      hasVerifiedSession: _remoteRunnerSession != null,
       statusWire: _remoteRunnerStatusWire,
     );
     _updateState(() => _exportingRemoteRevocation = true);
@@ -162,8 +188,12 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         return;
       }
       final profile = profiles.single;
-      final session = await _loadVerifiedRemoteSession(profile);
       final status = await _module.remoteRunnerProvisioning.status(profile);
+      final retainedSession = await _loadVerifiedRemoteSession(profile);
+      final session = tradingRemoteRunnerCurrentSession(
+        statusWire: status,
+        retainedSession: retainedSession,
+      );
       if (!mounted || _module.activeCapsuleRootHex() != capsuleRootHex) return;
       _updateState(() {
         _loadingRemoteRunnerSummary = false;
@@ -171,8 +201,20 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         _remoteRunnerStatusWire = status;
         _remoteRunnerSession = session;
       });
-      if (restoreCompletedEffects) {
-        await _restoreRemoteCompletedEffects();
+      if (retainedSession != null &&
+          !tradingRemoteRunnerStatusMatchesSession(
+            statusWire: status,
+            session: retainedSession,
+          )) {
+        await _module.uiLog.log(
+          'bingx.remote_session.projection_mismatch',
+          'local_operation_id=${retainedSession.operationId} effect=false',
+        );
+      } else if (restoreCompletedEffects && retainedSession != null) {
+        await _restoreRemoteCompletedEffects(
+          profile: profile,
+          session: retainedSession,
+        );
       }
       if (tradingRemoteRunnerIsRunning(status) && _localRunnerRunning) {
         await _stopLocalRunner(reason: 'vps_session_running');
@@ -196,13 +238,11 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     }
   }
 
-  Future<bool> _restoreRemoteCompletedEffects() async {
+  Future<bool> _restoreRemoteCompletedEffects({
+    required BingxFuturesRemoteRunnerProfile profile,
+    required BingxFuturesRemoteMandateAdmission session,
+  }) async {
     try {
-      final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
-      if (profiles.length != 1) return false;
-      final profile = profiles.single;
-      final session = await _loadVerifiedRemoteSession(profile);
-      if (session == null) return false;
       final operations = await _module.remoteRunnerProvisioning
           .completedSessionEffects(
             profile: profile,
@@ -333,22 +373,19 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
         'Stop trading on this computer before resuming the VPS session.',
       );
     }
-    final session = await _loadVerifiedRemoteSession(profile);
-    if (session == null) {
-      throw StateError('This Runner has no retained signed session.');
-    }
-    if (!session.mandate.isActiveAt(DateTime.now().toUtc())) {
-      throw StateError('The retained signed session has expired.');
-    }
     final status = await _module.remoteRunnerProvisioning.status(profile);
     if (!tradingRemoteRunnerCanResume(status)) {
       throw StateError('The retained session is not paused and resumable.');
     }
+    final sessionOperationId = tradingRemoteRunnerSessionOperationId(status);
+    if (sessionOperationId == null) {
+      throw StateError('The VPS did not identify its resumable session.');
+    }
     final result = await _module.remoteRunnerProvisioning.resume(profile);
     await _module.uiLog.log(
       'bingx.remote_session.resumed',
-      'session_operation_id=${session.operationId} '
-          'runner_key_id=${session.runnerKeyId} effect=false',
+      'session_operation_id=$sessionOperationId '
+          'runner_key_id=${profile.runnerKeyId} effect=false',
     );
     if (mounted) {
       await _showSnack('Same signed VPS session resumed.', seconds: 4);
@@ -588,12 +625,18 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
   Future<String> _revokeRemoteSession(
     BingxFuturesRemoteRunnerProfile profile,
   ) async {
-    final session = await _loadVerifiedRemoteSession(profile);
-    if (session == null) {
-      throw StateError('This Runner has no locally retained active session.');
+    final status = await _module.remoteRunnerProvisioning.status(profile);
+    if (!tradingRemoteRunnerCanRevoke(status)) {
+      return 'The VPS has no active trading authority to revoke.';
+    }
+    final sessionOperationId = tradingRemoteRunnerSessionOperationId(status);
+    if (sessionOperationId == null) {
+      throw StateError('The VPS did not identify its active session.');
     }
     final revocation = BingxFuturesRemoteSessionRevocation.issue(
-      session: session,
+      targetSessionOperationId: sessionOperationId,
+      runnerKeyId: profile.runnerKeyId,
+      capsuleRootHex: profile.capsuleHex,
       revokedAtUtc: DateTime.now().toUtc(),
       signCommitment: _module.signRootCommitment,
     );
@@ -609,9 +652,9 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
     }
     await _module.uiLog.log(
       'bingx.remote_session.revoked',
-      'session_operation_id=${session.operationId} '
+      'session_operation_id=$sessionOperationId '
           'revocation_id=${revocation.revocationId} '
-          'runner_key_id=${session.runnerKeyId} effect=false',
+          'runner_key_id=${profile.runnerKeyId} effect=false',
     );
     return result;
   }
@@ -1002,10 +1045,16 @@ Map<String, String>? _tradingRemoteRunnerStatusFields(String raw) {
   }
   if (!{'active', 'inactive', 'failed'}.contains(fields['active'])) return null;
   final state = fields['session_state'];
-  if (state == null || state == 'unavailable') {
+  if (state == null || {'absent', 'unavailable'}.contains(state)) {
+    if (fields.containsKey('session_operation_id')) return null;
     return fields;
   }
   if (!{'active', 'completed', 'stopped', 'expired'}.contains(state)) {
+    return null;
+  }
+  final sessionOperationId = fields['session_operation_id'];
+  if (sessionOperationId == null ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(sessionOperationId)) {
     return null;
   }
   final cycles = int.tryParse(fields['cycles'] ?? '');
@@ -1097,6 +1146,9 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
           };
   if (state == null || state == 'unavailable') {
     return '$process\n$startup\nSession details unavailable on this Runner.';
+  }
+  if (state == 'absent') {
+    return '$process\n$startup\nNo signed trading session is installed on this Runner.';
   }
   final cycles = int.parse(fields['cycles']!);
   final effects = int.parse(fields['effects']!);
@@ -1200,10 +1252,13 @@ bool tradingRemoteRunnerCanPause(String raw) {
 }
 
 @visibleForTesting
-bool tradingRemoteRunnerCanStartSession({
-  required String raw,
-  required bool hasVerifiedSession,
-}) {
+bool tradingRemoteRunnerCanRevoke(String raw) {
+  final fields = _tradingRemoteRunnerStatusFields(raw);
+  return fields != null && fields['session_state'] == 'active';
+}
+
+@visibleForTesting
+bool tradingRemoteRunnerCanStartSession({required String raw}) {
   final fields = _tradingRemoteRunnerStatusFields(raw);
   if (fields == null ||
       fields['active'] != 'inactive' ||
@@ -1217,11 +1272,7 @@ bool tradingRemoteRunnerCanStartSession({
     return false;
   }
   final state = fields['session_state'];
-  return hasVerifiedSession
-      ? {'completed', 'stopped', 'expired'}.contains(state)
-      : state == null ||
-          state == 'unavailable' ||
-          {'completed', 'stopped', 'expired'}.contains(state);
+  return {'absent', 'completed', 'stopped', 'expired'}.contains(state);
 }
 
 @visibleForTesting
@@ -1458,51 +1509,52 @@ class _RemoteRunnerProfileTileState extends State<_RemoteRunnerProfileTile> {
                     icon: const Icon(Icons.play_circle_outline_rounded),
                     label: Text(_pausing ? 'Resuming' : 'Resume VPS session'),
                   ),
-                OutlinedButton.icon(
-                  onPressed:
-                      _pausing || _removed
-                          ? null
-                          : () async {
-                            final confirmed =
-                                await showDialog<bool>(
-                                  context: context,
-                                  builder:
-                                      (context) => AlertDialog(
-                                        title: const Text(
-                                          'Revoke trading authority?',
-                                        ),
-                                        content: const Text(
-                                          'The Capsule signs an exact revocation. '
-                                          'The VPS stops that session and cannot '
-                                          'resume it. A new session must be authorized.',
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed:
-                                                () => Navigator.of(
-                                                  context,
-                                                ).pop(false),
-                                            child: const Text('Cancel'),
+                if (tradingRemoteRunnerCanRevoke(_statusWire ?? ''))
+                  OutlinedButton.icon(
+                    onPressed:
+                        _pausing || _removed
+                            ? null
+                            : () async {
+                              final confirmed =
+                                  await showDialog<bool>(
+                                    context: context,
+                                    builder:
+                                        (context) => AlertDialog(
+                                          title: const Text(
+                                            'Revoke trading authority?',
                                           ),
-                                          FilledButton(
-                                            onPressed:
-                                                () => Navigator.of(
-                                                  context,
-                                                ).pop(true),
-                                            child: const Text(
-                                              'Revoke authority',
+                                          content: const Text(
+                                            'The Capsule signs an exact revocation. '
+                                            'The VPS stops that session and cannot '
+                                            'resume it. A new session must be authorized.',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed:
+                                                  () => Navigator.of(
+                                                    context,
+                                                  ).pop(false),
+                                              child: const Text('Cancel'),
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                ) ??
-                                false;
-                            if (!confirmed || !mounted) return;
-                            await _runAction(widget.revoke);
-                          },
-                  icon: const Icon(Icons.block_rounded),
-                  label: const Text('Revoke trading authority'),
-                ),
+                                            FilledButton(
+                                              onPressed:
+                                                  () => Navigator.of(
+                                                    context,
+                                                  ).pop(true),
+                                              child: const Text(
+                                                'Revoke authority',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                  ) ??
+                                  false;
+                              if (!confirmed || !mounted) return;
+                              await _runAction(widget.revoke);
+                            },
+                    icon: const Icon(Icons.block_rounded),
+                    label: const Text('Revoke trading authority'),
+                  ),
                 OutlinedButton.icon(
                   onPressed:
                       _pausing || _removed

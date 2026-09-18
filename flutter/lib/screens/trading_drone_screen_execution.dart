@@ -372,7 +372,14 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
             providerSnapshot: allOrders,
             managedOrderProvenance: _managedOrderProvenance,
           )) {
-        await _restoreRemoteCompletedEffects();
+        final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
+        final session = _remoteRunnerSession;
+        if (profiles.length == 1 && session != null) {
+          await _restoreRemoteCompletedEffects(
+            profile: profiles.single,
+            session: session,
+          );
+        }
         if (!mounted) return;
       }
       final reconciliation = await _module.executionUseCase
@@ -392,7 +399,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       var canceledOrderIds = const <String>{};
       final mayMutateManagedOrders = tradingMayMutateManagedOrdersLocally(
         remoteRunnerConfigured: _remoteRunnerConfigured,
-        hasVerifiedRemoteSession: _remoteRunnerSession != null,
         remoteRunnerStatusWire: _remoteRunnerStatusWire,
       );
       if (result.isSuccess &&

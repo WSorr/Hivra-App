@@ -20,9 +20,10 @@ Status date: 2026-09-18
 - Trading reuses one execution use case, effect journal, order-tracking store,
   execution queue, revalidation service, and replacement service. `test20`
   proves packaged risk rejection and macOS reconciliation without a duplicate
-  effect. Opening the workspace restores the verified retained VPS mandate and
-  projects its exact market, mode, and effect budget before remote secrets are
-  unlocked. Capsule-managed VPS onboarding requires no Git or terminal work.
+  effect. Opening the workspace reconciles the current VPS session state first;
+  locally retained signed evidence may enrich only that exact server-reported
+  session and cannot define operational authority. Capsule-managed VPS
+  onboarding requires no Git or terminal work.
   A conflicting external order now pauses the Runner after one retained check
   instead of exhausting the signed session. Current source recomputes fresh
   entry authority from confirmed 5m sweep/reclaim or untouched liquidity-void

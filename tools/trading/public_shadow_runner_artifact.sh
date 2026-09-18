@@ -3214,7 +3214,7 @@ prepared_session_service_status() {
   if [ ! -e "$mandate" ] && [ ! -L "$mandate" ]; then
     printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
       "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
-    echo 'session_state=unavailable'
+    echo 'session_state=absent'
     return
   fi
   local details
@@ -3264,8 +3264,9 @@ prepared_session_service_status() {
     operator_hold="${outcome#blocked:}"
     summary="${summary/session_state=operator_hold/session_state=active}"
   fi
-  printf '%s operator_hold=%s last_outcome=%s\n' \
-    "${summary% last_cycle=*}" "$operator_hold" "$outcome"
+  printf '%s session_operation_id=%s operator_hold=%s last_outcome=%s\n' \
+    "${summary% last_cycle=*}" "$retained_session_id" \
+    "$operator_hold" "$outcome"
   )"; then
     printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
       "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
@@ -5274,6 +5275,8 @@ PY
     status_output="$(prepared_session_service_status "$root")"
     [[ "$status_output" == *session_state=expired*last_outcome=blocked:market_proposal_blocked* ]] ||
       die "self-test lost retained status evidence after expiry"
+    [[ "$status_output" == *session_operation_id="$session_id"* ]] ||
+      die "self-test status did not identify the retained session"
     [ "$(tree_digest "$STATE_DIRECTORY")" = "$status_digest" ] ||
       die "self-test status wrote operational state"
     mkdir "$STATE_DIRECTORY/revocations"
@@ -5283,6 +5286,8 @@ PY
     status_output="$(prepared_session_service_status "$root")"
     [[ "$status_output" == *session_state=stopped*operator_hold=none* ]] ||
       die "self-test did not project retained revocation as terminal"
+    [[ "$status_output" == *session_operation_id="$session_id"* ]] ||
+      die "self-test terminal status changed the retained session identity"
     [[ "$status_output" == *next_check=none* ]] ||
       die "self-test scheduled a check after retained revocation"
     [ "$(tree_digest "$STATE_DIRECTORY")" = "$status_digest" ] ||
