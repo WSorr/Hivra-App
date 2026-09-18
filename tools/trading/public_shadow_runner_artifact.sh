@@ -2446,6 +2446,30 @@ verified_retained_session_revocation() {
   echo true
 }
 
+retain_verified_session_revocation() {
+  local incoming="$1"
+  local retained="$2"
+  local expected_runner_key_id="$3"
+  local session_operation_id="$4"
+  local capsule_root="$5"
+  local verification_work="$6"
+  if [ -e "$retained" ] || [ -L "$retained" ]; then
+    [ -f "$retained" ] && [ ! -L "$retained" ] ||
+      die "retained session revocation is not one regular file"
+    mkdir "$verification_work"
+    verify_remote_session_revocation_artifact \
+      "$retained" "$expected_runner_key_id" \
+      "$session_operation_id" "$capsule_root" "$verification_work"
+    echo retained
+    return
+  fi
+  local pending
+  pending="$(mktemp "$(dirname "$retained")/.revocation.pending.XXXXXX")"
+  install -m 0600 "$incoming" "$pending"
+  mv "$pending" "$retained"
+  echo stored
+}
+
 stop_deterministic_session_state() {
   local state="$1"
   local session_operation_id="$2"
@@ -2730,18 +2754,14 @@ revoke_remote_session() {
   [ "$revocation_count" -le "$DETERMINISTIC_HISTORY_LIMIT" ] ||
     die "session revocation history exceeds its bound"
   local retained="$revocation_dir/$session_operation_id.json"
-  if [ -e "$retained" ] || [ -L "$retained" ]; then
-    [ -f "$retained" ] && [ ! -L "$retained" ] &&
-      cmp -s "$REVOCATION_ARTIFACT" "$retained" ||
-      die "session revocation refused conflicting retained evidence"
-  else
+  if [ ! -e "$retained" ] && [ ! -L "$retained" ]; then
     [ "$revocation_count" -lt "$DETERMINISTIC_HISTORY_LIMIT" ] ||
       die "session revocation history is full"
-    local pending
-    pending="$(mktemp "$revocation_dir/.revocation.pending.XXXXXX")"
-    install -m 0600 "$REVOCATION_ARTIFACT" "$pending"
-    mv "$pending" "$retained"
   fi
+  retain_verified_session_revocation \
+    "$REVOCATION_ARTIFACT" "$retained" "$EXPECTED_RUNNER_KEY_ID" \
+    "$session_operation_id" "$capsule_root" \
+    "$work/retained-revocation" >/dev/null
   local terminal_state
   terminal_state="$(stop_deterministic_session_state \
     "$STATE_DIRECTORY/deterministic-session.v1.json" \
@@ -6164,6 +6184,62 @@ artifact = {
     json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
 )
 PY
+  python3 - "$mandate_test" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+original = json.loads((root / "session-revocation.json").read_text())
+revoked = datetime.datetime.fromisoformat(
+    original["revoked_at_utc"].replace("Z", "+00:00")
+) + datetime.timedelta(milliseconds=1)
+semantic = {
+    "contract_version": original["contract_version"],
+    "target_session_operation_id": original["target_session_operation_id"],
+    "runner_key_id": original["runner_key_id"],
+    "capsule_root_hex": original["capsule_root_hex"],
+    "revoked_at_utc": revoked.isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    ),
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-session-revocation:v1\n" +
+    json.dumps(semantic, separators=(",", ":")).encode()
+).hexdigest()
+(root / "repeat-revocation-digest.bin").write_bytes(bytes.fromhex(commitment))
+(root / "repeat-revocation-metadata.json").write_text(json.dumps({
+    "commitment": commitment,
+    "semantic": semantic,
+}, separators=(",", ":")), encoding="utf-8")
+PY
+  openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
+    -in "$mandate_test/repeat-revocation-digest.bin" \
+    -out "$mandate_test/repeat-revocation-signature.bin"
+  python3 - "$mandate_test" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "repeat-revocation-metadata.json").read_text())
+semantic = metadata["semantic"]
+artifact = {
+    "contract_version": semantic["contract_version"],
+    "revocation_id": metadata["commitment"],
+    "target_session_operation_id": semantic["target_session_operation_id"],
+    "runner_key_id": semantic["runner_key_id"],
+    "capsule_root_hex": semantic["capsule_root_hex"],
+    "revoked_at_utc": semantic["revoked_at_utc"],
+    "signature_suite": "ed25519-v1",
+    "signature_hex": (root / "repeat-revocation-signature.bin").read_bytes().hex(),
+}
+(root / "session-revocation-repeat.json").write_text(
+    json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
+)
+PY
   mkdir "$mandate_test/revocation-verified"
   verify_remote_session_revocation_artifact \
     "$mandate_test/session-revocation.json" "$expected_runner" \
@@ -6182,6 +6258,29 @@ PY
     "$mandate_test/revocation-mutated-verified") >/dev/null 2>&1; then
     die "self-test accepted mutated session revocation"
   fi
+  mkdir "$mandate_test/revocation-repeat-verified"
+  verify_remote_session_revocation_artifact \
+    "$mandate_test/session-revocation-repeat.json" "$expected_runner" \
+    "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/revocation-repeat-verified"
+  local retained_revocation_dir="$mandate_test/retained-revocations"
+  local retained_revocation="$retained_revocation_dir/$(cat "$mandate_test/session-verified/operation-id").json"
+  mkdir "$retained_revocation_dir"
+  [ "$(retain_verified_session_revocation \
+    "$mandate_test/session-revocation.json" "$retained_revocation" \
+    "$expected_runner" "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/retained-revocation-first")" = stored ] ||
+    die "self-test did not retain initial session revocation"
+  [ "$(retain_verified_session_revocation \
+    "$mandate_test/session-revocation-repeat.json" "$retained_revocation" \
+    "$expected_runner" "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/retained-revocation-repeat")" = retained ] ||
+    die "self-test did not accept repeated semantic session revocation"
+  cmp -s "$mandate_test/session-revocation.json" "$retained_revocation" ||
+    die "self-test replaced initial session revocation evidence"
   local revoked_state="$mandate_test/revoked-session-state.json"
   prepare_deterministic_session_cycle \
     "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")" \

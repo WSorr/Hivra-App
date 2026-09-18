@@ -632,15 +632,17 @@ bool tradingMandateMaxNotionalMatches({
   required BingxFuturesTradingMandate mandate,
   required String selectedMaxNotional,
 }) {
-  final authorizedMax = num.tryParse(
+  final authorizedMax = double.tryParse(
     mandate.maxOrderNotionalQuoteDecimal.trim(),
   );
-  final selectedMax = num.tryParse(selectedMaxNotional.trim());
+  final selectedMax = double.tryParse(selectedMaxNotional.trim());
   return authorizedMax != null &&
       authorizedMax.isFinite &&
+      authorizedMax > 0 &&
       selectedMax != null &&
       selectedMax.isFinite &&
-      authorizedMax == selectedMax;
+      selectedMax > 0 &&
+      authorizedMax.toStringAsFixed(8) == selectedMax.toStringAsFixed(8);
 }
 
 @visibleForTesting

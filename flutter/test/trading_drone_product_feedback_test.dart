@@ -1461,6 +1461,35 @@ void main() {
       ),
       isFalse,
     );
+    final fittedMandate = BingxFuturesTradingMandate.issue(
+      capsuleRootHex: 'a' * 64,
+      accountBindingHashHex: 'b' * 64,
+      symbol: 'DOGE-USDT',
+      testOrder: false,
+      issuedAtUtc: issuedAt,
+      expiresAtUtc: issuedAt.add(const Duration(hours: 24)),
+      maxOrderNotionalQuoteDecimal: '19.318544',
+      maxRiskPerTradePercent: 2,
+      maxDailyLossPercent: 5,
+      maxConcurrentPositions: 1,
+      cooldownAfterLossStreak: 2,
+      cooldownMinutes: 60,
+      maxEffects: 1,
+    );
+    expect(
+      tradingMandateMaxNotionalMatches(
+        mandate: fittedMandate,
+        selectedMaxNotional: '19.318544000000003',
+      ),
+      isTrue,
+    );
+    expect(
+      tradingMandateMaxNotionalMatches(
+        mandate: fittedMandate,
+        selectedMaxNotional: '19.31854401',
+      ),
+      isFalse,
+    );
     expect(
       tradingMandateMaxNotionalMatches(
         mandate: mandate,
