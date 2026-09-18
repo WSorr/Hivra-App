@@ -2427,6 +2427,25 @@ PY
     die "session revocation Capsule signature is invalid"
 }
 
+verified_retained_session_revocation() {
+  local verified_mandate="$1"
+  local expected_runner_key_id="$2"
+  local session_operation_id="$3"
+  local verification_work="$4"
+  local retained="$STATE_DIRECTORY/revocations/$session_operation_id.json"
+  if [ ! -e "$retained" ] && [ ! -L "$retained" ]; then
+    echo false
+    return
+  fi
+  [ -f "$retained" ] && [ ! -L "$retained" ] ||
+    die "retained session revocation is not one regular file"
+  mkdir "$verification_work"
+  verify_remote_session_revocation_artifact \
+    "$retained" "$expected_runner_key_id" "$session_operation_id" \
+    "$(cat "$verified_mandate/capsule-root")" "$verification_work"
+  echo true
+}
+
 stop_deterministic_session_state() {
   local state="$1"
   local session_operation_id="$2"
@@ -2465,7 +2484,7 @@ if path.exists() or path.is_symlink():
         isinstance(index, bool) or not isinstance(index, int) or index < 0
         or completed != index
         or isinstance(consumed, bool) or not isinstance(consumed, int) or consumed < 0
-        or state not in ("active", "completed", "stopped")
+        or state not in ("active", "operator_hold", "completed", "stopped")
     ):
         raise SystemExit("session revocation refused invalid state invariant")
     if index == 0:
@@ -2481,7 +2500,7 @@ if path.exists() or path.is_symlink():
         ).hexdigest()
         if not isinstance(last, str) or re.fullmatch(r"[0-9a-f]{64}", last) is None or last != expected_last:
             raise SystemExit("session revocation refused invalid cycle lineage")
-    if value.get("state") == "active":
+    if value.get("state") in ("active", "operator_hold"):
         value["state"] = "stopped"
 else:
     value = {
@@ -2614,9 +2633,18 @@ admit_remote_mandate() {
             "$(cat "$work/retained/session-starts-at")" \
             "$(cat "$work/retained/expires-at")" activate)" ||
             die "mandate admission refused invalid retained session state"
+          local retained_session_revoked
+          retained_session_revoked="$(verified_retained_session_revocation \
+            "$work/retained" "$EXPECTED_RUNNER_KEY_ID" \
+            "$(cat "$work/retained/operation-id")" \
+            "$work/retained-revocation")" ||
+            die "mandate admission rejected retained revocation evidence"
           case "$session_status" in
             terminal:completed:*|terminal:stopped:*) ;;
-            *) die "mandate admission refused rotation before the retained session completed" ;;
+            *)
+              [ "$retained_session_revoked" = true ] ||
+                die "mandate admission refused rotation before the retained session completed"
+              ;;
           esac
         elif [ "$retained_kind" != "one_deterministic_order" ]; then
           die "mandate admission refused a deterministic mandate over another authority kind"
@@ -3171,16 +3199,21 @@ prepared_session_service_status() {
   fi
   local details
   if details="$(
-  local work summary last_cycle outcome operator_hold
+  local work summary last_cycle outcome operator_hold retained_session_id revoked
   work="$(mktemp -d /run/hivra-trading-session-status.XXXXXX)" || exit 1
   trap "rm -rf '$work'" EXIT INT TERM
   mkdir "$work/verified" || exit 1
   verify_remote_mandate_artifact "$mandate" "$runner_key" "$work/verified" || exit 1
   [ "$(cat "$work/verified/operation-kind")" = "bounded_deterministic_session" ] ||
     die "session status requires bounded session authority"
+  retained_session_id="$(cat "$work/verified/operation-id")"
+  revoked="$(verified_retained_session_revocation \
+    "$work/verified" "$runner_key" "$retained_session_id" \
+    "$work/revocation")" ||
+    die "session status rejected retained revocation evidence"
   summary="$(prepare_deterministic_session_cycle \
     "$STATE_DIRECTORY/deterministic-session.v1.json" \
-    "$(cat "$work/verified/operation-id")" \
+    "$retained_session_id" \
     "$(cat "$work/verified/session-max-cycles")" \
     "$(cat "$work/verified/mandate-max-effects")" \
     "$(cat "$work/verified/session-interval-seconds")" \
@@ -3197,7 +3230,15 @@ prepared_session_service_status() {
       die "session status rejected the retained cycle result"
   fi
   operator_hold="none"
-  if [[ "$summary" == session_state=operator_hold* ]]; then
+  if [ "$revoked" = true ]; then
+    local retained_state next_check
+    retained_state="${summary#session_state=}"
+    retained_state="${retained_state%% *}"
+    next_check="${summary#* next_check=}"
+    next_check="${next_check%% *}"
+    summary="${summary/session_state=$retained_state/session_state=stopped}"
+    summary="${summary/next_check=$next_check/next_check=none}"
+  elif [[ "$summary" == session_state=operator_hold* ]]; then
     deterministic_session_outcome_requires_operator_attention "$outcome" ||
       die "session status operator hold does not match retained evidence"
     operator_hold="${outcome#blocked:}"
@@ -5201,6 +5242,7 @@ PY
     verify_remote_mandate_artifact() {
       printf '%s' bounded_deterministic_session > "$3/operation-kind"
       printf '%s' "$session_id" > "$3/operation-id"
+      printf '%064d' 0 > "$3/capsule-root"
       printf '4' > "$3/session-max-cycles"
       printf '1' > "$3/mandate-max-effects"
       printf '60' > "$3/session-interval-seconds"
@@ -5214,6 +5256,18 @@ PY
       die "self-test lost retained status evidence after expiry"
     [ "$(tree_digest "$STATE_DIRECTORY")" = "$status_digest" ] ||
       die "self-test status wrote operational state"
+    mkdir "$STATE_DIRECTORY/revocations"
+    printf '{}\n' > "$STATE_DIRECTORY/revocations/$session_id.json"
+    verify_remote_session_revocation_artifact() { :; }
+    status_digest="$(tree_digest "$STATE_DIRECTORY")"
+    status_output="$(prepared_session_service_status "$root")"
+    [[ "$status_output" == *session_state=stopped*operator_hold=none* ]] ||
+      die "self-test did not project retained revocation as terminal"
+    [[ "$status_output" == *next_check=none* ]] ||
+      die "self-test scheduled a check after retained revocation"
+    [ "$(tree_digest "$STATE_DIRECTORY")" = "$status_digest" ] ||
+      die "self-test revocation status wrote operational state"
+    rm -rf "$STATE_DIRECTORY/revocations"
     printf '{}\n' > "$STATE_DIRECTORY/deterministic-results/$session_cycle_0.json"
     status_output="$(prepared_session_service_status "$root" 2>/dev/null)"
     [[ "$status_output" == *runner_key_id=*session_state=unavailable* ]] ||
@@ -5334,6 +5388,11 @@ PY
       "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
       "terminal:operator_hold:1:0" ] ||
       die "self-test restarted an operator-held session"
+    local revoked_hold_state="$STATE_DIRECTORY/revoked-operator-hold.json"
+    cp "$hold_state" "$revoked_hold_state"
+    [ "$(stop_deterministic_session_state \
+      "$revoked_hold_state" "$hold_session_id")" = stopped ] ||
+      die "self-test did not stop a revoked operator-held session"
     [ "$(resume_deterministic_session_operator_hold \
       "$hold_state" "$hold_session_id" 4 1)" = \
       "blocked:external_order_active" ] ||
