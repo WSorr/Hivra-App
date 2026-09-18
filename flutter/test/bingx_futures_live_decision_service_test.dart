@@ -14,31 +14,50 @@ void main() {
 
     test('passes canonical detected clusters directly to the zone owner', () {
       final snapshot = _buildInput(permuted: false);
-      final expected = const BingxFuturesFeatureExtractorService().extract(
-        const BingxFuturesMarketSnapshotService().build(snapshot),
-      ).liquidityLevels;
+      final expected =
+          const BingxFuturesFeatureExtractorService()
+              .extract(
+                const BingxFuturesMarketSnapshotService().build(snapshot),
+              )
+              .liquidityLevels;
       BingxFuturesZoneDecisionInput? captured;
       final consumer = BingxFuturesLiveDecisionService(
         zoneDecision: _StubZoneDecision(
-          side: 'buy', zoneSide: 'buyside', trend4h: 'flat', trend1d: 'flat',
-          needsFartherRetest: false, targetRetestPct: 0.01,
+          side: 'buy',
+          zoneSide: 'buyside',
+          trend4h: 'flat',
+          trend1d: 'flat',
+          needsFartherRetest: false,
+          targetRetestPct: 0.01,
           onInput: (input) => captured = input,
         ),
       );
-      consumer.decide(BingxFuturesLiveDecisionInput(
-        snapshotInput: snapshot, isConsensusSignable: true,
-      ));
-      List<Object> fields(List<BingxDetectedLiquidityLevel> levels) => levels.map(
-        (level) => [level.side, level.anchorIndex, level.pivotCount,
-          level.zoneTopDecimal, level.zoneBottomDecimal,
-          level.breached, level.breachedIndex],
-      ).toList();
+      consumer.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: snapshot,
+          isConsensusSignable: true,
+        ),
+      );
+      List<Object> fields(List<BingxDetectedLiquidityLevel> levels) =>
+          levels
+              .map(
+                (level) => [
+                  level.side,
+                  level.anchorIndex,
+                  level.pivotCount,
+                  level.zoneTopDecimal,
+                  level.zoneBottomDecimal,
+                  level.breached,
+                  level.breachedIndex,
+                ],
+              )
+              .toList();
       expect(expected, isNotEmpty);
       expect(captured, isNotNull);
       expect(fields(captured!.detectedLiquidityLevels), fields(expected));
     });
 
-    test('blocks deterministic live long without opposite target', () {
+    test('keeps target-only HTF liquidity out of live long entry', () {
       final input = BingxFuturesLiveDecisionInput(
         snapshotInput: _buildInput(permuted: false),
         isConsensusSignable: true,
@@ -58,11 +77,12 @@ void main() {
       expect(first.zoneSide, 'buyside');
       expect(first.zoneLowDecimal, isNotNull);
       expect(first.zoneHighDecimal, isNotNull);
-      expect(first.zoneAnchorLifecycle, 'fresh');
-      expect(first.trendGateBlocked, isFalse);
-      expect(first.trendGateCode, 'ok');
-      expect(first.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
-      expect(first.liquidityEventAtUtc, isNotNull);
+      expect(first.zoneAnchorExecutable, isFalse);
+      expect(first.zoneAnchorLifecycle, 'unavailable');
+      expect(first.trendGateBlocked, isTrue);
+      expect(first.trendGateCode, 'liquidity_anchor_unavailable');
+      expect(first.liquidityEventId, isNull);
+      expect(first.liquidityEventAtUtc, isNull);
       expect(first.latestClosedMicroBarAtUtc, isNotNull);
       expect(first.referencePriceDecimal, '102.50');
       expect(first.liveDecisionHashHex, second.liveDecisionHashHex);
@@ -87,8 +107,12 @@ void main() {
 
         expect(public.canonicalJson, local.canonicalJson);
         expect(
-          public.observedLiquidityLevels.map((level) => level.centerPriceDecimal),
-          local.observedLiquidityLevels.map((level) => level.centerPriceDecimal),
+          public.observedLiquidityLevels.map(
+            (level) => level.centerPriceDecimal,
+          ),
+          local.observedLiquidityLevels.map(
+            (level) => level.centerPriceDecimal,
+          ),
         );
         expect(public.liveDecisionHashHex, local.liveDecisionHashHex);
         expect(public.zoneAnchorSource, local.zoneAnchorSource);

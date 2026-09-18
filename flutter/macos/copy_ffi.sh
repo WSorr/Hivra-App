@@ -8,6 +8,8 @@ UNIVERSAL_LIB="${APP_PATH}/libhivra_ffi.dylib"
 if [ "${CONFIGURATION:-Debug}" = "Release" ]; then
     CARGO_PROFILE_FLAG="--release"
     LIB_SUBDIR="release"
+    # Cargo's deferred stripping creates dylibs rejected by dyld on macOS 27.
+    export CARGO_PROFILE_RELEASE_STRIP="none"
 else
     CARGO_PROFILE_FLAG=""
     LIB_SUBDIR="debug"

@@ -163,7 +163,7 @@ void main() {
 
       expect(withoutProxy.externalBuyRetest, 100);
       expect(withProxy.externalBuyRetest, 102);
-      expect(withProxy.anchorSource, '4h_fresh_low');
+      expect(withProxy.anchorSource, 'internal_diagnostic');
       expect(withProxy.anchorExecutable, isFalse);
       expect(withProxy.liquidityEventId, isNull);
     });
@@ -413,7 +413,7 @@ void main() {
       expect(result.anchorExecutable, isFalse);
     });
 
-    test('uses timestamped untouched low as executable fresh liquidity', () {
+    test('keeps timestamped untouched low as target-only liquidity', () {
       final base = _inputForSweepUp();
       final result = service.decide(
         input: BingxFuturesZoneDecisionInput(
@@ -469,9 +469,12 @@ void main() {
           ],
           higherCloseTimesUtc: List<String>.generate(
             12,
-            (index) => DateTime.utc(2026, 8, 1)
-                .add(Duration(hours: 4 * index))
-                .toIso8601String(),
+            (index) =>
+                DateTime.utc(
+                  2026,
+                  8,
+                  1,
+                ).add(Duration(hours: 4 * index)).toIso8601String(),
           ),
           dailyHighs: const <num>[],
           dailyLows: const <num>[],
@@ -485,13 +488,13 @@ void main() {
       );
 
       expect(result.externalBuyRetest, 100);
-      expect(result.anchorSource, '4h_fresh_low');
-      expect(result.anchorExecutable, isTrue);
-      expect(result.anchorLifecycle, 'fresh');
-      expect(result.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorExecutable, isFalse);
+      expect(result.anchorLifecycle, 'unavailable');
+      expect(result.liquidityEventId, isNull);
     });
 
-    test('uses timestamped untouched high as executable fresh liquidity', () {
+    test('keeps timestamped untouched high as target-only liquidity', () {
       final base = _inputForSweepUp();
       final result = service.decide(
         input: BingxFuturesZoneDecisionInput(
@@ -550,9 +553,12 @@ void main() {
               ].map<num>((price) => 240 - price).toList(),
           higherCloseTimesUtc: List<String>.generate(
             12,
-            (index) => DateTime.utc(2026, 8, 1)
-                .add(Duration(hours: 4 * index))
-                .toIso8601String(),
+            (index) =>
+                DateTime.utc(
+                  2026,
+                  8,
+                  1,
+                ).add(Duration(hours: 4 * index)).toIso8601String(),
           ),
           dailyHighs: const [],
           dailyLows: const [],
@@ -565,10 +571,10 @@ void main() {
         ),
       );
       expect(result.externalSellRetest, 140);
-      expect(result.anchorSource, '4h_fresh_high');
-      expect(result.anchorLifecycle, 'fresh');
-      expect(result.anchorExecutable, isTrue);
-      expect(result.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorLifecycle, 'unavailable');
+      expect(result.anchorExecutable, isFalse);
+      expect(result.liquidityEventId, isNull);
     });
 
     test('internal diagnostic low cannot authorize pending entry', () {
@@ -659,32 +665,82 @@ void main() {
       expect(result.anchorSource, 'micro_sweep_reclaim');
       expect(result.anchorExecutable, isTrue);
       expect(result.anchorLifecycle, 'reclaimed');
-      expect(result.zoneLow, greaterThanOrEqualTo(88));
+      expect(result.zoneLow, 90);
+      expect(result.zoneHigh, 92);
     });
 
-    test('successive closed snapshots wait for reclaim and replay the same event', () {
-      final untouched = service.decide(input: _microReclaimInput(
-        side: 'buy', visibleBars: 20, delayedReclaim: true,
-        clusters: [_cluster(breached: false)],
-      ));
-      final swept = service.decide(input: _microReclaimInput(
-        side: 'buy', visibleBars: 21, delayedReclaim: true,
-      ));
-      final confirmedInput = _microReclaimInput(
-        side: 'buy', visibleBars: 22, delayedReclaim: true,
-      );
-      final confirmed = service.decide(input: confirmedInput);
-      final recovered = const BingxFuturesZoneDecisionService().decide(
-        input: confirmedInput,
-      );
-      expect(untouched.anchorExecutable, isFalse);
-      expect(swept.anchorExecutable, isFalse);
-      expect(confirmed.anchorExecutable, isTrue);
-      expect(confirmed.anchorLifecycle, 'reclaimed');
-      expect(recovered.liquidityEventId, confirmed.liquidityEventId);
-      expect(recovered.zoneLow, confirmed.zoneLow);
-      expect(recovered.zoneHigh, confirmed.zoneHigh);
+    test('uses exact fresh bullish liquidity void as buy entry zone', () {
+      final first = service.decide(input: _liquidityVoidInput(side: 'buy'));
+      final second = service.decide(input: _liquidityVoidInput(side: 'buy'));
+
+      expect(first.anchorSource, 'micro_liquidity_void');
+      expect(first.anchorExecutable, isTrue);
+      expect(first.anchorLifecycle, 'fresh');
+      expect(first.zoneLow, 100);
+      expect(first.zoneHigh, 104);
+      expect(first.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(second.liquidityEventId, first.liquidityEventId);
+      expect(second.zoneLow, first.zoneLow);
+      expect(second.zoneHigh, first.zoneHigh);
     });
+
+    test('uses exact fresh bearish liquidity void as sell entry zone', () {
+      final result = service.decide(input: _liquidityVoidInput(side: 'sell'));
+
+      expect(result.anchorSource, 'micro_liquidity_void');
+      expect(result.anchorExecutable, isTrue);
+      expect(result.anchorLifecycle, 'fresh');
+      expect(result.zoneLow, 96);
+      expect(result.zoneHigh, 100);
+      expect(result.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
+    });
+
+    test('does not reuse a liquidity void after price trades into it', () {
+      final result = service.decide(
+        input: _liquidityVoidInput(side: 'buy', touched: true),
+      );
+
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorExecutable, isFalse);
+      expect(result.liquidityEventId, isNull);
+    });
+
+    test(
+      'successive closed snapshots wait for reclaim and replay the same event',
+      () {
+        final untouched = service.decide(
+          input: _microReclaimInput(
+            side: 'buy',
+            visibleBars: 20,
+            delayedReclaim: true,
+            clusters: [_cluster(breached: false)],
+          ),
+        );
+        final swept = service.decide(
+          input: _microReclaimInput(
+            side: 'buy',
+            visibleBars: 21,
+            delayedReclaim: true,
+          ),
+        );
+        final confirmedInput = _microReclaimInput(
+          side: 'buy',
+          visibleBars: 22,
+          delayedReclaim: true,
+        );
+        final confirmed = service.decide(input: confirmedInput);
+        final recovered = const BingxFuturesZoneDecisionService().decide(
+          input: confirmedInput,
+        );
+        expect(untouched.anchorExecutable, isFalse);
+        expect(swept.anchorExecutable, isFalse);
+        expect(confirmed.anchorExecutable, isTrue);
+        expect(confirmed.anchorLifecycle, 'reclaimed');
+        expect(recovered.liquidityEventId, confirmed.liquidityEventId);
+        expect(recovered.zoneLow, confirmed.zoneLow);
+        expect(recovered.zoneHigh, confirmed.zoneHigh);
+      },
+    );
 
     test('closed liquidity event zone ignores live quote drift', () {
       final first = service.decide(
@@ -850,6 +906,74 @@ BingxFuturesZoneDecisionInput _microReclaimInput({
     dailyCloses: const <num>[],
     weeklyHighs: const <num>[],
     weeklyLows: const <num>[],
+    recentMicroBars: 10,
+    zoneNearBps: 15,
+    zoneFarBps: 35,
+  );
+}
+
+BingxFuturesZoneDecisionInput _liquidityVoidInput({
+  required String side,
+  bool touched = false,
+}) {
+  final isBuy = side == 'buy';
+  final highs = List<num>.filled(30, isBuy ? 110 : 92);
+  final lows = List<num>.filled(30, isBuy ? 106 : 88);
+  final opens = List<num>.filled(30, isBuy ? 107 : 91);
+  final closes = List<num>.filled(30, isBuy ? 108 : 90);
+
+  if (isBuy) {
+    highs[20] = 100;
+    lows[20] = 98;
+    opens[20] = 99;
+    closes[20] = 99.5;
+    highs[22] = 106;
+    lows[22] = 104;
+    opens[22] = 101;
+    closes[22] = 105;
+    if (touched) lows[27] = 103;
+  } else {
+    highs[20] = 102;
+    lows[20] = 100;
+    opens[20] = 101;
+    closes[20] = 100.5;
+    highs[22] = 96;
+    lows[22] = 94;
+    opens[22] = 99;
+    closes[22] = 95;
+    if (touched) highs[27] = 97;
+  }
+
+  return BingxFuturesZoneDecisionInput(
+    symbol: 'DOGE-USDT',
+    midPrice: isBuy ? 108 : 90,
+    fallbackSide: side,
+    requiredSide: side,
+    microHighs: highs,
+    microLows: lows,
+    microOpens: opens,
+    microCloses: closes,
+    microCloseTimesUtc: List<String>.generate(
+      30,
+      (index) =>
+          DateTime.utc(
+            2026,
+            9,
+            18,
+          ).add(Duration(minutes: index * 5)).toIso8601String(),
+    ),
+    detectedLiquidityLevels: const <BingxDetectedLiquidityLevel>[],
+    macroHighs: List<num>.filled(40, 115),
+    macroLows: List<num>.filled(40, 85),
+    higherHighs: const <num>[],
+    higherLows: const <num>[],
+    higherCloses: const <num>[],
+    dailyHighs: const <num>[],
+    dailyLows: const <num>[],
+    dailyCloses: const <num>[],
+    weeklyHighs: const <num>[],
+    weeklyLows: const <num>[],
+    weeklyCloses: const <num>[],
     recentMicroBars: 10,
     zoneNearBps: 15,
     zoneFarBps: 35,

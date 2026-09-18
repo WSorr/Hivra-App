@@ -201,20 +201,40 @@ class _ExternalRetestLevel {
 
 class _MicroReclaimEvent {
   final num anchorPrice;
+  final num zoneLow;
+  final num zoneHigh;
   final int sweepIndex;
   final int reclaimIndex;
 
   const _MicroReclaimEvent({
     required this.anchorPrice,
+    required this.zoneLow,
+    required this.zoneHigh,
     required this.sweepIndex,
     required this.reclaimIndex,
   });
+}
+
+class _LiquidityVoidEvent {
+  final num zoneLow;
+  final num zoneHigh;
+  final int eventIndex;
+
+  const _LiquidityVoidEvent({
+    required this.zoneLow,
+    required this.zoneHigh,
+    required this.eventIndex,
+  });
+
+  num get anchorPrice => (zoneLow + zoneHigh) / 2;
 }
 
 class BingxFuturesZoneDecisionService {
   static const int _microReclaimMaxAgeBars = 8;
   static const int _microReclaimMaxRetests = 2;
   static const double _microReclaimMinBodyAtr = 0.5;
+  static const int _liquidityVoidMaxAgeBars = 24;
+  static const double _liquidityVoidMinBodyAtr = 0.75;
 
   const BingxFuturesZoneDecisionService();
 
@@ -338,6 +358,14 @@ class BingxFuturesZoneDecisionService {
       opens: input.microOpens,
       closes: input.microCloses,
       clusters: input.detectedLiquidityLevels,
+      eventStartIndex: microSplit,
+    );
+    final liquidityVoid = _findFreshLiquidityVoid(
+      side: selectedSide,
+      highs: input.microHighs,
+      lows: input.microLows,
+      opens: input.microOpens,
+      closes: input.microCloses,
       eventStartIndex: microSplit,
     );
     final aligned =
@@ -491,7 +519,6 @@ class BingxFuturesZoneDecisionService {
       preferFarther: needsFartherRetest,
     );
 
-    var usedExternalLiquidity = false;
     var anchorSource = 'internal_diagnostic';
     var anchorExecutable = false;
     var anchorLifecycle = 'unavailable';
@@ -512,33 +539,23 @@ class BingxFuturesZoneDecisionService {
           input.microCloseTimesUtc,
           microReclaim.reclaimIndex,
         );
-      } else if (externalSellRetest != null) {
-        anchorHigh = externalSellRetest.price;
-        usedExternalLiquidity = true;
-        anchorSource = externalSellRetest.source;
+        zoneLow = microReclaim.zoneLow;
+        zoneHigh = microReclaim.zoneHigh;
+      } else if (liquidityVoid != null) {
+        anchorHigh = liquidityVoid.anchorPrice;
+        anchorSource = 'micro_liquidity_void';
         anchorLifecycle = 'fresh';
-        liquidityAnchorPrice = externalSellRetest.price;
-        liquidityEventAtUtc = externalSellRetest.eventAtUtc;
+        liquidityAnchorPrice = liquidityVoid.anchorPrice;
+        liquidityEventAtUtc = _atOrNull(
+          input.microCloseTimesUtc,
+          liquidityVoid.eventIndex,
+        );
         anchorExecutable = liquidityEventAtUtc != null;
-      }
-      if (contrarian && !reversalSignal) {
-        zoneLow = anchorHigh - width * 0.15;
-        zoneHigh = anchorHigh + width * 0.35;
-      } else if (aligned) {
-        zoneLow = anchorHigh - width * 0.75;
-        zoneHigh = anchorHigh - width * 0.25;
+        zoneLow = liquidityVoid.zoneLow;
+        zoneHigh = liquidityVoid.zoneHigh;
       } else {
         zoneLow = anchorHigh - width * 0.55;
         zoneHigh = anchorHigh - width * 0.05;
-      }
-      if (zoneHigh <= 0 || zoneLow <= 0 || zoneHigh <= zoneLow) {
-        zoneLow = mid + (fallbackWidth * 0.40);
-        zoneHigh = mid + (fallbackWidth * 1.00);
-      }
-      if (zoneHigh < mid) {
-        final shift = (mid - zoneHigh) + (mid * 0.0005);
-        zoneLow += shift;
-        zoneHigh += shift;
       }
     } else {
       var anchorLow = olderLow;
@@ -552,41 +569,47 @@ class BingxFuturesZoneDecisionService {
           input.microCloseTimesUtc,
           microReclaim.reclaimIndex,
         );
-      } else if (externalBuyRetest != null) {
-        anchorLow = externalBuyRetest.price;
-        usedExternalLiquidity = true;
-        anchorSource = externalBuyRetest.source;
+        zoneLow = microReclaim.zoneLow;
+        zoneHigh = microReclaim.zoneHigh;
+      } else if (liquidityVoid != null) {
+        anchorLow = liquidityVoid.anchorPrice;
+        anchorSource = 'micro_liquidity_void';
         anchorLifecycle = 'fresh';
-        liquidityAnchorPrice = externalBuyRetest.price;
-        liquidityEventAtUtc = externalBuyRetest.eventAtUtc;
+        liquidityAnchorPrice = liquidityVoid.anchorPrice;
+        liquidityEventAtUtc = _atOrNull(
+          input.microCloseTimesUtc,
+          liquidityVoid.eventIndex,
+        );
         anchorExecutable = liquidityEventAtUtc != null;
-      }
-      if (contrarian && !reversalSignal) {
-        zoneLow = anchorLow - width * 0.35;
-        zoneHigh = anchorLow + width * 0.15;
-      } else if (aligned) {
-        zoneLow = anchorLow + width * 0.25;
-        zoneHigh = anchorLow + width * 0.75;
+        zoneLow = liquidityVoid.zoneLow;
+        zoneHigh = liquidityVoid.zoneHigh;
       } else {
         zoneLow = anchorLow + width * 0.05;
         zoneHigh = anchorLow + width * 0.55;
       }
-      if (zoneHigh <= 0 || zoneLow <= 0 || zoneHigh <= zoneLow) {
-        zoneLow = mid - (fallbackWidth * 1.00);
-        zoneHigh = mid - (fallbackWidth * 0.40);
-      }
-      if (zoneLow > mid) {
-        final shift = (zoneLow - mid) + (mid * 0.0005);
-        zoneLow -= shift;
-        zoneHigh -= shift;
-      }
+    }
+
+    if (zoneHigh <= 0 || zoneLow <= 0 || zoneHigh <= zoneLow) {
+      anchorSource = 'internal_diagnostic';
+      anchorExecutable = false;
+      anchorLifecycle = 'unavailable';
+      liquidityAnchorPrice = null;
+      liquidityEventAtUtc = null;
+      zoneLow =
+          selectedSide == 'buy'
+              ? mid - fallbackWidth
+              : mid + fallbackWidth * 0.40;
+      zoneHigh =
+          selectedSide == 'buy'
+              ? mid - fallbackWidth * 0.40
+              : mid + fallbackWidth;
     }
 
     var strength = 50;
     if (reversalSignal) strength += 20;
     if (aligned) strength += 15;
     if (contrarian) strength -= 15;
-    if (usedExternalLiquidity) strength += 10;
+    if (anchorExecutable) strength += 10;
     if (macroVolPct > 0.02) {
       strength += 10;
     } else if (macroVolPct < 0.008) {
@@ -791,12 +814,71 @@ class BingxFuturesZoneDecisionService {
           body >= atr * _microReclaimMinBodyAtr) {
         latestConfirmed = _MicroReclaimEvent(
           anchorPrice: sweepExtreme,
+          zoneLow: bottom,
+          zoneHigh: top,
           sweepIndex: sweepIndex,
           reclaimIndex: index,
         );
       }
     }
     return latestConfirmed;
+  }
+
+  _LiquidityVoidEvent? _findFreshLiquidityVoid({
+    required String side,
+    required List<num> highs,
+    required List<num> lows,
+    required List<num> opens,
+    required List<num> closes,
+    required int eventStartIndex,
+  }) {
+    if (highs.length != lows.length ||
+        highs.length != opens.length ||
+        highs.length != closes.length ||
+        highs.length < 15) {
+      return null;
+    }
+    final lastIndex = highs.length - 1;
+    final firstIndex = eventStartIndex < 2 ? 2 : eventStartIndex;
+    for (var index = lastIndex; index >= firstIndex; index -= 1) {
+      if (lastIndex - index > _liquidityVoidMaxAgeBars) break;
+      final directional =
+          side == 'buy'
+              ? closes[index] > opens[index]
+              : closes[index] < opens[index];
+      final atr = _atrAt(
+        highs: highs,
+        lows: lows,
+        closes: closes,
+        index: index,
+      );
+      final body = (closes[index] - opens[index]).abs();
+      if (!directional || atr <= 0 || body < atr * _liquidityVoidMinBodyAtr) {
+        continue;
+      }
+
+      final zoneLow = side == 'buy' ? highs[index - 2] : highs[index];
+      final zoneHigh = side == 'buy' ? lows[index] : lows[index - 2];
+      if (zoneLow <= 0 || zoneHigh <= zoneLow) continue;
+
+      var touched = false;
+      for (var later = index + 1; later <= lastIndex; later += 1) {
+        if (side == 'buy' ? lows[later] <= zoneHigh : highs[later] >= zoneLow) {
+          touched = true;
+          break;
+        }
+      }
+      if (touched) continue;
+
+      final current = closes.last;
+      if (side == 'buy' ? zoneHigh >= current : zoneLow <= current) continue;
+      return _LiquidityVoidEvent(
+        zoneLow: zoneLow,
+        zoneHigh: zoneHigh,
+        eventIndex: index,
+      );
+    }
+    return null;
   }
 
   num _atrAt({

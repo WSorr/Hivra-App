@@ -850,7 +850,8 @@ if (
 ):
     raise SystemExit("deterministic session advance refused stale state")
 effect = outcome.startswith("effect:")
-if not effect and not outcome.startswith("blocked:"):
+maintenance = outcome.startswith("maintenance:")
+if not effect and not maintenance and not outcome.startswith("blocked:"):
     raise SystemExit("deterministic session advance received an invalid outcome")
 consumed = value.get("consumed_effects")
 if isinstance(consumed, bool) or not isinstance(consumed, int):
@@ -865,7 +866,12 @@ if next_index == max_cycles:
     next_state = "completed"
 elif consumed == max_effects:
     next_state = "stopped"
-elif outcome.startswith("effect:unresolved:") or outcome.startswith("effect:terminal_failure:"):
+elif (
+    outcome.startswith("effect:unresolved:")
+    or outcome.startswith("effect:terminal_failure:")
+    or outcome.startswith("maintenance:unresolved:")
+    or outcome.startswith("maintenance:terminal_failure:")
+):
     next_state = "stopped"
 elif outcome in (
     "blocked:external_order_active",
@@ -3740,6 +3746,31 @@ elif contract == "hivra-trading-exact-order-evidence-v1":
     if state == "succeeded" and receipt is None:
         raise SystemExit("successful deterministic effect lacks receipt")
     print(f"effect:{state}:test={str(value['test_order']).lower()}")
+elif contract == "hivra-trading-managed-order-cancellation-evidence-v1":
+    expected_keys = [
+        "contract_version", "operation_id", "state", "attempt_count",
+        "provider_reference_id", "receipt_evidence_hash_hex", "effect",
+    ]
+    if list(value) != expected_keys or value.get("operation_id") != expected_operation:
+        raise SystemExit("managed cancellation outcome identity is invalid")
+    state = value.get("state")
+    if state not in ("succeeded", "unresolved", "terminal_failure"):
+        raise SystemExit("managed cancellation outcome state is invalid")
+    if value.get("attempt_count") != 1 or value.get("effect") is not True:
+        raise SystemExit("managed cancellation outcome use bound is invalid")
+    provider = value.get("provider_reference_id")
+    if provider is not None and (
+        not isinstance(provider, str) or not 1 <= len(provider) <= 256
+    ):
+        raise SystemExit("managed cancellation provider reference is invalid")
+    receipt = value.get("receipt_evidence_hash_hex")
+    if receipt is not None and (
+        not isinstance(receipt, str) or re.fullmatch(r"[0-9a-f]{64}", receipt) is None
+    ):
+        raise SystemExit("managed cancellation receipt is invalid")
+    if state == "succeeded" and receipt is None:
+        raise SystemExit("successful managed cancellation lacks receipt")
+    print(f"maintenance:{state}:cancel")
 else:
     raise SystemExit("deterministic cycle outcome version mismatch")
 PY
@@ -3801,7 +3832,7 @@ select_deterministic_recovery_cycle() {
     previous_outcome="$(validate_deterministic_cycle_outcome \
       "$previous_result" "$previous_operation")" || return 1
     case "$previous_outcome" in
-      effect:unresolved:*|effect:terminal_failure:*)
+      effect:unresolved:*|effect:terminal_failure:*|maintenance:unresolved:*|maintenance:terminal_failure:*)
         echo "$previous_index"
         return
         ;;
@@ -4376,7 +4407,7 @@ recover_deterministic_session_once() {
       "$retained_result" "$operation_id")" ||
       die "deterministic recovery retained result is invalid"
     case "$retained_outcome" in
-      effect:unresolved:*|effect:terminal_failure:*) ;;
+      effect:unresolved:*|effect:terminal_failure:*|maintenance:unresolved:*|maintenance:terminal_failure:*) ;;
       *)
         if [[ "$session_status" == active:* ]]; then
           advance_deterministic_session_cycle \
@@ -4451,7 +4482,7 @@ recover_deterministic_session_once() {
     die "deterministic recovery outcome validation failed"
   case "$outcome" in
     no_effect:*) ;;
-    effect:*)
+    effect:*|maintenance:*)
       pending_result="$(mktemp "$result_dir/.result.pending.XXXXXX")"
       install -m 0600 "$work/stdout" "$pending_result"
       mv "$pending_result" "$retained_result"
@@ -5532,6 +5563,27 @@ PY
     "effect:succeeded:test=true" ] ||
     die "self-test rejected a canonical deterministic effect outcome"
   printf '%s\n' \
+    "{\"contract_version\":\"hivra-trading-managed-order-cancellation-evidence-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"succeeded\",\"attempt_count\":1,\"provider_reference_id\":\"managed-order\",\"receipt_evidence_hash_hex\":\"$(printf 'cancel-receipt' | sha256_stdin)\",\"effect\":true}" \
+    >"$root/deterministic-maintenance.json"
+  [ "$(validate_deterministic_cycle_outcome \
+    "$root/deterministic-maintenance.json" "$deterministic_operation_id")" = \
+    "maintenance:succeeded:cancel" ] ||
+    die "self-test rejected canonical managed cancellation evidence"
+  local maintenance_state="$root/deterministic-maintenance-state.json"
+  local maintenance_session maintenance_cycle
+  maintenance_session="$(printf 'maintenance-session' | sha256_stdin)"
+  maintenance_cycle="$(derive_deterministic_session_cycle_operation_id \
+    "$maintenance_session" 0)"
+  [ "$(prepare_deterministic_session_cycle \
+    "$maintenance_state" "$maintenance_session" 2 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)" = \
+    "active:0:0" ] ||
+    die "self-test did not activate maintenance session"
+  [ "$(advance_deterministic_session_cycle \
+    "$maintenance_state" "$maintenance_session" 0 "$maintenance_cycle" \
+    "maintenance:succeeded:cancel" 2 1)" = "active:1:0" ] ||
+    die "self-test charged managed cancellation against placement budget"
+  printf '%s\n' \
     "{\"contract_version\":\"hivra-trading-exact-order-recovery-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"absent\",\"effect\":false}" \
     >"$root/deterministic-recovery-empty.json"
   [ "$(validate_deterministic_recovery_outcome \
@@ -5566,7 +5618,7 @@ PY
     >/dev/null 2>&1; then
     die "self-test accepted a non-canonical deterministic reason code"
   fi
-  unset deterministic_operation_id deterministic_outcome recovery_store recovery_session recovery_operation
+  unset deterministic_operation_id deterministic_outcome recovery_store recovery_session recovery_operation maintenance_state maintenance_session maintenance_cycle
 
   sed -i.bak 's/^binary_sha256=./binary_sha256=0/' "$artifact/$MANIFEST_NAME"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then

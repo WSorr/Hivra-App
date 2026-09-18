@@ -6,7 +6,9 @@ String formatBingxFuturesLiquidityObservation(
   if (decision == null) {
     return 'Observed liquidity (5m)\nScan and select a symbol to inspect its clusters.';
   }
-  final lines = <String>['Observed liquidity (5m) — snapshot, not order prices'];
+  final lines = <String>[
+    'Observed liquidity (5m) — snapshot, not order prices',
+  ];
   if (decision.observedLiquidityLevels.isEmpty) {
     lines.add('No pivot clusters detected in this snapshot.');
   }
@@ -21,8 +23,8 @@ String formatBingxFuturesLiquidityObservation(
   lines.add(
     decision.zoneAnchorExecutable
         ? (decision.canPrepareIntent
-            ? 'Reclaim confirmed. Order preparation still requires risk and mandate checks.'
-            : 'Reclaim confirmed; other entry checks block preparation.')
+            ? 'Liquidity entry confirmed. Order preparation still requires risk and mandate checks.'
+            : 'Liquidity entry confirmed; other entry checks block preparation.')
         : 'No confirmed executable setup. A swept cluster alone does not authorize entry.',
   );
   lines.add('Offline monitoring requires an active authorized Runner session.');
@@ -63,6 +65,9 @@ String? _formatAnchorSource(String? raw) {
   }
   if (source == 'micro_sweep_reclaim') {
     return 'current 5m sweep/reclaim';
+  }
+  if (source == 'micro_liquidity_void') {
+    return 'fresh untouched 5m liquidity void';
   }
   if (source.isEmpty || source == 'internal_diagnostic') {
     return null;

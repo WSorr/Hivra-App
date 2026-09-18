@@ -315,8 +315,10 @@ canonical normalized snapshot, derived liquidity, ATR, or zone decision.
 For the side selected by TVH, the zone owner chooses one canonical anchor:
 
 - a confirmed closed-candle sweep/reclaim is preferred when present;
-- otherwise an untouched, confirmed HTF buyside/sellside pivot with a stable
-  source timestamp may authorize a pending counter-directional retest entry;
+- otherwise a fresh untouched 5m liquidity void created by directional
+  displacement may authorize the pending entry;
+- confirmed HTF buyside/sellside pivots remain opposite-liquidity targets and
+  context; they do not authorize entry;
 - a window extremum, liquidation proxy by itself, missing timestamp, breached
   level, consumed level, or internal fallback remains non-executable.
 
@@ -339,6 +341,12 @@ For the sweep/reclaim path:
    the same cluster. Repeated evaluation of identical candles MUST produce the
    same event and zone. Among valid clusters select the latest reclaim; tied
    reclaim candle indices are ambiguous and MUST NOT authorize entry.
+
+For the liquidity-void path, a three-candle 5m displacement leaves the exact
+gap between candle one and candle three. The displacement body MUST be at least
+`0.75 * ATR14`, the void MUST remain untouched, and it expires after 24 closed
+bars. Its exact gap bounds are the entry zone; quote movement MUST NOT shift
+them. A later touch consumes the void and removes execution authority.
 
 The reducer has no persisted mutable market state. Restart, local execution,
 and shadow replay reconstruct the same lifecycle from the same canonical
@@ -527,10 +535,8 @@ External HTF levels MUST have an explicit deterministic lifecycle:
   liquidity;
 - `consumed`: a confirmed pivot breached by a later candle.
 
-An untouched `fresh` HTF pivot with a stable source timestamp may authorize
-one pending counter-directional retest entry when no current directional
-sweep/reclaim is available. A missing timestamp, breach, or consumption keeps
-the pivot observation-only.
+An untouched `fresh` HTF pivot with a stable source timestamp remains a target
+or contextual liquidity observation. It never authorizes an entry by itself.
 The `4h` lifecycle window MUST cover at least 80 days of closed candles so a
 level cannot appear fresh merely because an older sweep fell outside a short
 runtime lookback.
@@ -540,16 +546,15 @@ fresh again merely because price moved away from them. A trade that claims
 sweep/reclaim semantics requires the separate current microstructure path
 (`sweep -> reclaim -> displacement`) and a new live decision.
 Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
-`internal_diagnostic`, but MUST NOT authorize a pending order. If no
-current confirmed micro sweep/reclaim or eligible untouched HTF pivot exists,
-the live
-decision MUST emit `liquidity_anchor_unavailable`.
+`internal_diagnostic`, but MUST NOT authorize a pending order. If no current
+confirmed micro sweep/reclaim or fresh untouched 5m liquidity void exists, the
+live decision MUST emit `liquidity_anchor_unavailable`.
 
-The Trading UI MUST present executable HTF bounds as a **pending liquidity
-zone**, not as current market price. Its existing live-decision projection MUST
-show the anchor timeframe/source, formation time, age at the latest closed
-observation, signed distance from the reference price, and that `Run Intent`
-revalidates the zone. Signal ranking is an observational candidate list: its
+The Trading UI MUST present executable microstructure bounds as a **pending
+liquidity zone**, not as current market price. Its existing live-decision
+projection MUST show the anchor source, formation time, age at the latest
+closed observation, signed distance from the reference price, and that
+`Run Intent` revalidates the zone. Signal ranking is an observational candidate list: its
 internal `ready` bucket MUST be presented as a candidate rather than executable
 readiness. Selecting a ranked observation MUST clear prior pending-order fields
 and MUST NOT project the retained scan decision as current execution state.
@@ -606,7 +611,7 @@ available indicator:
    `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
 3. Use recent aggressive-volume imbalance to activate exactly one direction.
 4. Prefer a bounded sweep/reclaim event for that side; otherwise permit one
-   untouched, confirmed, timestamped HTF pivot as a pending retest anchor.
+   fresh untouched 5m liquidity void as a pending entry anchor.
 5. Rank valid structural candidates with liquidation-proxy confluence.
 6. Apply hard freshness, funding, structural, risk, claim, and effect guards.
 7. Use trend, OI, session, and large-flow evidence as context for explanation
@@ -621,9 +626,8 @@ contract.
 
 1. Recent aggressive-volume imbalance activates `buy`.
 2. A current sellside-liquidity sweep and bullish closed-candle reclaim supply
-   the preferred executable entry anchor. Without one, an untouched confirmed
-   HTF sellside pivot with a stable source timestamp may supply a pending
-   retest anchor.
+   the preferred executable entry anchor. Without one, a fresh untouched
+   bullish 5m liquidity void may supply the exact pending entry bounds.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
@@ -637,9 +641,8 @@ Entry anchor:
 
 1. Recent aggressive-volume imbalance activates `sell`.
 2. A current buyside-liquidity sweep and bearish closed-candle reclaim supply
-   the preferred executable entry anchor. Without one, an untouched confirmed
-   HTF buyside pivot with a stable source timestamp may supply a pending
-   retest anchor.
+   the preferred executable entry anchor. Without one, a fresh untouched
+   bearish 5m liquidity void may supply the exact pending entry bounds.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
@@ -706,6 +709,13 @@ Runtime implication:
 - when the side-locked structural anchor is executable and the order remains inside its zone, the order is kept even if transient flow inputs produce `NO_SIGNAL`,
 - when the side-locked anchor is unavailable or the order price left its structural zone, the order is canceled without replacement unless a separate normal actionable live decision exists.
 - replacement must never reuse an unprovenanced order or bypass fresh decision, risk, idempotency, and execution gates.
+- each VPS cycle computes fresh signed market evidence before deciding whether
+  its single active managed order still belongs to the same liquidity event;
+- a changed event or blocked market proposal produces one journaled
+  `cancel-exact-order` maintenance effect; no placement occurs in that cycle;
+- after confirmed cancellation, a later cycle may place the new event through
+  the existing exact-order effect path. Cancellation does not consume the
+  placement budget, but unresolved cancellation stops for reconciliation.
 
 Automatic replacement policy:
 

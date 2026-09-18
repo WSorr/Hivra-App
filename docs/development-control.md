@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-17
+Status date: 2026-09-18
 
 ## Current State
 
@@ -24,8 +24,12 @@ Status date: 2026-09-17
   projects its exact market, mode, and effect budget before remote secrets are
   unlocked. Capsule-managed VPS onboarding requires no Git or terminal work.
   A conflicting external order now pauses the Runner after one retained check
-  instead of exhausting the signed session; revalidation and replacement of a
-  Runner-managed pending order remain incomplete.
+  instead of exhausting the signed session. Current source recomputes fresh
+  entry authority from confirmed 5m sweep/reclaim or untouched liquidity-void
+  zones; 4h/1d/1w pivots are targets and context only. A stale Runner-managed
+  order is canceled through the existing effect journal, and a replacement may
+  be placed only by the next cycle. Packaged and live VPS evidence for this
+  lifecycle remains incomplete.
 - Capsule-scoped credential stores remain authoritative. AI unlock is
   process-scoped.
 - The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager

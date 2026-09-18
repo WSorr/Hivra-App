@@ -20,8 +20,8 @@ Legend:
 | Side/zone provenance linked to TVH decision hash | DONE | `snapshot/feature/tvh/live` hashes are propagated into host result and decision/execution envelopes | Keep provenance envelope regression tests green |
 | Trend bundle + far-retest continuation gate | DONE | `BingxFuturesLiveDecisionService` emits `trend_15m/4h/1d` and deterministic `trend_gate_*` block codes | Keep live-decision regressions green |
 | Momentum-missed continuation gate | DONE | `BingxFuturesLiveDecisionService` blocks untouched far pending entries with deterministic `momentum_gate_*_missed_retest` codes | Keep missed-retest regressions green |
-| HTF liquidity lifecycle gate | DONE | `BingxFuturesZoneDecisionService` accepts only untouched confirmed swing pivots or a bounded closed-candle micro sweep/reclaim with ATR body, expiry, and retest limits; internal fallback levels are diagnostic-only | Keep fresh/sweep-origin/consumed/weak-body/expiry/retest-limit/non-executable-fallback regressions green |
-| Pending-zone evidence projection | DONE | `TradingDroneScreen` labels HTF bounds as pending rather than current price and projects source, formation time, age, signed distance, and mandatory Run Intent revalidation from the matching existing live decision | Keep formatter, malformed-evidence fallback, and live-decision reference-price regressions green; manually verify symbol reset in packaged smoke |
+| Liquidity entry lifecycle gate | DONE | `BingxFuturesZoneDecisionService` accepts only a bounded closed-candle micro sweep/reclaim or fresh untouched 5m liquidity void; HTF pivots remain target-only and internal fallback levels are diagnostic-only | Keep sweep/reclaim, exact-void, touch/expiry, and non-executable-fallback regressions green |
+| Pending-zone evidence projection | DONE | `TradingDroneScreen` labels exact microstructure bounds as pending rather than current price and projects source, formation time, age, signed distance, and mandatory Run Intent revalidation from the matching existing live decision | Keep formatter, malformed-evidence fallback, and live-decision reference-price regressions green; manually verify symbol reset in packaged smoke |
 | Public liquidity confluence proxies | DONE | `BingxFuturesLiveSnapshotBuilderService` deterministically emits at most three bounded `liquidation_proxy` levels per side; `BingxFuturesZoneDecisionService` uses them only to rank valid closed-structure candidates and never as entry authority | Keep permutation, bounded-output, structural-ranking, stale/crossed-depth, force-order isolation, and proxy-only no-authority regressions green |
 | Live public shadow probe | DONE | The existing replay harness signs canonical public observations through `BingxFuturesPublicMarketDataPort`; run-count `1` remains the one-shot compatibility path and accepts no Capsule, credential, mandate, account state, or effect owner | Unbounded daemon operation, deployment, leases, account reads, and remote effects remain unauthorized |
 | Durable public shadow stream | DONE | `BingxFuturesShadowStreamStore` atomically commits the runner identity, retains at most 256 authenticated tail files, then commits the exact signed tail head as a local checkpoint before bounded cleanup and global sequence continuation | Keep identity/checkpoint pending recovery, foreign-key/corruption/unbound-state rejection, crash overlap, conflicting checkpoint no-delete, repeated compaction, and concurrency regressions green; external anchoring, daemon scheduling, deployment, leases, receivers, account reads, and remote effects remain unauthorized |
@@ -87,10 +87,11 @@ Legend:
 - [ ] Feature extractor computes trend (EMA50/EMA200 15m), ATR14(5m), liquidity levels, and large-flow context deterministically.
 - [ ] Live decision emits trend bundle (`trend_15m`, `trend_4h`, `trend_1d`) and deterministic trend-gate status.
 - [ ] Live decision blocks missed continuation retests before host intent preparation.
-- [ ] HTF pending-entry anchors are confirmed untouched swing pivots, never raw highs/lows.
+- [ ] HTF pivots are target/context only; they never authorize entry.
 - [ ] The `4h` lifecycle window covers at least 80 days of closed candles.
 - [ ] `sweep_origin`, immediate `post_sweep_reaction`, and `consumed` levels cannot silently enter the fresh candidate set.
-- [ ] Post-sweep entry requires a current `sweep -> reclaim -> displacement` decision.
+- [ ] Entry requires a current `sweep -> reclaim -> displacement` event or a
+      fresh untouched 5m liquidity void with exact gap bounds.
 - [ ] Internal older/recent high/low fallback is diagnostic-only and cannot authorize an intent.
 - [ ] Liquidation, force-order, and orderbook proxy levels may rank valid structural candidates but cannot authorize an intent or become its anchor.
 - [ ] Trend, OI, session evidence, and large-flow activation remain context; recent aggressive-volume imbalance owns directional activation.
@@ -111,6 +112,8 @@ Legend:
 - [ ] One LIVE `liquidity_event_id` can reserve at most one exchange effect across double-click, retry, restart, and reconnect; TEST validation creates no effect claim.
 - [ ] The Capsule-scoped event-claim journal is bounded and fails closed rather than evicting authority evidence.
 - [ ] Managed open orders are revalidated against fresh live TVH snapshots before being left active.
+- [ ] VPS cancellation is journaled, ownership-bound, and completed in a
+      separate cycle before a fresh event can place another order.
 - [ ] `NO_SIGNAL` managed orders receive a side-locked structural revalidation; transient flow failure alone neither cancels nor preserves them blindly.
 - [ ] Structural-only revalidation can keep/cancel but cannot create or replace an order.
 - [ ] Every managed open order retains capsule-scoped intent/decision provenance across restart.
