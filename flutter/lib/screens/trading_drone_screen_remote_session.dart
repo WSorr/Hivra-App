@@ -1033,6 +1033,18 @@ Map<String, String>? _tradingRemoteRunnerStatusFields(String raw) {
   if (!validOutcome) {
     return null;
   }
+  final operatorHold = fields['operator_hold'] ?? 'none';
+  if (!{
+        'none',
+        'external_order_active',
+        'order_ownership_unavailable',
+      }.contains(operatorHold) ||
+      operatorHold != 'none' &&
+          (fields['active'] != 'inactive' ||
+              state != 'active' ||
+              outcome != 'blocked:$operatorHold')) {
+    return null;
+  }
   final last = fields['last_scheduled_check'];
   final next = fields['next_check'];
   bool validTime(String? value) =>
@@ -1040,7 +1052,9 @@ Map<String, String>? _tradingRemoteRunnerStatusFields(String raw) {
       RegExp(r'^\d{4}-\d{2}-\d{2}T.*(?:Z|\+00:00)$').hasMatch(value) &&
       DateTime.tryParse(value) != null;
   if ((cycles == 0 ? last != 'none' : !validTime(last)) ||
-      (state == 'active' ? !validTime(next) : next != 'none')) {
+      (state == 'active' && operatorHold == 'none'
+          ? !validTime(next)
+          : next != 'none')) {
     return null;
   }
   return fields;
@@ -1059,22 +1073,28 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
     ('failed', _) => 'Runner failed',
     _ => throw StateError('Validated Runner process is missing.'),
   };
-  final startup = switch ((fields['enabled'], terminal)) {
-    ('enabled', true) =>
-      'Autostart remains enabled, but this finished session cannot trade. '
-          'Authorize a new signed session.',
-    ('enabled', false) =>
-      'WARNING: autostart enabled — a VPS reboot may start the Runner.',
-    ('enabled-runtime', true) =>
-      'Runtime startup remains enabled, but this finished session cannot trade. '
-          'Authorize a new signed session.',
-    ('enabled-runtime', false) =>
-      'WARNING: runtime startup activation is enabled.',
-    ('linked' || 'linked-runtime' || 'disabled', _) =>
-      'Autostart: not enabled.',
-    ('masked' || 'masked-runtime', _) => 'Startup blocked: service masked.',
-    _ => 'Autostart status unknown — pause persistence is not verified.',
-  };
+  final operatorHold = fields['operator_hold'] ?? 'none';
+  final startup =
+      operatorHold != 'none'
+          ? 'Startup blocked until you explicitly resume this signed session.'
+          : switch ((fields['enabled'], terminal)) {
+            ('enabled', true) =>
+              'Autostart remains enabled, but this finished session cannot trade. '
+                  'Authorize a new signed session.',
+            ('enabled', false) =>
+              'WARNING: autostart enabled — a VPS reboot may start the Runner.',
+            ('enabled-runtime', true) =>
+              'Runtime startup remains enabled, but this finished session cannot trade. '
+                  'Authorize a new signed session.',
+            ('enabled-runtime', false) =>
+              'WARNING: runtime startup activation is enabled.',
+            ('linked' || 'linked-runtime' || 'disabled', _) =>
+              'Autostart: not enabled.',
+            ('masked' || 'masked-runtime', _) =>
+              'Startup blocked: service masked.',
+            _ =>
+              'Autostart status unknown — pause persistence is not verified.',
+          };
   if (state == null || state == 'unavailable') {
     return '$process\n$startup\nSession details unavailable on this Runner.';
   }
@@ -1098,12 +1118,19 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
       'No new order: this Runner already has a pending order for the VPS '
           'market. It will not create a duplicate.',
     'blocked:external_order_active' =>
-      'No new order: the exchange already has an order for this VPS market '
-          'that is not owned by this session. Review it before the Runner can '
-          'trade this market.',
+      fields['active'] == 'inactive'
+          ? 'Runner paused: the exchange has an order for this VPS market '
+              'that is not owned by this session. Review the order, then '
+              'resume this signed session.'
+          : 'No new order: the exchange already has an order for this VPS '
+              'market that is not owned by this session. Review it before '
+              'the Runner can trade this market.',
     'blocked:order_ownership_unavailable' =>
-      'No new order: ownership of the existing market order could not be '
-          'verified.',
+      fields['active'] == 'inactive'
+          ? 'Runner paused because ownership of the existing market order '
+              'could not be verified. Review the order before resuming.'
+          : 'No new order: ownership of the existing market order could not '
+              'be verified.',
     'blocked:active_order_exists' =>
       'No new order: this VPS market already has an open order. '
           'The Runner is waiting to avoid a duplicate.',

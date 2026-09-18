@@ -534,6 +534,44 @@ void main() {
     expect(unknown, contains('could not be verified'));
   });
 
+  test('operator-owned order conflict explains automatic Runner pause', () {
+    const prefix = 'active=inactive enabled=enabled operator_hold=';
+    const suffix =
+        ' session_state=active cycles=13 effects=0 '
+        'last_scheduled_check=2026-09-17T12:45:00Z '
+        'next_check=none last_outcome=';
+
+    final external = tradingRemoteRunnerStatusLabel(
+      '${prefix}external_order_active${suffix}blocked:external_order_active',
+      authorizedMaxEffects: 2,
+    );
+    final unknown = tradingRemoteRunnerStatusLabel(
+      '${prefix}order_ownership_unavailable${suffix}blocked:order_ownership_unavailable',
+      authorizedMaxEffects: 2,
+    );
+
+    expect(external, contains('Runner paused'));
+    expect(external, contains('resume this signed session'));
+    expect(external, contains('Startup blocked until'));
+    expect(unknown, contains('Runner paused'));
+    expect(unknown, contains('before resuming'));
+  });
+
+  test('Runner rejects an operator hold that is not bound to its outcome', () {
+    const inconsistent =
+        'active=inactive enabled=enabled '
+        'operator_hold=external_order_active session_state=active '
+        'cycles=13 effects=0 '
+        'last_scheduled_check=2026-09-17T12:45:00Z '
+        'next_check=none '
+        'last_outcome=blocked:managed_order_active';
+
+    expect(
+      tradingRemoteRunnerStatusLabel(inconsistent, authorizedMaxEffects: 2),
+      'Runner status unknown. Refresh to retry.',
+    );
+  });
+
   test('Runner actions preserve one retained session lifecycle', () {
     const running =
         'active=active enabled=linked session_state=active cycles=1 effects=0 '

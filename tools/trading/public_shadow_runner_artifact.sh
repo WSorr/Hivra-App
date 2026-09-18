@@ -490,7 +490,7 @@ if (
     or not isinstance(value["consumed_effects"], int)
     or value["consumed_effects"] < 0
     or value["consumed_effects"] > max_effects
-    or value["state"] not in ("active", "completed", "stopped")
+    or value["state"] not in ("active", "operator_hold", "completed", "stopped")
 ):
     raise SystemExit("deterministic session state invariant failed")
 index = value["next_cycle_index"]
@@ -590,7 +590,7 @@ if (
     or value.get("completed_cycles") != index
     or isinstance(consumed, bool) or not isinstance(consumed, int)
     or consumed < 0 or consumed > max_effects
-    or value.get("state") not in ("active", "completed", "stopped")
+    or value.get("state") not in ("active", "operator_hold", "completed", "stopped")
 ):
     raise SystemExit("deterministic recovery state invariant failed")
 last = value.get("last_cycle_operation_id")
@@ -626,7 +626,7 @@ import re
 import sys
 
 status, raw_interval, starts_raw, expires_raw, now_raw = sys.argv[1:]
-match = re.fullmatch(r"(active|completed|stopped):([0-9]+):([0-9]+)", status)
+match = re.fullmatch(r"(active|operator_hold|completed|stopped):([0-9]+):([0-9]+)", status)
 if match is None:
     raise SystemExit("scheduler received invalid session status")
 state, raw_index, _ = match.groups()
@@ -675,7 +675,7 @@ deterministic_session_scheduler_decision_with_revocation() {
   local expires_at="$5"
   local now_override="${6:-}"
   case "$session_status" in
-    completed:*|stopped:*)
+    operator_hold:*|completed:*|stopped:*)
       deterministic_session_scheduler_decision \
         "$session_status" "$interval_seconds" "$starts_at" \
         "$expires_at" "$now_override"
@@ -693,6 +693,70 @@ deterministic_session_scheduler_decision_with_revocation() {
       ;;
     *) die "scheduler received invalid session status" ;;
   esac
+}
+
+deterministic_session_outcome_requires_operator_attention() {
+  case "$1" in
+    blocked:external_order_active|blocked:order_ownership_unavailable)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resume_deterministic_session_operator_hold() {
+  local state="$1"
+  local session_operation_id="$2"
+  local max_cycles="$3"
+  local max_effects="$4"
+  local status index cycle_index operation_id outcome
+  status="$(inspect_deterministic_session_cycle \
+    "$state" "$session_operation_id" "$max_cycles" "$max_effects")" ||
+    die "session resume refused invalid canonical state"
+  case "$status" in
+    operator_hold:*) ;;
+    *) return ;;
+  esac
+  index="${status#operator_hold:}"
+  index="${index%%:*}"
+  [ "$index" -gt 0 ] || die "session operator hold lacks a completed cycle"
+  cycle_index=$((index - 1))
+  operation_id="$(derive_deterministic_session_cycle_operation_id \
+    "$session_operation_id" "$cycle_index")" ||
+    die "session operator hold could not derive cycle identity"
+  outcome="$(validate_deterministic_cycle_outcome \
+    "$STATE_DIRECTORY/deterministic-results/$operation_id.json" \
+    "$operation_id")" ||
+    die "session operator hold rejected retained cycle evidence"
+  deterministic_session_outcome_requires_operator_attention "$outcome" ||
+    die "session operator hold does not match retained cycle evidence"
+  python3 - "$state" "$session_operation_id" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+path, session_id = sys.argv[1:]
+state_path = pathlib.Path(path)
+value = json.loads(state_path.read_text(encoding="utf-8"))
+if value.get("session_operation_id") != session_id or value.get("state") != "operator_hold":
+    raise SystemExit("session operator hold changed before resume")
+value["state"] = "active"
+pending = state_path.with_name(f".{state_path.name}.pending.{os.getpid()}")
+fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(json.dumps(value, separators=(",", ":")) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(pending, state_path)
+finally:
+    if pending.exists():
+        pending.unlink()
+PY
+  printf '%s\n' "$outcome"
 }
 
 settle_missed_deterministic_session_cycles() {
@@ -803,6 +867,11 @@ elif consumed == max_effects:
     next_state = "stopped"
 elif outcome.startswith("effect:unresolved:") or outcome.startswith("effect:terminal_failure:"):
     next_state = "stopped"
+elif outcome in (
+    "blocked:external_order_active",
+    "blocked:order_ownership_unavailable",
+):
+    next_state = "operator_hold"
 value = {
     "contract_version": "hivra-trading-deterministic-session-state-v1",
     "session_operation_id": session_id,
@@ -3027,6 +3096,26 @@ enable_prepared_session_service() {
   [ ! -e "$STATE_DIRECTORY/revocations/$session_id.json" ] &&
     [ ! -L "$STATE_DIRECTORY/revocations/$session_id.json" ] ||
     die "session service refused a revoked session"
+  local session_state="$STATE_DIRECTORY/deterministic-session.v1.json"
+  local session_state_backup="$work/deterministic-session.v1.json"
+  local session_status
+  session_status="$(inspect_deterministic_session_cycle \
+    "$session_state" "$session_id" \
+    "$(cat "$work/verified/session-max-cycles")" \
+    "$(cat "$work/verified/mandate-max-effects")")"
+  if [[ "$session_status" == operator_hold:* ]]; then
+    cp "$session_state" "$session_state_backup"
+    resume_deterministic_session_operator_hold \
+      "$session_state" "$session_id" \
+      "$(cat "$work/verified/session-max-cycles")" \
+      "$(cat "$work/verified/mandate-max-effects")" >/dev/null
+  fi
+  restore_session_state_on_failure() {
+    if [ -f "$session_state_backup" ]; then
+      install -m 0600 "$session_state_backup" "$session_state"
+    fi
+  }
+  trap "restore_session_state_on_failure; rm -rf '$work'; rollback_session_service_enablement" EXIT INT TERM
   systemctl start "$SESSION_UNIT_NAME"
   [ "$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")" = "active" ] ||
     die "session service did not remain active after validation"
@@ -3067,16 +3156,16 @@ prepared_session_service_status() {
   active="$(systemctl show -p ActiveState --value "$SESSION_UNIT_NAME")"
   enabled="$(systemctl is-enabled "$SESSION_UNIT_NAME" 2>/dev/null || true)"
   runner_key="$(read_installed_runner_key_id)"
-  printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
-    "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
   local mandate="$STATE_DIRECTORY/mandates/deterministic-order.v4.json"
   if [ ! -e "$mandate" ] && [ ! -L "$mandate" ]; then
+    printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
+      "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
     echo 'session_state=unavailable'
     return
   fi
   local details
   if details="$(
-  local work summary last_cycle outcome
+  local work summary last_cycle outcome operator_hold
   work="$(mktemp -d /run/hivra-trading-session-status.XXXXXX)" || exit 1
   trap "rm -rf '$work'" EXIT INT TERM
   mkdir "$work/verified" || exit 1
@@ -3101,10 +3190,22 @@ prepared_session_service_status() {
     outcome="$(validate_deterministic_cycle_outcome "$result" "$last_cycle")" ||
       die "session status rejected the retained cycle result"
   fi
-  printf '%s last_outcome=%s\n' "${summary% last_cycle=*}" "$outcome"
+  operator_hold="none"
+  if [[ "$summary" == session_state=operator_hold* ]]; then
+    deterministic_session_outcome_requires_operator_attention "$outcome" ||
+      die "session status operator hold does not match retained evidence"
+    operator_hold="${outcome#blocked:}"
+    summary="${summary/session_state=operator_hold/session_state=active}"
+  fi
+  printf '%s operator_hold=%s last_outcome=%s\n' \
+    "${summary% last_cycle=*}" "$operator_hold" "$outcome"
   )"; then
+    printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
+      "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
     printf '%s\n' "$details"
   else
+    printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
+      "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
     echo 'session_state=unavailable'
   fi
 }
@@ -5167,6 +5268,49 @@ PY
     "active:0:0" 300 "2000-01-01T00:00:00.000Z" \
     "2000-01-01T01:00:00.000Z" "2000-01-01T00:05:00.000Z")" = \
     "skip:0:1" ] || die "self-test scheduler did not isolate a missed slot"
+  deterministic_session_outcome_requires_operator_attention \
+    "blocked:external_order_active" &&
+    deterministic_session_outcome_requires_operator_attention \
+      "blocked:order_ownership_unavailable" ||
+    die "self-test did not hold operator-owned order conflicts"
+  if deterministic_session_outcome_requires_operator_attention \
+    "blocked:managed_order_active" ||
+    deterministic_session_outcome_requires_operator_attention \
+      "blocked:market_proposal_blocked"; then
+    die "self-test held a Runner-managed or ordinary blocked cycle"
+  fi
+  local operator_hold_root="$root/operator-hold-state"
+  (
+    STATE_DIRECTORY="$operator_hold_root"
+    mkdir -p "$STATE_DIRECTORY/deterministic-results"
+    local hold_state="$STATE_DIRECTORY/deterministic-session.v1.json"
+    local hold_session_id hold_cycle_id
+    hold_session_id="$(printf 'operator-hold-session' | sha256_stdin)"
+    hold_cycle_id="$(derive_deterministic_session_cycle_operation_id \
+      "$hold_session_id" 0)"
+    [ "$(prepare_deterministic_session_cycle \
+      "$hold_state" "$hold_session_id" 4 1 60 \
+      "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)" = \
+      "active:0:0" ] || die "self-test did not activate operator-hold session"
+    printf '{"contract_version":"hivra-trading-deterministic-cycle-evidence-v1","operation_id":"%s","state":"blocked","reason_code":"external_order_active","effect":false}\n' \
+      "$hold_cycle_id" >"$STATE_DIRECTORY/deterministic-results/$hold_cycle_id.json"
+    [ "$(advance_deterministic_session_cycle \
+      "$hold_state" "$hold_session_id" 0 "$hold_cycle_id" \
+      "blocked:external_order_active" 4 1)" = "operator_hold:1:0" ] ||
+      die "self-test did not atomically hold external-order conflict"
+    [ "$(prepare_deterministic_session_cycle \
+      "$hold_state" "$hold_session_id" 4 1 60 \
+      "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
+      "terminal:operator_hold:1:0" ] ||
+      die "self-test restarted an operator-held session"
+    [ "$(resume_deterministic_session_operator_hold \
+      "$hold_state" "$hold_session_id" 4 1)" = \
+      "blocked:external_order_active" ] ||
+      die "self-test did not resume the retained operator hold"
+    [ "$(inspect_deterministic_session_cycle \
+      "$hold_state" "$hold_session_id" 4 1)" = "active:1:0" ] ||
+      die "self-test did not restore the held session authority"
+  )
   local stale_session_state="$root/stale-deterministic-session.v1.json"
   local stale_session_id
   stale_session_id="$(printf 'stale-session' | sha256_stdin)"
