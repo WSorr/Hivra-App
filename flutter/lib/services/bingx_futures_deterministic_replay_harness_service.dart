@@ -647,6 +647,7 @@ class BingxFuturesDeterministicReplayHarnessService {
   BingxFuturesShadowEvidence parseShadowEvidence(
     List<int> untrustedWireBytes, {
     int maxEncodedBytes = 8192,
+    bool requireExecutableProposal = true,
   }) {
     if (untrustedWireBytes.isEmpty ||
         untrustedWireBytes.length > maxEncodedBytes) {
@@ -703,6 +704,7 @@ class BingxFuturesDeterministicReplayHarnessService {
     if (contractVersion == _shadowEvidenceV2 &&
         (!_isMarketSymbol(evidence.marketSymbol) ||
             !_marketProposalCodec.validate(
+              requireExecutableProposal: requireExecutableProposal,
               status: evidence.marketProposalStatus,
               proposalJson: evidence.marketProposalJson,
               decisionHashHex: evidence.decisionHashHex,

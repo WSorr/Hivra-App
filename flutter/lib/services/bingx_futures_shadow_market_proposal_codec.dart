@@ -13,6 +13,7 @@ class BingxFuturesShadowMarketProposalCodec {
     required String decision,
     required String marketSnapshotHashHex,
     required String featureHashHex,
+    bool requireExecutableProposal = true,
   }) {
     if (status != 'READY' && status != 'BLOCKED' || proposalJson == null) {
       return false;
@@ -72,7 +73,9 @@ class BingxFuturesShadowMarketProposalCodec {
           )) {
         return false;
       }
-      return status != 'READY' || _isExecutable(decoded);
+      return !requireExecutableProposal ||
+          status != 'READY' ||
+          _isExecutable(decoded);
     } on Object {
       return false;
     }

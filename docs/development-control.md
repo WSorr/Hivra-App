@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-20
+Status date: 2026-09-21
 
 ## Current State
 
@@ -62,9 +62,14 @@ outcome they attest.
 
 The approved local strategy replacement is HTF-first: a 4h parent liquidity
 zone has priority over conflicting 1h context; 5m confirms entry inside it.
-Only sweep/reclaim is selected. Local implementation binds parent evidence and
-strategy version through the existing decision and authorization paths; it is
-not deployed or product-accepted. The definition is owned by the trading
+Only sweep/reclaim is selected. Implementation binds parent evidence and
+strategy version through the existing decision and authorization paths.
+Candidate `ec9496b` was deployed for an explicitly authorized VPS trial, but
+its first cycle failed while loading retained pre-upgrade market evidence;
+zero cycles and zero effects completed in that new session. Service startup
+alone is not autonomous acceptance. The local correction separates historical
+chain authentication from current executable-proposal validation; deployment
+and successful closed-Capsule cycles remain pending. The definition is owned by the trading
 strategy specification. Do not deploy a
 trend-only filter as a substitute or change the active signed VPS session.
 
