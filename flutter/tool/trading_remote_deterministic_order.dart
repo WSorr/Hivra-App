@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
+import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_risk_input_service.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
@@ -36,6 +37,19 @@ typedef AuthorizedExactOrderExecutor =
 typedef AuthorizedExactOrderReconciler =
     Future<String> Function({
       required BingxFuturesRemoteMandateAdmission admission,
+      required String effectOperationId,
+      required BingxFuturesApiCredentials credentials,
+      required String stateHome,
+      BingxHttpRequestSender? requestSender,
+      DateTime Function()? nowUtc,
+      int Function()? clockMs,
+    });
+
+typedef AuthorizedManagedOrderCanceler =
+    Future<String> Function({
+      required BingxFuturesRemoteMandateAdmission admission,
+      required BingxFuturesOpenOrder order,
+      required String placementOperationId,
       required String effectOperationId,
       required BingxFuturesApiCredentials credentials,
       required String stateHome,
@@ -111,6 +125,7 @@ Future<String> runOneDeterministicOrder({
   required Map<String, String> options,
   required List<int> runnerSeedBytes,
   required AuthorizedExactOrderExecutor executeExactOrder,
+  AuthorizedManagedOrderCanceler? cancelManagedOrder,
   BingxHttpRequestSender? requestSender,
   DateTime Function()? nowUtc,
   int Function()? clockMs,
@@ -198,6 +213,7 @@ Future<String> runOneDeterministicOrder({
       jsonEncode(requiredExposureScope)) {
     return _blocked(cycleOperationId, 'exposure_read_authority_missing');
   }
+  var activeOrders = const <BingxFuturesOpenOrder>[];
   if (admission.isDeterministicSession) {
     final openOrders = await exchange.getOpenOrders(
       credentials: credentials,
@@ -206,21 +222,11 @@ Future<String> runOneDeterministicOrder({
     if (!openOrders.isSuccess) {
       return _blocked(cycleOperationId, 'open_orders_unavailable');
     }
-    final activeOrders = openOrders.orders
+    activeOrders = openOrders.orders
         .where(
           (order) => order.symbol.toUpperCase() == admission.mandate.symbol,
         )
         .toList(growable: false);
-    if (activeOrders.isNotEmpty) {
-      return _blocked(
-        cycleOperationId,
-        await _activeOrderReasonCode(
-          admission: admission,
-          activeOrders: activeOrders,
-          stateHome: stateHome,
-        ),
-      );
-    }
   }
   final risk = await const BingxFuturesExchangeRiskInputService().read(
     exposureSymbol: admission.mandate.symbol,
@@ -263,6 +269,41 @@ Future<String> runOneDeterministicOrder({
     stopLossPercent: policy['stop_loss_percent'] as double,
     minimumRiskReward: policy['minimum_risk_reward'] as double,
   );
+  if (activeOrders.isNotEmpty) {
+    final ownership = await _managedActiveOrder(
+      admission: admission,
+      activeOrders: activeOrders,
+      stateHome: stateHome,
+    );
+    if (ownership.order == null || ownership.placementOperationId == null) {
+      return _blocked(cycleOperationId, ownership.reasonCode);
+    }
+    final freshIntent = candidate.toExactOrderIntent(nowUtc: now);
+    final stale =
+        candidate.reasonCode == 'market_proposal_blocked' ||
+        (freshIntent != null &&
+            freshIntent.clientOrderId != ownership.order!.clientOrderId);
+    if (!stale) {
+      return _blocked(cycleOperationId, 'managed_order_active');
+    }
+    if (cancelManagedOrder == null) {
+      return _blocked(
+        cycleOperationId,
+        'managed_order_cancellation_unavailable',
+      );
+    }
+    return cancelManagedOrder(
+      admission: admission,
+      order: ownership.order!,
+      placementOperationId: ownership.placementOperationId!,
+      effectOperationId: cycleOperationId,
+      credentials: credentials,
+      stateHome: stateHome,
+      requestSender: requestSender,
+      nowUtc: () => now,
+      clockMs: clockMs,
+    );
+  }
   if (candidate.status != BingxFuturesRemoteOrderCandidateStatus.ready) {
     return _blocked(cycleOperationId, candidate.reasonCode);
   }
@@ -291,11 +332,25 @@ String _blocked(String operationId, String reasonCode) =>
       'effect': false,
     });
 
-Future<String> _activeOrderReasonCode({
+Future<
+  ({
+    String reasonCode,
+    BingxFuturesOpenOrder? order,
+    String? placementOperationId,
+  })
+>
+_managedActiveOrder({
   required BingxFuturesRemoteMandateAdmission admission,
   required List<BingxFuturesOpenOrder> activeOrders,
   required String stateHome,
 }) async {
+  if (activeOrders.length != 1) {
+    return (
+      reasonCode: 'order_ownership_unavailable',
+      order: null,
+      placementOperationId: null,
+    );
+  }
   try {
     final effects = ExternalEffectService(
       readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
@@ -308,7 +363,7 @@ Future<String> _activeOrderReasonCode({
       for (var index = 0; index < admission.authorizedUses; index += 1)
         admission.deterministicCycleOperationId(index)!,
     };
-    final managedClientOrderIds = <String>{};
+    final managedOperations = <String, String>{};
     for (final operation in await effects.list(
       pluginId: bingxFuturesTradingPluginId,
     )) {
@@ -320,26 +375,51 @@ Future<String> _activeOrderReasonCode({
               admission.mandate.accountBindingHashHex ||
           operation.effectKind !=
               BingxFuturesExternalEffectAdapter.exactOrderEffectKind ||
-          operation.approvalEvidenceHashHex != admission.commitmentHashHex) {
+          operation.approvalEvidenceHashHex != admission.commitmentHashHex ||
+          operation.state != ExternalEffectState.succeeded ||
+          operation.receipt == null) {
         continue;
       }
       final decoded = jsonDecode(operation.canonicalPayloadJson);
       if (decoded is! Map<String, dynamic>) {
-        return 'order_ownership_unavailable';
+        return (
+          reasonCode: 'order_ownership_unavailable',
+          order: null,
+          placementOperationId: null,
+        );
       }
       final payload = BingxFuturesIntentPayload.fromPluginResult(decoded);
-      if (payload.symbol == admission.mandate.symbol) {
-        managedClientOrderIds.add(payload.clientOrderId);
+      final receiptOrderId = operation.receipt!.providerReceiptId.trim();
+      if (payload.symbol == admission.mandate.symbol &&
+          receiptOrderId.isNotEmpty &&
+          (operation.providerReferenceId == null ||
+              operation.providerReferenceId == receiptOrderId)) {
+        managedOperations['${payload.clientOrderId}|$receiptOrderId'] =
+            operation.operationId;
       }
     }
-    final allManaged = activeOrders.every((order) {
-      final clientOrderId = order.clientOrderId?.trim() ?? '';
-      return clientOrderId.isNotEmpty &&
-          managedClientOrderIds.contains(clientOrderId);
-    });
-    return allManaged ? 'managed_order_active' : 'external_order_active';
+    final order = activeOrders.single;
+    final clientOrderId = order.clientOrderId?.trim() ?? '';
+    final placementOperationId =
+        managedOperations['$clientOrderId|${order.orderId}'];
+    if (clientOrderId.isEmpty || placementOperationId == null) {
+      return (
+        reasonCode: 'external_order_active',
+        order: null,
+        placementOperationId: null,
+      );
+    }
+    return (
+      reasonCode: 'managed_order_active',
+      order: order,
+      placementOperationId: placementOperationId,
+    );
   } on Object {
-    return 'order_ownership_unavailable';
+    return (
+      reasonCode: 'order_ownership_unavailable',
+      order: null,
+      placementOperationId: null,
+    );
   }
 }
 

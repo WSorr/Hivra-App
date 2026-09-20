@@ -129,7 +129,9 @@ liquidity_sequence_is_canonical() {
     rg -q "'liquidation_proxy'" "$2" &&
     rg -q '_applyLiquidationConfluence' "$3" &&
     rg -q 'level\.weight \+ bonus' "$3" &&
-    ! rg -q 'anchorSource = "liquidation_proxy"' "$3" &&
+    rg -q "anchorSource = 'micro_liquidity_void'" "$3" &&
+    rg -q 'zoneLow = microReclaim\.zoneLow' "$3" &&
+    ! rg -q "anchorSource = ['\"]liquidation_proxy['\"]" "$3" &&
     rg -q "code: 'market_volume_activation_unavailable'" "$4" &&
     rg -q 'oppositeLiquidityTargetDecimal: decision\.oppositeLiquidityTargetDecimal' "$4" &&
     rg -q "blockerCode: 'opposite_liquidity_target_unavailable'" "$4" &&
@@ -661,8 +663,14 @@ runner_exact_order_is_fail_closed() {
     rg -q 'exactOrderContractVersion' "$models" &&
     rg -q "exactOrderOperationKind = 'one_exact_order'" "$models" &&
     rg -q 'class BingxFuturesExternalEffectAdapter' "$exchange" &&
+    rg -q "cancelExactOrderEffectKind = 'cancel-exact-order'" "$exchange" &&
+    rg -q 'runAuthorizedManagedOrderCancellation' "$probe" &&
+    rg -q "'placement_operation_id': placementOperationId" "$probe" &&
+    rg -q 'managed order ownership is invalid' "$probe" &&
+    rg -q 'cancellation_not_confirmed' "$exchange" &&
     rg -q 'test_order_outcome_ambiguous' "$exchange" &&
     rg -q 'order_not_confirmed' "$exchange" &&
+    ! rg -q -- '--(cancel-order|switch-leverage|switch-margin-type|withdraw|transfer)' "$probe" &&
     "$artifact" --self-test >/dev/null
 }
 
@@ -1216,19 +1224,9 @@ fi
 if runner_exact_order_is_fail_closed \
   "$RUNNER_ARTIFACT" "$EXACT_ORDER_PROBE" "$TRADING_MODELS" \
   "$EXCHANGE_SERVICE"; then
-pass "exact remote order uses one signed operation, durable effect journal, and reconciliation-only replay"
-
-if rg -n \
-  '\.(cancelOrder|switchLeverage|switchMarginType)\s*\(' \
-  "$ROOT/flutter/tool/trading_remote_exact_order.dart" >/dev/null || \
-  rg -n \
-    -- '--(cancel-order|switch-leverage|switch-margin-type|withdraw|transfer)' \
-    "$ROOT/flutter/tool/trading_remote_exact_order.dart" >/dev/null; then
-  fail "exact remote order executable exposes widened exchange authority"
-fi
-pass "exact remote order executable exposes no cancel, leverage, margin, transfer, or withdrawal path"
+  pass "exact remote order and owned cancellation reuse one signed journal and reconciliation path"
 else
-  fail "exact remote order lost signed binding, durable handoff, or no-duplicate reconciliation"
+  fail "exact remote order lost signed binding, owned cancellation, durable handoff, or no-duplicate reconciliation"
 fi
 
 if runner_deterministic_order_is_bounded_session \
@@ -1459,7 +1457,7 @@ sed 's/publicSessionStream\.snapshotFor(symbol)/null/' \
   "$TRADING_MODULE" > "$LOCAL_SESSION_WIRING_MUTATION"
 sed "s/final longReady = longTradeOk && normalizedRequiredSide != 'sell';/final longReady = longTradeOk \&\& longSessionAligned \&\& normalizedRequiredSide != 'sell';/" \
   "$TVH_RULE_ENGINE" > "$LIQUIDITY_AUTHORITY_MUTATION"
-sed 's/anchorSource = externalBuyRetest\.source;/anchorSource = "liquidation_proxy";/' \
+sed "s/anchorSource = 'micro_liquidity_void';/anchorSource = 'liquidation_proxy';/" \
   "$ZONE_DECISION" > "$LIQUIDATION_ANCHOR_MUTATION"
 sed 's/oppositeLiquidityTargetDecimal: decision\.oppositeLiquidityTargetDecimal/oppositeLiquidityTargetDecimal: null/' \
   "$TRADING_CYCLE" > "$LIQUIDITY_TARGET_MUTATION"

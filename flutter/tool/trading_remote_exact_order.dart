@@ -53,6 +53,7 @@ Future<void> main(List<String> args) async {
           options: options,
           runnerSeedBytes: seedBytes,
           executeExactOrder: runAuthorizedExactOrder,
+          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
         ),
       );
       return;
@@ -144,7 +145,16 @@ Future<String> exportCompletedDeterministicSessionEffects({
       completed.add(operation);
     }
   }
-  if (completed.length > admission.mandate.maxEffects) {
+  final placementCount =
+      completed
+          .where(
+            (operation) =>
+                operation.effectKind ==
+                BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
+          )
+          .length;
+  if (placementCount > admission.mandate.maxEffects ||
+      completed.length > admission.authorizedUses) {
     throw const FormatException(
       'completed session effect count exceeds authority',
     );
@@ -167,14 +177,41 @@ void _validateCompletedSessionOperation({
       operation.pluginId != bingxFuturesTradingPluginId ||
       operation.providerId != BingxFuturesExternalEffectAdapter.providerId ||
       operation.accountBindingId != admission.mandate.accountBindingHashHex ||
-      operation.effectKind !=
-          BingxFuturesExternalEffectAdapter.exactOrderEffectKind ||
+      !const <String>{
+        BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
+        BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind,
+      }.contains(operation.effectKind) ||
       operation.approvalEvidenceHashHex != admission.operationId) {
     throw const FormatException('completed session effect binding is invalid');
   }
   final decoded = jsonDecode(operation.canonicalPayloadJson);
-  if (decoded is! Map<String, dynamic> ||
-      decoded['test_order'] is! bool ||
+  if (decoded is! Map<String, dynamic>) {
+    throw const FormatException('completed session effect payload is invalid');
+  }
+  if (operation.effectKind ==
+      BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind) {
+    const cancellationKeys = <String>{
+      'order_id',
+      'client_order_id',
+      'symbol',
+      'placement_operation_id',
+    };
+    final placementOperationId =
+        decoded['placement_operation_id']?.toString() ?? '';
+    if (admission.mandate.testOrder ||
+        decoded.keys.toSet().difference(cancellationKeys).isNotEmpty ||
+        cancellationKeys.difference(decoded.keys.toSet()).isNotEmpty ||
+        (decoded['order_id']?.toString().trim() ?? '').isEmpty ||
+        (decoded['client_order_id']?.toString().trim() ?? '').isEmpty ||
+        decoded['symbol'] != admission.mandate.symbol ||
+        !cycleOperationIds.contains(placementOperationId)) {
+      throw const FormatException(
+        'completed session cancellation payload is invalid',
+      );
+    }
+    return;
+  }
+  if (decoded['test_order'] is! bool ||
       decoded['test_order'] != admission.mandate.testOrder) {
     throw const FormatException('completed session effect payload is invalid');
   }
@@ -434,6 +471,105 @@ Future<String> runAuthorizedExactOrder({
   return _exactOrderEvidence(operation, admission.mandate.testOrder);
 }
 
+Future<String> runAuthorizedManagedOrderCancellation({
+  required BingxFuturesRemoteMandateAdmission admission,
+  required BingxFuturesOpenOrder order,
+  required String placementOperationId,
+  required String effectOperationId,
+  required BingxFuturesApiCredentials credentials,
+  required String stateHome,
+  BingxHttpRequestSender? requestSender,
+  DateTime Function()? nowUtc,
+  int Function()? clockMs,
+}) async {
+  if (!admission.isDeterministicSession ||
+      admission.mandate.testOrder ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(effectOperationId) ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(placementOperationId) ||
+      !Directory(stateHome).isAbsolute) {
+    throw const FormatException('managed order cancellation is invalid');
+  }
+  final now = nowUtc ?? () => DateTime.now().toUtc();
+  if (!admission.mandate.isActiveAt(now().toUtc()) ||
+      order.symbol.trim().toUpperCase() != admission.mandate.symbol) {
+    throw const FormatException('managed order cancellation is unauthorized');
+  }
+  final context = _authorizedEffectContext(
+    admission: admission,
+    credentials: credentials,
+    stateHome: stateHome,
+    requestSender: requestSender,
+    now: now,
+    clockMs: clockMs,
+  );
+  ExternalEffectOperation? placement;
+  for (final operation in await context.effects.list(
+    pluginId: bingxFuturesTradingPluginId,
+  )) {
+    if (operation.operationId == placementOperationId) {
+      placement = operation;
+      break;
+    }
+  }
+  final clientOrderId = order.clientOrderId?.trim() ?? '';
+  if (placement == null ||
+      placement.ownerCapsuleHex != admission.mandate.capsuleRootHex ||
+      placement.providerId != BingxFuturesExternalEffectAdapter.providerId ||
+      placement.accountBindingId != context.accountBinding ||
+      placement.effectKind !=
+          BingxFuturesExternalEffectAdapter.exactOrderEffectKind ||
+      placement.approvalEvidenceHashHex != admission.commitmentHashHex ||
+      placement.state != ExternalEffectState.succeeded ||
+      placement.receipt?.providerReceiptId != order.orderId ||
+      clientOrderId.isEmpty) {
+    throw const FormatException('managed order ownership is invalid');
+  }
+  final placedPayload = jsonDecode(placement.canonicalPayloadJson);
+  if (placedPayload is! Map<String, dynamic>) {
+    throw const FormatException('managed order provenance is invalid');
+  }
+  final placedIntent = BingxFuturesIntentPayload.fromPluginResult(
+    placedPayload,
+  );
+  if (placedIntent.clientOrderId != clientOrderId ||
+      placedIntent.symbol != admission.mandate.symbol) {
+    throw const FormatException('managed order provenance is invalid');
+  }
+
+  final canonicalCancellation = jsonEncode(<String, dynamic>{
+    'order_id': order.orderId,
+    'client_order_id': clientOrderId,
+    'symbol': admission.mandate.symbol,
+    'placement_operation_id': placementOperationId,
+  });
+  var operation = await context.effects.prepare(
+    operationId: effectOperationId,
+    pluginId: bingxFuturesTradingPluginId,
+    providerId: BingxFuturesExternalEffectAdapter.providerId,
+    accountBindingId: context.accountBinding,
+    effectKind: BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind,
+    canonicalPayloadJson: canonicalCancellation,
+  );
+  if (operation.state == ExternalEffectState.prepared) {
+    operation = await context.effects.approve(
+      pluginId: bingxFuturesTradingPluginId,
+      operationId: effectOperationId,
+      approvalEvidenceHashHex: admission.commitmentHashHex,
+    );
+  }
+  if (operation.state == ExternalEffectState.approved) {
+    operation = await context.effects.enqueue(
+      pluginId: bingxFuturesTradingPluginId,
+      operationId: effectOperationId,
+    );
+  }
+  operation = await context.effects.process(
+    pluginId: bingxFuturesTradingPluginId,
+    operationId: effectOperationId,
+  );
+  return _managedOrderCancellationEvidence(operation);
+}
+
 bool _claimsSameExactOrder({
   required ExternalEffectOperation operation,
   required Map<String, dynamic> normalizedOrder,
@@ -511,7 +647,10 @@ Future<String> reconcileAuthorizedExactOrder({
   if (operation.attemptCount == 0) {
     return _noEffectRecoveryEvidence(effectOperationId, 'not_delivered');
   }
-  return _exactOrderEvidence(operation, admission.mandate.testOrder);
+  return operation.effectKind ==
+          BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind
+      ? _managedOrderCancellationEvidence(operation)
+      : _exactOrderEvidence(operation, admission.mandate.testOrder);
 }
 
 String _noEffectRecoveryEvidence(String operationId, String state) =>
@@ -572,6 +711,19 @@ String _exactOrderEvidence(ExternalEffectOperation operation, bool testOrder) =>
           operation.providerReferenceId ?? operation.receipt?.providerReceiptId,
       'receipt_evidence_hash_hex': operation.receipt?.evidenceHashHex,
       'test_order': testOrder,
+    });
+
+String _managedOrderCancellationEvidence(ExternalEffectOperation operation) =>
+    jsonEncode(<String, dynamic>{
+      'contract_version':
+          'hivra-trading-managed-order-cancellation-evidence-v1',
+      'operation_id': operation.operationId,
+      'state': operation.state.wireName,
+      'attempt_count': operation.attemptCount,
+      'provider_reference_id':
+          operation.providerReferenceId ?? operation.receipt?.providerReceiptId,
+      'receipt_evidence_hash_hex': operation.receipt?.evidenceHashHex,
+      'effect': true,
     });
 
 Map<String, String> _parseExactOrderArgs(List<String> args) {

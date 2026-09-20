@@ -2518,6 +2518,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
 class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
   static const String providerId = 'bingx-futures';
   static const String exactOrderEffectKind = 'place-exact-order';
+  static const String cancelExactOrderEffectKind = 'cancel-exact-order';
 
   final BingxFuturesExchangeService _exchange;
   final BingxFuturesApiCredentials _credentials;
@@ -2538,7 +2539,32 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
   Future<ExternalEffectAdapterResult> deliver(
     ExternalEffectAdapterRequest request,
   ) async {
-    final exactOrder = _parseRequest(request);
+    if (request.effectKind == cancelExactOrderEffectKind) {
+      final cancellation = _parseCancellationRequest(request);
+      final result = await _exchange.cancelOrder(
+        credentials: _credentials,
+        symbol: cancellation.symbol,
+        orderId: cancellation.orderId,
+      );
+      if (result.isSuccess) {
+        return _cancelSucceeded(
+          request,
+          cancellation,
+          providerReferenceId: result.canceledOrderId ?? cancellation.orderId,
+          exchangeCode: result.exchangeCode,
+          signedPayloadHashHex: result.signedPayloadHashHex,
+        );
+      }
+      return _failedDelivery(
+        httpStatusCode: result.httpStatusCode,
+        exchangeCode: result.exchangeCode,
+        exchangeMessage: result.exchangeMessage,
+        providerReferenceId: result.canceledOrderId,
+        effectLabel: 'exact order cancellation',
+      );
+    }
+
+    final exactOrder = _parseExactOrderRequest(request);
     final result = await _exchange.placeOrder(
       credentials: _credentials,
       intent: exactOrder.intent,
@@ -2554,39 +2580,12 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
         signedPayloadHashHex: result.signedPayloadHashHex,
       );
     }
-    final normalizedExchangeCode = result.exchangeCode.trim().toLowerCase();
-    final providerClaimsSuccess = const <String>{
-      '0',
-      'ok',
-    }.contains(normalizedExchangeCode);
-    final retryClass = bingxExchangeExecutionRetryClass(
+    return _failedDelivery(
       httpStatusCode: result.httpStatusCode,
       exchangeCode: result.exchangeCode,
       exchangeMessage: result.exchangeMessage,
-    );
-    final explicitHttpRejection =
-        result.httpStatusCode >= 400 &&
-        result.httpStatusCode < 500 &&
-        result.httpStatusCode != 408 &&
-        result.httpStatusCode != 429;
-    if (explicitHttpRejection ||
-        (!providerClaimsSuccess &&
-            retryClass == BingxExecutionRetryClass.nonRetryable)) {
-      return ExternalEffectAdapterResult(
-        status: ExternalEffectAdapterStatus.terminalFailure,
-        errorCode: 'provider_rejected',
-        errorMessage: 'BingX rejected the exact order (${result.exchangeCode})',
-      );
-    }
-    return ExternalEffectAdapterResult(
-      status: ExternalEffectAdapterStatus.unresolved,
-      errorCode: 'provider_outcome_ambiguous',
-      errorMessage:
-          providerClaimsSuccess
-              ? 'BingX success response lacked an exact order reference'
-              : 'BingX order outcome requires reconciliation '
-                  '(${result.exchangeCode})',
       providerReferenceId: result.orderId,
+      effectLabel: 'exact order',
     );
   }
 
@@ -2594,7 +2593,32 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
   Future<ExternalEffectAdapterResult> reconcile(
     ExternalEffectAdapterRequest request,
   ) async {
-    final exactOrder = _parseRequest(request);
+    if (request.effectKind == cancelExactOrderEffectKind) {
+      final cancellation = _parseCancellationRequest(request);
+      final result = await _exchange.getOrder(
+        credentials: _credentials,
+        symbol: cancellation.symbol,
+        orderId: cancellation.orderId,
+      );
+      final status = result.order?.status.trim().toUpperCase();
+      if (result.isSuccess && (status == 'CANCELED' || status == 'CANCELLED')) {
+        return _cancelSucceeded(
+          request,
+          cancellation,
+          providerReferenceId: cancellation.orderId,
+          exchangeCode: result.exchangeCode,
+          signedPayloadHashHex: result.signedPayloadHashHex,
+        );
+      }
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.unresolved,
+        errorCode: 'cancellation_not_confirmed',
+        errorMessage:
+            'The exact order cancellation is not yet confirmed by reconciliation',
+      );
+    }
+
+    final exactOrder = _parseExactOrderRequest(request);
     if (exactOrder.testOrder) {
       return const ExternalEffectAdapterResult(
         status: ExternalEffectAdapterStatus.unresolved,
@@ -2639,7 +2663,7 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
     errorMessage: 'BingX exact orders do not use interactive provider actions',
   );
 
-  ({BingxFuturesIntentPayload intent, bool testOrder}) _parseRequest(
+  ({BingxFuturesIntentPayload intent, bool testOrder}) _parseExactOrderRequest(
     ExternalEffectAdapterRequest request,
   ) {
     request.validate();
@@ -2664,6 +2688,99 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
     return (intent: intent, testOrder: decoded['test_order']! as bool);
   }
 
+  ({
+    String orderId,
+    String clientOrderId,
+    String symbol,
+    String placementOperationId,
+  })
+  _parseCancellationRequest(ExternalEffectAdapterRequest request) {
+    request.validate();
+    if (request.providerId != providerId ||
+        request.effectKind != cancelExactOrderEffectKind ||
+        request.accountBindingId != _accountBindingId) {
+      throw const FormatException('BingX cancellation binding mismatch');
+    }
+    final decoded = jsonDecode(request.canonicalPayloadJson);
+    const keys = <String>{
+      'order_id',
+      'client_order_id',
+      'symbol',
+      'placement_operation_id',
+    };
+    if (decoded is! Map<String, dynamic> ||
+        decoded.keys.toSet().difference(keys).isNotEmpty ||
+        keys.difference(decoded.keys.toSet()).isNotEmpty ||
+        jsonEncode(decoded) != request.canonicalPayloadJson) {
+      throw const FormatException('BingX cancellation payload is invalid');
+    }
+    final orderId = decoded['order_id']?.toString().trim() ?? '';
+    final clientOrderId = decoded['client_order_id']?.toString().trim() ?? '';
+    final symbol = decoded['symbol']?.toString().trim().toUpperCase() ?? '';
+    final placementOperationId =
+        decoded['placement_operation_id']?.toString().trim().toLowerCase() ??
+        '';
+    if (orderId.isEmpty ||
+        clientOrderId.isEmpty ||
+        symbol.isEmpty ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(placementOperationId)) {
+      throw const FormatException('BingX cancellation payload is invalid');
+    }
+    return (
+      orderId: orderId,
+      clientOrderId: clientOrderId,
+      symbol: symbol,
+      placementOperationId: placementOperationId,
+    );
+  }
+
+  ExternalEffectAdapterResult _failedDelivery({
+    required int httpStatusCode,
+    required String exchangeCode,
+    required String exchangeMessage,
+    required String? providerReferenceId,
+    required String effectLabel,
+  }) {
+    final normalizedExchangeCode = exchangeCode.trim().toLowerCase();
+    final providerClaimsSuccess = const <String>{
+      '0',
+      'ok',
+    }.contains(normalizedExchangeCode);
+    final retryClass = bingxExchangeExecutionRetryClass(
+      httpStatusCode: httpStatusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+    );
+    final explicitHttpRejection =
+        httpStatusCode >= 400 &&
+        httpStatusCode < 500 &&
+        httpStatusCode != 408 &&
+        httpStatusCode != 429;
+    if (explicitHttpRejection ||
+        (!providerClaimsSuccess &&
+            retryClass == BingxExecutionRetryClass.nonRetryable)) {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        errorCode: 'provider_rejected',
+        errorMessage: 'BingX rejected the $effectLabel ($exchangeCode)',
+      );
+    }
+    return ExternalEffectAdapterResult(
+      status: ExternalEffectAdapterStatus.unresolved,
+      errorCode: 'provider_outcome_ambiguous',
+      errorMessage:
+          providerClaimsSuccess
+              ? effectLabel == 'exact order'
+                  ? 'BingX success response lacked an exact order reference'
+                  : 'BingX success response lacked an exact cancellation reference'
+              : effectLabel == 'exact order'
+              ? 'BingX order outcome requires reconciliation ($exchangeCode)'
+              : 'BingX cancellation outcome requires reconciliation '
+                  '($exchangeCode)',
+      providerReferenceId: providerReferenceId,
+    );
+  }
+
   ExternalEffectAdapterResult _succeeded(
     ExternalEffectAdapterRequest request,
     ({BingxFuturesIntentPayload intent, bool testOrder}) exactOrder, {
@@ -2682,6 +2799,50 @@ class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
                   'client_order_id': exactOrder.intent.clientOrderId,
                   'symbol': exactOrder.intent.symbol,
                   'test_order': exactOrder.testOrder,
+                  'exchange_code': exchangeCode,
+                  'signed_payload_hash_hex': signedPayloadHashHex,
+                }),
+              ),
+            )
+            .toString();
+    return ExternalEffectAdapterResult(
+      status: ExternalEffectAdapterStatus.succeeded,
+      providerReferenceId: providerReferenceId,
+      receipt: ExternalEffectReceipt(
+        operationId: request.operationId,
+        providerId: providerId,
+        providerReceiptId: providerReferenceId,
+        evidenceHashHex: evidenceHashHex,
+        receivedAtUtc: _clock().toUtc().toIso8601String(),
+      ),
+    );
+  }
+
+  ExternalEffectAdapterResult _cancelSucceeded(
+    ExternalEffectAdapterRequest request,
+    ({
+      String orderId,
+      String clientOrderId,
+      String symbol,
+      String placementOperationId,
+    })
+    cancellation, {
+    required String providerReferenceId,
+    required String exchangeCode,
+    required String signedPayloadHashHex,
+  }) {
+    final evidenceHashHex =
+        sha256
+            .convert(
+              utf8.encode(
+                jsonEncode(<String, dynamic>{
+                  'operation_id': request.operationId,
+                  'provider_id': providerId,
+                  'provider_reference_id': providerReferenceId,
+                  'order_id': cancellation.orderId,
+                  'client_order_id': cancellation.clientOrderId,
+                  'symbol': cancellation.symbol,
+                  'placement_operation_id': cancellation.placementOperationId,
                   'exchange_code': exchangeCode,
                   'signed_payload_hash_hex': signedPayloadHashHex,
                 }),

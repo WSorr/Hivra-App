@@ -261,7 +261,9 @@ void main() {
             signCommitment: (_) => '8' * 128,
           )!;
       final revocation = BingxFuturesRemoteSessionRevocation.issue(
-        session: session,
+        targetSessionOperationId: session.operationId,
+        runnerKeyId: session.runnerKeyId,
+        capsuleRootHex: session.mandate.capsuleRootHex,
         revokedAtUtc: fixture.now.add(const Duration(minutes: 1)),
         signCommitment: (_) => '9' * 128,
       );
@@ -313,18 +315,9 @@ void main() {
       }
       expect(
         BingxFuturesRemoteSessionRevocation.issue(
-          session:
-              BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
-                mandate: fixture.mandate,
-                runnerKeyId: '7' * 64,
-                strategyPolicy:
-                    BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
-                      stopLossPercent: 5,
-                      minimumRiskReward: 2,
-                      includeOpenOrders: false,
-                    ),
-                signCommitment: (_) => '8' * 128,
-              )!,
+          targetSessionOperationId: 'invalid',
+          runnerKeyId: session.runnerKeyId,
+          capsuleRootHex: session.mandate.capsuleRootHex,
           revokedAtUtc: fixture.now,
           signCommitment: (_) => '9' * 128,
         ),

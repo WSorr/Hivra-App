@@ -1079,15 +1079,16 @@ class BingxFuturesRemoteSessionRevocation {
   });
 
   static BingxFuturesRemoteSessionRevocation? issue({
-    required BingxFuturesRemoteMandateAdmission session,
+    required String targetSessionOperationId,
+    required String runnerKeyId,
+    required String capsuleRootHex,
     required DateTime revokedAtUtc,
     required String? Function(String commitmentHashHex) signCommitment,
   }) {
-    if (!session.isDeterministicSession) return null;
     final semantic = _normalizeSemantic(
-      targetSessionOperationId: session.operationId,
-      runnerKeyId: session.runnerKeyId,
-      capsuleRootHex: session.mandate.capsuleRootHex,
+      targetSessionOperationId: targetSessionOperationId,
+      runnerKeyId: runnerKeyId,
+      capsuleRootHex: capsuleRootHex,
       revokedAtUtc: revokedAtUtc.toUtc().toIso8601String(),
     );
     if (semantic == null) return null;

@@ -17,6 +17,7 @@ import '../tool/trading_remote_exact_order.dart'
         completedSessionEffectsMode,
         exportCompletedDeterministicSessionEffects,
         reconcileAuthorizedExactOrder,
+        runAuthorizedManagedOrderCancellation,
         runAuthorizedExactOrder;
 
 void main() {
@@ -346,7 +347,7 @@ void main() {
                     'data': <String, dynamic>{
                       'orders': <Map<String, dynamic>>[
                         <String, dynamic>{
-                          'orderId': 'first-order',
+                          'orderId': 'live-order-1',
                           'clientOrderId': activeClientOrderId,
                           'symbol': 'BTC-USDT',
                           'side': 'BUY',
@@ -401,6 +402,346 @@ void main() {
     expect(second['reason_code'], 'managed_order_active');
     expect(posts, 1);
   });
+
+  test(
+    'fresh liquidity event cancels the managed order before next placement',
+    () async {
+      final first = await _fixture(
+        sessionCycleIndex: 0,
+        testOrder: false,
+        maxEffects: 2,
+        liquidityEventId: '4' * 64,
+      );
+      final harness = const BingxFuturesDeterministicReplayHarnessService();
+      final firstEvidence = harness.parseShadowEvidence(
+        await File(first.options['market-evidence-file']!).readAsBytes(),
+      );
+      final second = await _fixture(
+        sessionCycleIndex: 1,
+        testOrder: false,
+        maxEffects: 2,
+        liquidityEventId: '5' * 64,
+        evidenceSequence: 2,
+        previousEvidenceHash: firstEvidence.evidenceHashHex,
+      );
+      final secondEvidence = harness.parseShadowEvidence(
+        await File(second.options['market-evidence-file']!).readAsBytes(),
+      );
+      final third = await _fixture(
+        sessionCycleIndex: 2,
+        testOrder: false,
+        maxEffects: 2,
+        liquidityEventId: '5' * 64,
+        evidenceSequence: 3,
+        previousEvidenceHash: secondEvidence.evidenceHashHex,
+      );
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+      addTearDown(third.dispose);
+
+      var active = false;
+      var activeOrderId = '';
+      String? activeClientOrderId;
+      var posts = 0;
+      var deletes = 0;
+      Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+        if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+          return BingxHttpResponse(
+            statusCode: 200,
+            body: jsonEncode(<String, dynamic>{
+              'code': 0,
+              'msg': 'ok',
+              'data': <String, dynamic>{
+                'orders':
+                    active
+                        ? <Map<String, dynamic>>[
+                          <String, dynamic>{
+                            'orderId': activeOrderId,
+                            'clientOrderId': activeClientOrderId,
+                            'symbol': 'BTC-USDT',
+                            'side': 'BUY',
+                            'positionSide': 'LONG',
+                            'type': 'TRIGGER_LIMIT',
+                            'status': 'NEW',
+                            'price': '100.5',
+                            'stopPrice': '101',
+                            'origQty': '0.01',
+                            'executedQty': '0',
+                            'time': 1,
+                          },
+                        ]
+                        : <Map<String, dynamic>>[],
+              },
+            }),
+          );
+        }
+        if (request.uri.path == '/openApi/swap/v2/trade/order' &&
+            request.method == 'DELETE') {
+          deletes += 1;
+          active = false;
+          return BingxHttpResponse(
+            statusCode: 200,
+            body: jsonEncode(<String, dynamic>{
+              'code': 0,
+              'msg': 'success',
+              'data': <String, dynamic>{
+                'order': <String, dynamic>{'orderID': activeOrderId},
+              },
+            }),
+          );
+        }
+        if (request.uri.path == '/openApi/swap/v2/trade/order' &&
+            request.method == 'POST') {
+          posts += 1;
+          activeOrderId = 'live-order-$posts';
+          activeClientOrderId =
+              Uri.splitQueryString(request.body)['clientOrderId'];
+          active = true;
+          return BingxHttpResponse(
+            statusCode: 200,
+            body: jsonEncode(<String, dynamic>{
+              'code': 0,
+              'msg': 'success',
+              'data': <String, dynamic>{
+                'order': <String, dynamic>{'orderID': activeOrderId},
+              },
+            }),
+          );
+        }
+        return _providerResponse(request);
+      }
+
+      final placed = jsonDecode(
+        await runOneDeterministicOrder(
+          options: first.options,
+          runnerSeedBytes: first.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+          requestSender: sender,
+          nowUtc: () => first.now,
+        ),
+      );
+      final cancelled = jsonDecode(
+        await runOneDeterministicOrder(
+          options: <String, String>{
+            ...first.options,
+            'session-cycle-index': '1',
+            'market-evidence-file': second.options['market-evidence-file']!,
+            'last-accepted-sequence': '1',
+            'last-accepted-evidence-hash': firstEvidence.evidenceHashHex,
+          },
+          runnerSeedBytes: first.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+          requestSender: sender,
+          nowUtc: () => first.now,
+        ),
+      );
+      expect(placed['state'], 'succeeded');
+      expect(cancelled['state'], 'succeeded');
+      expect(
+        cancelled['contract_version'],
+        'hivra-trading-managed-order-cancellation-evidence-v1',
+      );
+      expect(posts, 1);
+      expect(deletes, 1);
+      expect(active, isFalse);
+
+      final replaced = jsonDecode(
+        await runOneDeterministicOrder(
+          options: <String, String>{
+            ...first.options,
+            'session-cycle-index': '2',
+            'market-evidence-file': third.options['market-evidence-file']!,
+            'last-accepted-sequence': '2',
+            'last-accepted-evidence-hash': secondEvidence.evidenceHashHex,
+          },
+          runnerSeedBytes: first.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+          requestSender: sender,
+          nowUtc: () => first.now,
+        ),
+      );
+      expect(replaced['state'], 'succeeded');
+      expect(posts, 2);
+      expect(deletes, 1);
+      expect(active, isTrue);
+      expect(activeClientOrderId, 'hivra-${'5' * 32}');
+    },
+  );
+
+  test(
+    'ambiguous managed cancellation reconciles without a second DELETE',
+    () async {
+      final first = await _fixture(
+        sessionCycleIndex: 0,
+        testOrder: false,
+        maxEffects: 2,
+        liquidityEventId: '6' * 64,
+      );
+      final harness = const BingxFuturesDeterministicReplayHarnessService();
+      final firstEvidence = harness.parseShadowEvidence(
+        await File(first.options['market-evidence-file']!).readAsBytes(),
+      );
+      final second = await _fixture(
+        sessionCycleIndex: 1,
+        testOrder: false,
+        maxEffects: 2,
+        liquidityEventId: '7' * 64,
+        evidenceSequence: 2,
+        previousEvidenceHash: firstEvidence.evidenceHashHex,
+      );
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+
+      var active = false;
+      var clientOrderId = '';
+      var deletes = 0;
+      Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+        if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+          return BingxHttpResponse(
+            statusCode: 200,
+            body: jsonEncode(<String, dynamic>{
+              'code': 0,
+              'msg': 'ok',
+              'data': <String, dynamic>{
+                'orders':
+                    active
+                        ? <Map<String, dynamic>>[
+                          <String, dynamic>{
+                            'orderId': 'accepted-order',
+                            'clientOrderId': clientOrderId,
+                            'symbol': 'BTC-USDT',
+                            'side': 'BUY',
+                            'positionSide': 'LONG',
+                            'type': 'TRIGGER_LIMIT',
+                            'status': 'NEW',
+                            'price': '100.5',
+                            'stopPrice': '101',
+                            'origQty': '0.01',
+                            'executedQty': '0',
+                            'time': 1,
+                          },
+                        ]
+                        : <Map<String, dynamic>>[],
+              },
+            }),
+          );
+        }
+        if (request.uri.path == '/openApi/swap/v2/trade/order' &&
+            request.method == 'POST') {
+          clientOrderId = Uri.splitQueryString(request.body)['clientOrderId']!;
+          active = true;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"success","data":{"order":{"orderID":"accepted-order"}}}',
+          );
+        }
+        if (request.uri.path == '/openApi/swap/v2/trade/order' &&
+            request.method == 'DELETE') {
+          deletes += 1;
+          active = false;
+          throw TimeoutException('response lost after cancellation');
+        }
+        return _providerResponse(request);
+      }
+
+      final placed = jsonDecode(
+        await runOneDeterministicOrder(
+          options: first.options,
+          runnerSeedBytes: first.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+          requestSender: sender,
+          nowUtc: () => first.now,
+        ),
+      );
+      final unresolved = jsonDecode(
+        await runOneDeterministicOrder(
+          options: <String, String>{
+            ...first.options,
+            'session-cycle-index': '1',
+            'market-evidence-file': second.options['market-evidence-file']!,
+            'last-accepted-sequence': '1',
+            'last-accepted-evidence-hash': firstEvidence.evidenceHashHex,
+          },
+          runnerSeedBytes: first.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+          requestSender: sender,
+          nowUtc: () => first.now,
+        ),
+      );
+      final recoveryRequests = <BingxHttpRequest>[];
+      final recovered = jsonDecode(
+        await recoverOneDeterministicOrder(
+          options: <String, String>{
+            'mode': deterministicOrderRecoveryMode,
+            'runner-seed-file': first.options['runner-seed-file']!,
+            'deterministic-admission-file':
+                first.options['deterministic-admission-file']!,
+            'deterministic-credential-file':
+                first.options['deterministic-credential-file']!,
+            'deterministic-state-home':
+                first.options['deterministic-state-home']!,
+            'session-cycle-index': '1',
+          },
+          runnerSeedBytes: first.runnerSeed,
+          reconcileExactOrder: reconcileAuthorizedExactOrder,
+          requestSender: (request) async {
+            recoveryRequests.add(request);
+            if (request.method == 'DELETE') {
+              throw StateError('recovery attempted a second cancellation');
+            }
+            if (request.uri.path == '/openApi/swap/v2/trade/order' &&
+                request.method == 'GET') {
+              return BingxHttpResponse(
+                statusCode: 200,
+                body: jsonEncode(<String, dynamic>{
+                  'code': 0,
+                  'msg': 'success',
+                  'data': <String, dynamic>{
+                    'order': <String, dynamic>{
+                      'orderId': 'accepted-order',
+                      'clientOrderId': clientOrderId,
+                      'symbol': 'BTC-USDT',
+                      'side': 'BUY',
+                      'positionSide': 'LONG',
+                      'type': 'TRIGGER_LIMIT',
+                      'status': 'CANCELED',
+                      'price': '100.5',
+                      'stopPrice': '101',
+                      'origQty': '0.01',
+                      'executedQty': '0',
+                      'time': 1,
+                    },
+                  },
+                }),
+              );
+            }
+            return _providerResponse(request);
+          },
+          nowUtc: () => first.now.add(const Duration(minutes: 1)),
+        ),
+      );
+
+      expect(placed['state'], 'succeeded');
+      expect(unresolved['state'], 'unresolved');
+      expect(recovered['state'], 'succeeded');
+      expect(recovered['operation_id'], unresolved['operation_id']);
+      expect(deletes, 1);
+      expect(
+        recoveryRequests.where((request) => request.method == 'DELETE'),
+        isEmpty,
+      );
+      expect(
+        recoveryRequests.where((request) => request.method == 'GET'),
+        hasLength(1),
+      );
+    },
+  );
 
   test('unavailable open orders blocks the session before POST', () async {
     final fixture = await _fixture(sessionCycleIndex: 0, testOrder: false);
@@ -927,6 +1268,7 @@ _fixture({
   DateTime? evidenceAtUtc,
   int evidenceSequence = 1,
   String previousEvidenceHash = _zeroHash,
+  String? liquidityEventId,
 }) async {
   if (legacySession && sessionCycleIndex == null) {
     throw ArgumentError('legacySession requires a deterministic session');
@@ -1083,7 +1425,7 @@ _fixture({
       'anchor_source': 'micro_sweep_reclaim',
       'anchor_executable': true,
       'anchor_lifecycle': 'reclaimed',
-      'liquidity_event_id': '4' * 64,
+      'liquidity_event_id': liquidityEventId ?? '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:50:00Z',
       'latest_closed_micro_bar_at_utc': '2026-08-22T11:55:00Z',
     },

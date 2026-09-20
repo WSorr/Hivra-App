@@ -395,7 +395,15 @@ class BingxFuturesExchangeExecutionUseCaseService {
         session.mandate.accountBindingHashHex != accountBinding ||
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(accountBinding) ||
         (session.mandate.testOrder && operations.isNotEmpty) ||
-        operations.length > session.mandate.maxEffects) {
+        operations
+                .where(
+                  (operation) =>
+                      operation.effectKind ==
+                      BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
+                )
+                .length >
+            session.mandate.maxEffects ||
+        operations.length > session.authorizedUses) {
       throw StateError('Remote completed effect authority is invalid.');
     }
     final cycleOperationIds = <String>{
@@ -415,9 +423,26 @@ class BingxFuturesExchangeExecutionUseCaseService {
     final provenance = <String, BingxManagedOrderProvenance>{
       ...current.managedOrderProvenance,
     };
+    final managedOrderIds = current.managedOrderIds.toSet();
+    final managedOrderSymbols = <String, String>{
+      ...current.managedOrderSymbols,
+    };
+    final claims = <String, BingxLiquidityEventEffectClaim>{
+      ...current.liquidityEventEffectClaims,
+    };
     final importedOperations = <String>{};
     final importedOrders = <String>{};
-    for (final operation in operations) {
+    final orderedOperations = [...operations]..sort((left, right) {
+      final leftCancel =
+          left.effectKind ==
+          BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind;
+      final rightCancel =
+          right.effectKind ==
+          BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind;
+      if (leftCancel != rightCancel) return leftCancel ? 1 : -1;
+      return left.operationId.compareTo(right.operationId);
+    });
+    for (final operation in orderedOperations) {
       operation.validate();
       if (!importedOperations.add(operation.operationId) ||
           operation.ownerCapsuleHex != capsuleRootHex ||
@@ -425,8 +450,10 @@ class BingxFuturesExchangeExecutionUseCaseService {
           operation.providerId !=
               BingxFuturesExternalEffectAdapter.providerId ||
           operation.accountBindingId != accountBinding ||
-          operation.effectKind !=
-              BingxFuturesExternalEffectAdapter.exactOrderEffectKind ||
+          !const <String>{
+            BingxFuturesExternalEffectAdapter.exactOrderEffectKind,
+            BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind,
+          }.contains(operation.effectKind) ||
           operation.approvalEvidenceHashHex != session.operationId ||
           !cycleOperationIds.contains(operation.operationId) ||
           operation.state != ExternalEffectState.succeeded ||
@@ -444,7 +471,57 @@ class BingxFuturesExchangeExecutionUseCaseService {
       }
       final decoded = jsonDecode(operation.canonicalPayloadJson);
       if (decoded is! Map<String, dynamic> ||
-          decoded['test_order'] is! bool ||
+          jsonEncode(decoded) != operation.canonicalPayloadJson) {
+        throw const FormatException(
+          'Remote completed effect payload is invalid.',
+        );
+      }
+      if (operation.effectKind ==
+          BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind) {
+        const cancellationKeys = <String>{
+          'order_id',
+          'client_order_id',
+          'symbol',
+          'placement_operation_id',
+        };
+        final orderId = decoded['order_id']?.toString().trim() ?? '';
+        final clientOrderId =
+            decoded['client_order_id']?.toString().trim() ?? '';
+        final placementOperationId =
+            decoded['placement_operation_id']?.toString().trim() ?? '';
+        final record = provenance[orderId];
+        if (decoded.keys.toSet().difference(cancellationKeys).isNotEmpty ||
+            cancellationKeys.difference(decoded.keys.toSet()).isNotEmpty ||
+            decoded['symbol'] != session.mandate.symbol ||
+            !cycleOperationIds.contains(placementOperationId) ||
+            operation.receipt!.providerReceiptId != orderId ||
+            record == null ||
+            record.externalEffectOperationId != placementOperationId ||
+            record.clientOrderId != clientOrderId) {
+          throw const FormatException(
+            'Remote completed cancellation binding is invalid.',
+          );
+        }
+        final evidenceAtUtc = operation.receipt!.receivedAtUtc;
+        provenance[orderId] = record.withLifecycle(
+          status: BingxManagedOrderLifecycleStatus.cancelled,
+          evidenceAtUtc: evidenceAtUtc,
+          diagnostic: 'remote_managed_order_cancelled',
+        );
+        managedOrderIds.remove(orderId);
+        managedOrderSymbols.remove(orderId);
+        for (final entry in claims.entries.toList(growable: false)) {
+          if (entry.value.orderId == orderId) {
+            claims[entry.key] = entry.value.withLifecycle(
+              lifecycleStatus: BingxManagedOrderLifecycleStatus.cancelled,
+              evidenceAtUtc: evidenceAtUtc,
+              diagnostic: 'remote_managed_order_cancelled',
+            );
+          }
+        }
+        continue;
+      }
+      if (decoded['test_order'] is! bool ||
           decoded['test_order'] != session.mandate.testOrder) {
         throw const FormatException(
           'Remote completed effect payload is invalid.',
@@ -512,12 +589,18 @@ class BingxFuturesExchangeExecutionUseCaseService {
     }
     final next = BingxFuturesOrderTrackingState(
       trackedSymbol: current.trackedSymbol,
-      trackedOrderId: current.trackedOrderId,
-      managedOrderIds: current.managedOrderIds,
-      managedOrderSymbols: current.managedOrderSymbols,
+      trackedOrderId:
+          managedOrderIds.contains(current.trackedOrderId)
+              ? current.trackedOrderId
+              : null,
+      managedOrderIds: managedOrderIds.toList(growable: false),
+      managedOrderSymbols: Map<String, String>.unmodifiable(
+        managedOrderSymbols,
+      ),
       managedOrderProvenance:
           Map<String, BingxManagedOrderProvenance>.unmodifiable(provenance),
-      liquidityEventEffectClaims: current.liquidityEventEffectClaims,
+      liquidityEventEffectClaims:
+          Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
       droneEnabled: current.droneEnabled,
       tradingMandate: current.tradingMandate,
       stopLossPercent: current.stopLossPercent,

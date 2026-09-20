@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-17
+Status date: 2026-09-20
 
 ## Current State
 
@@ -18,14 +18,19 @@ Status date: 2026-09-17
 - Moltbook Assisted publication is release-proven; Bounded autonomous operation
   is not reference-grade.
 - Trading reuses one execution use case, effect journal, order-tracking store,
-  execution queue, revalidation service, and replacement service. `test20`
+  and execution queue. `test20`
   proves packaged risk rejection and macOS reconciliation without a duplicate
-  effect. Opening the workspace restores the verified retained VPS mandate and
-  projects its exact market, mode, and effect budget before remote secrets are
-  unlocked. Capsule-managed VPS onboarding requires no Git or terminal work.
+  effect. Opening the workspace reconciles the current VPS session state first;
+  locally retained signed evidence may enrich only that exact server-reported
+  session and cannot define operational authority. Capsule-managed VPS
+  onboarding requires no Git or terminal work.
   A conflicting external order now pauses the Runner after one retained check
-  instead of exhausting the signed session; revalidation and replacement of a
-  Runner-managed pending order remain incomplete.
+  instead of exhausting the signed session. Current source recomputes fresh
+  entry authority from confirmed 5m sweep/reclaim or untouched liquidity-void
+  zones; 4h/1d/1w pivots are targets and context only. A stale Runner-managed
+  order is canceled through the existing effect journal, and a replacement may
+  be placed only by the next cycle. Packaged and live VPS evidence for this
+  lifecycle remains incomplete.
 - Capsule-scoped credential stores remain authoritative. AI unlock is
   process-scoped.
 - The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager
@@ -68,11 +73,18 @@ without another provider effect.
 Pending orders stay on the existing path:
 
 - `BingxFuturesExecutionQueueService`: pending tracking and TTL;
-- `BingxFuturesOrderRevalidationService`: keep or cancel from current market;
-- `BingxFuturesOrderReplacementService`: fresh same-side replacement through
-  the existing execution use case;
-- existing tracking store and effect journal: durable state, receipt,
-  reconciliation, and duplicate suppression.
+- the VPS Runner's retained signed cycle: bounded managed-order revalidation
+  and cancellation, never a local UI refresh effect;
+- the existing tracking store and effect journal: durable state, receipt,
+  reconciliation, and duplicate suppression. `Check Open Orders` only reads
+  provider state and reconciles local evidence.
+
+A session with a one-effect budget stops after its first exchange request.
+Its provider receipt does not prove the order is still open, and a stopped
+Runner does not monitor or manage it. A new signed session cannot automatically
+adopt an earlier session's open order; it pauses on that ownership conflict.
+Continued VPS trading requires explicit authorization after the existing order
+is resolved. No renewal or ownership transfer is inferred.
 
 An order not owned by the signed Runner session is never canceled or replaced.
 The Runner records the conflict once, persists an operator hold in its bounded

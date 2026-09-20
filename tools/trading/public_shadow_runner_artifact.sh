@@ -850,7 +850,8 @@ if (
 ):
     raise SystemExit("deterministic session advance refused stale state")
 effect = outcome.startswith("effect:")
-if not effect and not outcome.startswith("blocked:"):
+maintenance = outcome.startswith("maintenance:")
+if not effect and not maintenance and not outcome.startswith("blocked:"):
     raise SystemExit("deterministic session advance received an invalid outcome")
 consumed = value.get("consumed_effects")
 if isinstance(consumed, bool) or not isinstance(consumed, int):
@@ -865,7 +866,12 @@ if next_index == max_cycles:
     next_state = "completed"
 elif consumed == max_effects:
     next_state = "stopped"
-elif outcome.startswith("effect:unresolved:") or outcome.startswith("effect:terminal_failure:"):
+elif (
+    outcome.startswith("effect:unresolved:")
+    or outcome.startswith("effect:terminal_failure:")
+    or outcome.startswith("maintenance:unresolved:")
+    or outcome.startswith("maintenance:terminal_failure:")
+):
     next_state = "stopped"
 elif outcome in (
     "blocked:external_order_active",
@@ -2421,6 +2427,49 @@ PY
     die "session revocation Capsule signature is invalid"
 }
 
+verified_retained_session_revocation() {
+  local verified_mandate="$1"
+  local expected_runner_key_id="$2"
+  local session_operation_id="$3"
+  local verification_work="$4"
+  local retained="$STATE_DIRECTORY/revocations/$session_operation_id.json"
+  if [ ! -e "$retained" ] && [ ! -L "$retained" ]; then
+    echo false
+    return
+  fi
+  [ -f "$retained" ] && [ ! -L "$retained" ] ||
+    die "retained session revocation is not one regular file"
+  mkdir "$verification_work"
+  verify_remote_session_revocation_artifact \
+    "$retained" "$expected_runner_key_id" "$session_operation_id" \
+    "$(cat "$verified_mandate/capsule-root")" "$verification_work"
+  echo true
+}
+
+retain_verified_session_revocation() {
+  local incoming="$1"
+  local retained="$2"
+  local expected_runner_key_id="$3"
+  local session_operation_id="$4"
+  local capsule_root="$5"
+  local verification_work="$6"
+  if [ -e "$retained" ] || [ -L "$retained" ]; then
+    [ -f "$retained" ] && [ ! -L "$retained" ] ||
+      die "retained session revocation is not one regular file"
+    mkdir "$verification_work"
+    verify_remote_session_revocation_artifact \
+      "$retained" "$expected_runner_key_id" \
+      "$session_operation_id" "$capsule_root" "$verification_work"
+    echo retained
+    return
+  fi
+  local pending
+  pending="$(mktemp "$(dirname "$retained")/.revocation.pending.XXXXXX")"
+  install -m 0600 "$incoming" "$pending"
+  mv "$pending" "$retained"
+  echo stored
+}
+
 stop_deterministic_session_state() {
   local state="$1"
   local session_operation_id="$2"
@@ -2459,7 +2508,7 @@ if path.exists() or path.is_symlink():
         isinstance(index, bool) or not isinstance(index, int) or index < 0
         or completed != index
         or isinstance(consumed, bool) or not isinstance(consumed, int) or consumed < 0
-        or state not in ("active", "completed", "stopped")
+        or state not in ("active", "operator_hold", "completed", "stopped")
     ):
         raise SystemExit("session revocation refused invalid state invariant")
     if index == 0:
@@ -2475,7 +2524,7 @@ if path.exists() or path.is_symlink():
         ).hexdigest()
         if not isinstance(last, str) or re.fullmatch(r"[0-9a-f]{64}", last) is None or last != expected_last:
             raise SystemExit("session revocation refused invalid cycle lineage")
-    if value.get("state") == "active":
+    if value.get("state") in ("active", "operator_hold"):
         value["state"] = "stopped"
 else:
     value = {
@@ -2608,9 +2657,18 @@ admit_remote_mandate() {
             "$(cat "$work/retained/session-starts-at")" \
             "$(cat "$work/retained/expires-at")" activate)" ||
             die "mandate admission refused invalid retained session state"
+          local retained_session_revoked
+          retained_session_revoked="$(verified_retained_session_revocation \
+            "$work/retained" "$EXPECTED_RUNNER_KEY_ID" \
+            "$(cat "$work/retained/operation-id")" \
+            "$work/retained-revocation")" ||
+            die "mandate admission rejected retained revocation evidence"
           case "$session_status" in
             terminal:completed:*|terminal:stopped:*) ;;
-            *) die "mandate admission refused rotation before the retained session completed" ;;
+            *)
+              [ "$retained_session_revoked" = true ] ||
+                die "mandate admission refused rotation before the retained session completed"
+              ;;
           esac
         elif [ "$retained_kind" != "one_deterministic_order" ]; then
           die "mandate admission refused a deterministic mandate over another authority kind"
@@ -2696,18 +2754,14 @@ revoke_remote_session() {
   [ "$revocation_count" -le "$DETERMINISTIC_HISTORY_LIMIT" ] ||
     die "session revocation history exceeds its bound"
   local retained="$revocation_dir/$session_operation_id.json"
-  if [ -e "$retained" ] || [ -L "$retained" ]; then
-    [ -f "$retained" ] && [ ! -L "$retained" ] &&
-      cmp -s "$REVOCATION_ARTIFACT" "$retained" ||
-      die "session revocation refused conflicting retained evidence"
-  else
+  if [ ! -e "$retained" ] && [ ! -L "$retained" ]; then
     [ "$revocation_count" -lt "$DETERMINISTIC_HISTORY_LIMIT" ] ||
       die "session revocation history is full"
-    local pending
-    pending="$(mktemp "$revocation_dir/.revocation.pending.XXXXXX")"
-    install -m 0600 "$REVOCATION_ARTIFACT" "$pending"
-    mv "$pending" "$retained"
   fi
+  retain_verified_session_revocation \
+    "$REVOCATION_ARTIFACT" "$retained" "$EXPECTED_RUNNER_KEY_ID" \
+    "$session_operation_id" "$capsule_root" \
+    "$work/retained-revocation" >/dev/null
   local terminal_state
   terminal_state="$(stop_deterministic_session_state \
     "$STATE_DIRECTORY/deterministic-session.v1.json" \
@@ -3160,21 +3214,26 @@ prepared_session_service_status() {
   if [ ! -e "$mandate" ] && [ ! -L "$mandate" ]; then
     printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
       "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
-    echo 'session_state=unavailable'
+    echo 'session_state=absent'
     return
   fi
   local details
   if details="$(
-  local work summary last_cycle outcome operator_hold
+  local work summary last_cycle outcome operator_hold retained_session_id revoked
   work="$(mktemp -d /run/hivra-trading-session-status.XXXXXX)" || exit 1
   trap "rm -rf '$work'" EXIT INT TERM
   mkdir "$work/verified" || exit 1
   verify_remote_mandate_artifact "$mandate" "$runner_key" "$work/verified" || exit 1
   [ "$(cat "$work/verified/operation-kind")" = "bounded_deterministic_session" ] ||
     die "session status requires bounded session authority"
+  retained_session_id="$(cat "$work/verified/operation-id")"
+  revoked="$(verified_retained_session_revocation \
+    "$work/verified" "$runner_key" "$retained_session_id" \
+    "$work/revocation")" ||
+    die "session status rejected retained revocation evidence"
   summary="$(prepare_deterministic_session_cycle \
     "$STATE_DIRECTORY/deterministic-session.v1.json" \
-    "$(cat "$work/verified/operation-id")" \
+    "$retained_session_id" \
     "$(cat "$work/verified/session-max-cycles")" \
     "$(cat "$work/verified/mandate-max-effects")" \
     "$(cat "$work/verified/session-interval-seconds")" \
@@ -3191,14 +3250,23 @@ prepared_session_service_status() {
       die "session status rejected the retained cycle result"
   fi
   operator_hold="none"
-  if [[ "$summary" == session_state=operator_hold* ]]; then
+  if [ "$revoked" = true ]; then
+    local retained_state next_check
+    retained_state="${summary#session_state=}"
+    retained_state="${retained_state%% *}"
+    next_check="${summary#* next_check=}"
+    next_check="${next_check%% *}"
+    summary="${summary/session_state=$retained_state/session_state=stopped}"
+    summary="${summary/next_check=$next_check/next_check=none}"
+  elif [[ "$summary" == session_state=operator_hold* ]]; then
     deterministic_session_outcome_requires_operator_attention "$outcome" ||
       die "session status operator hold does not match retained evidence"
     operator_hold="${outcome#blocked:}"
     summary="${summary/session_state=operator_hold/session_state=active}"
   fi
-  printf '%s operator_hold=%s last_outcome=%s\n' \
-    "${summary% last_cycle=*}" "$operator_hold" "$outcome"
+  printf '%s session_operation_id=%s operator_hold=%s last_outcome=%s\n' \
+    "${summary% last_cycle=*}" "$retained_session_id" \
+    "$operator_hold" "$outcome"
   )"; then
     printf 'session_unit=%s active=%s enabled=%s runner_key_id=%s restart=on-failure restart_sec=30s start_limit=3/10min\n' \
       "$SESSION_UNIT_NAME" "$active" "$enabled" "$runner_key"
@@ -3740,6 +3808,31 @@ elif contract == "hivra-trading-exact-order-evidence-v1":
     if state == "succeeded" and receipt is None:
         raise SystemExit("successful deterministic effect lacks receipt")
     print(f"effect:{state}:test={str(value['test_order']).lower()}")
+elif contract == "hivra-trading-managed-order-cancellation-evidence-v1":
+    expected_keys = [
+        "contract_version", "operation_id", "state", "attempt_count",
+        "provider_reference_id", "receipt_evidence_hash_hex", "effect",
+    ]
+    if list(value) != expected_keys or value.get("operation_id") != expected_operation:
+        raise SystemExit("managed cancellation outcome identity is invalid")
+    state = value.get("state")
+    if state not in ("succeeded", "unresolved", "terminal_failure"):
+        raise SystemExit("managed cancellation outcome state is invalid")
+    if value.get("attempt_count") != 1 or value.get("effect") is not True:
+        raise SystemExit("managed cancellation outcome use bound is invalid")
+    provider = value.get("provider_reference_id")
+    if provider is not None and (
+        not isinstance(provider, str) or not 1 <= len(provider) <= 256
+    ):
+        raise SystemExit("managed cancellation provider reference is invalid")
+    receipt = value.get("receipt_evidence_hash_hex")
+    if receipt is not None and (
+        not isinstance(receipt, str) or re.fullmatch(r"[0-9a-f]{64}", receipt) is None
+    ):
+        raise SystemExit("managed cancellation receipt is invalid")
+    if state == "succeeded" and receipt is None:
+        raise SystemExit("successful managed cancellation lacks receipt")
+    print(f"maintenance:{state}:cancel")
 else:
     raise SystemExit("deterministic cycle outcome version mismatch")
 PY
@@ -3801,7 +3894,7 @@ select_deterministic_recovery_cycle() {
     previous_outcome="$(validate_deterministic_cycle_outcome \
       "$previous_result" "$previous_operation")" || return 1
     case "$previous_outcome" in
-      effect:unresolved:*|effect:terminal_failure:*)
+      effect:unresolved:*|effect:terminal_failure:*|maintenance:unresolved:*|maintenance:terminal_failure:*)
         echo "$previous_index"
         return
         ;;
@@ -4376,7 +4469,7 @@ recover_deterministic_session_once() {
       "$retained_result" "$operation_id")" ||
       die "deterministic recovery retained result is invalid"
     case "$retained_outcome" in
-      effect:unresolved:*|effect:terminal_failure:*) ;;
+      effect:unresolved:*|effect:terminal_failure:*|maintenance:unresolved:*|maintenance:terminal_failure:*) ;;
       *)
         if [[ "$session_status" == active:* ]]; then
           advance_deterministic_session_cycle \
@@ -4451,7 +4544,7 @@ recover_deterministic_session_once() {
     die "deterministic recovery outcome validation failed"
   case "$outcome" in
     no_effect:*) ;;
-    effect:*)
+    effect:*|maintenance:*)
       pending_result="$(mktemp "$result_dir/.result.pending.XXXXXX")"
       install -m 0600 "$work/stdout" "$pending_result"
       mv "$pending_result" "$retained_result"
@@ -5170,6 +5263,7 @@ PY
     verify_remote_mandate_artifact() {
       printf '%s' bounded_deterministic_session > "$3/operation-kind"
       printf '%s' "$session_id" > "$3/operation-id"
+      printf '%064d' 0 > "$3/capsule-root"
       printf '4' > "$3/session-max-cycles"
       printf '1' > "$3/mandate-max-effects"
       printf '60' > "$3/session-interval-seconds"
@@ -5181,8 +5275,24 @@ PY
     status_output="$(prepared_session_service_status "$root")"
     [[ "$status_output" == *session_state=expired*last_outcome=blocked:market_proposal_blocked* ]] ||
       die "self-test lost retained status evidence after expiry"
+    [[ "$status_output" == *session_operation_id="$session_id"* ]] ||
+      die "self-test status did not identify the retained session"
     [ "$(tree_digest "$STATE_DIRECTORY")" = "$status_digest" ] ||
       die "self-test status wrote operational state"
+    mkdir "$STATE_DIRECTORY/revocations"
+    printf '{}\n' > "$STATE_DIRECTORY/revocations/$session_id.json"
+    verify_remote_session_revocation_artifact() { :; }
+    status_digest="$(tree_digest "$STATE_DIRECTORY")"
+    status_output="$(prepared_session_service_status "$root")"
+    [[ "$status_output" == *session_state=stopped*operator_hold=none* ]] ||
+      die "self-test did not project retained revocation as terminal"
+    [[ "$status_output" == *session_operation_id="$session_id"* ]] ||
+      die "self-test terminal status changed the retained session identity"
+    [[ "$status_output" == *next_check=none* ]] ||
+      die "self-test scheduled a check after retained revocation"
+    [ "$(tree_digest "$STATE_DIRECTORY")" = "$status_digest" ] ||
+      die "self-test revocation status wrote operational state"
+    rm -rf "$STATE_DIRECTORY/revocations"
     printf '{}\n' > "$STATE_DIRECTORY/deterministic-results/$session_cycle_0.json"
     status_output="$(prepared_session_service_status "$root" 2>/dev/null)"
     [[ "$status_output" == *runner_key_id=*session_state=unavailable* ]] ||
@@ -5303,6 +5413,11 @@ PY
       "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z")" = \
       "terminal:operator_hold:1:0" ] ||
       die "self-test restarted an operator-held session"
+    local revoked_hold_state="$STATE_DIRECTORY/revoked-operator-hold.json"
+    cp "$hold_state" "$revoked_hold_state"
+    [ "$(stop_deterministic_session_state \
+      "$revoked_hold_state" "$hold_session_id")" = stopped ] ||
+      die "self-test did not stop a revoked operator-held session"
     [ "$(resume_deterministic_session_operator_hold \
       "$hold_state" "$hold_session_id" 4 1)" = \
       "blocked:external_order_active" ] ||
@@ -5532,6 +5647,27 @@ PY
     "effect:succeeded:test=true" ] ||
     die "self-test rejected a canonical deterministic effect outcome"
   printf '%s\n' \
+    "{\"contract_version\":\"hivra-trading-managed-order-cancellation-evidence-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"succeeded\",\"attempt_count\":1,\"provider_reference_id\":\"managed-order\",\"receipt_evidence_hash_hex\":\"$(printf 'cancel-receipt' | sha256_stdin)\",\"effect\":true}" \
+    >"$root/deterministic-maintenance.json"
+  [ "$(validate_deterministic_cycle_outcome \
+    "$root/deterministic-maintenance.json" "$deterministic_operation_id")" = \
+    "maintenance:succeeded:cancel" ] ||
+    die "self-test rejected canonical managed cancellation evidence"
+  local maintenance_state="$root/deterministic-maintenance-state.json"
+  local maintenance_session maintenance_cycle
+  maintenance_session="$(printf 'maintenance-session' | sha256_stdin)"
+  maintenance_cycle="$(derive_deterministic_session_cycle_operation_id \
+    "$maintenance_session" 0)"
+  [ "$(prepare_deterministic_session_cycle \
+    "$maintenance_state" "$maintenance_session" 2 1 60 \
+    "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate)" = \
+    "active:0:0" ] ||
+    die "self-test did not activate maintenance session"
+  [ "$(advance_deterministic_session_cycle \
+    "$maintenance_state" "$maintenance_session" 0 "$maintenance_cycle" \
+    "maintenance:succeeded:cancel" 2 1)" = "active:1:0" ] ||
+    die "self-test charged managed cancellation against placement budget"
+  printf '%s\n' \
     "{\"contract_version\":\"hivra-trading-exact-order-recovery-v1\",\"operation_id\":\"$deterministic_operation_id\",\"state\":\"absent\",\"effect\":false}" \
     >"$root/deterministic-recovery-empty.json"
   [ "$(validate_deterministic_recovery_outcome \
@@ -5566,7 +5702,7 @@ PY
     >/dev/null 2>&1; then
     die "self-test accepted a non-canonical deterministic reason code"
   fi
-  unset deterministic_operation_id deterministic_outcome recovery_store recovery_session recovery_operation
+  unset deterministic_operation_id deterministic_outcome recovery_store recovery_session recovery_operation maintenance_state maintenance_session maintenance_cycle
 
   sed -i.bak 's/^binary_sha256=./binary_sha256=0/' "$artifact/$MANIFEST_NAME"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
@@ -6053,6 +6189,62 @@ artifact = {
     json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
 )
 PY
+  python3 - "$mandate_test" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+original = json.loads((root / "session-revocation.json").read_text())
+revoked = datetime.datetime.fromisoformat(
+    original["revoked_at_utc"].replace("Z", "+00:00")
+) + datetime.timedelta(milliseconds=1)
+semantic = {
+    "contract_version": original["contract_version"],
+    "target_session_operation_id": original["target_session_operation_id"],
+    "runner_key_id": original["runner_key_id"],
+    "capsule_root_hex": original["capsule_root_hex"],
+    "revoked_at_utc": revoked.isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    ),
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-session-revocation:v1\n" +
+    json.dumps(semantic, separators=(",", ":")).encode()
+).hexdigest()
+(root / "repeat-revocation-digest.bin").write_bytes(bytes.fromhex(commitment))
+(root / "repeat-revocation-metadata.json").write_text(json.dumps({
+    "commitment": commitment,
+    "semantic": semantic,
+}, separators=(",", ":")), encoding="utf-8")
+PY
+  openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
+    -in "$mandate_test/repeat-revocation-digest.bin" \
+    -out "$mandate_test/repeat-revocation-signature.bin"
+  python3 - "$mandate_test" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "repeat-revocation-metadata.json").read_text())
+semantic = metadata["semantic"]
+artifact = {
+    "contract_version": semantic["contract_version"],
+    "revocation_id": metadata["commitment"],
+    "target_session_operation_id": semantic["target_session_operation_id"],
+    "runner_key_id": semantic["runner_key_id"],
+    "capsule_root_hex": semantic["capsule_root_hex"],
+    "revoked_at_utc": semantic["revoked_at_utc"],
+    "signature_suite": "ed25519-v1",
+    "signature_hex": (root / "repeat-revocation-signature.bin").read_bytes().hex(),
+}
+(root / "session-revocation-repeat.json").write_text(
+    json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
+)
+PY
   mkdir "$mandate_test/revocation-verified"
   verify_remote_session_revocation_artifact \
     "$mandate_test/session-revocation.json" "$expected_runner" \
@@ -6071,6 +6263,29 @@ PY
     "$mandate_test/revocation-mutated-verified") >/dev/null 2>&1; then
     die "self-test accepted mutated session revocation"
   fi
+  mkdir "$mandate_test/revocation-repeat-verified"
+  verify_remote_session_revocation_artifact \
+    "$mandate_test/session-revocation-repeat.json" "$expected_runner" \
+    "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/revocation-repeat-verified"
+  local retained_revocation_dir="$mandate_test/retained-revocations"
+  local retained_revocation="$retained_revocation_dir/$(cat "$mandate_test/session-verified/operation-id").json"
+  mkdir "$retained_revocation_dir"
+  [ "$(retain_verified_session_revocation \
+    "$mandate_test/session-revocation.json" "$retained_revocation" \
+    "$expected_runner" "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/retained-revocation-first")" = stored ] ||
+    die "self-test did not retain initial session revocation"
+  [ "$(retain_verified_session_revocation \
+    "$mandate_test/session-revocation-repeat.json" "$retained_revocation" \
+    "$expected_runner" "$(cat "$mandate_test/session-verified/operation-id")" \
+    "$(cat "$mandate_test/session-verified/capsule-root")" \
+    "$mandate_test/retained-revocation-repeat")" = retained ] ||
+    die "self-test did not accept repeated semantic session revocation"
+  cmp -s "$mandate_test/session-revocation.json" "$retained_revocation" ||
+    die "self-test replaced initial session revocation evidence"
   local revoked_state="$mandate_test/revoked-session-state.json"
   prepare_deterministic_session_cycle \
     "$revoked_state" "$(cat "$mandate_test/session-verified/operation-id")" \

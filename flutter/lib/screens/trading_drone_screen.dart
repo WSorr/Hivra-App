@@ -9,10 +9,8 @@ import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_live_strategy_models.dart';
 import '../models/bingx_futures_order_sizing_models.dart';
 import '../models/bingx_futures_order_tracking_models.dart';
-import '../models/bingx_futures_order_replacement_models.dart';
 import '../models/bingx_futures_risk_models.dart';
 import '../models/bingx_futures_signal_rank_models.dart';
-import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
 import '../services/trading_drone_module_service.dart';
@@ -85,19 +83,6 @@ void tradingSynchronizeManagedOrderState({
 }
 
 @visibleForTesting
-bool tradingMayMutateManagedOrdersLocally({
-  required bool remoteRunnerConfigured,
-  required bool hasVerifiedRemoteSession,
-  required String? remoteRunnerStatusWire,
-}) {
-  return !tradingRemoteRunnerMayHoldAuthority(
-    configured: remoteRunnerConfigured,
-    hasVerifiedSession: hasVerifiedRemoteSession,
-    statusWire: remoteRunnerStatusWire,
-  );
-}
-
-@visibleForTesting
 bool tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation({
   required bool remoteRunnerConfigured,
   required bool hasVerifiedRemoteSession,
@@ -112,21 +97,6 @@ bool tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation({
     return clientOrderId.startsWith('hivra-') &&
         !managedOrderProvenance.containsKey(order.orderId);
   });
-}
-
-@visibleForTesting
-List<BingxFuturesOpenOrder> tradingOpenOrdersAfterLifecycleChanges({
-  required List<BingxFuturesOpenOrder> providerSnapshot,
-  required Set<String> canceledOrderIds,
-}) {
-  if (canceledOrderIds.isEmpty) {
-    return List<BingxFuturesOpenOrder>.unmodifiable(providerSnapshot);
-  }
-  return List<BingxFuturesOpenOrder>.unmodifiable(
-    providerSnapshot.where(
-      (order) => !canceledOrderIds.contains(order.orderId),
-    ),
-  );
 }
 
 @visibleForTesting
@@ -158,8 +128,8 @@ String? tradingReconciliationNotice(
           .length;
   final activeLabel =
       result.activeCount == 0
-          ? 'No active orders'
-          : '${result.activeCount} active';
+          ? 'No active drone orders'
+          : '${result.activeCount} active drone orders';
   final reviewLabel =
       result.unresolvedCount == 0
           ? 'History verified'
@@ -545,12 +515,6 @@ String tradingSideAfterCycle({
 String tradingZoneSideForOrderSide(String orderSide) =>
     orderSide.trim().toLowerCase() == 'buy' ? 'buyside' : 'sellside';
 
-@visibleForTesting
-String? tradingManagedOrderStructuralSide(String orderSide) {
-  final normalized = orderSide.trim().toLowerCase();
-  return normalized == 'buy' || normalized == 'sell' ? normalized : null;
-}
-
 String tradingZoneSideAfterCycle({
   required String currentZoneSide,
   required bool cyclePrepared,
@@ -632,15 +596,17 @@ bool tradingMandateMaxNotionalMatches({
   required BingxFuturesTradingMandate mandate,
   required String selectedMaxNotional,
 }) {
-  final authorizedMax = num.tryParse(
+  final authorizedMax = double.tryParse(
     mandate.maxOrderNotionalQuoteDecimal.trim(),
   );
-  final selectedMax = num.tryParse(selectedMaxNotional.trim());
+  final selectedMax = double.tryParse(selectedMaxNotional.trim());
   return authorizedMax != null &&
       authorizedMax.isFinite &&
+      authorizedMax > 0 &&
       selectedMax != null &&
       selectedMax.isFinite &&
-      authorizedMax == selectedMax;
+      selectedMax > 0 &&
+      authorizedMax.toStringAsFixed(8) == selectedMax.toStringAsFixed(8);
 }
 
 @visibleForTesting
@@ -754,7 +720,6 @@ class TradingDroneScreen extends StatefulWidget {
 }
 
 class _TradingDroneScreenState extends State<TradingDroneScreen> {
-  static const Duration _hostIntentTimeout = Duration(seconds: 20);
   static const Duration _openOrdersPollInterval = Duration(seconds: 12);
   static const double _zoneNearBps = 15.0;
   static const double _zoneFarBps = 35.0;
@@ -858,7 +823,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   final Map<String, String> _managedOrderSymbols = <String, String>{};
   final Map<String, BingxManagedOrderProvenance> _managedOrderProvenance =
       <String, BingxManagedOrderProvenance>{};
-  int _managedOrderLifecycleRevision = 0;
   Timer? _openOrdersPollTimer;
   String? _trackedOrdersSymbol;
   String? _trackedOrderId;
@@ -970,7 +934,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       updated = true;
     }
     if (updated) {
-      _managedOrderLifecycleRevision += 1;
       unawaited(_persistOpenOrdersTrackingState(source: 'register_order_id'));
     }
   }
@@ -1386,13 +1349,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Future<void> _restoreTradingWorkspaceState() async {
     var remoteRunnerConfigured = true;
     var remoteRunnerProfileUnavailable = false;
-    BingxFuturesRemoteMandateAdmission? remoteRunnerSession;
     try {
       final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
       remoteRunnerConfigured = profiles.isNotEmpty;
-      if (profiles.length == 1) {
-        remoteRunnerSession = await _loadVerifiedRemoteSession(profiles.single);
-      }
     } catch (error) {
       remoteRunnerProfileUnavailable = true;
       await _module.uiLog.log(
@@ -1402,10 +1361,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     if (mounted) {
       _updateState(() {
-        _loadingRemoteRunnerSummary = false;
+        _loadingRemoteRunnerSummary = remoteRunnerConfigured;
         _remoteRunnerConfigured = remoteRunnerConfigured;
         _remoteRunnerStatusWire = null;
-        _remoteRunnerSession = remoteRunnerSession;
+        _remoteRunnerSession = null;
         _remoteRunnerStatusUnavailable = remoteRunnerProfileUnavailable;
       });
     }
@@ -1413,6 +1372,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       remoteRunnerConfigured: remoteRunnerConfigured,
       restoreOpenOrdersTrackingState: _restoreOpenOrdersTrackingState,
     );
+    if (remoteRunnerConfigured && !remoteRunnerProfileUnavailable) {
+      await _refreshRemoteRunnerSummary();
+    }
   }
 
   Future<void> _restoreOpenOrdersTrackingState({
@@ -1574,7 +1536,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     if (tradingRemoteRunnerMayHoldAuthority(
       configured: _remoteRunnerConfigured,
-      hasVerifiedSession: _remoteRunnerSession != null,
       statusWire: _remoteRunnerStatusWire,
     )) {
       await _showSnack(
@@ -1697,7 +1658,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     if (tradingRemoteRunnerMayHoldAuthority(
       configured: _remoteRunnerConfigured,
-      hasVerifiedSession: _remoteRunnerSession != null,
       statusWire: _remoteRunnerStatusWire,
     )) {
       throw StateError(

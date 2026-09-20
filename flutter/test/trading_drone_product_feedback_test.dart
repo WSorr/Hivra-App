@@ -11,6 +11,8 @@ import 'package:hivra_app/screens/trading_drone_screen.dart';
 import 'package:hivra_app/services/bingx_futures_mode_orchestrator_service.dart';
 
 void main() {
+  const remoteSessionId =
+      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
   test('symbol picker prioritizes exact and prefix matches', () {
     expect(
       tradingFilterPerpetualSymbols(const <String>[
@@ -115,50 +117,6 @@ void main() {
     );
   });
 
-  test('active remote authority keeps local order refresh observation-only', () {
-    const running =
-        'active=active enabled=linked session_state=active cycles=2 effects=1 '
-        'last_scheduled_check=2026-09-14T02:00:00Z '
-        'next_check=2026-09-14T02:05:00Z '
-        'last_outcome=effect:succeeded:test=false';
-    const paused =
-        'active=inactive enabled=linked session_state=active cycles=2 effects=1 '
-        'last_scheduled_check=2026-09-14T02:00:00Z '
-        'next_check=2026-09-14T02:05:00Z '
-        'last_outcome=effect:succeeded:test=false';
-    const terminal =
-        'active=inactive enabled=linked session_state=completed cycles=2 effects=1 '
-        'last_scheduled_check=2026-09-14T02:00:00Z '
-        'next_check=none last_outcome=effect:succeeded:test=false';
-
-    for (final status in <String?>[running, paused, null, 'malformed']) {
-      expect(
-        tradingMayMutateManagedOrdersLocally(
-          remoteRunnerConfigured: true,
-          hasVerifiedRemoteSession: true,
-          remoteRunnerStatusWire: status,
-        ),
-        isFalse,
-      );
-    }
-    expect(
-      tradingMayMutateManagedOrdersLocally(
-        remoteRunnerConfigured: true,
-        hasVerifiedRemoteSession: true,
-        remoteRunnerStatusWire: terminal,
-      ),
-      isTrue,
-    );
-    expect(
-      tradingMayMutateManagedOrdersLocally(
-        remoteRunnerConfigured: false,
-        hasVerifiedRemoteSession: false,
-        remoteRunnerStatusWire: null,
-      ),
-      isTrue,
-    );
-  });
-
   test('unknown Runner order restores receipt before reconciliation', () {
     const remoteOrder = BingxFuturesOpenOrder(
       orderId: 'remote-order',
@@ -233,45 +191,6 @@ void main() {
       isFalse,
     );
   });
-
-  test(
-    'successful local cancellation disappears from stale provider snapshot',
-    () {
-      final visible = tradingOpenOrdersAfterLifecycleChanges(
-        providerSnapshot: const <BingxFuturesOpenOrder>[
-          BingxFuturesOpenOrder(
-            orderId: 'managed-canceled',
-            symbol: 'ACH-USDT',
-            side: 'BUY',
-            positionSide: 'BOTH',
-            orderType: 'TRIGGER_LIMIT',
-            status: 'NEW',
-            priceDecimal: '0.004680',
-            triggerPriceDecimal: '0.004685',
-            quantityDecimal: '1696',
-            executedQuantityDecimal: '0',
-            createdAtMs: 1,
-          ),
-          BingxFuturesOpenOrder(
-            orderId: 'manual-open',
-            symbol: 'SOL-USDT',
-            side: 'SELL',
-            positionSide: 'BOTH',
-            orderType: 'LIMIT',
-            status: 'NEW',
-            priceDecimal: '250',
-            triggerPriceDecimal: null,
-            quantityDecimal: '1',
-            executedQuantityDecimal: '0',
-            createdAtMs: 2,
-          ),
-        ],
-        canceledOrderIds: const <String>{'managed-canceled'},
-      );
-
-      expect(visible.map((order) => order.orderId), <String>['manual-open']);
-    },
-  );
 
   test('signal rank input is bounded and keeps ready candidates first', () {
     final candidates = <BingxFuturesSignalRankCandidate>[
@@ -375,7 +294,7 @@ void main() {
       );
       final notice = tradingReconciliationNotice(result, 'capsule-a')!;
       final details = tradingReconciliationDetails(result, 'capsule-a')!;
-      expect(notice, contains('No active orders · 1 needs review'));
+      expect(notice, contains('No active drone orders · 1 needs review'));
       expect(notice, contains('not recreate'));
       expect(notice, isNot(contains('live-client')));
       expect(details, contains('may mean filled'));
@@ -442,7 +361,8 @@ void main() {
   test('paused process does not imply disabled startup', () {
     for (final details in [
       '',
-      ' session_state=active cycles=0 effects=0 '
+      ' session_state=active session_operation_id=$remoteSessionId '
+          'cycles=0 effects=0 '
           'last_scheduled_check=none next_check=2026-09-05T02:00:00Z last_outcome=none',
     ]) {
       final enabled = tradingRemoteRunnerStatusLabel(
@@ -476,7 +396,8 @@ void main() {
 
   test('failed Runner does not present retained authority as execution', () {
     const failed =
-        'active=failed enabled=enabled session_state=active cycles=14 effects=0 '
+        'active=failed enabled=enabled session_state=active '
+        'session_operation_id=$remoteSessionId cycles=14 effects=0 '
         'last_scheduled_check=2026-09-14T08:25:00Z '
         'next_check=2026-09-14T08:30:00Z '
         'last_outcome=blocked:active_order_exists';
@@ -495,7 +416,8 @@ void main() {
 
   test('Runner explains an existing market order as duplicate protection', () {
     const running =
-        'active=active enabled=linked session_state=active cycles=12 effects=0 '
+        'active=active enabled=linked session_state=active '
+        'session_operation_id=$remoteSessionId cycles=12 effects=0 '
         'last_scheduled_check=2026-09-17T12:40:00Z '
         'next_check=2026-09-17T12:45:00Z '
         'last_outcome=blocked:active_order_exists';
@@ -512,7 +434,8 @@ void main() {
 
   test('Runner distinguishes managed and external pending orders', () {
     const prefix =
-        'active=active enabled=linked session_state=active cycles=12 effects=0 '
+        'active=active enabled=linked session_state=active '
+        'session_operation_id=$remoteSessionId cycles=12 effects=0 '
         'last_scheduled_check=2026-09-17T12:40:00Z '
         'next_check=2026-09-17T12:45:00Z last_outcome=';
 
@@ -537,7 +460,8 @@ void main() {
   test('operator-owned order conflict explains automatic Runner pause', () {
     const prefix = 'active=inactive enabled=enabled operator_hold=';
     const suffix =
-        ' session_state=active cycles=13 effects=0 '
+        ' session_state=active session_operation_id=$remoteSessionId '
+        'cycles=13 effects=0 '
         'last_scheduled_check=2026-09-17T12:45:00Z '
         'next_check=none last_outcome=';
 
@@ -561,6 +485,7 @@ void main() {
     const inconsistent =
         'active=inactive enabled=enabled '
         'operator_hold=external_order_active session_state=active '
+        'session_operation_id=$remoteSessionId '
         'cycles=13 effects=0 '
         'last_scheduled_check=2026-09-17T12:45:00Z '
         'next_check=none '
@@ -574,7 +499,8 @@ void main() {
 
   test('Runner actions preserve one retained session lifecycle', () {
     const running =
-        'active=active enabled=linked session_state=active cycles=1 effects=0 '
+        'active=active enabled=linked session_state=active '
+        'session_operation_id=$remoteSessionId cycles=1 effects=0 '
         'last_scheduled_check=2026-09-04T16:50:00+00:00 '
         'next_check=2026-09-04T16:55:00+00:00 '
         'last_outcome=blocked:market_proposal_blocked';
@@ -591,17 +517,11 @@ void main() {
     expect(tradingRemoteRunnerCanResume(running), isFalse);
     expect(tradingRemoteRunnerCanResume(paused), isTrue);
     expect(tradingRemoteRunnerCanPause(paused), isFalse);
-    expect(
-      tradingRemoteRunnerCanStartSession(raw: paused, hasVerifiedSession: true),
-      isFalse,
-    );
-    expect(
-      tradingRemoteRunnerCanStartSession(
-        raw: terminal,
-        hasVerifiedSession: true,
-      ),
-      isTrue,
-    );
+    expect(tradingRemoteRunnerCanRevoke(running), isTrue);
+    expect(tradingRemoteRunnerCanRevoke(paused), isTrue);
+    expect(tradingRemoteRunnerCanRevoke(terminal), isFalse);
+    expect(tradingRemoteRunnerCanStartSession(raw: paused), isFalse);
+    expect(tradingRemoteRunnerCanStartSession(raw: terminal), isTrue);
     final enabledTerminal = terminal.replaceFirst(
       'enabled=linked',
       'enabled=enabled',
@@ -614,17 +534,10 @@ void main() {
       tradingRemoteRunnerStatusLabel(enabledTerminal),
       contains('finished session cannot trade'),
     );
-    expect(
-      tradingRemoteRunnerCanStartSession(
-        raw: enabledTerminal,
-        hasVerifiedSession: true,
-      ),
-      isTrue,
-    );
+    expect(tradingRemoteRunnerCanStartSession(raw: enabledTerminal), isTrue);
     expect(
       tradingRemoteRunnerCanStartSession(
         raw: paused.replaceFirst('enabled=linked', 'enabled=enabled'),
-        hasVerifiedSession: true,
       ),
       isFalse,
     );
@@ -633,23 +546,17 @@ void main() {
     expect(
       tradingRemoteRunnerMayHoldAuthority(
         configured: true,
-        hasVerifiedSession: true,
         statusWire: running,
       ),
       isTrue,
     );
     expect(
-      tradingRemoteRunnerMayHoldAuthority(
-        configured: true,
-        hasVerifiedSession: true,
-        statusWire: paused,
-      ),
+      tradingRemoteRunnerMayHoldAuthority(configured: true, statusWire: paused),
       isTrue,
     );
     expect(
       tradingRemoteRunnerMayHoldAuthority(
         configured: true,
-        hasVerifiedSession: true,
         statusWire: terminal,
       ),
       isFalse,
@@ -657,7 +564,6 @@ void main() {
     expect(
       tradingRemoteRunnerMayHoldAuthority(
         configured: true,
-        hasVerifiedSession: true,
         statusWire: terminal.replaceFirst('active=inactive', 'active=active'),
       ),
       isTrue,
@@ -666,7 +572,6 @@ void main() {
     expect(
       tradingRemoteRunnerMayHoldAuthority(
         configured: true,
-        hasVerifiedSession: true,
         statusWire: 'malformed',
       ),
       isTrue,
@@ -674,7 +579,6 @@ void main() {
     expect(
       tradingRemoteRunnerMayHoldAuthority(
         configured: false,
-        hasVerifiedSession: true,
         statusWire: running,
       ),
       isFalse,
@@ -682,11 +586,31 @@ void main() {
     expect(
       tradingRemoteRunnerMayHoldAuthority(
         configured: true,
-        hasVerifiedSession: false,
         statusWire: running,
       ),
       isTrue,
     );
+    const absent = 'active=inactive enabled=linked session_state=absent';
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(configured: true, statusWire: absent),
+      isFalse,
+    );
+    expect(tradingRemoteRunnerCanStartSession(raw: absent), isTrue);
+    expect(tradingRemoteRunnerCanRevoke(absent), isFalse);
+    expect(
+      tradingRemoteRunnerStatusLabel(absent),
+      contains('No signed trading session'),
+    );
+    const unavailable =
+        'active=inactive enabled=linked session_state=unavailable';
+    expect(
+      tradingRemoteRunnerMayHoldAuthority(
+        configured: true,
+        statusWire: unavailable,
+      ),
+      isTrue,
+    );
+    expect(tradingRemoteRunnerCanStartSession(raw: unavailable), isFalse);
   });
 
   test('verified Runner session summary names exact market and limits', () {
@@ -721,17 +645,54 @@ void main() {
           maxCycles: 24,
           signCommitment: (_) => 'd' * 128,
         );
+    expect(session, isNotNull);
+    final verifiedSession = session!;
 
-    final summary = tradingRemoteRunnerSessionDetailsLabel(session);
+    final summary = tradingRemoteRunnerSessionDetailsLabel(verifiedSession);
     expect(summary, contains('SOL-USDT · LIVE'));
     expect(summary, contains('Limit 17 USDT · Up to 1 exchange request'));
     expect(summary, contains('SL 2% · Minimum R:R 2.5'));
     expect(summary, contains('Checks every 5 min · Up to 24 checks'));
     expect(summary, contains('Capsule aaaaaaaa · Account bbbbbbbb'));
+
+    final currentStatus =
+        'active=active enabled=linked session_state=active '
+        'session_operation_id=${verifiedSession.operationId} cycles=0 effects=0 '
+        'last_scheduled_check=none '
+        'next_check=2026-09-08T10:15:00Z last_outcome=none';
+    expect(
+      tradingRemoteRunnerCurrentSession(
+        statusWire: currentStatus,
+        retainedSession: verifiedSession,
+      ),
+      same(verifiedSession),
+    );
+    expect(
+      tradingRemoteRunnerCurrentSession(
+        statusWire: currentStatus.replaceFirst(
+          verifiedSession.operationId,
+          remoteSessionId,
+        ),
+        retainedSession: verifiedSession,
+      ),
+      isNull,
+      reason: 'local evidence cannot define a different VPS session',
+    );
+    expect(
+      tradingRemoteRunnerCurrentSession(
+        statusWire: currentStatus
+            .replaceFirst('session_state=active', 'session_state=stopped')
+            .replaceFirst('next_check=2026-09-08T10:15:00Z', 'next_check=none'),
+        retainedSession: verifiedSession,
+      ),
+      isNull,
+      reason: 'terminal VPS state removes operational authority',
+    );
   });
   test('remote status reports retained outcomes, not process success', () {
     const wire =
-        'active=active enabled=linked session_state=active cycles=1 effects=0 '
+        'active=active enabled=linked session_state=active '
+        'session_operation_id=$remoteSessionId cycles=1 effects=0 '
         'last_scheduled_check=2026-09-04T16:50:00+00:00 '
         'next_check=2026-09-04T16:55:00+00:00 '
         'last_outcome=blocked:market_proposal_blocked';
@@ -754,6 +715,8 @@ void main() {
       '$wire active=active',
       wire.replaceFirst('cycles=1', 'cycles=-1'),
       wire.replaceFirst('effects=0', 'effects=2'),
+      wire.replaceFirst('session_operation_id=$remoteSessionId ', ''),
+      wire.replaceFirst(remoteSessionId, 'not-a-session-id'),
       wire.replaceFirst('2026-09-04T16:55:00+00:00', 'invalid'),
       wire.replaceFirst('blocked:market_proposal_blocked', 'executed'),
     ]) {
@@ -808,6 +771,9 @@ void main() {
       allOf(
         contains('Exchange requests used: 1 of 1 · Remaining: 0'),
         contains('exchange-request limit was reached'),
+        contains('does not automatically adopt'),
+        contains('provider receipt does not prove the order is still open'),
+        contains('Check Open Orders'),
       ),
     );
   });
@@ -860,7 +826,8 @@ void main() {
         configured: true,
         unavailable: false,
         statusWire:
-            'active=active enabled=linked session_state=active cycles=0 '
+            'active=active enabled=linked session_state=active '
+            'session_operation_id=$remoteSessionId cycles=0 '
             'effects=0 last_scheduled_check=none '
             'next_check=2026-09-06T12:00:00Z last_outcome=none',
       ),
@@ -1461,6 +1428,35 @@ void main() {
       ),
       isFalse,
     );
+    final fittedMandate = BingxFuturesTradingMandate.issue(
+      capsuleRootHex: 'a' * 64,
+      accountBindingHashHex: 'b' * 64,
+      symbol: 'DOGE-USDT',
+      testOrder: false,
+      issuedAtUtc: issuedAt,
+      expiresAtUtc: issuedAt.add(const Duration(hours: 24)),
+      maxOrderNotionalQuoteDecimal: '19.318544',
+      maxRiskPerTradePercent: 2,
+      maxDailyLossPercent: 5,
+      maxConcurrentPositions: 1,
+      cooldownAfterLossStreak: 2,
+      cooldownMinutes: 60,
+      maxEffects: 1,
+    );
+    expect(
+      tradingMandateMaxNotionalMatches(
+        mandate: fittedMandate,
+        selectedMaxNotional: '19.318544000000003',
+      ),
+      isTrue,
+    );
+    expect(
+      tradingMandateMaxNotionalMatches(
+        mandate: fittedMandate,
+        selectedMaxNotional: '19.31854401',
+      ),
+      isFalse,
+    );
     expect(
       tradingMandateMaxNotionalMatches(
         mandate: mandate,
@@ -1606,12 +1602,6 @@ void main() {
   test('ranked order side maps to the matching liquidity zone side', () {
     expect(tradingZoneSideForOrderSide('buy'), 'buyside');
     expect(tradingZoneSideForOrderSide('sell'), 'sellside');
-  });
-
-  test('managed order revalidation always locks its existing side', () {
-    expect(tradingManagedOrderStructuralSide('SELL'), 'sell');
-    expect(tradingManagedOrderStructuralSide('BUY'), 'buy');
-    expect(tradingManagedOrderStructuralSide('unknown'), isNull);
   });
 
   test(

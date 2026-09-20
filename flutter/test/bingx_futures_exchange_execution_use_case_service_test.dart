@@ -2357,6 +2357,103 @@ void main() {
       },
     );
 
+    test(
+      'remote cancellation removes only its managed order projection',
+      () async {
+        final store = _trackingStore(tempHome);
+        final fixture = _remoteCompletedEffectFixture();
+        final useCase = _reconciliationUseCase(
+          exchange: BingxFuturesExchangeService(
+            requestSender: (_) async => throw StateError('unexpected query'),
+          ),
+          store: store,
+          riskHistory: riskHistory,
+        );
+        await useCase.retainRemoteCompletedEffects(
+          session: fixture.session,
+          operations: <ExternalEffectOperation>[fixture.operation],
+          expectedAccountBindingHashHex: fixture.accountBindingHashHex,
+        );
+        await useCase.reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(<BingxFuturesOpenOrder>[
+            BingxFuturesOpenOrder(
+              orderId: fixture.orderId,
+              clientOrderId: fixture.clientOrderId,
+              symbol: 'BTC-USDT',
+              side: 'BUY',
+              positionSide: 'LONG',
+              orderType: 'TRIGGER_LIMIT',
+              status: 'NEW',
+              priceDecimal: '100',
+              triggerPriceDecimal: '99',
+              quantityDecimal: '0.01',
+              executedQuantityDecimal: '0',
+              createdAtMs: 1,
+            ),
+          ]),
+        );
+        final cancellationPayload = jsonEncode(<String, dynamic>{
+          'order_id': fixture.orderId,
+          'client_order_id': fixture.clientOrderId,
+          'symbol': 'BTC-USDT',
+          'placement_operation_id': fixture.operation.operationId,
+        });
+        final cancellationOperationId =
+            fixture.session.deterministicCycleOperationId(1)!;
+        final cancelledAt = DateTime.utc(2026, 8, 28, 4).toIso8601String();
+        final cancellation = ExternalEffectOperation(
+          ownerCapsuleHex: fixture.operation.ownerCapsuleHex,
+          operationId: cancellationOperationId,
+          pluginId: bingxFuturesTradingPluginId,
+          providerId: BingxFuturesExternalEffectAdapter.providerId,
+          accountBindingId: fixture.accountBindingHashHex,
+          effectKind:
+              BingxFuturesExternalEffectAdapter.cancelExactOrderEffectKind,
+          canonicalPayloadJson: cancellationPayload,
+          payloadHashHex:
+              sha256.convert(utf8.encode(cancellationPayload)).toString(),
+          state: ExternalEffectState.succeeded,
+          approvalEvidenceHashHex: fixture.session.operationId,
+          attemptCount: 1,
+          revision: 4,
+          createdAtUtc: cancelledAt,
+          updatedAtUtc: cancelledAt,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          providerReferenceId: fixture.orderId,
+          requiredAction: null,
+          receipt: ExternalEffectReceipt(
+            operationId: cancellationOperationId,
+            providerId: BingxFuturesExternalEffectAdapter.providerId,
+            providerReceiptId: fixture.orderId,
+            evidenceHashHex: 'f' * 64,
+            receivedAtUtc: cancelledAt,
+          ),
+        )..validate();
+
+        final retained = await useCase.retainRemoteCompletedEffects(
+          session: fixture.session,
+          operations: <ExternalEffectOperation>[
+            fixture.operation,
+            cancellation,
+          ],
+          expectedAccountBindingHashHex: fixture.accountBindingHashHex,
+        );
+
+        expect(retained.managedOrderIds, isEmpty);
+        expect(retained.trackedOrderId, isNull);
+        expect(
+          retained.managedOrderProvenance[fixture.orderId]!.lifecycleStatus,
+          BingxManagedOrderLifecycleStatus.cancelled,
+        );
+        expect(
+          retained.managedOrderProvenance[fixture.orderId]!.lifecycleDiagnostic,
+          'remote_managed_order_cancelled',
+        );
+      },
+    );
+
     test('late reconciliation stays bound to the starting capsule', () async {
       var activeCapsule = List<String>.filled(64, 'a').join();
       final fileStore = CapsuleFileStore(

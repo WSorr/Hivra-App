@@ -272,7 +272,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
     final remoteSessionRunning = tradingRemoteRunnerIsRunning(remoteStatusWire);
     final remoteMayHoldAuthority = tradingRemoteRunnerMayHoldAuthority(
       configured: _remoteRunnerConfigured,
-      hasVerifiedSession: _remoteRunnerSession != null,
       statusWire: _remoteRunnerStatusWire,
     );
     final remoteMandate =
@@ -298,15 +297,12 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 (_droneEnabled
                     ? 'The active Capsule may use the displayed bounded limits.'
                     : 'Choose a market, then run on this computer or VPS. Bounded authority is requested during start.');
-    final remoteSessionResumable =
-        _remoteRunnerSession?.mandate.isActiveAt(nowUtc) == true &&
-        tradingRemoteRunnerCanResume(remoteStatusWire);
+    final remoteSessionResumable = tradingRemoteRunnerCanResume(
+      remoteStatusWire,
+    );
     final remoteSessionCanStart =
         _remoteRunnerConfigured &&
-        tradingRemoteRunnerCanStartSession(
-          raw: remoteStatusWire,
-          hasVerifiedSession: _remoteRunnerSession != null,
-        );
+        tradingRemoteRunnerCanStartSession(raw: remoteStatusWire);
     final localRunnerRunning = _localRunnerRunning;
     final remoteSessionActionLabel = tradingRemoteRunnerPrimaryActionLabel(
       configured: _remoteRunnerConfigured,
@@ -1104,7 +1100,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           _panel(
             title: 'Order and Activity',
             subtitle:
-                'Review the exact order, place it once, and follow its exchange status.',
+                'Read exchange orders without changing them. A filled order may leave an open position; check positions in BingX.',
             children: [
               Wrap(
                 spacing: 10,
@@ -1143,7 +1139,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             )
                             : const Icon(Icons.list_alt_rounded),
                     label: Text(
-                      _fetchingOpenOrders ? 'Fetching Orders' : 'Open Orders',
+                      _fetchingOpenOrders
+                          ? 'Fetching Orders'
+                          : 'Check Open Orders',
                     ),
                   ),
                 ],
