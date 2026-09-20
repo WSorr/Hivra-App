@@ -4,11 +4,22 @@ String formatBingxFuturesLiquidityObservation(
   BingxFuturesLiveDecisionResult? decision,
 ) {
   if (decision == null) {
-    return 'Observed liquidity (5m)\nScan and select a symbol to inspect its clusters.';
+    return 'Observed liquidity (4h)\nScan and select a symbol to inspect its clusters.';
   }
   final lines = <String>[
-    'Observed liquidity (5m) — snapshot, not order prices',
+    'Observed liquidity (4h) — snapshot, not order prices',
   ];
+  final parent = decision.parentZone;
+  if (parent != null) {
+    lines.add(
+      '4h ${parent['side']} sweep/reclaim: '
+      '${parent['low_decimal']}–${parent['high_decimal']} '
+      '· confirmed ${parent['confirmed_at_utc']}',
+    );
+    if (!decision.zoneAnchorExecutable) {
+      lines.add('No valid 5m confirmation inside this parent zone.');
+    }
+  }
   if (decision.observedLiquidityLevels.isEmpty) {
     lines.add('No pivot clusters detected in this snapshot.');
   }
@@ -59,6 +70,9 @@ String formatBingxFuturesZoneEvidence(BingxFuturesLiveDecisionResult decision) {
 
 String? _formatAnchorSource(String? raw) {
   final source = raw?.trim().toLowerCase() ?? '';
+  if (source == '4h_sweep_reclaim_5m') {
+    return '4h sweep/reclaim, confirmed on 5m';
+  }
   final match = RegExp(r'^(4h|1d|1w)_fresh_(high|low)$').firstMatch(source);
   if (match != null) {
     return '${match.group(1)} unswept ${match.group(2)}';

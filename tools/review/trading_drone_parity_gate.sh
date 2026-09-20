@@ -129,8 +129,6 @@ liquidity_sequence_is_canonical() {
     rg -q "'liquidation_proxy'" "$2" &&
     rg -q '_applyLiquidationConfluence' "$3" &&
     rg -q 'level\.weight \+ bonus' "$3" &&
-    rg -q "anchorSource = 'micro_liquidity_void'" "$3" &&
-    rg -q 'zoneLow = microReclaim\.zoneLow' "$3" &&
     ! rg -q "anchorSource = ['\"]liquidation_proxy['\"]" "$3" &&
     rg -q "code: 'market_volume_activation_unavailable'" "$4" &&
     rg -q 'oppositeLiquidityTargetDecimal: decision\.oppositeLiquidityTargetDecimal' "$4" &&
@@ -1457,7 +1455,7 @@ sed 's/publicSessionStream\.snapshotFor(symbol)/null/' \
   "$TRADING_MODULE" > "$LOCAL_SESSION_WIRING_MUTATION"
 sed "s/final longReady = longTradeOk && normalizedRequiredSide != 'sell';/final longReady = longTradeOk \&\& longSessionAligned \&\& normalizedRequiredSide != 'sell';/" \
   "$TVH_RULE_ENGINE" > "$LIQUIDITY_AUTHORITY_MUTATION"
-sed "s/anchorSource = 'micro_liquidity_void';/anchorSource = 'liquidation_proxy';/" \
+sed "s/anchorSource = '4h_sweep_reclaim_5m';/anchorSource = 'liquidation_proxy';/" \
   "$ZONE_DECISION" > "$LIQUIDATION_ANCHOR_MUTATION"
 sed 's/oppositeLiquidityTargetDecimal: decision\.oppositeLiquidityTargetDecimal/oppositeLiquidityTargetDecimal: null/' \
   "$TRADING_CYCLE" > "$LIQUIDITY_TARGET_MUTATION"

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import '../models/bingx_futures_market_snapshot_models.dart';
 
 class BingxFuturesShadowMarketProposalCodec {
   const BingxFuturesShadowMarketProposalCodec();
@@ -96,6 +97,8 @@ class BingxFuturesShadowMarketProposalCodec {
           'anchor_source',
           'anchor_executable',
           'anchor_lifecycle',
+          'parent',
+          'atr14_5m_decimal',
           'liquidity_event_id',
           'liquidity_event_at_utc',
           'latest_closed_micro_bar_at_utc',
@@ -104,6 +107,7 @@ class BingxFuturesShadowMarketProposalCodec {
         zone['conflict'] != false ||
         !_isPositiveDecimal(zone['low_decimal']) ||
         !_isPositiveDecimal(zone['high_decimal']) ||
+        !_isPositiveDecimal(zone['atr14_5m_decimal']) ||
         !_isSha256(zone['liquidity_event_id']) ||
         !_isUtcTimestamp(zone['liquidity_event_at_utc']) ||
         !_isUtcTimestamp(zone['latest_closed_micro_bar_at_utc']) ||
@@ -120,6 +124,42 @@ class BingxFuturesShadowMarketProposalCodec {
         !_isUtcTimestamp(target['event_at_utc'])) {
       return false;
     }
+    final parent = zone['parent'];
+    if (parent is! Map<String, dynamic> ||
+        !_hasExactKeys(parent, const {
+          'strategy_version',
+          'timeframe',
+          'side',
+          'low_decimal',
+          'high_decimal',
+          'sweep_at_utc',
+          'confirmed_at_utc',
+        }) ||
+        parent['strategy_version'] != bingxLiquidityStrategyVersion ||
+        parent['timeframe'] != '4h' ||
+        parent['side'] != side ||
+        zone['anchor_source'] != '4h_sweep_reclaim_5m' ||
+        zone['anchor_lifecycle'] != 'reclaimed' ||
+        !_isPositiveDecimal(parent['low_decimal']) ||
+        !_isPositiveDecimal(parent['high_decimal']) ||
+        !_isUtcTimestamp(parent['sweep_at_utc']) ||
+        !_isUtcTimestamp(parent['confirmed_at_utc'])) {
+      return false;
+    }
+    final low = double.parse(zone['low_decimal'] as String);
+    final high = double.parse(zone['high_decimal'] as String);
+    final known = DateTime.parse(parent['confirmed_at_utc'] as String);
+    final confirmed = DateTime.parse(zone['liquidity_event_at_utc'] as String);
+    if (low >= high ||
+        low < double.parse(parent['low_decimal'] as String) ||
+        high > double.parse(parent['high_decimal'] as String) ||
+        known.isBefore(DateTime.parse(parent['sweep_at_utc'] as String)) ||
+        confirmed.difference(known) < const Duration(minutes: 5) ||
+        confirmed.isAfter(
+          DateTime.parse(zone['latest_closed_micro_bar_at_utc'] as String),
+        )) {
+      return false;
+    }
     return true;
   }
 
@@ -134,7 +174,8 @@ class BingxFuturesShadowMarketProposalCodec {
     if (value is! String || !RegExp(r'^[0-9]+(?:\.[0-9]+)?$').hasMatch(value)) {
       return false;
     }
-    return (double.tryParse(value) ?? 0) > 0;
+    final number = double.tryParse(value);
+    return number != null && number.isFinite && number > 0;
   }
 
   bool _isUtcTimestamp(Object? value) =>

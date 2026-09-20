@@ -578,6 +578,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     required String symbol,
     required String interval,
     int limit = 120,
+    int? endTimeMs,
   }) async {
     final normalizedSymbol = _normalizeSymbol(symbol);
     final normalizedInterval = interval.trim().toLowerCase();
@@ -594,7 +595,8 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       '$_baseUrl$_publicKlinesPath'
       '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}'
       '&interval=${Uri.encodeQueryComponent(normalizedInterval)}'
-      '&limit=$limit',
+      '&limit=$limit'
+      '${endTimeMs == null ? '' : '&endTime=$endTimeMs'}',
     );
     final response = await _requestSender(
       BingxHttpRequest(

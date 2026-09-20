@@ -199,3 +199,5 @@ class BingxFuturesMarketSnapshotDigest {
     required this.liquidationFeedAvailable,
   });
 }
+
+const bingxLiquidityStrategyVersion = '4h-sweep-reclaim-5m-v1';

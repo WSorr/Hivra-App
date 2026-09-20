@@ -12,7 +12,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 ## Build
 
 - [ ] `tools/toolchain/verify_environment.sh --full` passes against the checked-in baseline.
-- [ ] `tools/release/preflight.sh` passes before packaging.
+- [ ] `tools/release/preflight.sh --trading-evidence-build-tag <version-tag>` passes before packaging; this validates deterministic evidence, not packaged manual signoff.
 - [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/release/android_release.sh --version <version> --channel <test|public>` is used for packaging.
 - [ ] `--channel` was chosen explicitly (`test` for internal/pre-release, `public` for stable release).
@@ -23,6 +23,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 
 - [ ] APK installs on a clean Android device.
 - [ ] APK install verification used the packaged release artifact (not only a local debug/build-tree install).
+- [ ] The published APK is the exact artifact used for smoke; a rebuild requires a new digest-bound smoke/signoff.
 - [ ] App launches and reaches first interactive screen.
 - [ ] Create or recover capsule path succeeds.
 - [ ] Invitation send succeeds.

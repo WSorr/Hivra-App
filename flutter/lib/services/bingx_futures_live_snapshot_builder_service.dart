@@ -1,6 +1,7 @@
 import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
 import 'bingx_futures_public_market_data_port.dart';
+import 'bingx_futures_live_decision_service.dart';
 
 DateTime _systemClockUtc() => DateTime.now().toUtc();
 
@@ -206,25 +207,49 @@ class BingxFuturesLiveSnapshotBuilderService {
       final orderBookLevels = _mapOrderBook(depth);
 
       final instrument = _buildInstrumentMeta(normalizedSymbol);
+      final snapshotInput = BingxFuturesMarketSnapshotInput(
+        instrument: instrument,
+        prices: BingxFuturesPriceSnapshot(
+          lastTradePriceDecimal: price.priceDecimal!,
+          markPriceDecimal: premium.markPriceDecimal ?? price.priceDecimal!,
+          indexPriceDecimal: premium.indexPriceDecimal ?? price.priceDecimal!,
+        ),
+        candles: allCandles,
+        trades: tradeRows,
+        openInterest: openInterestRows,
+        funding: funding,
+        liquidityLevels: liquidity,
+        sessionVolumes: sessions,
+        orderBookTopLevels: orderBookLevels,
+      );
+      Map<String, dynamic>? parent;
+      try {
+        parent =
+            const BingxFuturesLiveDecisionService()
+                .decidePublicMarket(snapshotInput: snapshotInput)
+                .parentZone;
+      } on FormatException {
+        // Preserve the original snapshot for the decision owner's diagnostics.
+        // An invalid snapshot must never gain execution authority by hydration.
+      }
+      if (parent != null) {
+        final history = await loadMicroHistory(
+          exchange: exchange,
+          symbol: normalizedSymbol,
+          fromUtc: DateTime.parse(
+            parent['confirmed_at_utc'] as String,
+          ).subtract(const Duration(minutes: 75)),
+          observedAtUtc: observationTime,
+          initial: k5m.klines,
+        );
+        allCandles.removeWhere((c) => c.timeframe == '5m');
+        allCandles.addAll(history);
+      }
       return BingxFuturesLiveSnapshotBuildResult(
         isSuccess: true,
         errorCode: '0',
         errorMessage: 'ok',
-        snapshotInput: BingxFuturesMarketSnapshotInput(
-          instrument: instrument,
-          prices: BingxFuturesPriceSnapshot(
-            lastTradePriceDecimal: price.priceDecimal!,
-            markPriceDecimal: premium.markPriceDecimal ?? price.priceDecimal!,
-            indexPriceDecimal: premium.indexPriceDecimal ?? price.priceDecimal!,
-          ),
-          candles: allCandles,
-          trades: tradeRows,
-          openInterest: openInterestRows,
-          funding: funding,
-          liquidityLevels: liquidity,
-          sessionVolumes: sessions,
-          orderBookTopLevels: orderBookLevels,
-        ),
+        snapshotInput: snapshotInput,
         symbol: normalizedSymbol,
       );
     } on FormatException catch (error) {
@@ -234,6 +259,97 @@ class BingxFuturesLiveSnapshotBuilderService {
         message: error.message,
       );
     }
+  }
+
+  /// One bounded history reader for new entries and original-order revalidation.
+  /// Coverage failure is not evidence that a zone was consumed.
+  Future<List<BingxFuturesCandle>> loadMicroHistory({
+    required BingxFuturesPublicMarketDataPort exchange,
+    required String symbol,
+    required DateTime fromUtc,
+    required DateTime observedAtUtc,
+    List<BingxFuturesPublicKline>? initial,
+  }) async {
+    const step = 300000;
+    final end = observedAtUtc.toUtc().millisecondsSinceEpoch ~/ step * step;
+    final start = fromUtc.toUtc().millisecondsSinceEpoch ~/ step * step - step;
+    if (start <= 0 ||
+        start >= end ||
+        end - start > const Duration(days: 84).inMilliseconds) {
+      throw const FormatException('micro_history_window_unavailable');
+    }
+    final rows = <int, BingxFuturesPublicKline>{};
+    // BingX rounds a non-aligned endTime forward to the next candle.
+    var cursor = end - step;
+    var seed = initial;
+    for (var page = 0; page < 26; page++) {
+      List<BingxFuturesPublicKline> bars;
+      if (seed != null) {
+        bars = seed;
+        seed = null;
+      } else {
+        final result = await exchange.getPublicKlines(
+          symbol: symbol,
+          interval: '5m',
+          limit: 1000,
+          endTimeMs: cursor,
+        );
+        if (!result.isSuccess ||
+            result.symbol != symbol ||
+            result.interval != '5m' ||
+            result.klines.length > 1000) {
+          throw const FormatException('micro_history_read_unavailable');
+        }
+        bars = result.klines;
+        if (bars.any((bar) => bar.openTimeMs > cursor)) {
+          throw const FormatException('micro_history_cursor_ignored');
+        }
+      }
+      final closed = bars.where((bar) => bar.openTimeMs + step <= end).toList();
+      if (closed.isEmpty) {
+        throw const FormatException('micro_history_read_unavailable');
+      }
+      var earliest = cursor + 1;
+      for (final bar in closed) {
+        final at = bar.openTimeMs;
+        final open = num.tryParse(bar.openDecimal);
+        final high = num.tryParse(bar.highDecimal);
+        final low = num.tryParse(bar.lowDecimal);
+        final close = num.tryParse(bar.closeDecimal);
+        if ([
+              open,
+              high,
+              low,
+              close,
+            ].any((v) => v == null || !v.isFinite || v <= 0) ||
+            high! < low! ||
+            open! < low ||
+            open > high ||
+            close! < low ||
+            close > high) {
+          throw const FormatException('micro_history_invalid_ohlc');
+        }
+        if (at % step != 0 || rows.containsKey(at)) {
+          throw const FormatException('micro_history_duplicate_or_unaligned');
+        }
+        rows[at] = bar;
+        if (at < earliest) earliest = at;
+      }
+      if (earliest > cursor) {
+        throw const FormatException('micro_history_no_progress');
+      }
+      if (earliest <= start) {
+        final covered = <BingxFuturesPublicKline>[];
+        for (var at = start; at < end; at += step) {
+          final bar = rows[at];
+          if (bar == null) throw const FormatException('micro_history_gap');
+          covered.add(bar);
+        }
+        return mapCandles('5m', covered, observedAtUtc: observedAtUtc);
+      }
+      cursor = earliest - step;
+    }
+    throw const FormatException('micro_history_page_budget_exhausted');
   }
 
   BingxFuturesInstrumentMeta _buildInstrumentMeta(String symbol) {

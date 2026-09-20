@@ -728,7 +728,7 @@ void main() {
     final summary = tradingRemoteRunnerSessionDetailsLabel(verifiedSession);
     expect(summary, contains('SOL-USDT · LIVE'));
     expect(summary, contains('Limit 17 USDT · Up to 1 exchange request'));
-    expect(summary, contains('SL 2% · Minimum R:R 2.5'));
+    expect(summary, contains('Loss budget 2% · Minimum R:R 2.5'));
     expect(summary, contains('Checks every 5 min · Up to 24 checks'));
     expect(summary, contains('Capsule aaaaaaaa · Account bbbbbbbb'));
 

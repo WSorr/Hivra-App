@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
@@ -7,6 +8,120 @@ import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
 
 void main() {
+  group('bounded parent history', () {
+    final now = DateTime.utc(2026, 9, 20, 12);
+    const step = 300000;
+    final end = now.millisecondsSinceEpoch;
+    List<Object> row(int at) => [at, '100', '102', '99', '101'];
+
+    for (final fault in [
+      'none',
+      'gap',
+      'duplicate',
+      'ignored_cursor',
+      'http',
+      'invalid_ohlc',
+    ]) {
+      test('older parent history: $fault', () async {
+        var requests = 0;
+        final cursors = <int>[];
+        final exchange = BingxFuturesExchangeService(
+          requestSender: (request) async {
+            requests++;
+            expect(request.method, 'GET');
+            expect(request.headers, isEmpty);
+            expect(request.uri.queryParameters['interval'], '5m');
+            final cursor = int.parse(request.uri.queryParameters['endTime']!);
+            expect(cursor % step, 0);
+            cursors.add(cursor);
+            final latest = cursor ~/ step * step;
+            final rows = List.generate(1000, (i) => row(latest - i * step));
+            if (requests == 2) {
+              if (fault == 'gap') rows.removeAt(20);
+              if (fault == 'duplicate') rows.add(rows[20]);
+              if (fault == 'ignored_cursor') rows[0] = row(end - step);
+              if (fault == 'invalid_ohlc') {
+                rows[20] = [latest - 20 * step, '100', '98', '99', '101'];
+              }
+              if (fault == 'http') {
+                return const BingxHttpResponse(statusCode: 503, body: '{}');
+              }
+            }
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: jsonEncode({'code': 0, 'data': rows}),
+            );
+          },
+        );
+        final future = const BingxFuturesLiveSnapshotBuilderService()
+            .loadMicroHistory(
+              exchange: exchange,
+              symbol: 'BTC-USDT',
+              fromUtc: now.subtract(const Duration(days: 12)),
+              observedAtUtc: now,
+            );
+        if (fault == 'none') {
+          final result = await future;
+          expect(requests, 4);
+          expect(result.length, 12 * 24 * 12 + 1);
+          expect(
+            result.first.closeTimeUtc,
+            now.subtract(const Duration(days: 12)).toIso8601String(),
+          );
+          expect(result.last.closeTimeUtc, now.toIso8601String());
+          expect(result.every((bar) => bar.isClosed), isTrue);
+        } else {
+          await expectLater(future, throwsFormatException);
+        }
+        for (var i = 1; i < cursors.length; i++) {
+          expect(cursors[i], lessThan(cursors[i - 1]));
+        }
+        expect(requests, lessThanOrEqualTo(4));
+      });
+    }
+
+    test(
+      'covered parent reuses initial bars without another request',
+      () async {
+        final exchange = BingxFuturesExchangeService(
+          requestSender: (_) async => throw StateError('unexpected request'),
+        );
+        final result = await const BingxFuturesLiveSnapshotBuilderService()
+            .loadMicroHistory(
+              exchange: exchange,
+              symbol: 'BTC-USDT',
+              fromUtc: now.subtract(const Duration(minutes: 10)),
+              observedAtUtc: now,
+              initial: List.generate(
+                10,
+                (i) => BingxFuturesPublicKline(
+                  openTimeMs: end - (i + 1) * step,
+                  openDecimal: '100',
+                  highDecimal: '102',
+                  lowDecimal: '99',
+                  closeDecimal: '101',
+                ),
+              ),
+            );
+        expect(result, hasLength(3));
+      },
+    );
+
+    test('out-of-budget history fails before network access', () async {
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (_) async => throw StateError('unexpected request'),
+      );
+      await expectLater(
+        const BingxFuturesLiveSnapshotBuilderService().loadMicroHistory(
+          exchange: exchange,
+          symbol: 'BTC-USDT',
+          fromUtc: now.subtract(const Duration(days: 85)),
+          observedAtUtc: now,
+        ),
+        throwsFormatException,
+      );
+    });
+  });
   group('BingxFuturesLiveSnapshotBuilderService', () {
     test('fetches independent public reads in two bounded phases', () async {
       final klineGate = Completer<void>();

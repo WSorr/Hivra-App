@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import 'bingx_futures_exchange_models.dart';
+import 'bingx_futures_market_snapshot_models.dart';
 
 enum BingxLiquidityEventEffectClaimStatus { reserved, confirmed }
 
@@ -555,6 +556,7 @@ class BingxFuturesRemoteMandateAdmission {
     'minimum_risk_reward': minimumRiskReward,
     'account_read_scope':
         includeOpenOrders ? exposureReadScope : legacyExposureReadScope,
+    'strategy_version': bingxLiquidityStrategyVersion,
   };
 
   static BingxFuturesRemoteMandateAdmission? parseAndVerify({
@@ -962,6 +964,7 @@ class BingxFuturesRemoteMandateAdmission {
     if (value.keys.toSet().difference({
           ...keys,
           'account_read_scope',
+          'strategy_version',
         }).isNotEmpty ||
         keys.difference(value.keys.toSet()).isNotEmpty) {
       return null;
@@ -969,6 +972,10 @@ class BingxFuturesRemoteMandateAdmission {
     if (value.containsKey('account_read_scope') &&
         jsonEncode(value['account_read_scope']) !=
             jsonEncode(expectedExposureReadScope)) {
+      return null;
+    }
+    if (value.containsKey('strategy_version') &&
+        value['strategy_version'] != bingxLiquidityStrategyVersion) {
       return null;
     }
     final buildId = value['runner_build_id']?.toString().trim() ?? '';
@@ -1007,6 +1014,8 @@ class BingxFuturesRemoteMandateAdmission {
       'minimum_risk_reward': minimumRiskReward,
       if (value.containsKey('account_read_scope'))
         'account_read_scope': expectedExposureReadScope,
+      if (value.containsKey('strategy_version'))
+        'strategy_version': bingxLiquidityStrategyVersion,
     };
   }
 

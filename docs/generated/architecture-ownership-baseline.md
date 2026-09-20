@@ -482,6 +482,7 @@ Exact line counts are evaluated live by the ownership gate and are not persisted
 - `flutter/lib/screens/wasm_plugins_screen.dart`
 - `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart`
 - `flutter/lib/services/bingx_futures_exchange_service.dart`
+- `flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart`
 - `flutter/lib/services/bingx_futures_remote_runner_provisioning_service.dart`
 - `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `flutter/lib/services/capsule_chat_delivery_service.dart`

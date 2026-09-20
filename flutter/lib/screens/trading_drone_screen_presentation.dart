@@ -847,7 +847,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                         .map(
                           (value) => DropdownMenuItem<double>(
                             value: value,
-                            child: Text('SL ${value.toStringAsFixed(0)}%'),
+                            child: Text(
+                              'Loss budget ${value.toStringAsFixed(0)}%',
+                            ),
                           ),
                         )
                         .toList(growable: false),

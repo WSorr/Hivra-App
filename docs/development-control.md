@@ -26,8 +26,8 @@ Status date: 2026-09-20
   onboarding requires no Git or terminal work.
   A conflicting external order now pauses the Runner after one retained check
   instead of exhausting the signed session. Current source recomputes fresh
-  entry authority from confirmed 5m sweep/reclaim or untouched liquidity-void
-  zones; 4h/1d/1w pivots are targets and context only. A stale Runner-managed
+  entry authority from a closed 4h sweep/reclaim with subsequent 5m confirmation;
+  micro-only and void entry are removed locally, not deployed. A stale Runner-managed
   order is canceled through the existing effect journal, and a replacement may
   be placed only by the next cycle. Packaged and live VPS evidence for this
   lifecycle remains incomplete.
@@ -60,6 +60,14 @@ outcome they attest.
 
 ## Active Outcome: Trading 24/7
 
+The approved local strategy replacement is HTF-first: a 4h parent liquidity
+zone has priority over conflicting 1h context; 5m confirms entry inside it.
+Only sweep/reclaim is selected. Local implementation binds parent evidence and
+strategy version through the existing decision and authorization paths; it is
+not deployed or product-accepted. The definition is owned by the trading
+strategy specification. Do not deploy a
+trend-only filter as a substitute or change the active signed VPS session.
+
 Release is on hold until the autonomous order-to-position journey and the
 strategy are product-accepted. Order Check cleanup alone does not close this
 outcome. The remaining work is:
@@ -69,9 +77,12 @@ outcome. The remaining work is:
    protection explicitly; do not silently extend expired authority.
 2. Reuse the canonical structural revalidation for existing orders. A blocked
    new-entry proposal alone must not decide whether their zone is invalid.
-3. Reconcile the shared stop calculation with the strategy contract's
-   structure/ATR rule; size from the actual stop and retain opposite-liquidity
-   targets. Verify order, fill, protection, and terminal-result continuity.
+3. Verify provider acceptance of the locally implemented shared structure/ATR
+   stop and reduced notional sizing. Local and remote preparation now apply
+   instrument price precision before sizing and risk/reward checks;
+   focused regressions pass, but packaged/provider acceptance is pending.
+   Opposite-liquidity targets remain authoritative. Verify order, fill,
+   protection, and terminal-result continuity.
 4. Evaluate the fixed strategy chronologically on real market evidence,
    including fees, funding, slippage, and conservative fill assumptions.
    Keep evaluation data separate from tuning; unavailable inputs must remain
@@ -88,11 +99,13 @@ tests pass; this has not been deployed. New session authorization explicitly
 signs bounded post-budget checks and pending-order cancellation. Existing
 sessions retain their original stop policy. Pending-order revalidation now binds
 the retained signed placement observation to the exact journal-owned order and
-checks its original reclaim/void against continuous closed 5m candles through
+checks its original signed parent/entry against continuous closed 5m candles through
 the existing zone owner. A different or blocked new-entry proposal is not a
 cancellation reason. Missing proof/history or partial execution retains the
-order as revalidation unavailable. The 120-bar read cannot revalidate anchors
-outside its coverage. Order-to-position protection continuity and packaged/VPS
+order as revalidation unavailable. Local source now extends 5m coverage back to
+the selected or retained parent through one bounded reader; packaged and live
+acceptance of this history extension remains pending.
+Order-to-position protection continuity and packaged/VPS
 acceptance remain unfinished; this is not autonomous product acceptance.
 
 ```text
@@ -137,6 +150,14 @@ Change code only for a reproduced defect or missing user-facing step.
 Exit evidence is one packaged bounded session that continues with the app
 closed and proves pause/resume, restart/reconnect, invalidation, reconciliation,
 duplicate suppression, and useful diagnostics on supported platforms.
+
+The release route remains: close the stop/protection and strategy acceptance
+gaps above; integrate the coherent change through required PR checks; package
+the clean candidate once; perform macOS/Android smoke on those exact bytes;
+record digest-bound signoff, then request explicit tag/publication approval.
+The local public-data history probe and blocked build-tree smoke do not replace
+packaged positive-path evidence. Planned 1D/1W/1M observation is not part of
+this release acceptance scope.
 
 ## Queued Outcomes
 

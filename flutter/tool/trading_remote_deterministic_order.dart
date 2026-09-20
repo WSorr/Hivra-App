@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
@@ -208,6 +209,13 @@ Future<String> runOneDeterministicOrder({
   if (admission.isLegacyDeterministicSession) {
     return _blocked(cycleOperationId, 'session_contract_upgrade_required');
   }
+  if (admission.strategyPolicy?['strategy_version'] !=
+      bingxLiquidityStrategyVersion) {
+    return _blocked(
+      cycleOperationId,
+      'strategy_authorization_upgrade_required',
+    );
+  }
   final requiredExposureScope =
       admission.isDeterministicSession
           ? BingxFuturesRemoteMandateAdmission.exposureReadScope
@@ -378,6 +386,7 @@ Future<String> _revalidateManagedAnchor({
         original.runnerKeyId != admission.runnerKeyId ||
         original.marketSymbol != admission.mandate.symbol ||
         original.marketProposalStatus != 'READY' ||
+        original.policyHashHex != harness.publicStrategyPolicyHashHex() ||
         original.observedAtEpochMs > now.millisecondsSinceEpoch ||
         original.runnerBuildId != policy['runner_build_id'] ||
         original.packageDigestHex != policy['package_digest_hex'] ||
@@ -395,28 +404,26 @@ Future<String> _revalidateManagedAnchor({
         order.side.toLowerCase() != side) {
       return 'anchor_unavailable';
     }
-    final bars = await exchange.getPublicKlines(
-      symbol: admission.mandate.symbol,
-      interval: '5m',
-      limit: 120,
-    );
-    if (!bars.isSuccess ||
-        bars.symbol != admission.mandate.symbol ||
-        bars.interval != '5m') {
-      return 'anchor_unavailable';
-    }
+    final bars = await const BingxFuturesLiveSnapshotBuilderService()
+        .loadMicroHistory(
+          exchange: exchange,
+          symbol: admission.mandate.symbol,
+          fromUtc: DateTime.parse(
+            (zone['parent'] as Map<String, dynamic>?)?['confirmed_at_utc']
+                    as String? ??
+                zone['liquidity_event_at_utc'] as String,
+          ),
+          observedAtUtc: now,
+        );
     return const BingxFuturesZoneDecisionService().revalidateAnchor(
+      parentZone: zone['parent'] as Map<String, dynamic>?,
       side: side,
       source: zone['anchor_source'] as String,
       zoneLow: num.parse(zone['low_decimal'] as String),
       zoneHigh: num.parse(zone['high_decimal'] as String),
       eventAtUtc: DateTime.parse(zone['liquidity_event_at_utc'] as String),
       nowUtc: now,
-      candles: const BingxFuturesLiveSnapshotBuilderService().mapCandles(
-        '5m',
-        bars.klines,
-        observedAtUtc: now,
-      ),
+      candles: bars,
     );
   } on Object {
     return 'anchor_unavailable';

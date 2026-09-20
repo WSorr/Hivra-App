@@ -13,7 +13,33 @@ void main() {
     const service = BingxFuturesLiveDecisionService();
 
     test('passes canonical detected clusters directly to the zone owner', () {
-      final snapshot = _buildInput(permuted: false);
+      final base = _buildInput(permuted: false);
+      final snapshot = _withCandles(base, [
+        ...base.candles.where((c) => c.timeframe != '4h'),
+        for (final (i, c) in _generate5mCandles(count: 80).indexed)
+          BingxFuturesCandle(
+            timeframe: '4h',
+            openTimeUtc:
+                DateTime.utc(
+                  2026,
+                  4,
+                  1,
+                ).add(Duration(hours: i * 4)).toIso8601String(),
+            closeTimeUtc:
+                DateTime.utc(
+                  2026,
+                  4,
+                  1,
+                ).add(Duration(hours: (i + 1) * 4)).toIso8601String(),
+            openDecimal: c.openDecimal,
+            highDecimal: c.highDecimal,
+            lowDecimal: c.lowDecimal,
+            closeDecimal: c.closeDecimal,
+            volumeBaseDecimal: c.volumeBaseDecimal,
+            volumeQuoteDecimal: c.volumeQuoteDecimal,
+            isClosed: true,
+          ),
+      ]);
       final expected =
           const BingxFuturesFeatureExtractorService()
               .extract(
@@ -67,14 +93,12 @@ void main() {
       final second = service.decide(input);
 
       expect(first.canPrepareIntent, isFalse);
-      expect(first.observedLiquidityLevels, isNotEmpty);
+      expect(first.observedLiquidityLevels, isEmpty);
       expect(
         () => first.observedLiquidityLevels.clear(),
         throwsUnsupportedError,
       );
-      expect(first.decision, BingxTvhDecisionKind.long);
-      expect(first.side, 'buy');
-      expect(first.zoneSide, 'buyside');
+      expect(first.canPrepareIntent, isFalse);
       expect(first.zoneLowDecimal, isNotNull);
       expect(first.zoneHighDecimal, isNotNull);
       expect(first.zoneAnchorExecutable, isFalse);
@@ -204,7 +228,7 @@ void main() {
       expect(result.canPrepareIntent, isFalse);
       expect(result.decision, BingxTvhDecisionKind.blocked);
       expect(result.side, isNull);
-      expect(result.zoneLowDecimal, isNull);
+      expect(result.zoneAnchorExecutable, isFalse);
       expect(result.reasons.first.code, 'consensus_guard');
     });
 
@@ -217,10 +241,10 @@ void main() {
       final first = service.decide(input);
       final second = service.decide(input);
 
-      expect(first.decision, BingxTvhDecisionKind.short);
-      expect(first.side, 'sell');
+      expect(first.decision, BingxTvhDecisionKind.noSignal);
+      expect(first.side, isNull);
       expect(first.canPrepareIntent, isFalse);
-      expect(first.zoneSide, 'sellside');
+      expect(first.zoneAnchorExecutable, isFalse);
       expect(first.zoneLowDecimal, isNotNull);
       expect(first.zoneHighDecimal, isNotNull);
       expect(first.liveDecisionHashHex, second.liveDecisionHashHex);
@@ -239,7 +263,7 @@ void main() {
       expect(result.decision, BingxTvhDecisionKind.noSignal);
       expect(result.canPrepareIntent, isFalse);
       expect(result.side, isNull);
-      expect(result.zoneSide, isNull);
+      expect(result.zoneAnchorExecutable, isFalse);
       expect(result.reasons.any((r) => r.code == 'funding_guard'), isTrue);
       expect(
         result.reasons

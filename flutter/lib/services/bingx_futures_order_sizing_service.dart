@@ -15,6 +15,11 @@ class BingxFuturesOrderSizingService {
   }) : _exchange = exchange,
        _exposureReadTimeout = exposureReadTimeout;
 
+  Future<BingxFuturesContractRules?> loadContractRules(String symbol) async {
+    final result = await _exchange.getPerpetualContractRules(symbol: symbol);
+    return result.isSuccess ? result.rules : null;
+  }
+
   Future<String> describeExposure({
     required BingxFuturesApiCredentials credentials,
     required String symbol,
@@ -413,6 +418,8 @@ class BingxFuturesOrderSizingService {
 
   String _format(num value, int precision) {
     final fixed = value.toStringAsFixed(precision);
-    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+    return fixed.contains('.')
+        ? fixed.replaceFirst(RegExp(r'\.?0+$'), '')
+        : fixed;
   }
 }

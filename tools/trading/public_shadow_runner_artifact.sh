@@ -2153,6 +2153,7 @@ else:
         "package_digest_hex", "host_abi", "stop_loss_percent",
         "minimum_risk_reward",
         *(["account_read_scope"] if isinstance(policy, dict) and "account_read_scope" in policy else []),
+        *(["strategy_version"] if isinstance(policy, dict) and "strategy_version" in policy else []),
     ]
     if not isinstance(policy, dict) or list(policy) != expected_policy:
         raise SystemExit("deterministic strategy policy is not canonical")

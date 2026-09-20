@@ -21,6 +21,28 @@ import '../tool/trading_remote_exact_order.dart'
         runAuthorizedExactOrder;
 
 void main() {
+  test(
+    'old strategy authorization cannot run new strategy or read exchange',
+    () async {
+      final fixture = await _fixture(
+        sessionCycleIndex: 0,
+        legacyStrategy: true,
+      );
+      addTearDown(fixture.dispose);
+      final result = jsonDecode(
+        await runOneDeterministicOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          nowUtc: () => fixture.now,
+          requestSender:
+              (_) async => throw StateError('old authority reached exchange'),
+        ),
+      );
+      expect(result['reason_code'], 'strategy_authorization_upgrade_required');
+      expect(result['effect'], isFalse);
+    },
+  );
   for (final initialState in ['succeeded', 'unresolved', 'terminal_failure']) {
     test(
       'spent entry budget after $initialState blocks a fresh event',
@@ -1276,7 +1298,7 @@ void main() {
 }
 
 BingxFuturesMarketSnapshotInput _reclaimSnapshot({required bool confirmed}) {
-  final start = DateTime.utc(2026, 8, 22, 9, 15);
+  final start = DateTime.utc(2026, 8, 22, 6, 40);
   BingxFuturesCandle candle(
     String timeframe,
     DateTime closeAt,
@@ -1314,25 +1336,15 @@ BingxFuturesMarketSnapshotInput _reclaimSnapshot({required bool confirmed}) {
       indexPriceDecimal: '100',
     ),
     candles: [
-      for (var index = 0; index < (confirmed ? 34 : 33); index++)
+      for (var index = 0; index < (confirmed ? 65 : 64); index++)
         candle(
           '5m',
           start.add(Duration(minutes: (index + 1) * 5)),
           5,
-          index == 33 ? 96 : 101,
-          102,
-          index == 32
-              ? 95
-              : index == 33
-              ? 96
-              : [8, 16, 24].contains(index)
-              ? 98
-              : 100,
-          index == 32
-              ? 96
-              : index == 33
-              ? 100
-              : 101,
+          index == 64 ? 91.5 : 101,
+          index == 64 ? 94 : 102,
+          index == 64 ? 91 : 100,
+          index == 64 ? 93.5 : 101,
         ),
       for (var index = 0; index < 220; index++)
         candle(
@@ -1354,15 +1366,24 @@ BingxFuturesMarketSnapshotInput _reclaimSnapshot({required bool confirmed}) {
           96,
           100,
         ),
-      for (var index = 0; index < 7; index++)
+      for (var index = 0; index < 34; index++)
         candle(
           '4h',
-          start.subtract(Duration(hours: (7 - index) * 4)),
+          DateTime.utc(
+            2026,
+            8,
+            22,
+            12,
+          ).subtract(Duration(hours: (33 - index) * 4)),
           240,
-          100,
-          index == 3 ? 112 : 105,
-          98,
-          100,
+          index == 32 ? 94 : 101,
+          index == 27 ? 112 : 102,
+          index == 32
+              ? 90
+              : [8, 16, 24].contains(index)
+              ? 98
+              : 100,
+          index == 32 ? 100 : 101,
         ),
       candle('1m', start, 1, 100, 102, 98, 100),
       candle('1d', DateTime.utc(2026, 8, 22), 1440, 100, 112, 98, 100),
@@ -1419,12 +1440,19 @@ BingxHttpResponse _anchorBars({bool consumed = false}) => BingxHttpResponse(
   body: jsonEncode({
     'code': 0,
     'data': [
-      for (final minute in [45, 50, 55])
+      for (var minute = 0; minute <= 240; minute += 5)
         {
-          'time': DateTime.utc(2026, 8, 22, 11, minute).millisecondsSinceEpoch,
+          'time':
+              DateTime.utc(
+                2026,
+                8,
+                22,
+                7,
+                55,
+              ).add(Duration(minutes: minute)).millisecondsSinceEpoch,
           'open': '102',
           'high': '103',
-          'low': consumed && minute == 55 ? '99' : '101.5',
+          'low': consumed && minute == 240 ? '99' : '101.5',
           'close': '102',
           'volume': '10',
         },
@@ -1471,6 +1499,7 @@ _fixture({
   bool testOrder = true,
   bool includeExposureScope = true,
   bool legacySession = false,
+  bool legacyStrategy = false,
   bool maintenance = true,
   int maxEffects = 1,
   BingxFuturesReplayRunResult? publicRun,
@@ -1512,6 +1541,7 @@ _fixture({
     maxEffects: maxEffects,
   );
   final policy = <String, dynamic>{
+    if (!legacyStrategy) 'strategy_version': '4h-sweep-reclaim-5m-v1',
     'runner_build_id': 'runner-build',
     'plugin_id': 'hivra.bingx-futures-trading',
     'plugin_version': '0.2.7-plugins',
@@ -1632,9 +1662,19 @@ _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': 'micro_sweep_reclaim',
+      'anchor_source': '4h_sweep_reclaim_5m',
       'anchor_executable': true,
       'anchor_lifecycle': 'reclaimed',
+      'atr14_5m_decimal': '2.5',
+      'parent': {
+        'strategy_version': '4h-sweep-reclaim-5m-v1',
+        'timeframe': '4h',
+        'side': 'buy',
+        'low_decimal': '99',
+        'high_decimal': '102',
+        'sweep_at_utc': '2026-08-22T08:00:00Z',
+        'confirmed_at_utc': '2026-08-22T08:00:00Z',
+      },
       'liquidity_event_id': liquidityEventId ?? '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:50:00Z',
       'latest_closed_micro_bar_at_utc': '2026-08-22T11:55:00Z',

@@ -537,7 +537,8 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
               'of this session\'s pending orders, without new entries.\n'
               'Exchange leverage: long ${leverage.longLeverage}x, '
               'short ${leverage.shortLeverage}x\n'
-              'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}%\n'
+              'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional\n'
+              'Stop: entry structure / ATR; wider stops reduce order size.\n'
               'Authorized reads: balance, positions, realized PnL, and '
               '${activeMandate.symbol} leverage and margin mode.\n'
               'Expires: ${activeMandate.expiresAtUtc}\n\n'
@@ -700,7 +701,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                           '${mandate.testOrder ? "TEST" : "LIVE"}\n'
                           'Max order: '
                           '${mandate.maxOrderNotionalQuoteDecimal} USDT · '
-                          'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}% · '
+                          'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional · '
                           'Minimum RR: '
                           '${_takeProfitRiskReward.toStringAsFixed(1)}',
                         ),
@@ -1311,7 +1312,7 @@ String tradingRemoteRunnerSessionDetailsLabel(
     '${session.mandate.symbol} · ${session.mandate.testOrder ? "TEST" : "LIVE"}',
     'Limit ${session.mandate.maxOrderNotionalQuoteDecimal} USDT · '
         'Up to ${session.mandate.maxEffects} exchange request${session.mandate.maxEffects == 1 ? "" : "s"}',
-    'SL ${number(strategy['stop_loss_percent'])}% · '
+    '${strategy['strategy_version'] == null ? 'SL' : 'Loss budget'} ${number(strategy['stop_loss_percent'])}% · '
         'Minimum R:R ${number(strategy['minimum_risk_reward'])}',
     'Checks every ${intervalSeconds ~/ 60} min · '
         'Up to ${policy['max_cycles']} checks',

@@ -251,21 +251,21 @@ The runtime decision envelope must emit this bundle for every live decision.
 
 ### 5.3 Liquidity Zone Detection
 
-Define swing levels on 5m:
+Detect 4h pivot clusters through the canonical detector below:
 
-- buyside liquidity: local highs over lookback=40 candles,
-- sellside liquidity: local lows over lookback=40 candles.
+- buyside liquidity: clustered confirmed highs;
+- sellside liquidity: clustered confirmed lows.
 
 Sweep condition:
 
 - a closed-candle wick crosses a previously established swing level;
-- reclaim is evaluated by the bounded microstructure lifecycle in section
-  5.3.2, not by a fixed percentage offset.
+- parent reclaim and subsequent 5m confirmation follow the HTF-first contract
+  below, not a fixed percentage offset or an independent micro entry.
 
 ### 5.3.1 Canonical Hivra Pivot-Cluster Contract
 
-The v1 liquidity detector is an independently specified deterministic
-pivot-cluster model:
+The liquidity detector is an independently specified deterministic
+pivot-cluster model over closed 4h candles, not a numerical port of LuxAlgo:
 
 1. Pivot source:
    - `pivot_high = pivothigh(liqLen, 1)`
@@ -308,53 +308,89 @@ Determinism constraints:
 
 ### 5.3.2 Closed-Candle Sweep/Reclaim Lifecycle
 
-The executable microstructure path MUST be a pure reduction over ordered,
-closed 5m OHLC candles. A currently forming provider candle MUST NOT enter the
-canonical normalized snapshot, derived liquidity, ATR, or zone decision.
+### HTF-first sweep/reclaim (local implementation, not deployed)
 
-For the side selected by TVH, the zone owner chooses one canonical anchor:
+The selected replacement is `4h parent zone -> 5m entry confirmation`.
+The 4h zone determines the scenario and direction; a conflicting 1h zone
+MUST NOT override it. The 1h timeframe may refine compatible context, but a
+missing or ambiguous 4h parent MUST NOT silently fall back to an independent
+1h or 5m entry. A trend label alone is not a parent liquidity zone.
 
-- a confirmed closed-candle sweep/reclaim is preferred when present;
-- otherwise a fresh untouched 5m liquidity void created by directional
-  displacement may authorize the pending entry;
-- confirmed HTF buyside/sellside pivots remain opposite-liquidity targets and
-  context; they do not authorize entry;
-- a window extremum, liquidation proxy by itself, missing timestamp, breached
-  level, consumed level, or internal fallback remains non-executable.
+#### Planned higher-timeframe observation
 
-For the sweep/reclaim path:
+The market overview shall include `1D`, `1W`, and `1M` (calendar month,
+not minute) as observation-only context through the existing market-data,
+feature-extraction, and presentation owners. Weekly and monthly observations
+show broader ranges and external liquidity clusters; daily observations show
+price location and nearby liquidity above and below it. Each observation must
+identify its timeframe, bounds, candle close time, freshness, and zone state.
+Missing or insufficient history is unavailable, not an empty or valid zone.
+Forming candles, if displayed, must be marked provisional and cannot confirm
+a zone or event.
 
-1. Consume the existing feature extractor's detected cluster, with at least
-   three confirmed pivots, matching liquidity side, finite ordered bounds,
-   and a first breach inside the recent evaluation window. Window extrema
-   alone MUST NOT authorize a sweep/reclaim entry. Buyside clusters feed short reclaim;
-   sellside clusters feed long reclaim.
-2. Record a sweep when a closed wick crosses that level. A deeper wick in the
-   same active event updates its extreme without creating another event.
-3. Confirm reclaim only when a closed candle finishes back beyond the level in
-   the intended direction and its directional body is at least `0.5 * ATR14`.
-4. Expire an unconfirmed sweep after 8 closed bars.
-5. Invalidate it after more than 2 failed close-back attempts.
-6. Once confirmed, keep one event anchored to the exact sweep extreme. A later
-   sweep invalidates that cluster's setup rather than generating another entry
-   from consumed liquidity. Expired or invalidated evidence cannot restart from
-   the same cluster. Repeated evaluation of identical candles MUST produce the
-   same event and zone. Among valid clusters select the latest reclaim; tied
-   reclaim candle indices are ambiguous and MUST NOT authorize entry.
+This overview is separate from executable readiness. Agreement across these
+timeframes is not a new entry requirement; disagreement cannot independently
+authorize, veto, cancel, or replace an order. It does not change entry bounds,
+targets, sizing, or signed authority. Execution remains `4h -> 5m`.
+Reuse the existing observation path without a separate scheduler, strategy,
+or truth store. This planned overview does not resolve insufficient 5m history
+for parent confirmation or pending-order revalidation.
 
-For the liquidity-void path, a three-candle 5m displacement leaves the exact
-gap between candle one and candle three. The displacement body MUST be at least
-`0.75 * ATR14`, the void MUST remain untouched, and it expires after 24 closed
-bars. Its exact gap bounds are the entry zone; quote movement MUST NOT shift
-them. A later touch consumes the void and removes execution authority.
+#### Parent and entry binding
 
-The reducer has no persisted mutable market state. Restart, local execution,
-and shadow replay reconstruct the same lifecycle from the same canonical
-candle sequence. The zone owner derives a domain-separated stable liquidity
-event identity from symbol, side, executable anchor source/lifecycle, anchor
-price, and the closed-candle event timestamp. A deeper wick inside an
-unconfirmed sweep does not create another event. A new entry requires a new
-valid cluster setup, not reuse of the previously consumed cluster.
+The existing zone owner must retain the parent bounds, source, confirmation
+time and identity separately from the 5m entry bounds and confirmation.
+The 5m confirmation must occur after the parent is knowable, agree with its
+direction, and lie within its bounds. Forming candles cannot establish either
+authority. A new micro event cannot revive an invalidated parent.
+
+Before activation, the same parent/confirmation binding must survive the
+existing signed proposal, order identity, restart and pending-order
+revalidation paths. A different parent candidate does not invalidate an
+existing order. Existing signed sessions retain their original semantics;
+the replacement requires explicit strategy-version binding and fresh session
+authorization, not an in-place reinterpretation of existing evidence.
+
+The sole new-entry strategy is `4h-sweep-reclaim-5m-v1`:
+
+1. A sellside cluster with at least three pivots is swept below its bottom;
+   a closed 4h candle above that boundary confirms a long parent. A buyside
+   cluster is symmetric for short. Reclaim may occur on the sweep candle.
+2. The parent spans the cluster boundary to the most extreme sweep wick before
+   confirmation. An unconfirmed sweep expires after eight 4h bars. A later
+   strict breach of the confirmed extreme invalidates that parent permanently.
+3. Active opposing parents, or equally recent same-side parents, are ambiguous.
+   Otherwise select the latest same-side reclaim. Flow and 1h context cannot
+   choose another direction or bypass an absent parent.
+4. The first subsequent closed 5m candle entirely inside the parent confirms
+   entry when its directional body is at least `0.5 * ATR14_5m`. Its high/low
+   are the entry bounds. A candle closing at the parent confirmation time is
+   not subsequent. Later strict crossing of the entry's outer extreme consumes
+   the confirmation; it cannot restart from a later micro candle.
+5. Closed timestamps must be continuous. Missing coverage from the parent
+   confirmation through the current micro snapshot is unavailable, not proof
+   of validity or invalidity. The snapshot builder reuses the canonical decision
+   to select the parent, then extends the initial micro window backward from
+   its confirmation, including 15 bars of ATR warm-up. Original-order
+   revalidation uses the same reader with the retained parent timestamp.
+   Reads are bounded to 84 days and 26 pages of at most 1000 candles, covering
+   the existing 500-bar 4h window. Every required closed 5m timestamp must be
+   present; duplicate, malformed, non-progressing, or failed pages are
+   unavailable, never execution or cancellation evidence. No persistent
+   candle cache or second zone-selection owner is introduced.
+6. The signed proposal includes separate parent bounds, side, sweep time,
+   confirmation time and strategy version. Event identity hashes the normalized
+   symbol and exact parent, so another micro confirmation cannot purchase a
+   second effect for the same parent. Decision hashing also binds entry bounds.
+
+Void and independent micro-only entry paths are removed. Current replay and
+new authorization include the strategy version; a new runner rejects older
+strategy authorizations before exchange reads/effects. This does not rewrite
+old signed evidence or upgrade the active VPS installation. Legacy anchor
+revalidation remains read-only for historical evidence, not new-entry authority.
+No mutable market store or second effect path is introduced. Chronological
+fixtures prove mechanics, not profitability; packaged and live acceptance remain
+required before deployment.
 
 The workspace MUST retain detected buyside/sellside clusters as observations
 when entry preparation is blocked. Displayed bounds and breach status come
@@ -543,11 +579,11 @@ runtime lookback.
 Raw candle highs/lows MUST NOT be treated as executable liquidity levels.
 `sweep_origin`, `post_sweep_reaction`, and `consumed` levels MUST NOT become
 fresh again merely because price moved away from them. A trade that claims
-sweep/reclaim semantics requires the separate current microstructure path
-(`sweep -> reclaim -> displacement`) and a new live decision.
+sweep/reclaim semantics requires the canonical 4h parent and subsequent 5m
+confirmation, with a new live decision.
 Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
 `internal_diagnostic`, but MUST NOT authorize a pending order. If no current
-confirmed micro sweep/reclaim or fresh untouched 5m liquidity void exists, the
+confirmed 4h-parent/5m-entry binding exists, the
 live decision MUST emit `liquidity_anchor_unavailable`.
 
 The Trading UI MUST present executable microstructure bounds as a **pending
@@ -609,9 +645,10 @@ available indicator:
    the exact zone geometry must not drift with the live quote.
 2. Maintain each pool lifecycle as `fresh`, `sweep_origin`,
    `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
-3. Use recent aggressive-volume imbalance to activate exactly one direction.
-4. Prefer a bounded sweep/reclaim event for that side; otherwise permit one
-   fresh untouched 5m liquidity void as a pending entry anchor.
+3. Select the unambiguous 4h sweep/reclaim parent and its direction.
+4. Require subsequent 5m confirmation inside that parent and recent
+   aggressive-volume eligibility for the same side. No void fallback or
+   flow-driven reversal of the parent is permitted.
 5. Rank valid structural candidates with liquidation-proxy confluence.
 6. Apply hard freshness, funding, structural, risk, claim, and effect guards.
 7. Use trend, OI, session, and large-flow evidence as context for explanation
@@ -624,10 +661,9 @@ contract.
 
 ### 6.1 LONG TVH
 
-1. Recent aggressive-volume imbalance activates `buy`.
-2. A current sellside-liquidity sweep and bullish closed-candle reclaim supply
-   the preferred executable entry anchor. Without one, a fresh untouched
-   bullish 5m liquidity void may supply the exact pending entry bounds.
+1. A confirmed 4h sellside sweep/reclaim selects `buy`.
+2. A subsequent bullish 5m confirmation inside the parent supplies entry
+   bounds; recent aggressive-volume eligibility must agree with `buy`.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
@@ -639,10 +675,9 @@ Entry anchor:
 
 ### 6.2 SHORT TVH
 
-1. Recent aggressive-volume imbalance activates `sell`.
-2. A current buyside-liquidity sweep and bearish closed-candle reclaim supply
-   the preferred executable entry anchor. Without one, a fresh untouched
-   bearish 5m liquidity void may supply the exact pending entry bounds.
+1. A confirmed 4h buyside sweep/reclaim selects `sell`.
+2. A subsequent bearish 5m confirmation inside the parent supplies entry
+   bounds; recent aggressive-volume eligibility must agree with `sell`.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
@@ -702,36 +737,53 @@ Runtime implication:
 - each managed order must persist capsule-scoped provenance (canonical intent and decision hash lineage) before it can participate in replacement lifecycle,
 - only capsule-managed drone orders may be auto-canceled,
 - manual exchange orders must not be touched by this lifecycle,
-- market-dead reasons (`momentum_gate_*_missed_retest`, `trend_gate_*_far_retest`, `liquidity_anchor_unavailable`) require deterministic cancel of the stale pending order,
-- side mismatch or entry price leaving the current TVH zone also requires deterministic cancel.
-- `NO_SIGNAL` alone must neither cancel nor preserve a managed order blindly: revalidation must lock the existing order side and evaluate the current structural zone independently from trade-delta signal eligibility,
-- a side-locked structural evaluation may only keep or cancel the existing order; it must never authorize a new or replacement order,
-- when the side-locked structural anchor is executable and the order remains inside its zone, the order is kept even if transient flow inputs produce `NO_SIGNAL`,
-- when the side-locked anchor is unavailable or the order price left its structural zone, the order is canceled without replacement unless a separate normal actionable live decision exists.
+- a changed or blocked new-entry proposal, including `NO_SIGNAL`, side mismatch,
+  and `liquidity_anchor_unavailable`, is not cancellation authority;
+- revalidation binds the exact order to its original signed parent and entry,
+  using continuous history rather than a newly selected zone;
+- proven structural invalidation may authorize cancellation only within the
+  signed maintenance scope; missing proof or history leaves revalidation
+  unavailable without cancellation;
 - replacement must never reuse an unprovenanced order or bypass fresh decision, risk, idempotency, and execution gates.
-- each VPS cycle computes fresh signed market evidence before deciding whether
-  its single active managed order still belongs to the same liquidity event;
-- a changed event or blocked market proposal produces one journaled
+- a proven invalid original anchor produces one journaled
   `cancel-exact-order` maintenance effect; no placement occurs in that cycle;
 - after confirmed cancellation, a later cycle may place the new event through
   the existing exact-order effect path. Cancellation does not consume the
   placement budget, but unresolved cancellation stops for reconciliation.
 
-Automatic replacement policy:
-
-- `live_zone_mismatch` may produce one same-side replacement per `(peer, symbol, side)` lifecycle cycle,
-- replacement uses the fresh live TVH zone and retains original quantity,
-- original stop-distance percentage and risk/reward ratio are projected onto the fresh zone midpoint,
-- replacement receives the same deterministic client-id derivation from the fresh liquidity event identity,
-- consensus/host preparation and risk governor are evaluated again, while exchange submission still flows only through `BingxFuturesExchangeExecutionUseCaseService`,
-- an event already claimed by the original order is cancel-only and cannot create a replacement effect,
-- `live_side_mismatch`, `momentum_gate_*`, `trend_gate_*`, and `liquidity_anchor_unavailable` are cancel-only and must never auto-reverse or auto-replace.
+Replacement is a fresh entry in a later cycle, not an in-place move of the
+old order. Its event, quantity, targets, account risk and signed authority must
+pass the normal execution path again. It cannot inherit the old quantity or
+reuse an already claimed event. No new-entry blocker alone authorizes an
+automatic cancellation, reversal, or replacement.
 
 ---
 
 ## 7. Risk, Stop, Target Rules
 
 For every accepted TVH:
+
+The shared target calculation derives the stop from the confirmed 5m entry's
+outer extreme and ATR14(5m), which is included in the signed market proposal.
+Missing or invalid ATR cannot fall back to a percentage stop. A strict crossing
+of that entry extreme already invalidates the entry even if its 4h parent
+survives. Decimal normalization must not round the stop inward.
+
+For the new strategy, the retained `stop_loss_percent` setting bounds the loss
+budget at maximum notional; it is not the stop's price distance or a percentage
+of account equity. The notional cap is reduced by
+`min(1, entry * configured_percent / (100 * actual_stop_distance))` before lot
+sizing. It never increases the signed maximum. Local preparation, scan
+eligibility, and remote composition share this calculation. Existing deployed
+sessions are not reinterpreted. Local and remote preparation require the
+instrument's price precision (0 through 8 decimal places). Entry is the rounded
+zone midpoint and must remain strictly inside the zone. The trigger rounds
+outward from the zone, SL outward from the invalidation boundary, and TP toward
+entry. Risk/reward and lot sizing use these serialized prices. Local preparation
+passes the computed entry through the existing explicit-price contract rather
+than asking the plugin to recompute the midpoint. Scan eligibility remains a
+market-level estimate, not an executable price approval. Provider acceptance
+and position-protection continuity still require product verification.
 
 1. Stop-loss distance:
    - `max(structure_invalidation_distance, 0.8 * ATR14_5m)`.
@@ -1074,11 +1126,14 @@ A blocked or different ready entry proposal is not structural invalidation of a
 pending order. Revalidation authenticates the retained signed placement
 observation and binds its operation, event, side, symbol and policy to the
 exact journal-owned order. The existing zone owner checks continuous closed
-5m bars from the original event: a subsequent strict reclaim-level sweep,
-inclusive void touch, or untouched void age beyond 24 bars invalidates it.
+5m bars from the original parent through the current observation. A strict
+crossing of the original parent or confirmed entry extreme invalidates it.
+Legacy micro/void revalidation helpers remain read-only compatibility logic;
+they do not grant current-strategy admission or enable a new void entry.
 Missing or stale coverage, invalid proof, and partial execution report
-revalidation unavailable without cancellation. The public read is bounded to
-120 bars; an older uncovered anchor is not assumed valid or invalid. No new
+revalidation unavailable without cancellation. The public read uses the bounded
+parent-history reader described above; an uncovered anchor is not assumed valid
+or invalid. No new
 candidate replaces this original-anchor decision or supplies its authority.
 Session deployment and activation do not require a currently executable zone.
 The Runner remains active across bounded blocked cycles and waits for a later

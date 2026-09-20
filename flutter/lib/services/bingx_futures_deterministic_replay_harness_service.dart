@@ -337,6 +337,7 @@ class BingxFuturesDeterministicReplayHarnessService {
 
   String publicStrategyPolicyHashHex() {
     final canonical = jsonEncode(<String, dynamic>{
+      'strategy_version': bingxLiquidityStrategyVersion,
       'min_abs_trade_imbalance_ratio': _policy.minAbsTradeImbalanceRatio,
       'max_abs_funding_rate': _policy.maxAbsFundingRate,
     });
