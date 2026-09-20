@@ -667,6 +667,11 @@ class BingxFuturesExchangeExecutionUseCaseService {
         <String, Future<BingxFuturesPositionHistoryResult>>{};
     final diagnostics = <String>[];
 
+    String? usablePositionId(String? value) {
+      final id = value?.trim() ?? '';
+      return id.isEmpty || RegExp(r'^0+$').hasMatch(id) ? null : id;
+    }
+
     Future<
       ({
         BingxManagedOrderLifecycleStatus status,
@@ -793,29 +798,44 @@ class BingxFuturesExchangeExecutionUseCaseService {
       required BingxManagedOrderProvenance record,
       required BingxFuturesOpenOrder? entryOrder,
     }) async {
-      if (record.positionLifecycleStatus ==
-          BingxManagedPositionLifecycleStatus.closed) {
+      final recordedPositionId = usablePositionId(record.positionId);
+      final observedPositionId = usablePositionId(entryOrder?.positionId);
+      if (recordedPositionId != null &&
+          observedPositionId != null &&
+          recordedPositionId != observedPositionId) {
         return (
-          status: record.positionLifecycleStatus,
-          positionId: record.positionId,
-          diagnostic: record.positionDiagnostic,
-          realizedPnlQuoteDecimal: record.realizedPnlQuoteDecimal,
-          netPnlQuoteDecimal: record.netPnlQuoteDecimal,
-          closedAtUtc: record.closedAtUtc,
+          status: BingxManagedPositionLifecycleStatus.unresolved,
+          positionId: recordedPositionId,
+          diagnostic: 'provider_position_id_conflict',
+          realizedPnlQuoteDecimal: null,
+          netPnlQuoteDecimal: null,
+          closedAtUtc: null,
         );
       }
-      final positionId =
-          entryOrder?.positionId?.trim().isNotEmpty == true
-              ? entryOrder!.positionId!.trim()
-              : record.positionId?.trim() ?? '';
+      final positionId = observedPositionId ?? recordedPositionId ?? '';
       if (positionId.isEmpty) {
         return (
           status: BingxManagedPositionLifecycleStatus.unresolved,
           positionId: null,
-          diagnostic: 'provider_position_id_missing',
+          diagnostic:
+              entryOrder?.positionId != null || record.positionId != null
+                  ? 'provider_position_id_unusable'
+                  : 'provider_position_id_missing',
           realizedPnlQuoteDecimal: null,
           netPnlQuoteDecimal: null,
           closedAtUtc: null,
+        );
+      }
+      if (recordedPositionId != null &&
+          record.positionLifecycleStatus ==
+              BingxManagedPositionLifecycleStatus.closed) {
+        return (
+          status: record.positionLifecycleStatus,
+          positionId: positionId,
+          diagnostic: record.positionDiagnostic,
+          realizedPnlQuoteDecimal: record.realizedPnlQuoteDecimal,
+          netPnlQuoteDecimal: record.netPnlQuoteDecimal,
+          closedAtUtc: record.closedAtUtc,
         );
       }
       final recordedAt = DateTime.tryParse(record.recordedAtUtc)?.toUtc();
@@ -1012,15 +1032,21 @@ class BingxFuturesExchangeExecutionUseCaseService {
         clientOrderId: record.clientOrderId,
         expectedTriggerLimit: _isTriggerLimitIntent(record.canonicalIntentJson),
       );
+      final retainedPositionId = usablePositionId(record.positionId);
+      final observedPositionId = usablePositionId(evidence.order?.positionId);
       var reconciledRecord = record.withLifecycle(
         status: evidence.status,
         evidenceAtUtc: evidenceAtUtc,
         diagnostic: evidence.diagnostic,
-        observedPositionId: evidence.order?.positionId,
+        observedPositionId:
+            retainedPositionId == null ||
+                    retainedPositionId == observedPositionId
+                ? observedPositionId
+                : null,
       );
       if (evidence.status == BingxManagedOrderLifecycleStatus.filled) {
         final positionEvidence = await readPositionEvidence(
-          record: reconciledRecord,
+          record: record,
           entryOrder: evidence.order,
         );
         reconciledRecord = reconciledRecord.withPositionLifecycle(

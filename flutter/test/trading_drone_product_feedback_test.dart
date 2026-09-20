@@ -255,6 +255,7 @@ void main() {
             testOrder: false,
             intentHashHex: 'intent',
             canonicalIntentJson: '{}',
+            lifecycleStatus: BingxManagedOrderLifecycleStatus.filled,
             positionId: 'position-1',
             positionLifecycleStatus: BingxManagedPositionLifecycleStatus.closed,
             netPnlQuoteDecimal: '-0.83',
@@ -298,6 +299,7 @@ void main() {
       expect(notice, contains('not recreate'));
       expect(notice, isNot(contains('live-client')));
       expect(details, contains('may mean filled'));
+      expect(details, contains('A fill alone does not verify a position or PnL'));
       expect(details, contains('DOGE-USDT · live-client'));
       expect(
         details,
@@ -312,6 +314,74 @@ void main() {
       expect(tradingReconciliationNotice(null, 'capsule-a'), isNull);
     },
   );
+
+  test('filled order without position proof still needs review', () {
+    const state = BingxFuturesOrderTrackingState(
+      trackedSymbol: null,
+      trackedOrderId: null,
+      managedOrderIds: <String>[],
+      managedOrderSymbols: <String, String>{},
+      managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+        'filled-no-position': BingxManagedOrderProvenance(
+          orderId: 'filled-no-position',
+          symbol: 'DOGE-USDT',
+          side: 'buy',
+          testOrder: false,
+          intentHashHex: 'intent',
+          canonicalIntentJson: '{}',
+          lifecycleStatus: BingxManagedOrderLifecycleStatus.filled,
+          positionId: '0',
+          positionDiagnostic: 'provider_position_id_unusable',
+          marketSnapshotHashHex: null,
+          featureHashHex: null,
+          tvhDecisionHashHex: null,
+          liveDecisionHashHex: null,
+          recordedAtUtc: '2026-09-06T12:00:00.000Z',
+        ),
+        'other-account': BingxManagedOrderProvenance(
+          orderId: 'other-account',
+          symbol: 'ZIL-USDT',
+          side: 'sell',
+          testOrder: false,
+          intentHashHex: 'intent',
+          canonicalIntentJson: '{}',
+          lifecycleStatus: BingxManagedOrderLifecycleStatus.unresolved,
+          lifecycleDiagnostic: 'account_binding_mismatch',
+          positionId: 'old-position',
+          positionLifecycleStatus: BingxManagedPositionLifecycleStatus.closed,
+          netPnlQuoteDecimal: '4.2',
+          marketSnapshotHashHex: null,
+          featureHashHex: null,
+          tvhDecisionHashHex: null,
+          liveDecisionHashHex: null,
+          recordedAtUtc: '2026-09-05T12:00:00.000Z',
+        ),
+      },
+      stopLossPercent: null,
+      takeProfitRiskReward: null,
+    );
+    const result = BingxFuturesManagedOrderReconciliationResult(
+      status: BingxFuturesManagedOrderReconciliationStatus.reconciled,
+      capsuleRootHex: 'capsule-a',
+      state: state,
+      activeCount: 0,
+      terminalCount: 1,
+      unresolvedCount: 1,
+      diagnostics: <String>[],
+    );
+
+    final notice = tradingReconciliationNotice(result, 'capsule-a')!;
+    final details = tradingReconciliationDetails(result, 'capsule-a')!;
+    expect(notice, contains('2 need review'));
+    expect(notice, contains('1 filled order'));
+    expect(notice, isNot(contains('No unresolved records')));
+    expect(
+      details,
+      contains('filled-no-position · order filled; position/PnL unverified'),
+    );
+    expect(details, contains('did not provide a usable position ID'));
+    expect(details, isNot(contains('ZIL-USDT position closed')));
+  });
 
   test('account changes stay concise until reconciliation details expand', () {
     const state = BingxFuturesOrderTrackingState(

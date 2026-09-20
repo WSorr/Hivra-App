@@ -2168,6 +2168,162 @@ void main() {
       );
     });
 
+    test('zero position ID cannot verify a filled order or PnL', () async {
+      final store = _trackingStore(tempHome);
+      final binding =
+          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+            _credentials,
+          );
+      await store.save(
+        _trackingState(
+          orderId: 'managed-zero-position',
+          accountBindingHashHex: binding,
+          positionId: '0',
+        ),
+      );
+      var orderReads = 0;
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          if (request.uri.path.endsWith('/trade/order')) {
+            orderReads += 1;
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-zero-position","clientOrderId":"managed-client","positionID":"0","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","status":"FILLED","executedQty":"0.01"}}',
+            );
+          }
+          throw StateError('unexpected ${request.uri.path}');
+        },
+      );
+
+      for (final currentStore in [store, _trackingStore(tempHome)]) {
+        final result = await _reconciliationUseCase(
+          exchange: exchange,
+          store: currentStore,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
+        final record =
+            result.state!.managedOrderProvenance['managed-zero-position']!;
+        expect(record.lifecycleStatus, BingxManagedOrderLifecycleStatus.filled);
+        expect(
+          record.positionLifecycleStatus,
+          BingxManagedPositionLifecycleStatus.unresolved,
+        );
+        expect(record.positionDiagnostic, 'provider_position_id_unusable');
+        expect(record.realizedPnlQuoteDecimal, isNull);
+        expect(record.netPnlQuoteDecimal, isNull);
+      }
+      expect(orderReads, 2);
+    });
+
+    test(
+      'retained exact position ID survives an order response without it',
+      () async {
+        final store = _trackingStore(tempHome);
+        final binding =
+            BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+              _credentials,
+            );
+        await store.save(
+          _trackingState(
+            orderId: 'managed-known-position',
+            accountBindingHashHex: binding,
+            positionId: 'known-position',
+          ),
+        );
+        final exchange = BingxFuturesExchangeService(
+          requestSender: (request) async {
+            if (request.uri.path.endsWith('/trade/order')) {
+              return const BingxHttpResponse(
+                statusCode: 200,
+                body:
+                    '{"code":0,"msg":"ok","data":{"orderID":"managed-known-position","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","status":"FILLED","executedQty":"0.01"}}',
+              );
+            }
+            if (request.uri.path.endsWith('/trade/positionHistory')) {
+              expect(
+                request.uri.queryParameters['positionId'],
+                'known-position',
+              );
+              return const BingxHttpResponse(
+                statusCode: 200,
+                body:
+                    '{"code":0,"msg":"ok","data":{"total":1,"list":[{"positionId":"known-position","symbol":"BTC-USDT","positionSide":"LONG","openTime":1787356800000,"updateTime":1787360400000,"avgPrice":"100","avgClosePrice":"95","realisedProfit":"-0.05","netProfit":"-0.06","positionAmt":"0.01","closePositionAmt":"0.01","closeAllPositions":true}]}}',
+              );
+            }
+            throw StateError('unexpected ${request.uri.path}');
+          },
+        );
+
+        final result = await _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
+        final record =
+            result.state!.managedOrderProvenance['managed-known-position']!;
+        expect(record.positionId, 'known-position');
+        expect(
+          record.positionLifecycleStatus,
+          BingxManagedPositionLifecycleStatus.closed,
+        );
+        expect(record.netPnlQuoteDecimal, '-0.06');
+      },
+    );
+
+    test('conflicting position IDs cannot replace retained PnL', () async {
+      final store = _trackingStore(tempHome);
+      final binding =
+          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+            _credentials,
+          );
+      await store.save(
+        _trackingState(
+          orderId: 'managed-position-conflict',
+          accountBindingHashHex: binding,
+          positionId: 'known-position',
+          closedPosition: true,
+        ),
+      );
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          if (request.uri.path.endsWith('/trade/order')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"orderID":"managed-position-conflict","clientOrderId":"managed-client","positionID":"other-position","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","status":"FILLED","executedQty":"0.01"}}',
+            );
+          }
+          throw StateError('unexpected ${request.uri.path}');
+        },
+      );
+
+      final result = await _reconciliationUseCase(
+        exchange: exchange,
+        store: store,
+        riskHistory: riskHistory,
+      ).reconcileManagedOrders(
+        credentials: _credentials,
+        openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+      );
+      final record =
+          result.state!.managedOrderProvenance['managed-position-conflict']!;
+      expect(record.positionId, 'known-position');
+      expect(
+        record.positionLifecycleStatus,
+        BingxManagedPositionLifecycleStatus.unresolved,
+      );
+      expect(record.positionDiagnostic, 'provider_position_id_conflict');
+      expect(record.realizedPnlQuoteDecimal, isNull);
+      expect(record.netPnlQuoteDecimal, isNull);
+    });
+
     test('another position identity cannot close a managed trade', () async {
       final store = _trackingStore(tempHome);
       final binding =
@@ -2699,6 +2855,8 @@ BingxFuturesOrderTrackingState _trackingState({
   required String orderId,
   required String accountBindingHashHex,
   bool includeEffectClaim = false,
+  String? positionId,
+  bool closedPosition = false,
 }) {
   final eventId = List<String>.filled(64, 'f').join();
   final canonicalIntentJson =
@@ -2722,6 +2880,16 @@ BingxFuturesOrderTrackingState _trackingState({
         accountBindingHashHex: accountBindingHashHex,
         lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
         lifecycleEvidenceAtUtc: '2026-08-13T09:00:00.000Z',
+        positionId: positionId,
+        positionLifecycleStatus:
+            closedPosition
+                ? BingxManagedPositionLifecycleStatus.closed
+                : BingxManagedPositionLifecycleStatus.unresolved,
+        positionEvidenceAtUtc:
+            closedPosition ? '2026-08-13T10:00:00.000Z' : null,
+        realizedPnlQuoteDecimal: closedPosition ? '-0.05' : null,
+        netPnlQuoteDecimal: closedPosition ? '-0.06' : null,
+        closedAtUtc: closedPosition ? '2026-08-13T10:00:00.000Z' : null,
         marketSnapshotHashHex: null,
         featureHashHex: null,
         tvhDecisionHashHex: null,

@@ -1621,14 +1621,12 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     final data = decoded['data'];
     final rows = <dynamic>[];
     var shapeValid = false;
-    if (data is List) {
-      rows.addAll(data);
-      shapeValid = true;
-    } else if (data is Map) {
+    if (data is Map) {
       final list = data['list'];
       if (list is List) {
         rows.addAll(list);
-        shapeValid = true;
+        final total = int.tryParse(data['total']?.toString() ?? '');
+        shapeValid = total != null && total == list.length;
       }
     }
     final parsed = <BingxFuturesClosedPosition>[];
