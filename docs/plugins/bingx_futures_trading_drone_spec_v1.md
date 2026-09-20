@@ -1056,8 +1056,30 @@ completed-cycle count, consumed effect count, terminal state, and exact last
 cycle identity. A retained result is committed before the journal advances, so
 restart between those writes reconciles the exact result without repeating the
 provider call. Blocked evaluations consume a cycle but not an effect. Any
-provider attempt consumes an effect; unresolved or terminal failure stops the
-session. Reaching the signed cycle, effect, or expiry bound is terminal.
+placement attempt consumes an effect, including rejected or uncertain delivery;
+unresolved or terminal failure stops the session. The exact effect executor
+also enforces the placement ceiling from its retained journal, independently of
+scheduler progress. Reaching the signed cycle or expiry bound is terminal.
+Newly authorized v6 sessions may explicitly sign
+`session_policy.entry_budget_exhaustion = "manage_existing"`. This keeps the
+existing serial checks and permitted cancellation of session-owned pending
+orders available after the placement ceiling, without authorizing another entry.
+Cancellation does not replenish or consume the placement budget. Without this
+signed field, the placement ceiling remains terminal; existing signed bytes are
+never rewritten. Older verifiers reject the extended policy rather than silently
+discarding it. This compatibility rule can be removed only when no retained
+pre-extension sessions require verification or recovery.
+
+A blocked or different ready entry proposal is not structural invalidation of a
+pending order. Revalidation authenticates the retained signed placement
+observation and binds its operation, event, side, symbol and policy to the
+exact journal-owned order. The existing zone owner checks continuous closed
+5m bars from the original event: a subsequent strict reclaim-level sweep,
+inclusive void touch, or untouched void age beyond 24 bars invalidates it.
+Missing or stale coverage, invalid proof, and partial execution report
+revalidation unavailable without cancellation. The public read is bounded to
+120 bars; an older uncovered anchor is not assumed valid or invalid. No new
+candidate replaces this original-anchor decision or supplies its authority.
 Session deployment and activation do not require a currently executable zone.
 The Runner remains active across bounded blocked cycles and waits for a later
 fresh zone; only a cycle that passes the canonical market, freshness,

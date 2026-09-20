@@ -528,7 +528,7 @@ runner_prepared_session_activation_is_fail_closed() {
     printf '%s\n' "$body" | rg -q 'refused a revoked session' &&
     printf '%s\n' "$body" | rg -q 'require_retained_exchange_credential_binding' &&
     printf '%s\n' "$body" | rg -q 'prepare_deterministic_session_cycle' &&
-    printf '%s\n' "$body" | rg -Fq 'activate)' &&
+    printf '%s\n' "$body" | rg -q '(^|[[:space:]])activate([[:space:]\\)]|$)' &&
     rg -q 'deterministic session has not been explicitly activated' "$1" &&
     printf '%s\n' "$body" | rg -q 'scheduler=false effect=false' &&
     ! printf '%s\n' "$body" | rg -q 'systemctl (enable|start)|execute_deterministic_order_once|capture_deterministic_market_evidence_once' &&

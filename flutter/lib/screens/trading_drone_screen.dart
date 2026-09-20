@@ -111,21 +111,23 @@ String? tradingReconciliationNotice(
     return null;
   }
   final state = result.state!;
-  final unresolvedLiveRecords = <String, String>{
+  final mismatchedKeyOrders = <String>{
     for (final record in state.managedOrderProvenance.values)
       if (!record.testOrder &&
-          record.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
-        record.orderId: record.lifecycleDiagnostic ?? 'evidence_unavailable',
+          record.lifecycleStatus ==
+              BingxManagedOrderLifecycleStatus.unresolved &&
+          record.lifecycleDiagnostic == 'account_binding_mismatch')
+        'order:${record.orderId}',
     for (final claim in state.liquidityEventEffectClaims.values)
       if (!claim.testOrder &&
-          claim.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
-        claim.orderId ?? claim.clientOrderId:
-            claim.lifecycleDiagnostic ?? 'evidence_unavailable',
+          claim.lifecycleStatus ==
+              BingxManagedOrderLifecycleStatus.unresolved &&
+          claim.lifecycleDiagnostic == 'account_binding_mismatch')
+        if (claim.orderId?.trim().isNotEmpty == true)
+          'order:${claim.orderId!.trim()}'
+        else
+          'client:live:${claim.clientOrderId}',
   };
-  final accountMismatchCount =
-      unresolvedLiveRecords.values
-          .where((diagnostic) => diagnostic == 'account_binding_mismatch')
-          .length;
   final unverifiedPositionCount =
       state.managedOrderProvenance.values
           .where(
@@ -137,28 +139,25 @@ String? tradingReconciliationNotice(
                     BingxManagedPositionLifecycleStatus.unresolved,
           )
           .length;
-  final reviewCount = result.unresolvedCount + unverifiedPositionCount;
+  final otherUnresolvedCount =
+      result.unresolvedCount - mismatchedKeyOrders.length;
+  final reviewCount = otherUnresolvedCount + unverifiedPositionCount;
   final activeLabel =
       result.activeCount == 0
           ? 'No active drone orders'
           : '${result.activeCount} active drone orders';
   final reviewLabel =
       reviewCount == 0
-          ? 'No unresolved records'
+          ? 'Nothing to review with this key'
           : reviewCount == 1
           ? '1 needs review'
           : '$reviewCount need review';
   return <String>[
     'Order check · $activeLabel · $reviewLabel',
     if (unverifiedPositionCount > 0)
-      '$unverifiedPositionCount filled order${unverifiedPositionCount == 1 ? '' : 's'} '
-          '${unverifiedPositionCount == 1 ? 'has' : 'have'} unverified position/PnL evidence.',
-    if (accountMismatchCount == result.unresolvedCount &&
-        accountMismatchCount > 0)
-      '$accountMismatchCount earlier records belong to another BingX account. '
-          'They stay isolated and will not be reused.',
-    if (result.unresolvedCount > accountMismatchCount)
-      'Some outcomes are not verified. Hivra will not recreate those orders automatically.',
+      '$unverifiedPositionCount filled order${unverifiedPositionCount == 1 ? '' : 's'} without position/PnL proof.',
+    if (otherUnresolvedCount > 0)
+      '$otherUnresolvedCount order outcome${otherUnresolvedCount == 1 ? '' : 's'} still unverified; Hivra will not recreate them.',
   ].join('\n');
 }
 
@@ -175,9 +174,6 @@ String? tradingReconciliationDetails(
   }
   final state = result.state!;
   String reason(String? diagnostic) {
-    if (diagnostic == 'account_binding_mismatch') {
-      return 'different BingX account';
-    }
     const prefix = 'provider_status_unknown:';
     if (diagnostic?.startsWith(prefix) == true) {
       return 'BingX reports ${diagnostic!.substring(prefix.length)}; final outcome unverified';
@@ -188,12 +184,16 @@ String? tradingReconciliationDetails(
   final unresolved = <String, String>{
     for (final record in state.managedOrderProvenance.values)
       if (!record.testOrder &&
-          record.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+          record.lifecycleStatus ==
+              BingxManagedOrderLifecycleStatus.unresolved &&
+          record.lifecycleDiagnostic != 'account_binding_mismatch')
         record.orderId:
             '${record.symbol} · ${record.orderId} · ${reason(record.lifecycleDiagnostic)}',
     for (final claim in state.liquidityEventEffectClaims.values)
       if (!claim.testOrder &&
-          claim.lifecycleStatus == BingxManagedOrderLifecycleStatus.unresolved)
+          claim.lifecycleStatus ==
+              BingxManagedOrderLifecycleStatus.unresolved &&
+          claim.lifecycleDiagnostic != 'account_binding_mismatch')
         claim.orderId ?? claim.clientOrderId:
             '${claim.symbol} · ${claim.orderId ?? claim.clientOrderId} · ${reason(claim.lifecycleDiagnostic)}',
   };
@@ -234,23 +234,24 @@ String? tradingReconciliationDetails(
         '${record.closedAtUtc == null ? '' : ' · ${record.closedAtUtc}'}';
   }
 
-  return <String>[
-    'Order outcomes: ${result.terminalCount} terminal records. Completed may mean filled, cancelled, rejected, or expired. A fill alone does not verify a position or PnL.',
-    if (state.managedOrderProvenance.values.any((record) => record.testOrder) ||
-        state.liquidityEventEffectClaims.values.any((claim) => claim.testOrder))
-      'Test records are retained separately; they are not live orders.',
-    if (result.unresolvedCount > 0)
-      'Review unresolved records in BingX. Missing evidence is not success or cancellation.',
-    ...positions.take(3).map(positionSummary),
+  final lines = <String>[
+    if (unverifiedPositions.isNotEmpty)
+      'Filled orders needing position review:',
     ...unverifiedPositions
         .take(3)
         .map(
           (record) =>
-              '${record.symbol} · ${record.orderId} · order filled; position/PnL unverified: '
-              '${positionReason(record.positionDiagnostic)}',
+              '${record.symbol} · ${record.orderId} · ${positionReason(record.positionDiagnostic)}',
         ),
+    if (unresolved.isNotEmpty) 'Order outcomes needing review:',
     ...unresolved.values,
-  ].join('\n');
+    if (positions.isNotEmpty) 'Verified positions:',
+    ...positions.take(3).map(positionSummary),
+    if (state.managedOrderProvenance.values.any((record) => record.testOrder) ||
+        state.liquidityEventEffectClaims.values.any((claim) => claim.testOrder))
+      'Test records are separate from live orders.',
+  ];
+  return lines.isEmpty ? null : lines.join('\n');
 }
 
 @visibleForTesting
@@ -350,12 +351,10 @@ String tradingOrderBudgetLabel(int value) =>
 
 @visibleForTesting
 String tradingOrderBudgetNotice(int value) =>
-    value == 1
-        ? 'The Runner stops after its first exchange request. Increase the '
-            'session budget before authorization if it should keep watching '
-            'after one request.'
-        : 'The Runner stops after $value exchange requests or when the '
-            '24-hour session expires.';
+    'At most $value new entry attempt${value == 1 ? '' : 's'}. '
+    'New VPS sessions continue checks and permitted pending-order cancellation '
+    'after this limit, until the signed expiry or check limit. '
+    'Previously signed sessions keep their original stop policy.';
 
 @visibleForTesting
 int tradingRestoredEffectBudget(BingxFuturesTradingMandate mandate) =>

@@ -3,6 +3,129 @@ import 'package:hivra_app/services/bingx_futures_zone_decision_service.dart';
 import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 
 void main() {
+  group('original anchor revalidation', () {
+    const service = BingxFuturesZoneDecisionService();
+    final event = DateTime.utc(2026, 9, 20, 12);
+    BingxFuturesCandle bar(
+      int index, {
+      num low = 101,
+      num high = 103,
+      bool closed = true,
+    }) {
+      final close = event.add(Duration(minutes: index * 5));
+      return BingxFuturesCandle(
+        timeframe: '5m',
+        openTimeUtc:
+            close.subtract(const Duration(minutes: 5)).toIso8601String(),
+        closeTimeUtc: close.toIso8601String(),
+        openDecimal: '102',
+        highDecimal: '$high',
+        lowDecimal: '$low',
+        closeDecimal: '102',
+        volumeBaseDecimal: '1',
+        volumeQuoteDecimal: '102',
+        isClosed: closed,
+      );
+    }
+
+    String check(
+      List<BingxFuturesCandle> bars, {
+      String side = 'buy',
+      String source = 'micro_sweep_reclaim',
+      int age = 2,
+    }) => service.revalidateAnchor(
+      side: side,
+      source: source,
+      zoneLow: 100,
+      zoneHigh: 102,
+      eventAtUtc: event,
+      nowUtc: event.add(Duration(minutes: age * 5)),
+      candles: bars,
+    );
+
+    test('reclaim consumes only a later strict sweep on the original side', () {
+      expect(
+        check([bar(0, low: 90), bar(1, low: 100), bar(2)]),
+        'anchor_valid',
+      );
+      expect(check([bar(0), bar(1, low: 99), bar(2)]), 'anchor_consumed');
+      expect(
+        check([bar(0), bar(1, high: 102), bar(2, high: 102)], side: 'sell'),
+        'anchor_valid',
+      );
+      expect(
+        check([bar(0), bar(1), bar(2, high: 102)], side: 'sell'),
+        'anchor_consumed',
+      );
+    });
+    test('void consumes on inclusive near-edge touch for either side', () {
+      expect(
+        check([
+          bar(0),
+          bar(1, low: 103),
+          bar(2, low: 103),
+        ], source: 'micro_liquidity_void'),
+        'anchor_valid',
+      );
+      expect(
+        check([
+          bar(0),
+          bar(1, low: 102),
+          bar(2, low: 103),
+        ], source: 'micro_liquidity_void'),
+        'anchor_consumed',
+      );
+      expect(
+        check(
+          [bar(0), bar(1, low: 98, high: 99), bar(2, low: 98, high: 99)],
+          source: 'micro_liquidity_void',
+          side: 'sell',
+        ),
+        'anchor_valid',
+      );
+      expect(
+        check(
+          [bar(0), bar(1, low: 98, high: 100), bar(2, low: 98, high: 99)],
+          source: 'micro_liquidity_void',
+          side: 'sell',
+        ),
+        'anchor_consumed',
+      );
+    });
+    test(
+      'missing, stale, duplicate and gapped coverage cannot authorize cancellation',
+      () {
+        for (final bars in <List<BingxFuturesCandle>>[
+          [],
+          [bar(1), bar(2)],
+          [bar(0), bar(1)],
+          [bar(0), bar(1), bar(1), bar(2)],
+          [bar(0), bar(2, low: 99)],
+          [bar(0), bar(1), bar(2), bar(3)],
+        ]) {
+          expect(check(bars), 'anchor_unavailable');
+        }
+      },
+    );
+    test('forming candle does not consume a confirmed anchor', () {
+      expect(
+        check([bar(0), bar(1), bar(2), bar(3, low: 90, closed: false)]),
+        'anchor_valid',
+      );
+    });
+    test('only untouched void expires after 24 closed bars', () {
+      final bars = List.generate(26, (i) => bar(i, low: 103));
+      expect(
+        check(bars.take(25).toList(), source: 'micro_liquidity_void', age: 24),
+        'anchor_valid',
+      );
+      expect(
+        check(bars, source: 'micro_liquidity_void', age: 25),
+        'anchor_expired',
+      );
+      expect(check(bars, age: 25), 'anchor_valid');
+    });
+  });
   group('BingxFuturesZoneDecisionService', () {
     const service = BingxFuturesZoneDecisionService();
 

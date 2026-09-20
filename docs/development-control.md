@@ -60,6 +60,41 @@ outcome they attest.
 
 ## Active Outcome: Trading 24/7
 
+Release is on hold until the autonomous order-to-position journey and the
+strategy are product-accepted. Order Check cleanup alone does not close this
+outcome. The remaining work is:
+
+1. Complete the lifecycle of an already accepted order when the new-entry
+   budget is exhausted. Define and authorize observation, cancellation, and
+   protection explicitly; do not silently extend expired authority.
+2. Reuse the canonical structural revalidation for existing orders. A blocked
+   new-entry proposal alone must not decide whether their zone is invalid.
+3. Reconcile the shared stop calculation with the strategy contract's
+   structure/ATR rule; size from the actual stop and retain opposite-liquidity
+   targets. Verify order, fill, protection, and terminal-result continuity.
+4. Evaluate the fixed strategy chronologically on real market evidence,
+   including fees, funding, slippage, and conservative fill assumptions.
+   Keep evaluation data separate from tuning; unavailable inputs must remain
+   explicit. Deterministic fixtures alone do not establish trading quality.
+
+Work proceeds through lifecycle completion, strategy reconciliation, and
+end-to-end autonomous acceptance using the existing owners. These requirements
+do not grant additional trading authority or change current signed sessions.
+
+Local implementation now enforces the placement budget in the existing exact
+effect executor using retained attempted placements, including uncertain and
+rejected deliveries. Same-operation reconciliation remains available. Focused
+tests pass; this has not been deployed. New session authorization explicitly
+signs bounded post-budget checks and pending-order cancellation. Existing
+sessions retain their original stop policy. Pending-order revalidation now binds
+the retained signed placement observation to the exact journal-owned order and
+checks its original reclaim/void against continuous closed 5m candles through
+the existing zone owner. A different or blocked new-entry proposal is not a
+cancellation reason. Missing proof/history or partial execution retains the
+order as revalidation unavailable. The 120-bar read cannot revalidate anchors
+outside its coverage. Order-to-position protection continuity and packaged/VPS
+acceptance remain unfinished; this is not autonomous product acceptance.
+
 ```text
 one Capsule -> one configured VPS -> one signed session
             -> at most one external effect per market event
@@ -79,7 +114,8 @@ Pending orders stay on the existing path:
   reconciliation, and duplicate suppression. `Check Open Orders` only reads
   provider state and reconciles local evidence.
 
-A session with a one-effect budget stops after its first exchange request.
+A session without signed post-budget maintenance stops after its first exchange
+request when its budget is one.
 Its provider receipt does not prove the order is still open, and a stopped
 Runner does not monitor or manage it. A new signed session cannot automatically
 adopt an earlier session's open order; it pauses on that ownership conflict.

@@ -7,6 +7,9 @@ import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
+import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
+import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
+import 'package:hivra_app/services/bingx_futures_zone_decision_service.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_risk_input_service.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_order_sizing_service.dart';
@@ -278,12 +281,26 @@ Future<String> runOneDeterministicOrder({
     if (ownership.order == null || ownership.placementOperationId == null) {
       return _blocked(cycleOperationId, ownership.reasonCode);
     }
-    final freshIntent = candidate.toExactOrderIntent(nowUtc: now);
-    final stale =
-        candidate.reasonCode == 'market_proposal_blocked' ||
-        (freshIntent != null &&
-            freshIntent.clientOrderId != ownership.order!.clientOrderId);
-    if (!stale) {
+    final anchor = await _revalidateManagedAnchor(
+      options: options,
+      admission: admission,
+      runnerKey: runnerPublicKey,
+      order: ownership.order!,
+      placementOperationId: ownership.placementOperationId!,
+      exchange: exchange,
+      now: now,
+    );
+    if (!const {
+      'anchor_valid',
+      'anchor_consumed',
+      'anchor_expired',
+    }.contains(anchor)) {
+      return _blocked(
+        cycleOperationId,
+        'managed_order_revalidation_unavailable',
+      );
+    }
+    if (anchor == 'anchor_valid') {
       return _blocked(cycleOperationId, 'managed_order_active');
     }
     if (cancelManagedOrder == null) {
@@ -331,6 +348,80 @@ String _blocked(String operationId, String reasonCode) =>
       'reason_code': reasonCode,
       'effect': false,
     });
+
+Future<String> _revalidateManagedAnchor({
+  required Map<String, String> options,
+  required BingxFuturesRemoteMandateAdmission admission,
+  required SimplePublicKey runnerKey,
+  required BingxFuturesOpenOrder order,
+  required String placementOperationId,
+  required BingxFuturesExchangeService exchange,
+  required DateTime now,
+}) async {
+  try {
+    if (options['original-market-operation-id'] != placementOperationId ||
+        num.tryParse(order.executedQuantityDecimal ?? '') != 0) {
+      return 'anchor_unavailable';
+    }
+    const harness = BingxFuturesDeterministicReplayHarnessService();
+    final original = harness.parseShadowEvidence(
+      await _readBoundedFile(
+        _required(options, 'original-market-evidence-file'),
+        _maxEvidenceBytes,
+      ),
+    );
+    final policy = admission.strategyPolicy!;
+    if (!await harness.authenticateShadowEvidence(
+          evidence: original,
+          trustedRunnerKey: runnerKey,
+        ) ||
+        original.runnerKeyId != admission.runnerKeyId ||
+        original.marketSymbol != admission.mandate.symbol ||
+        original.marketProposalStatus != 'READY' ||
+        original.observedAtEpochMs > now.millisecondsSinceEpoch ||
+        original.runnerBuildId != policy['runner_build_id'] ||
+        original.packageDigestHex != policy['package_digest_hex'] ||
+        original.pluginId != policy['plugin_id'] ||
+        original.pluginVersion != policy['plugin_version'] ||
+        original.hostAbi != policy['host_abi']) {
+      return 'anchor_unavailable';
+    }
+    final proposal =
+        jsonDecode(original.marketProposalJson!) as Map<String, dynamic>;
+    final zone = proposal['zone'] as Map<String, dynamic>;
+    final eventId = zone['liquidity_event_id'] as String;
+    final side = proposal['side'] as String;
+    if (order.clientOrderId != 'hivra-${eventId.substring(0, 32)}' ||
+        order.side.toLowerCase() != side) {
+      return 'anchor_unavailable';
+    }
+    final bars = await exchange.getPublicKlines(
+      symbol: admission.mandate.symbol,
+      interval: '5m',
+      limit: 120,
+    );
+    if (!bars.isSuccess ||
+        bars.symbol != admission.mandate.symbol ||
+        bars.interval != '5m') {
+      return 'anchor_unavailable';
+    }
+    return const BingxFuturesZoneDecisionService().revalidateAnchor(
+      side: side,
+      source: zone['anchor_source'] as String,
+      zoneLow: num.parse(zone['low_decimal'] as String),
+      zoneHigh: num.parse(zone['high_decimal'] as String),
+      eventAtUtc: DateTime.parse(zone['liquidity_event_at_utc'] as String),
+      nowUtc: now,
+      candles: const BingxFuturesLiveSnapshotBuilderService().mapCandles(
+        '5m',
+        bars.klines,
+        observedAtUtc: now,
+      ),
+    );
+  } on Object {
+    return 'anchor_unavailable';
+  }
+}
 
 Future<
   ({
@@ -440,6 +531,8 @@ Map<String, String> parseDeterministicOrderArgs(List<String> args) {
     'runner-seed-file',
     'deterministic-admission-file',
     'market-evidence-file',
+    'original-market-evidence-file',
+    'original-market-operation-id',
     'deterministic-credential-file',
     'deterministic-state-home',
     'last-accepted-sequence',

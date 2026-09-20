@@ -168,12 +168,12 @@ class BingxFuturesLiveSnapshotBuilderService {
     try {
       final observationTime = _clockUtc().toUtc();
       final allCandles = <BingxFuturesCandle>[
-        ..._mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
-        ..._mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
-        ..._mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
-        ..._mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
-        ..._mapCandles('1d', k1d.klines, observedAtUtc: observationTime),
-        ..._mapCandles('1w', k1w.klines, observedAtUtc: observationTime),
+        ...mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
+        ...mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
+        ...mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
+        ...mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
+        ...mapCandles('1d', k1d.klines, observedAtUtc: observationTime),
+        ...mapCandles('1w', k1w.klines, observedAtUtc: observationTime),
       ];
       final tradeRows = _mapTrades(trades.trades);
       final openInterestRows = _buildOpenInterestRows(
@@ -266,7 +266,7 @@ class BingxFuturesLiveSnapshotBuilderService {
     );
   }
 
-  List<BingxFuturesCandle> _mapCandles(
+  List<BingxFuturesCandle> mapCandles(
     String timeframe,
     List<BingxFuturesPublicKline> input, {
     DateTime? observedAtUtc,
