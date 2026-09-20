@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-18
+Status date: 2026-09-20
 
 ## Current State
 
@@ -18,7 +18,7 @@ Status date: 2026-09-18
 - Moltbook Assisted publication is release-proven; Bounded autonomous operation
   is not reference-grade.
 - Trading reuses one execution use case, effect journal, order-tracking store,
-  execution queue, revalidation service, and replacement service. `test20`
+  and execution queue. `test20`
   proves packaged risk rejection and macOS reconciliation without a duplicate
   effect. Opening the workspace reconciles the current VPS session state first;
   locally retained signed evidence may enrich only that exact server-reported
@@ -73,11 +73,18 @@ without another provider effect.
 Pending orders stay on the existing path:
 
 - `BingxFuturesExecutionQueueService`: pending tracking and TTL;
-- `BingxFuturesOrderRevalidationService`: keep or cancel from current market;
-- `BingxFuturesOrderReplacementService`: fresh same-side replacement through
-  the existing execution use case;
-- existing tracking store and effect journal: durable state, receipt,
-  reconciliation, and duplicate suppression.
+- the VPS Runner's retained signed cycle: bounded managed-order revalidation
+  and cancellation, never a local UI refresh effect;
+- the existing tracking store and effect journal: durable state, receipt,
+  reconciliation, and duplicate suppression. `Check Open Orders` only reads
+  provider state and reconciles local evidence.
+
+A session with a one-effect budget stops after its first exchange request.
+Its provider receipt does not prove the order is still open, and a stopped
+Runner does not monitor or manage it. A new signed session cannot automatically
+adopt an earlier session's open order; it pauses on that ownership conflict.
+Continued VPS trading requires explicit authorization after the existing order
+is resolved. No renewal or ownership transfer is inferred.
 
 An order not owned by the signed Runner session is never canceled or replaced.
 The Runner records the conflict once, persists an operator hold in its bounded

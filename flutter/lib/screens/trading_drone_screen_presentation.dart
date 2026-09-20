@@ -1100,7 +1100,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           _panel(
             title: 'Order and Activity',
             subtitle:
-                'Review the exact order, place it once, and follow its exchange status.',
+                'Read exchange orders without changing them. A filled order may leave an open position; check positions in BingX.',
             children: [
               Wrap(
                 spacing: 10,
@@ -1139,7 +1139,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                             )
                             : const Icon(Icons.list_alt_rounded),
                     label: Text(
-                      _fetchingOpenOrders ? 'Fetching Orders' : 'Open Orders',
+                      _fetchingOpenOrders
+                          ? 'Fetching Orders'
+                          : 'Check Open Orders',
                     ),
                   ),
                 ],

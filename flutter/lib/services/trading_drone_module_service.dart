@@ -10,8 +10,6 @@ import 'bingx_futures_live_strategy_use_case_service.dart';
 import 'bingx_futures_live_snapshot_builder_service.dart';
 import 'bingx_futures_mode_orchestrator_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
-import 'bingx_futures_order_replacement_service.dart';
-import 'bingx_futures_order_revalidation_service.dart';
 import 'bingx_futures_order_sizing_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_futures_public_session_stream_service.dart';
@@ -39,8 +37,6 @@ class TradingDroneModule {
   final BingxFuturesIntentUseCaseService intentUseCase;
   final BingxFuturesExchangeExecutionUseCaseService executionUseCase;
   final BingxFuturesSignalRankUseCaseService signalRankUseCase;
-  final BingxFuturesOrderRevalidationService orderRevalidation;
-  final BingxFuturesOrderReplacementService orderReplacement;
   final BingxFuturesPublicSessionStreamService publicSessionStream;
   final BingxFuturesRemoteRunnerIdentityService remoteRunnerIdentity;
   final BingxFuturesRemoteRunnerProvisioningService remoteRunnerProvisioning;
@@ -72,8 +68,6 @@ class TradingDroneModule {
     required this.intentUseCase,
     required this.executionUseCase,
     required this.signalRankUseCase,
-    required this.orderRevalidation,
-    required this.orderReplacement,
     required this.publicSessionStream,
     required this.remoteRunnerIdentity,
     required this.remoteRunnerProvisioning,
@@ -156,8 +150,6 @@ class TradingDroneModuleService {
       signalRankUseCase: BingxFuturesSignalRankUseCaseService(
         hostApi: pluginHostApi,
       ),
-      orderRevalidation: const BingxFuturesOrderRevalidationService(),
-      orderReplacement: const BingxFuturesOrderReplacementService(),
       publicSessionStream: publicSessionStream,
       remoteRunnerIdentity: remoteRunnerIdentity,
       remoteRunnerProvisioning: BingxFuturesRemoteRunnerProvisioningService(

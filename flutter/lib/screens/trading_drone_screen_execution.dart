@@ -310,47 +310,19 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     }
   }
 
-  Future<BingxFuturesRiskDecision?> _evaluateExecutionRisk({
-    required BingxFuturesIntentPayload payload,
-    required Map<String, dynamic> rawIntentResult,
-  }) async {
-    final credentials = await _ensureCredentialsLoaded();
-    if (credentials == null) {
-      await _showSnack('Save BingX API credentials first');
-      return null;
-    }
-    final evaluation = await _module.executionUseCase.evaluateRisk(
-      payload: payload,
-      rawIntentResult: rawIntentResult,
-      credentials: credentials,
-      riskPolicy: _TradingDroneScreenState._executionRiskPolicy,
-    );
-    for (final diagnostic in evaluation.diagnostics) {
-      await _module.uiLog.log('bingx.exchange.risk_detail', diagnostic);
-    }
-    if (evaluation.decision == null) {
-      await _module.uiLog.log(
-        'bingx.exchange.risk_error',
-        evaluation.errorCode ?? 'risk_unavailable',
-      );
-      await _showSnack(evaluation.errorMessage ?? 'Risk check unavailable');
-    }
-    return evaluation.decision;
-  }
-
   Future<void> _fetchOpenOrders({bool silent = false}) async {
     if (_fetchingOpenOrders) return;
-    final credentials = await _ensureCredentialsLoaded(silent: silent);
-    if (credentials == null) {
-      if (!silent) {
-        await _showSnack('Save BingX API credentials first');
-      }
-      return;
-    }
     _updateState(() {
       _fetchingOpenOrders = true;
     });
     try {
+      final credentials = await _ensureCredentialsLoaded(silent: silent);
+      if (credentials == null) {
+        if (!silent) {
+          await _showSnack('Save BingX API credentials first');
+        }
+        return;
+      }
       final result = await _module.exchangeService.getOpenOrders(
         credentials: credentials,
       );
@@ -394,39 +366,8 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       final managedOrders = allOrders
           .where((order) => _managedOrderIds.contains(order.orderId))
           .toList(growable: false);
-      final lifecycleRevisionBeforeRevalidation =
-          _managedOrderLifecycleRevision;
-      var canceledOrderIds = const <String>{};
-      final mayMutateManagedOrders = tradingMayMutateManagedOrdersLocally(
-        remoteRunnerConfigured: _remoteRunnerConfigured,
-        remoteRunnerStatusWire: _remoteRunnerStatusWire,
-      );
-      if (result.isSuccess &&
-          managedOrders.isNotEmpty &&
-          mayMutateManagedOrders) {
-        canceledOrderIds = await _revalidateManagedOpenOrders(
-          credentials: credentials,
-          managedOrders: managedOrders,
-          silent: silent,
-        );
-      } else if (result.isSuccess &&
-          managedOrders.isNotEmpty &&
-          !mayMutateManagedOrders) {
-        await _module.uiLog.log(
-          'bingx.exchange.revalidate.skip',
-          'reason=remote_session_owns_effect_lifecycle '
-              'orders=${managedOrders.length}',
-        );
-      }
-      final visibleOrders = tradingOpenOrdersAfterLifecycleChanges(
-        providerSnapshot: allOrders,
-        canceledOrderIds: canceledOrderIds,
-      );
-      final visibleManagedOrders = visibleOrders
-          .where((order) => _managedOrderIds.contains(order.orderId))
-          .toList(growable: false);
-      final snapshotInvalidatedByLifecycle =
-          lifecycleRevisionBeforeRevalidation != _managedOrderLifecycleRevision;
+      final visibleOrders = allOrders;
+      final visibleManagedOrders = managedOrders;
       _updateState(() {
         _lastOpenOrdersRead = result;
         if (result.isSuccess) {
@@ -439,14 +380,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       final trackedOrderId = _trackedOrderId;
       if (trackedOrderId != null && trackedOrderId.isNotEmpty) {
         if (result.isSuccess) {
-          if (snapshotInvalidatedByLifecycle) {
-            await _module.uiLog.log(
-              'bingx.exchange.tracking.skip',
-              'symbol=${result.symbol} orderId=$trackedOrderId '
-                  'reason=stale_snapshot_after_lifecycle_change',
-            );
-            return;
-          }
           final trackedStillOpen = visibleOrders.any(
             (order) => order.orderId == trackedOrderId,
           );
@@ -461,7 +394,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
             _managedOrderIds.remove(trackedOrderId);
             _managedOrderSymbols.remove(trackedOrderId);
             _managedOrderProvenance.remove(trackedOrderId);
-            _managedOrderLifecycleRevision += 1;
             final remainingManagedOrders = visibleOrders
                 .where((order) => _managedOrderIds.contains(order.orderId))
                 .toList(growable: false);
@@ -537,7 +469,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     _trackedOrdersSymbol = state.trackedSymbol;
     _trackedOrderId = state.trackedOrderId;
     _cancelOrderIdController.text = state.trackedOrderId ?? '';
-    _managedOrderLifecycleRevision += 1;
     unawaited(
       _module.uiLog.log(
         'bingx.exchange.tracking.reconcile',
@@ -550,309 +481,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     if (tradingReconciliationResumeSymbol(state) == null) {
       _stopOpenOrdersAutoTracking(reason: 'no_managed_open_orders');
     }
-  }
-
-  Future<Set<String>> _revalidateManagedOpenOrders({
-    required BingxFuturesApiCredentials credentials,
-    required List<BingxFuturesOpenOrder> managedOrders,
-    required bool silent,
-  }) async {
-    final bySymbol = <String, List<BingxFuturesOpenOrder>>{};
-    for (final order in managedOrders) {
-      final symbol = order.symbol.trim().toUpperCase();
-      if (symbol.isEmpty) continue;
-      bySymbol.putIfAbsent(symbol, () => <BingxFuturesOpenOrder>[]).add(order);
-    }
-
-    final canceledOrderIds = <String>{};
-    final replacementLifecycleKeys = <String>{};
-    for (final entry in bySymbol.entries) {
-      final actionableDecision = await _computeLiveDecision(
-        symbol: entry.key,
-        silent: true,
-      );
-      if (actionableDecision == null) {
-        await _module.uiLog.log(
-          'bingx.exchange.revalidate.skip',
-          'symbol=${entry.key} reason=live_decision_unavailable '
-              'orders=${entry.value.length}',
-        );
-        continue;
-      }
-      final structuralDecisions = <String, BingxFuturesLiveDecisionResult?>{};
-
-      for (final order in entry.value) {
-        if (!_managedOrderIds.contains(order.orderId)) continue;
-        final structuralSide = tradingManagedOrderStructuralSide(order.side);
-        var revalidationDecision = actionableDecision;
-        // Entry confirmation is short-lived; a live order belongs to its
-        // structural side until that projection becomes invalid.
-        if (structuralSide != null) {
-          if (!structuralDecisions.containsKey(structuralSide)) {
-            structuralDecisions[structuralSide] = await _computeLiveDecision(
-              symbol: entry.key,
-              silent: true,
-              zoneEvaluationSide: structuralSide,
-            );
-          }
-          final structuralDecision = structuralDecisions[structuralSide];
-          if (structuralDecision == null) {
-            await _module.uiLog.log(
-              'bingx.exchange.revalidate.skip',
-              'symbol=${entry.key} orderId=${order.orderId} '
-                  'reason=structural_decision_unavailable side=$structuralSide',
-            );
-            continue;
-          }
-          revalidationDecision = structuralDecision;
-        }
-        final provenance = _managedOrderProvenance[order.orderId];
-        final verdict = _module.orderRevalidation.revalidate(
-          order: order,
-          liveDecision: revalidationDecision,
-        );
-        await _module.uiLog.log(
-          'bingx.exchange.revalidate',
-          'symbol=${order.symbol} orderId=${order.orderId} '
-              'action=${verdict.action.name} reason=${verdict.reasonCode} '
-              'live_hash=${revalidationDecision.liveDecisionHashHex.substring(0, 12)}',
-        );
-        if (!verdict.shouldCancel) continue;
-
-        final cancel = await _module.exchangeService.cancelOrder(
-          credentials: credentials,
-          symbol: order.symbol,
-          orderId: order.orderId,
-        );
-        await _module.uiLog.log(
-          'bingx.exchange.revalidate.cancel',
-          'symbol=${order.symbol} orderId=${order.orderId} '
-              'success=${cancel.isSuccess} code=${cancel.exchangeCode} '
-              'reason=${verdict.reasonCode}',
-        );
-        if (!cancel.isSuccess) continue;
-        canceledOrderIds.add(order.orderId);
-        _managedOrderIds.remove(order.orderId);
-        _managedOrderSymbols.remove(order.orderId);
-        _managedOrderProvenance.remove(order.orderId);
-        _managedOrderLifecycleRevision += 1;
-        if (_trackedOrderId == order.orderId) {
-          _trackedOrderId = null;
-        }
-        if (provenance == null) {
-          await _module.uiLog.log(
-            'bingx.exchange.replace.skip',
-            'symbol=${order.symbol} orderId=${order.orderId} '
-                'reason=replacement_provenance_missing',
-          );
-          continue;
-        }
-        if (!actionableDecision.canPrepareIntent) {
-          await _module.uiLog.log(
-            'bingx.exchange.replace.skip',
-            'symbol=${order.symbol} orderId=${order.orderId} '
-                'reason=structural_revalidation_cancel_only',
-          );
-          continue;
-        }
-        try {
-          await _replaceCanceledManagedOrder(
-            credentials: credentials,
-            provenance: provenance,
-            liveDecision: actionableDecision,
-            cancellationReasonCode: verdict.reasonCode,
-            replacementLifecycleKeys: replacementLifecycleKeys,
-          );
-        } catch (error) {
-          await _module.uiLog.log(
-            'bingx.exchange.replace.error',
-            'oldOrderId=${provenance.orderId} symbol=${provenance.symbol} '
-                'error=$error',
-          );
-        }
-      }
-    }
-
-    if (canceledOrderIds.isNotEmpty) {
-      await _persistOpenOrdersTrackingState(source: 'revalidate_cancel');
-      if (!silent && mounted) {
-        await _showSnack(
-          'Canceled stale drone orders: ${canceledOrderIds.length}',
-        );
-      }
-    }
-    return Set<String>.unmodifiable(canceledOrderIds);
-  }
-
-  Future<void> _replaceCanceledManagedOrder({
-    required BingxFuturesApiCredentials credentials,
-    required BingxManagedOrderProvenance provenance,
-    required BingxFuturesLiveDecisionResult liveDecision,
-    required String cancellationReasonCode,
-    required Set<String> replacementLifecycleKeys,
-  }) async {
-    final cycleAtUtc = DateTime.now().toUtc().toIso8601String();
-    final plan = _module.orderReplacement.plan(
-      provenance: provenance,
-      liveDecision: liveDecision,
-      cancellationReasonCode: cancellationReasonCode,
-      cycleAtUtc: cycleAtUtc,
-    );
-    await _module.uiLog.log(
-      'bingx.exchange.replace.plan',
-      'oldOrderId=${provenance.orderId} symbol=${provenance.symbol} '
-          'status=${plan.status.name} reason=${plan.reasonCode} '
-          'liveHash=${liveDecision.liveDecisionHashHex.substring(0, 12)}',
-    );
-    if (!plan.isReady) return;
-    final peerHex = plan.hostArgs!['peer_hex']?.toString().trim() ?? '';
-    final lifecycleKey =
-        '$peerHex|${provenance.symbol.toUpperCase()}|${provenance.side}';
-    if (!replacementLifecycleKeys.add(lifecycleKey)) {
-      await _module.uiLog.log(
-        'bingx.exchange.replace.skip',
-        'oldOrderId=${provenance.orderId} symbol=${provenance.symbol} '
-            'reason=replacement_lifecycle_duplicate key=$lifecycleKey',
-      );
-      return;
-    }
-
-    Map<String, dynamic>? replacementIntentResult;
-    final runtime = await _module.orderReplacement.execute(
-      provenance: provenance,
-      liveDecision: liveDecision,
-      cancellationReasonCode: cancellationReasonCode,
-      cycleAtUtc: cycleAtUtc,
-      prepareIntent: (hostArgs) async {
-        final response = await _module.pluginHostApi
-            .executeWithRuntimeHook(
-              PluginHostApiRequest(
-                schemaVersion: pluginHostApiSchemaVersion,
-                pluginId: bingxFuturesTradingPluginId,
-                method: placeBingxFuturesOrderIntentMethod,
-                args: hostArgs,
-              ),
-            )
-            .timeout(_TradingDroneScreenState._hostIntentTimeout);
-        replacementIntentResult = response.result;
-        return response;
-      },
-      evaluateRisk: (payload, rawIntentResult) {
-        return _evaluateExecutionRisk(
-          payload: payload,
-          rawIntentResult: rawIntentResult,
-        );
-      },
-      executeOrder: (payload, testOrder) async {
-        final rawIntentResult = replacementIntentResult;
-        if (rawIntentResult == null) return null;
-        final execution = await _module.executionUseCase.execute(
-          screen: 'trading_drone_replacement',
-          rawIntentResult: rawIntentResult,
-          credentials: credentials,
-          riskPolicy: _TradingDroneScreenState._executionRiskPolicy,
-          testOrder: testOrder,
-          preparedDecision: liveDecision,
-          refreshDecision:
-              () => _computeLiveDecision(
-                symbol: payload.symbol,
-                silent: true,
-                zoneEvaluationSide: payload.side,
-              ),
-        );
-        return execution.queuedExecution;
-      },
-    );
-    final response = runtime.hostResponse;
-    await _module.uiLog.log(
-      'bingx.exchange.replace.intent',
-      'oldOrderId=${provenance.orderId} runtime=${runtime.status.name} '
-          'status=${response?.status.name ?? "-"} '
-          'source=${response?.executionSource ?? "-"} '
-          'code=${response?.errorCode ?? "-"}',
-    );
-    final riskDecision = runtime.riskDecision;
-    if (runtime.status == BingxFuturesReplacementRuntimeStatus.riskBlocked ||
-        runtime.status ==
-            BingxFuturesReplacementRuntimeStatus.riskUnavailable) {
-      await _module.uiLog.log(
-        'bingx.exchange.replace.risk_blocked',
-        'oldOrderId=${provenance.orderId} '
-            'code=${riskDecision?.reasonCode ?? "risk_unavailable"}',
-      );
-    }
-    final payload = runtime.payload;
-    final queued = runtime.queuedExecution;
-    final result = response?.result;
-    if (payload == null ||
-        queued == null ||
-        riskDecision == null ||
-        result == null) {
-      return;
-    }
-
-    final executionEnvelope = _module.observability.buildExecutionEnvelope(
-      screen: 'trading_drone_replacement',
-      symbol: payload.symbol,
-      side: payload.side,
-      orderType: payload.orderType,
-      idempotencyKey: queued.idempotencyKey,
-      attempts: queued.attempts,
-      fromIdempotentCache: queued.fromIdempotentCache,
-      isSuccess: queued.execution.isSuccess,
-      httpStatusCode: queued.execution.httpStatusCode,
-      exchangeCode: queued.execution.exchangeCode,
-      endpointPath: queued.execution.endpointPath,
-      orderId: queued.execution.orderId,
-      intentHashHex: payload.intentHashHex,
-      riskDecisionCode: riskDecision.reasonCode,
-      riskDecisionHashHex: riskDecision.decisionHashHex,
-      marketSnapshotHashHex:
-          result['market_snapshot_hash_hex']?.toString().trim(),
-      featureHashHex: result['feature_hash_hex']?.toString().trim(),
-      tvhDecisionHashHex: result['tvh_decision_hash_hex']?.toString().trim(),
-      liveDecisionHashHex: result['live_decision_hash_hex']?.toString().trim(),
-    );
-    await _module.uiLog.log(
-      'bingx.exchange.replace.execute',
-      'oldOrderId=${provenance.orderId} '
-          'success=${queued.execution.isSuccess} '
-          'newOrderId=${queued.execution.orderId ?? "-"} '
-          'attempts=${queued.attempts} code=${queued.execution.exchangeCode}',
-    );
-    await _module.uiLog.log(
-      'drone.execution.envelope',
-      'hash=${executionEnvelope.envelopeHashHex} '
-          'kind=execution screen=trading_drone_replacement',
-    );
-    if (!queued.execution.isSuccess) return;
-
-    final newOrderId = queued.execution.orderId?.trim();
-    if (newOrderId == null || newOrderId.isEmpty) {
-      await _module.uiLog.log(
-        'bingx.exchange.replace.skip',
-        'oldOrderId=${provenance.orderId} '
-            'reason=replacement_receipt_missing_order_id',
-      );
-      return;
-    }
-    _registerManagedOrderId(
-      newOrderId,
-      symbol: payload.symbol,
-      provenance: _buildManagedOrderProvenance(
-        orderId: newOrderId,
-        payload: payload,
-        result: result,
-        testOrder: provenance.testOrder,
-        credentials: credentials,
-      ),
-    );
-    _startOpenOrdersAutoTracking(symbol: payload.symbol, orderId: newOrderId);
-    await _module.uiLog.log(
-      'bingx.exchange.replace.complete',
-      'oldOrderId=${provenance.orderId} newOrderId=$newOrderId '
-          'intentHash=${_shortHash(payload.intentHashHex)}',
-    );
   }
 
   String _shortHash(String? value) {
@@ -907,7 +535,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
           _managedOrderIds.remove(canceled);
           _managedOrderSymbols.remove(canceled);
           _managedOrderProvenance.remove(canceled);
-          _managedOrderLifecycleRevision += 1;
           _openOrders =
               _openOrders.where((order) => order.orderId != canceled).toList();
         }

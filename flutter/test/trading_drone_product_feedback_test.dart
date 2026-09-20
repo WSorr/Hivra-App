@@ -117,53 +117,6 @@ void main() {
     );
   });
 
-  test(
-    'active remote authority keeps local order refresh observation-only',
-    () {
-      const running =
-          'active=active enabled=linked session_state=active '
-          'session_operation_id=$remoteSessionId cycles=2 effects=1 '
-          'last_scheduled_check=2026-09-14T02:00:00Z '
-          'next_check=2026-09-14T02:05:00Z '
-          'last_outcome=effect:succeeded:test=false';
-      const paused =
-          'active=inactive enabled=linked session_state=active '
-          'session_operation_id=$remoteSessionId cycles=2 effects=1 '
-          'last_scheduled_check=2026-09-14T02:00:00Z '
-          'next_check=2026-09-14T02:05:00Z '
-          'last_outcome=effect:succeeded:test=false';
-      const terminal =
-          'active=inactive enabled=linked session_state=completed '
-          'session_operation_id=$remoteSessionId cycles=2 effects=1 '
-          'last_scheduled_check=2026-09-14T02:00:00Z '
-          'next_check=none last_outcome=effect:succeeded:test=false';
-
-      for (final status in <String?>[running, paused, null, 'malformed']) {
-        expect(
-          tradingMayMutateManagedOrdersLocally(
-            remoteRunnerConfigured: true,
-            remoteRunnerStatusWire: status,
-          ),
-          isFalse,
-        );
-      }
-      expect(
-        tradingMayMutateManagedOrdersLocally(
-          remoteRunnerConfigured: true,
-          remoteRunnerStatusWire: terminal,
-        ),
-        isTrue,
-      );
-      expect(
-        tradingMayMutateManagedOrdersLocally(
-          remoteRunnerConfigured: false,
-          remoteRunnerStatusWire: null,
-        ),
-        isTrue,
-      );
-    },
-  );
-
   test('unknown Runner order restores receipt before reconciliation', () {
     const remoteOrder = BingxFuturesOpenOrder(
       orderId: 'remote-order',
@@ -238,45 +191,6 @@ void main() {
       isFalse,
     );
   });
-
-  test(
-    'successful local cancellation disappears from stale provider snapshot',
-    () {
-      final visible = tradingOpenOrdersAfterLifecycleChanges(
-        providerSnapshot: const <BingxFuturesOpenOrder>[
-          BingxFuturesOpenOrder(
-            orderId: 'managed-canceled',
-            symbol: 'ACH-USDT',
-            side: 'BUY',
-            positionSide: 'BOTH',
-            orderType: 'TRIGGER_LIMIT',
-            status: 'NEW',
-            priceDecimal: '0.004680',
-            triggerPriceDecimal: '0.004685',
-            quantityDecimal: '1696',
-            executedQuantityDecimal: '0',
-            createdAtMs: 1,
-          ),
-          BingxFuturesOpenOrder(
-            orderId: 'manual-open',
-            symbol: 'SOL-USDT',
-            side: 'SELL',
-            positionSide: 'BOTH',
-            orderType: 'LIMIT',
-            status: 'NEW',
-            priceDecimal: '250',
-            triggerPriceDecimal: null,
-            quantityDecimal: '1',
-            executedQuantityDecimal: '0',
-            createdAtMs: 2,
-          ),
-        ],
-        canceledOrderIds: const <String>{'managed-canceled'},
-      );
-
-      expect(visible.map((order) => order.orderId), <String>['manual-open']);
-    },
-  );
 
   test('signal rank input is bounded and keeps ready candidates first', () {
     final candidates = <BingxFuturesSignalRankCandidate>[
@@ -380,7 +294,7 @@ void main() {
       );
       final notice = tradingReconciliationNotice(result, 'capsule-a')!;
       final details = tradingReconciliationDetails(result, 'capsule-a')!;
-      expect(notice, contains('No active orders · 1 needs review'));
+      expect(notice, contains('No active drone orders · 1 needs review'));
       expect(notice, contains('not recreate'));
       expect(notice, isNot(contains('live-client')));
       expect(details, contains('may mean filled'));
@@ -857,6 +771,9 @@ void main() {
       allOf(
         contains('Exchange requests used: 1 of 1 · Remaining: 0'),
         contains('exchange-request limit was reached'),
+        contains('does not automatically adopt'),
+        contains('provider receipt does not prove the order is still open'),
+        contains('Check Open Orders'),
       ),
     );
   });
@@ -1685,12 +1602,6 @@ void main() {
   test('ranked order side maps to the matching liquidity zone side', () {
     expect(tradingZoneSideForOrderSide('buy'), 'buyside');
     expect(tradingZoneSideForOrderSide('sell'), 'sellside');
-  });
-
-  test('managed order revalidation always locks its existing side', () {
-    expect(tradingManagedOrderStructuralSide('SELL'), 'sell');
-    expect(tradingManagedOrderStructuralSide('BUY'), 'buy');
-    expect(tradingManagedOrderStructuralSide('unknown'), isNull);
   });
 
   test(

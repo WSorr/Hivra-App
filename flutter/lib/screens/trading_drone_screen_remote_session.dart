@@ -1210,7 +1210,12 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
     'Last retained result: $result',
     if (terminal && remainingEffects == 0)
       'Session ended because its exchange-request limit was reached. '
-          'Authorize a new session to continue.',
+          'Check any open order before authorizing a new session; new authority '
+          'does not automatically adopt an earlier session\'s order.',
+    if (terminal && outcome == 'effect:succeeded:test=false')
+      'The provider receipt does not prove the order is still open. '
+          'Check Open Orders to read its current status; this stopped '
+          'Runner cannot manage it. A filled order may leave an open position.',
     if (cycles > 0) 'Last completed check slot: $last',
     if (state == 'active' && fields['active'] == 'active')
       'Next scheduled check: $next (not guaranteed execution)',

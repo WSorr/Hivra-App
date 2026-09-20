@@ -52,9 +52,9 @@ Legend:
 | Plugin-owned semantic contract execution | DONE | `hivra-plugins` owns BingX/chat evaluators; `hivra-wasm-runtime` executes ABI v2 JSON-in/JSON-out through bounded `wasmi`; Flutter validates canonical output and no longer contains mirrored contract evaluators | Keep ABI, runtime, integrity and cross-platform regressions green |
 | Plugin-owned signal ranking | DONE | `rank_bingx_futures_signals` is implemented in the external BingX futures plugin; Flutter sends deterministic live-decision summaries and renders the returned `entries`/`scan_hash_hex` without mirroring score logic | Keep plugin ABI tests and host boundary tests green |
 | Idempotency/TTL/retry discipline | DONE | `flutter/lib/services/bingx_futures_execution_queue_service.dart` | Keep regression green |
-| Managed order revalidation | DONE | `BingxFuturesOrderRevalidationService` cancels stale managed drone orders when live TVH invalidates the setup | Keep revalidation regressions green |
+| Managed order revalidation | DONE | The signed VPS Runner owns managed-order revalidation and cancellation; `Check Open Orders` is observation-only | Verify VPS cancellation evidence and no local refresh effect |
 | Managed order provenance journal | DONE | Capsule-scoped tracking state persists canonical intent + decision hash lineage for each managed order | Use provenance as the mandatory input for future deterministic replacement |
-| Deterministic stale-zone replacement | DONE | `BingxFuturesOrderReplacementService` plans same-side replacement; runtime repeats host/consensus, risk, idempotency, and exchange gates | Keep replacement planner and manual exchange smoke green |
+| Deterministic stale-zone replacement | DONE | The local UI replacement path was removed; a signed Runner cycle can prepare a fresh order only within its remaining authority | Verify no duplicate effect and explicit session renewal when its budget ends |
 | Decision/execution observability envelopes | DONE | envelope logs wired through the dedicated trading-drone execution surface | Keep release smoke evidence |
 
 ## Hivra Laws (Non-Negotiable)
@@ -144,8 +144,6 @@ Legend:
 - [ ] `flutter test test/bingx_futures_shadow_stream_store_test.dart`
 - [ ] `flutter test test/bingx_futures_risk_governor_service_test.dart`
 - [ ] `flutter test test/bingx_futures_execution_queue_service_test.dart`
-- [ ] `flutter test test/bingx_futures_order_revalidation_service_test.dart`
-- [ ] `flutter test test/bingx_futures_order_replacement_service_test.dart`
 - [ ] `flutter test test/bingx_futures_trading_cycle_use_case_service_test.dart`
 - [ ] `flutter test test/bingx_futures_order_tracking_store_test.dart`
 - [ ] `flutter test test/bingx_futures_exchange_execution_use_case_service_test.dart`
