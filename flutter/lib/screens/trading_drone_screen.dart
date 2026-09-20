@@ -126,18 +126,33 @@ String? tradingReconciliationNotice(
       unresolvedLiveRecords.values
           .where((diagnostic) => diagnostic == 'account_binding_mismatch')
           .length;
+  final unverifiedPositionCount =
+      state.managedOrderProvenance.values
+          .where(
+            (record) =>
+                !record.testOrder &&
+                record.lifecycleStatus ==
+                    BingxManagedOrderLifecycleStatus.filled &&
+                record.positionLifecycleStatus ==
+                    BingxManagedPositionLifecycleStatus.unresolved,
+          )
+          .length;
+  final reviewCount = result.unresolvedCount + unverifiedPositionCount;
   final activeLabel =
       result.activeCount == 0
           ? 'No active drone orders'
           : '${result.activeCount} active drone orders';
   final reviewLabel =
-      result.unresolvedCount == 0
-          ? 'History verified'
-          : result.unresolvedCount == 1
+      reviewCount == 0
+          ? 'No unresolved records'
+          : reviewCount == 1
           ? '1 needs review'
-          : '${result.unresolvedCount} need review';
+          : '$reviewCount need review';
   return <String>[
     'Order check · $activeLabel · $reviewLabel',
+    if (unverifiedPositionCount > 0)
+      '$unverifiedPositionCount filled order${unverifiedPositionCount == 1 ? '' : 's'} '
+          '${unverifiedPositionCount == 1 ? 'has' : 'have'} unverified position/PnL evidence.',
     if (accountMismatchCount == result.unresolvedCount &&
         accountMismatchCount > 0)
       '$accountMismatchCount earlier records belong to another BingX account. '
@@ -186,11 +201,28 @@ String? tradingReconciliationDetails(
       .where(
         (record) =>
             !record.testOrder &&
+            record.lifecycleStatus == BingxManagedOrderLifecycleStatus.filled &&
             record.positionLifecycleStatus !=
                 BingxManagedPositionLifecycleStatus.unresolved,
       )
       .toList(growable: false)
     ..sort((a, b) => b.recordedAtUtc.compareTo(a.recordedAtUtc));
+  final unverifiedPositions = state.managedOrderProvenance.values
+      .where(
+        (record) =>
+            !record.testOrder &&
+            record.lifecycleStatus == BingxManagedOrderLifecycleStatus.filled &&
+            record.positionLifecycleStatus ==
+                BingxManagedPositionLifecycleStatus.unresolved,
+      )
+      .toList(growable: false)
+    ..sort((a, b) => b.recordedAtUtc.compareTo(a.recordedAtUtc));
+  String positionReason(String? diagnostic) => switch (diagnostic) {
+    'provider_position_id_missing' || 'provider_position_id_unusable' =>
+      'BingX did not provide a usable position ID',
+    'provider_position_id_conflict' => 'BingX position IDs conflict',
+    _ => diagnostic ?? 'position evidence unavailable',
+  };
   String positionSummary(BingxManagedOrderProvenance record) {
     if (record.positionLifecycleStatus ==
         BingxManagedPositionLifecycleStatus.open) {
@@ -203,13 +235,20 @@ String? tradingReconciliationDetails(
   }
 
   return <String>[
-    'Verified history: ${result.terminalCount} completed records. Completed may mean filled, cancelled, rejected, or expired.',
+    'Order outcomes: ${result.terminalCount} terminal records. Completed may mean filled, cancelled, rejected, or expired. A fill alone does not verify a position or PnL.',
     if (state.managedOrderProvenance.values.any((record) => record.testOrder) ||
         state.liquidityEventEffectClaims.values.any((claim) => claim.testOrder))
       'Test records are retained separately; they are not live orders.',
     if (result.unresolvedCount > 0)
       'Review unresolved records in BingX. Missing evidence is not success or cancellation.',
     ...positions.take(3).map(positionSummary),
+    ...unverifiedPositions
+        .take(3)
+        .map(
+          (record) =>
+              '${record.symbol} · ${record.orderId} · order filled; position/PnL unverified: '
+              '${positionReason(record.positionDiagnostic)}',
+        ),
     ...unresolved.values,
   ].join('\n');
 }

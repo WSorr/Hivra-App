@@ -646,6 +646,30 @@ void main() {
       expect(result.positions, isEmpty);
     });
 
+    test('incomplete position history page cannot prove closure', () async {
+      final service = BingxFuturesExchangeService(
+        requestSender:
+            (_) async => const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"total":2,"list":[{"positionId":"position-1","symbol":"ZIL-USDT","positionSide":"SHORT","openTime":1787356800000,"updateTime":1787360400000,"avgPrice":"0.00291","avgClosePrice":"0.00294","realisedProfit":"-0.79","netProfit":"-0.83","positionAmt":"27146","closePositionAmt":"27146","closeAllPositions":true}]}}',
+            ),
+      );
+
+      final result = await service.getPositionHistory(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'ZIL-USDT',
+        positionId: 'position-1',
+        startTimeMs: 1787356800000,
+        endTimeMs: 1787360400000,
+      );
+
+      expect(result.isSuccess, isFalse);
+    });
+
     test('cancels order via signed DELETE endpoint', () async {
       late BingxHttpRequest capturedRequest;
       final service = BingxFuturesExchangeService(
