@@ -11,8 +11,9 @@ Required status values:
 
 - `PASS`: gate was manually completed for this exact build tag and artifact.
 - `N/A`: gate is intentionally not applicable to this platform. For Trading
-  provider receipt, restart reconciliation, and duplicate suppression, it is
-  valid only when the same field is `PASS` on the other packaged platform.
+  provider receipt, restart reconciliation, and duplicate suppression, a
+  `public` release permits it only when the same field is `PASS` on the other
+  packaged platform. A `test` prerelease may use `N/A` on both platforms.
 - `LEGACY`: historical broad evidence predates the split Trading acceptance
   fields and cannot satisfy a new publication or promotion.
 - `INVALID`: the historical exercise is retained, but it does not prove the
@@ -27,9 +28,12 @@ For publication, macOS and Android must each have one row for the build tag.
 `Manual Smoke`, Trading READY/BLOCKED, Trading Risk Rejection,
 `Moltbook Smoke`, and `User Lifetime` must be `PASS` on both platforms.
 Provider receipt, restart reconciliation, and duplicate suppression attest the
-single canonical effect lifecycle: each field must be `PASS` on at least one
-packaged platform and may be `N/A` on the other. A paused scan or deterministic
-fixture cannot satisfy them. `AI Surface` records the release's canonical AI
+single canonical effect lifecycle. A `public` release requires each field to
+be `PASS` on at least one packaged platform and permits `N/A` on the other. A
+`test` prerelease may use `N/A` on both platforms so the exact packaged build
+can collect rare live-market evidence; its notes must state that no provider
+effect was observed. A paused scan or deterministic fixture cannot be recorded
+as a live-effect `PASS`. `AI Surface` records the release's canonical AI
 product surface: current candidates must complete the Capsule Analyst smoke on
 macOS and may use `PASS` or `N/A` on Android. Historical rows retain the result
 for the AI surface that existed in that artifact; they do not authorize its
