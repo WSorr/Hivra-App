@@ -1421,7 +1421,7 @@ _fixture({
     maxEffects: maxEffects,
   );
   final policy = <String, dynamic>{
-    if (!legacyStrategy) 'strategy_version': '4h-sweep-reclaim-5m-v1',
+    if (!legacyStrategy) 'strategy_version': '4h-sweep-reclaim-5m-v2',
     'runner_build_id': 'runner-build',
     'plugin_id': 'hivra.bingx-futures-trading',
     'plugin_version': '0.2.7-plugins',
@@ -1547,7 +1547,7 @@ _fixture({
       'anchor_lifecycle': 'reclaimed',
       'atr14_5m_decimal': '2.5',
       'parent': {
-        'strategy_version': '4h-sweep-reclaim-5m-v1',
+        'strategy_version': '4h-sweep-reclaim-5m-v2',
         'timeframe': '4h',
         'side': 'buy',
         'low_decimal': '99',

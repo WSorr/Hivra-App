@@ -226,7 +226,7 @@ void main() {
           'anchor_lifecycle': 'reclaimed',
           'atr14_5m_decimal': '1.25',
           'parent': {
-            'strategy_version': '4h-sweep-reclaim-5m-v1',
+            'strategy_version': '4h-sweep-reclaim-5m-v2',
             'timeframe': '4h',
             'side': 'buy',
             'low_decimal': '99',

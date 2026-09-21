@@ -127,11 +127,17 @@ class BingxFuturesLiveDecisionService {
               blockingFactCodes: input.blockingFactCodes,
               policy: input.policy,
             );
-    final decisionSide = switch (tvhDecision.decision) {
+    final tvhSide = switch (tvhDecision.decision) {
       BingxTvhDecisionKind.long => 'buy',
       BingxTvhDecisionKind.short => 'sell',
       BingxTvhDecisionKind.noSignal || BingxTvhDecisionKind.blocked => null,
     };
+    final authorityBlocked =
+        tvhDecision.decision == BingxTvhDecisionKind.blocked;
+    final decisionSide =
+        !authorityBlocked && zone.anchorExecutable
+            ? zoneEvaluationSide
+            : tvhSide;
 
     final zoneConflict =
         (zone.side != zoneEvaluationSide ||
@@ -143,7 +149,7 @@ class BingxFuturesLiveDecisionService {
       features: features,
       zone: zone,
     );
-    final trendGateBlocked = trendGateCode != 'ok';
+    final trendGateBlocked = trendGateCode == 'liquidity_anchor_unavailable';
     final liquidationConfluence = _hasLiquidationConfluence(
       side: zoneEvaluationSide,
       zone: zone,
@@ -159,7 +165,12 @@ class BingxFuturesLiveDecisionService {
       BingxTvhDecisionReason(
         code: trendGateCode,
         passed: !trendGateBlocked,
-        detail: trendGateBlocked ? 'trend_gate_blocked' : 'trend_gate_ok',
+        detail:
+            trendGateBlocked
+                ? 'structural_entry_blocked'
+                : trendGateCode == 'ok'
+                ? 'trend_context_clear'
+                : 'trend_context_observed',
       ),
       BingxTvhDecisionReason(
         code: 'liquidation_proxy_context',
@@ -171,6 +182,7 @@ class BingxFuturesLiveDecisionService {
       snapshot: snapshot,
       observedLiquidityLevels: features.liquidityLevels,
       tvhDecision: tvhDecision,
+      authorityBlocked: authorityBlocked,
       side: decisionSide,
       zoneEvaluationSide: zoneEvaluationSide,
       zone: zone,
@@ -190,6 +202,7 @@ class BingxFuturesLiveDecisionService {
     required BingxFuturesMarketSnapshotDigest snapshot,
     required List<BingxDetectedLiquidityLevel> observedLiquidityLevels,
     required BingxTvhDecisionResult tvhDecision,
+    required bool authorityBlocked,
     required String? side,
     required String? zoneEvaluationSide,
     required BingxFuturesZoneDecisionResult? zone,
@@ -234,11 +247,19 @@ class BingxFuturesLiveDecisionService {
         oppositeLiquidityTargetAtUtc.endsWith('Z') &&
         DateTime.tryParse(oppositeLiquidityTargetAtUtc)?.isUtc == true;
     final canPrepareIntent =
+        !authorityBlocked &&
         side != null &&
         zone != null &&
+        zone.anchorExecutable &&
         !zoneConflict &&
         !trendGateBlocked &&
         hasExecutableTarget;
+    final effectiveDecision =
+        canPrepareIntent
+            ? side == 'buy'
+                ? BingxTvhDecisionKind.long
+                : BingxTvhDecisionKind.short
+            : tvhDecision.decision;
     final effectiveReasons = <BingxTvhDecisionReason>[
       ...reasons,
       BingxTvhDecisionReason(
@@ -256,7 +277,7 @@ class BingxFuturesLiveDecisionService {
       'market_snapshot_hash_hex': snapshot.marketSnapshotHashHex,
       'feature_hash_hex': tvhDecision.featureHashHex,
       'tvh_decision_hash_hex': tvhDecision.decisionHashHex,
-      'decision': tvhDecision.decision.name,
+      'decision': effectiveDecision.name,
       'can_prepare_intent': canPrepareIntent,
       'trend_bundle': <String, dynamic>{
         'trend_15m': trend15m,
@@ -314,7 +335,7 @@ class BingxFuturesLiveDecisionService {
     return BingxFuturesLiveDecisionResult(
       observedLiquidityLevels: List.unmodifiable(observedLiquidityLevels),
       canPrepareIntent: canPrepareIntent,
-      decision: tvhDecision.decision,
+      decision: effectiveDecision,
       side: side,
       zoneSide: zone?.zoneSide,
       zoneLowDecimal: zoneLowDecimal,

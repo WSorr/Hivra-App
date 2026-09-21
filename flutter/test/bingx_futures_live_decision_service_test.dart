@@ -317,45 +317,42 @@ void main() {
       expect(result.canPrepareIntent, isFalse);
     });
 
-    test(
-      'blocks far retest short in strong bearish continuation trend gate',
-      () {
-        final gatedService = BingxFuturesLiveDecisionService(
-          snapshotService: _StubSnapshotService(),
-          featureExtractor: _StubFeatureExtractor(
-            trendDirection: BingxTrendDirection.bearish,
-          ),
-          ruleEngine: _StubRuleEngine(decision: BingxTvhDecisionKind.short),
-          zoneDecision: _StubZoneDecision(
-            side: 'sell',
-            zoneSide: 'sellside',
-            trend4h: 'bear',
-            trend1d: 'bear',
-            needsFartherRetest: true,
-            targetRetestPct: 0.09,
-          ),
-        );
+    test('keeps far retest trend context advisory for structural short', () {
+      final gatedService = BingxFuturesLiveDecisionService(
+        snapshotService: _StubSnapshotService(),
+        featureExtractor: _StubFeatureExtractor(
+          trendDirection: BingxTrendDirection.bearish,
+        ),
+        ruleEngine: _StubRuleEngine(decision: BingxTvhDecisionKind.short),
+        zoneDecision: _StubZoneDecision(
+          side: 'sell',
+          zoneSide: 'sellside',
+          trend4h: 'bear',
+          trend1d: 'bear',
+          needsFartherRetest: true,
+          targetRetestPct: 0.09,
+        ),
+      );
 
-        final result = gatedService.decide(
-          BingxFuturesLiveDecisionInput(
-            snapshotInput: _buildMinimalInput(),
-            isConsensusSignable: true,
-          ),
-        );
+      final result = gatedService.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildMinimalInput(),
+          isConsensusSignable: true,
+        ),
+      );
 
-        expect(result.decision, BingxTvhDecisionKind.short);
-        expect(result.side, 'sell');
-        expect(result.trendGateBlocked, isTrue);
-        expect(result.trendGateCode, 'trend_gate_short_far_retest');
-        expect(result.canPrepareIntent, isFalse);
-        expect(
-          result.reasons.any(
-            (reason) => reason.code == 'trend_gate_short_far_retest',
-          ),
-          isTrue,
-        );
-      },
-    );
+      expect(result.decision, BingxTvhDecisionKind.short);
+      expect(result.side, 'sell');
+      expect(result.trendGateBlocked, isFalse);
+      expect(result.trendGateCode, 'trend_gate_short_far_retest');
+      expect(result.canPrepareIntent, isTrue);
+      expect(
+        result.reasons.any(
+          (reason) => reason.code == 'trend_gate_short_far_retest',
+        ),
+        isTrue,
+      );
+    });
 
     test('binds fresh opposite liquidity into the signed decision', () {
       final result = BingxFuturesLiveDecisionService(
@@ -428,7 +425,7 @@ void main() {
       );
     });
 
-    test('blocks missed short retest after bearish momentum continuation', () {
+    test('keeps missed retest momentum advisory for structural short', () {
       final gatedService = BingxFuturesLiveDecisionService(
         snapshotService: _StubSnapshotService(),
         featureExtractor: _StubFeatureExtractor(
@@ -459,15 +456,99 @@ void main() {
 
       expect(result.decision, BingxTvhDecisionKind.short);
       expect(result.side, 'sell');
-      expect(result.trendGateBlocked, isTrue);
+      expect(result.trendGateBlocked, isFalse);
       expect(result.trendGateCode, 'momentum_gate_short_missed_retest');
-      expect(result.canPrepareIntent, isFalse);
+      expect(result.canPrepareIntent, isTrue);
       expect(
         result.reasons.any(
           (reason) => reason.code == 'momentum_gate_short_missed_retest',
         ),
         isTrue,
       );
+    });
+
+    test('uses executable structure when TVH has no directional signal', () {
+      final result = BingxFuturesLiveDecisionService(
+        snapshotService: _StubSnapshotService(),
+        featureExtractor: const _StubFeatureExtractor(
+          trendDirection: BingxTrendDirection.neutral,
+        ),
+        ruleEngine: const _StubRuleEngine(
+          decision: BingxTvhDecisionKind.noSignal,
+          reasons: <BingxTvhDecisionReason>[
+            BingxTvhDecisionReason(
+              code: 'funding_guard',
+              passed: false,
+              detail: 'outside_preference',
+            ),
+            BingxTvhDecisionReason(
+              code: 'long_trade_imbalance',
+              passed: false,
+              detail: 'balanced',
+            ),
+            BingxTvhDecisionReason(
+              code: 'short_trade_imbalance',
+              passed: false,
+              detail: 'balanced',
+            ),
+          ],
+        ),
+        zoneDecision: const _StubZoneDecision(
+          side: 'buy',
+          zoneSide: 'buyside',
+          trend4h: 'flat',
+          trend1d: 'flat',
+          needsFartherRetest: false,
+          targetRetestPct: 0.02,
+        ),
+      ).decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildMinimalInput(),
+          isConsensusSignable: true,
+        ),
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.long);
+      expect(result.side, 'buy');
+      expect(result.zoneAnchorExecutable, isTrue);
+      expect(result.canPrepareIntent, isTrue);
+      expect(result.canonicalJson, contains('"decision":"long"'));
+      expect(
+        result.reasons
+            .where((reason) => reason.code == 'funding_guard')
+            .single
+            .passed,
+        isFalse,
+      );
+    });
+
+    test('does not bypass an authority-blocked TVH decision', () {
+      final result = BingxFuturesLiveDecisionService(
+        snapshotService: _StubSnapshotService(),
+        featureExtractor: const _StubFeatureExtractor(
+          trendDirection: BingxTrendDirection.neutral,
+        ),
+        ruleEngine: const _StubRuleEngine(
+          decision: BingxTvhDecisionKind.blocked,
+        ),
+        zoneDecision: const _StubZoneDecision(
+          side: 'buy',
+          zoneSide: 'buyside',
+          trend4h: 'flat',
+          trend1d: 'flat',
+          needsFartherRetest: false,
+          targetRetestPct: 0.02,
+        ),
+      ).decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildMinimalInput(),
+          isConsensusSignable: false,
+        ),
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.blocked);
+      expect(result.side, isNull);
+      expect(result.canPrepareIntent, isFalse);
     });
   });
 }
@@ -1164,8 +1245,14 @@ class _StubFeatureExtractor extends BingxFuturesFeatureExtractorService {
 
 class _StubRuleEngine extends BingxFuturesTvhRuleEngineService {
   final BingxTvhDecisionKind decision;
+  final List<BingxTvhDecisionReason> reasons;
 
-  const _StubRuleEngine({required this.decision});
+  const _StubRuleEngine({
+    required this.decision,
+    this.reasons = const <BingxTvhDecisionReason>[
+      BingxTvhDecisionReason(code: 'stub_rule', passed: true, detail: 'stub'),
+    ],
+  });
 
   @override
   BingxTvhDecisionResult evaluate({
@@ -1180,9 +1267,7 @@ class _StubRuleEngine extends BingxFuturesTvhRuleEngineService {
       ruleSet: 'tvh_v1',
       featureHashHex: features.featureHashHex,
       decision: decision,
-      reasons: const <BingxTvhDecisionReason>[
-        BingxTvhDecisionReason(code: 'stub_rule', passed: true, detail: 'stub'),
-      ],
+      reasons: reasons,
       canonicalJson: '{"decision":"stub"}',
       decisionHashHex:
           'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',

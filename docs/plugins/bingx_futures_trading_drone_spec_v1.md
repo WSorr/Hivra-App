@@ -351,7 +351,7 @@ existing order. Existing signed sessions retain their original semantics;
 the replacement requires explicit strategy-version binding and fresh session
 authorization, not an in-place reinterpretation of existing evidence.
 
-The sole new-entry strategy is `4h-sweep-reclaim-5m-v1`:
+The sole new-entry strategy is `4h-sweep-reclaim-5m-v2`:
 
 1. A sellside cluster with at least three pivots is swept below its bottom;
    a closed 4h candle above that boundary confirms a long parent. A buyside
@@ -382,6 +382,11 @@ The sole new-entry strategy is `4h-sweep-reclaim-5m-v1`:
    confirmation time and strategy version. Event identity hashes the normalized
    symbol and exact parent, so another micro confirmation cannot purchase a
    second effect for the same parent. Decision hashing also binds entry bounds.
+7. Funding, trade imbalance and trend/momentum context remain signed observation
+   and ranking evidence, but cannot veto a complete structural entry. Missing or
+   conflicting authority, an absent executable anchor, stale evidence, invalid
+   precision, a missing opposite-liquidity target, risk limits and duplicate
+   effect protection remain fail-closed.
 
 Void and independent micro-only entry paths are removed. Current replay and
 new authorization include the strategy version; a new runner rejects older
