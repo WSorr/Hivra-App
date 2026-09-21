@@ -308,6 +308,24 @@ void main() {
       expect(blocked['reason_code'], 'market_proposal_blocked');
       expect(requests.where((request) => request.method == 'POST'), isEmpty);
 
+      final requestsBeforeExport = requests.length;
+      for (var read = 0; read < 2; read += 1) {
+        expect(
+          await exportCompletedDeterministicSessionEffects(
+            options: {
+              'mode': completedSessionEffectsMode,
+              'expected-runner-key-id': previousEvidence.runnerKeyId,
+              'deterministic-admission-file':
+                  waiting.options['deterministic-admission-file']!,
+              'deterministic-state-home':
+                  waiting.options['deterministic-state-home']!,
+            },
+          ),
+          '[]',
+        );
+      }
+      expect(requests, hasLength(requestsBeforeExport));
+
       final nextOptions = <String, String>{
         ...waiting.options,
         'session-cycle-index': '1',

@@ -694,7 +694,7 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'deterministic observation requires an inactive public-shadow runner' "$1" &&
     rg -q 'deterministic observation requires a disabled public-shadow runner' "$1" &&
     rg -q '^TRANSIENT_TASKS_MAX="32"$' "$1" &&
-    [ "$(rg -c -F -- '--property="TasksMax=$TRANSIENT_TASKS_MAX"' "$1")" -eq 5 ] &&
+    [ "$(rg -c -F -- '--property="TasksMax=$TRANSIENT_TASKS_MAX"' "$1")" -eq 6 ] &&
     rg -q 'LoadCredentialEncrypted="runner-seed:' "$1" &&
     rg -q 'deterministic public-market observation failed' "$1" &&
     rg -q '"market_symbol": symbol' "$1" &&

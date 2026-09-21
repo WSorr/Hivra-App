@@ -3298,6 +3298,43 @@ prepared_session_service_status() {
   fi
 }
 
+read_completed_session_effects() {
+  local mandate="$1"
+  local unit="hivra-trading-effect-read-$$-$RANDOM"
+  # The canonical journal reader may maintain storage metadata. Keep that work
+  # in the existing state sandbox, not the read-only scheduler namespace.
+  systemd-run --unit="$unit" --service-type=exec --wait --pipe --collect --quiet \
+    --property=DynamicUser=yes \
+    --property="StateDirectory=$(effect_state_directory deterministic)" \
+    --property=StateDirectoryMode=0700 \
+    --property="LoadCredential=deterministic-admission:$mandate" \
+    --property=RuntimeMaxSec=90s \
+    --property=MemoryMax=160M \
+    --property=MemorySwapMax=0 \
+    --property="TasksMax=$TRANSIENT_TASKS_MAX" \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=PrivateNetwork=yes \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=yes \
+    --property=ProtectKernelTunables=yes \
+    --property=ProtectKernelModules=yes \
+    --property=ProtectKernelLogs=yes \
+    --property=ProtectControlGroups=yes \
+    --property=RestrictSUIDSGID=yes \
+    --property=RestrictNamespaces=yes \
+    --property=LockPersonality=yes \
+    --property=CapabilityBoundingSet= \
+    --property=AmbientCapabilities= \
+    --property=RestrictAddressFamilies=AF_UNIX \
+    "$EFFECT_BINARY_INSTALL_PATH" \
+      --mode completed-session-effects \
+      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
+      --deterministic-admission-file "/run/credentials/$unit.service/deterministic-admission" \
+      --deterministic-state-home "$(effect_state_home deterministic)"
+}
+
 export_completed_session_effects() {
   local directory="$1"
   require_expected_runner_key_id
@@ -3323,11 +3360,7 @@ export_completed_session_effects() {
     die "completed effect export refused another session"
   local output
   output="$(
-    "$EFFECT_BINARY_INSTALL_PATH" \
-      --mode completed-session-effects \
-      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
-      --deterministic-admission-file "$mandate" \
-      --deterministic-state-home "$(effect_state_home deterministic)"
+    read_completed_session_effects "$mandate"
   )" || die "completed effect export failed"
   [ "${#output}" -le 65536 ] || die "completed effect export is oversized"
   trap - EXIT INT TERM
@@ -4348,10 +4381,7 @@ PY
   local -a original_market_credentials=()
   if [ -n "$cycle_index" ]; then
     session_cycle_args=(--session-cycle-index "$cycle_index")
-    "$EFFECT_BINARY_INSTALL_PATH" --mode completed-session-effects \
-      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
-      --deterministic-admission-file "$mandate" \
-      --deterministic-state-home "$(effect_state_home deterministic)" \
+    read_completed_session_effects "$mandate" \
       >"$work/completed-effects.json" || die "original observation selection requires verified effects"
     local original_operation
     original_operation="$(python3 - "$work/completed-effects.json" "$admission_operation_id" "$cycle_index" <<'PY'

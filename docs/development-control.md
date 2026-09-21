@@ -68,8 +68,13 @@ Candidate `ec9496b` was deployed for an explicitly authorized VPS trial, but
 its first cycle failed while loading retained pre-upgrade market evidence;
 zero cycles and zero effects completed in that new session. Service startup
 alone is not autonomous acceptance. The local correction separates historical
-chain authentication from current executable-proposal validation; deployment
-and successful closed-Capsule cycles remain pending. The definition is owned by the trading
+chain authentication from current executable-proposal validation and was
+deployed as `42bf66c`. One closed-Capsule cycle completed without an
+exchange effect; the next failed while exporting completed effects from the
+read-only scheduler namespace. The local correction consolidates journal
+export in the existing effect-state sandbox without network or exchange
+credentials. Its deployment and consecutive closed-Capsule cycles remain
+pending. The definition is owned by the trading
 strategy specification. Do not deploy a
 trend-only filter as a substitute or change the active signed VPS session.
 
