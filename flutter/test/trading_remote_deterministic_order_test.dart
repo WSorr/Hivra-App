@@ -6,7 +6,6 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
-import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
@@ -21,6 +20,106 @@ import '../tool/trading_remote_exact_order.dart'
         runAuthorizedExactOrder;
 
 void main() {
+  test(
+    'old strategy authorization cannot run new strategy or read exchange',
+    () async {
+      final fixture = await _fixture(
+        sessionCycleIndex: 0,
+        legacyStrategy: true,
+      );
+      addTearDown(fixture.dispose);
+      final result = jsonDecode(
+        await runOneDeterministicOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          nowUtc: () => fixture.now,
+          requestSender:
+              (_) async => throw StateError('old authority reached exchange'),
+        ),
+      );
+      expect(result['reason_code'], 'strategy_authorization_upgrade_required');
+      expect(result['effect'], isFalse);
+    },
+  );
+  for (final initialState in ['succeeded', 'unresolved', 'terminal_failure']) {
+    test(
+      'spent entry budget after $initialState blocks a fresh event',
+      () async {
+        final first = await _fixture(
+          sessionCycleIndex: 0,
+          testOrder: false,
+          liquidityEventId: '4' * 64,
+        );
+        addTearDown(first.dispose);
+        final harness = const BingxFuturesDeterministicReplayHarnessService();
+        final evidence = harness.parseShadowEvidence(
+          await File(first.options['market-evidence-file']!).readAsBytes(),
+        );
+        final next = await _fixture(
+          sessionCycleIndex: 1,
+          testOrder: false,
+          liquidityEventId: '5' * 64,
+          evidenceSequence: 2,
+          previousEvidenceHash: evidence.evidenceHashHex,
+        );
+        addTearDown(next.dispose);
+        var posts = 0;
+        Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+          if (request.method == 'POST') {
+            posts++;
+            if (initialState == 'unresolved') {
+              throw TimeoutException('delivery outcome unknown');
+            }
+            if (initialState == 'terminal_failure') {
+              return const BingxHttpResponse(
+                statusCode: 200,
+                body: '{"code":100400,"msg":"invalid order"}',
+              );
+            }
+          }
+          return _providerResponse(request);
+        }
+
+        Future<dynamic> run(Map<String, String> options) async => jsonDecode(
+          await runOneDeterministicOrder(
+            options: options,
+            runnerSeedBytes: first.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            requestSender: sender,
+            nowUtc: () => first.now,
+          ),
+        );
+        expect((await run(first.options))['state'], initialState);
+        if (initialState == 'succeeded') {
+          expect((await run(first.options))['state'], 'succeeded');
+        }
+        expect(
+          posts,
+          1,
+          reason: 'Same-operation replay must not deliver again',
+        );
+        final blocked = await run({
+          ...first.options,
+          'session-cycle-index': '1',
+          'market-evidence-file': next.options['market-evidence-file']!,
+          'last-accepted-sequence': '1',
+          'last-accepted-evidence-hash': evidence.evidenceHashHex,
+        });
+        expect(blocked['state'], 'blocked');
+        expect(
+          blocked['reason_code'],
+          'trading_mandate_effect_budget_exhausted',
+        );
+        expect(
+          posts,
+          1,
+          reason: 'A new event cannot replenish signed authority',
+        );
+      },
+    );
+  }
+
   for (final scenario in [
     'legacy',
     'leverage',
@@ -109,13 +208,14 @@ void main() {
     'closed-candle reclaim reaches one remote effect and survives recovery',
     () async {
       const strategy = BingxFuturesDeterministicReplayHarnessService();
-      final before = strategy.runPublicLiveMarket(
+      final reference = strategy.runSweepReclaimReferenceScenario();
+      final before = strategy.replayLiveDecision(
         fixtureId: 'live:BTC-USDT',
-        snapshotInput: _reclaimSnapshot(confirmed: false),
+        decision: reference.waiting,
       );
-      final after = strategy.runPublicLiveMarket(
+      final after = strategy.replayLiveDecision(
         fixtureId: 'live:BTC-USDT',
-        snapshotInput: _reclaimSnapshot(confirmed: true),
+        decision: reference.ready,
       );
       expect(
         before.marketProposalStatus,
@@ -207,6 +307,24 @@ void main() {
       expect(blocked['state'], 'blocked');
       expect(blocked['reason_code'], 'market_proposal_blocked');
       expect(requests.where((request) => request.method == 'POST'), isEmpty);
+
+      final requestsBeforeExport = requests.length;
+      for (var read = 0; read < 2; read += 1) {
+        expect(
+          await exportCompletedDeterministicSessionEffects(
+            options: {
+              'mode': completedSessionEffectsMode,
+              'expected-runner-key-id': previousEvidence.runnerKeyId,
+              'deterministic-admission-file':
+                  waiting.options['deterministic-admission-file']!,
+              'deterministic-state-home':
+                  waiting.options['deterministic-state-home']!,
+            },
+          ),
+          '[]',
+        );
+      }
+      expect(requests, hasLength(requestsBeforeExport));
 
       final nextOptions = <String, String>{
         ...waiting.options,
@@ -325,251 +443,359 @@ void main() {
     },
   );
 
-  test('two session cycles can create at most one active order', () async {
-    final fixture = await _fixture(
-      sessionCycleIndex: 0,
-      testOrder: false,
-      maxEffects: 2,
-    );
-    addTearDown(fixture.dispose);
-    var posts = 0;
-    var orderIsActive = false;
-    String? activeClientOrderId;
-    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
-      if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
-        return BingxHttpResponse(
-          statusCode: 200,
-          body:
-              orderIsActive
-                  ? jsonEncode(<String, dynamic>{
-                    'code': 0,
-                    'msg': 'ok',
-                    'data': <String, dynamic>{
-                      'orders': <Map<String, dynamic>>[
-                        <String, dynamic>{
-                          'orderId': 'live-order-1',
-                          'clientOrderId': activeClientOrderId,
-                          'symbol': 'BTC-USDT',
-                          'side': 'BUY',
-                          'positionSide': 'LONG',
-                          'type': 'TRIGGER_LIMIT',
-                          'status': 'NEW',
-                          'price': '100',
-                          'stopPrice': '99',
-                          'origQty': '0.01',
-                          'executedQty': '0',
-                          'time': 1,
-                        },
-                      ],
-                    },
-                  })
-                  : '{"code":0,"msg":"ok","data":{"orders":[]}}',
+  for (final blockedProposal in [false, true]) {
+    test(
+      'active order is retained with blocked proposal=$blockedProposal',
+      () async {
+        final fixture = await _fixture(
+          sessionCycleIndex: 0,
+          testOrder: false,
+          maxEffects: 2,
         );
-      }
-      if (request.method == 'POST') {
-        posts += 1;
-        activeClientOrderId =
-            Uri.splitQueryString(request.body)['clientOrderId'];
-        orderIsActive = true;
-      }
-      return _providerResponse(request);
-    }
+        addTearDown(fixture.dispose);
+        final harness = const BingxFuturesDeterministicReplayHarnessService();
+        final evidence = harness.parseShadowEvidence(
+          await File(fixture.options['market-evidence-file']!).readAsBytes(),
+        );
+        final blockedRun = harness.replayLiveDecision(
+          fixtureId: 'live:BTC-USDT',
+          decision: harness.runSweepReclaimReferenceScenario().waiting,
+        );
+        expect(blockedRun.marketProposalStatus, 'BLOCKED');
+        final next = await _fixture(
+          sessionCycleIndex: 1,
+          testOrder: false,
+          maxEffects: 2,
+          publicRun: blockedProposal ? blockedRun : null,
+          liquidityEventId: '5' * 64,
+          evidenceSequence: 2,
+          previousEvidenceHash: evidence.evidenceHashHex,
+        );
+        addTearDown(next.dispose);
+        var posts = 0;
+        var deletes = 0;
+        var orderIsActive = false;
+        var executedQuantity = '0';
+        String? activeClientOrderId;
+        Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+          if (request.method == 'DELETE') deletes++;
+          if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+            return BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  orderIsActive
+                      ? jsonEncode(<String, dynamic>{
+                        'code': 0,
+                        'msg': 'ok',
+                        'data': <String, dynamic>{
+                          'orders': <Map<String, dynamic>>[
+                            <String, dynamic>{
+                              'orderId': 'live-order-1',
+                              'clientOrderId': activeClientOrderId,
+                              'symbol': 'BTC-USDT',
+                              'side': 'BUY',
+                              'positionSide': 'LONG',
+                              'type': 'TRIGGER_LIMIT',
+                              'status': 'NEW',
+                              'price': '100',
+                              'stopPrice': '99',
+                              'origQty': '0.01',
+                              'executedQty': executedQuantity,
+                              'time': 1,
+                            },
+                          ],
+                        },
+                      })
+                      : '{"code":0,"msg":"ok","data":{"orders":[]}}',
+            );
+          }
+          if (request.method == 'POST') {
+            posts += 1;
+            activeClientOrderId =
+                Uri.splitQueryString(request.body)['clientOrderId'];
+            orderIsActive = true;
+          }
+          return _providerResponse(request);
+        }
 
-    final first = jsonDecode(
-      await runOneDeterministicOrder(
-        options: fixture.options,
-        runnerSeedBytes: fixture.runnerSeed,
-        executeExactOrder: runAuthorizedExactOrder,
-        requestSender: sender,
-        nowUtc: () => fixture.now,
-      ),
+        final first = jsonDecode(
+          await runOneDeterministicOrder(
+            options: fixture.options,
+            runnerSeedBytes: fixture.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            requestSender: sender,
+            nowUtc: () => fixture.now,
+          ),
+        );
+        final second = jsonDecode(
+          await runOneDeterministicOrder(
+            options: <String, String>{
+              ...fixture.options,
+              'session-cycle-index': '1',
+              'market-evidence-file': next.options['market-evidence-file']!,
+              'last-accepted-sequence': '1',
+              'last-accepted-evidence-hash': evidence.evidenceHashHex,
+            },
+            runnerSeedBytes: fixture.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+            requestSender: sender,
+            nowUtc: () => fixture.now,
+          ),
+        );
+
+        expect(first['state'], 'succeeded');
+        expect(second['state'], 'blocked');
+        expect(second['reason_code'], 'managed_order_active');
+        expect(posts, 1);
+        expect(deletes, 0);
+        expect(orderIsActive, isTrue);
+        final unknown = jsonDecode(
+          await runOneDeterministicOrder(
+            options: {
+              ...fixture.options,
+              'session-cycle-index': '1',
+              'original-market-operation-id': 'f' * 64,
+            },
+            runnerSeedBytes: fixture.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+            requestSender: sender,
+            nowUtc: () => fixture.now,
+          ),
+        );
+        expect(
+          unknown['reason_code'],
+          'managed_order_revalidation_unavailable',
+        );
+        expect(deletes, 0);
+        for (final corruptProof in [false, true]) {
+          executedQuantity = corruptProof ? '0' : '0.001';
+          if (corruptProof) {
+            final file = File(
+              fixture.options['original-market-evidence-file']!,
+            );
+            await file.writeAsString(
+              (await file.readAsString()).replaceAll('BTC-USDT', 'ETH-USDT'),
+            );
+          }
+          final result = jsonDecode(
+            await runOneDeterministicOrder(
+              options: {
+                ...fixture.options,
+                'session-cycle-index': '1',
+                'market-evidence-file': next.options['market-evidence-file']!,
+                'last-accepted-sequence': '1',
+                'last-accepted-evidence-hash': evidence.evidenceHashHex,
+              },
+              runnerSeedBytes: fixture.runnerSeed,
+              executeExactOrder: runAuthorizedExactOrder,
+              cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+              requestSender: sender,
+              nowUtc: () => fixture.now,
+            ),
+          );
+          expect(
+            result['reason_code'],
+            'managed_order_revalidation_unavailable',
+          );
+          expect(posts, 1);
+          expect(deletes, 0);
+        }
+      },
     );
-    final second = jsonDecode(
-      await runOneDeterministicOrder(
-        options: <String, String>{
-          ...fixture.options,
-          'session-cycle-index': '1',
-        },
-        runnerSeedBytes: fixture.runnerSeed,
-        executeExactOrder: runAuthorizedExactOrder,
-        requestSender: sender,
-        nowUtc: () => fixture.now,
-      ),
+  }
+
+  for (final (maxEffects, maintenance) in [(1, false), (1, true), (2, true)]) {
+    test(
+      'managed cancellation preserves entry budget $maxEffects maintenance=$maintenance',
+      () async {
+        final first = await _fixture(
+          sessionCycleIndex: 0,
+          testOrder: false,
+          maxEffects: maxEffects,
+          liquidityEventId: '4' * 64,
+          maintenance: maintenance,
+        );
+        final harness = const BingxFuturesDeterministicReplayHarnessService();
+        final firstEvidence = harness.parseShadowEvidence(
+          await File(first.options['market-evidence-file']!).readAsBytes(),
+        );
+        final second = await _fixture(
+          sessionCycleIndex: 1,
+          testOrder: false,
+          maxEffects: maxEffects,
+          liquidityEventId: '5' * 64,
+          evidenceSequence: 2,
+          previousEvidenceHash: firstEvidence.evidenceHashHex,
+        );
+        final secondEvidence = harness.parseShadowEvidence(
+          await File(second.options['market-evidence-file']!).readAsBytes(),
+        );
+        final third = await _fixture(
+          sessionCycleIndex: 2,
+          testOrder: false,
+          maxEffects: maxEffects,
+          liquidityEventId: '5' * 64,
+          evidenceSequence: 3,
+          previousEvidenceHash: secondEvidence.evidenceHashHex,
+        );
+        addTearDown(first.dispose);
+        addTearDown(second.dispose);
+        addTearDown(third.dispose);
+
+        var active = false;
+        var activeOrderId = '';
+        String? activeClientOrderId;
+        var posts = 0;
+        var deletes = 0;
+        Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+          if (request.uri.path.endsWith('/quote/klines')) {
+            return _anchorBars(consumed: true);
+          }
+          if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: jsonEncode(<String, dynamic>{
+                'code': 0,
+                'msg': 'ok',
+                'data': <String, dynamic>{
+                  'orders':
+                      active
+                          ? <Map<String, dynamic>>[
+                            <String, dynamic>{
+                              'orderId': activeOrderId,
+                              'clientOrderId': activeClientOrderId,
+                              'symbol': 'BTC-USDT',
+                              'side': 'BUY',
+                              'positionSide': 'LONG',
+                              'type': 'TRIGGER_LIMIT',
+                              'status': 'NEW',
+                              'price': '100.5',
+                              'stopPrice': '101',
+                              'origQty': '0.01',
+                              'executedQty': '0',
+                              'time': 1,
+                            },
+                          ]
+                          : <Map<String, dynamic>>[],
+                },
+              }),
+            );
+          }
+          if (request.uri.path == '/openApi/swap/v2/trade/order' &&
+              request.method == 'DELETE') {
+            deletes += 1;
+            active = false;
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: jsonEncode(<String, dynamic>{
+                'code': 0,
+                'msg': 'success',
+                'data': <String, dynamic>{
+                  'order': <String, dynamic>{'orderID': activeOrderId},
+                },
+              }),
+            );
+          }
+          if (request.uri.path == '/openApi/swap/v2/trade/order' &&
+              request.method == 'POST') {
+            posts += 1;
+            activeOrderId = 'live-order-$posts';
+            activeClientOrderId =
+                Uri.splitQueryString(request.body)['clientOrderId'];
+            active = true;
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: jsonEncode(<String, dynamic>{
+                'code': 0,
+                'msg': 'success',
+                'data': <String, dynamic>{
+                  'order': <String, dynamic>{'orderID': activeOrderId},
+                },
+              }),
+            );
+          }
+          return _providerResponse(request);
+        }
+
+        final placed = jsonDecode(
+          await runOneDeterministicOrder(
+            options: first.options,
+            runnerSeedBytes: first.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+            requestSender: sender,
+            nowUtc: () => first.now,
+          ),
+        );
+        final cancelled = jsonDecode(
+          await runOneDeterministicOrder(
+            options: <String, String>{
+              ...first.options,
+              'session-cycle-index': '1',
+              'market-evidence-file': second.options['market-evidence-file']!,
+              'last-accepted-sequence': '1',
+              'last-accepted-evidence-hash': firstEvidence.evidenceHashHex,
+            },
+            runnerSeedBytes: first.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+            requestSender: sender,
+            nowUtc: () => first.now,
+          ),
+        );
+        expect(placed['state'], 'succeeded');
+        if (!maintenance) {
+          expect(cancelled['state'], 'blocked');
+          expect(
+            cancelled['reason_code'],
+            'trading_mandate_effect_budget_exhausted',
+          );
+          expect(posts, 1);
+          expect(deletes, 0);
+          expect(active, isTrue);
+          return;
+        }
+        expect(cancelled['state'], 'succeeded');
+        expect(
+          cancelled['contract_version'],
+          'hivra-trading-managed-order-cancellation-evidence-v1',
+        );
+        expect(posts, 1);
+        expect(deletes, 1);
+        expect(active, isFalse);
+
+        final replaced = jsonDecode(
+          await runOneDeterministicOrder(
+            options: <String, String>{
+              ...first.options,
+              'session-cycle-index': '2',
+              'market-evidence-file': third.options['market-evidence-file']!,
+              'last-accepted-sequence': '2',
+              'last-accepted-evidence-hash': secondEvidence.evidenceHashHex,
+            },
+            runnerSeedBytes: first.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+            requestSender: sender,
+            nowUtc: () => first.now,
+          ),
+        );
+        expect(replaced['state'], maxEffects == 1 ? 'blocked' : 'succeeded');
+        if (maxEffects == 1) {
+          expect(
+            replaced['reason_code'],
+            'trading_mandate_effect_budget_exhausted',
+          );
+        }
+        expect(posts, maxEffects);
+        expect(deletes, 1);
+        expect(active, maxEffects > 1);
+        if (maxEffects > 1) expect(activeClientOrderId, 'hivra-${'5' * 32}');
+      },
     );
-
-    expect(first['state'], 'succeeded');
-    expect(second['state'], 'blocked');
-    expect(second['reason_code'], 'managed_order_active');
-    expect(posts, 1);
-  });
-
-  test(
-    'fresh liquidity event cancels the managed order before next placement',
-    () async {
-      final first = await _fixture(
-        sessionCycleIndex: 0,
-        testOrder: false,
-        maxEffects: 2,
-        liquidityEventId: '4' * 64,
-      );
-      final harness = const BingxFuturesDeterministicReplayHarnessService();
-      final firstEvidence = harness.parseShadowEvidence(
-        await File(first.options['market-evidence-file']!).readAsBytes(),
-      );
-      final second = await _fixture(
-        sessionCycleIndex: 1,
-        testOrder: false,
-        maxEffects: 2,
-        liquidityEventId: '5' * 64,
-        evidenceSequence: 2,
-        previousEvidenceHash: firstEvidence.evidenceHashHex,
-      );
-      final secondEvidence = harness.parseShadowEvidence(
-        await File(second.options['market-evidence-file']!).readAsBytes(),
-      );
-      final third = await _fixture(
-        sessionCycleIndex: 2,
-        testOrder: false,
-        maxEffects: 2,
-        liquidityEventId: '5' * 64,
-        evidenceSequence: 3,
-        previousEvidenceHash: secondEvidence.evidenceHashHex,
-      );
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
-      addTearDown(third.dispose);
-
-      var active = false;
-      var activeOrderId = '';
-      String? activeClientOrderId;
-      var posts = 0;
-      var deletes = 0;
-      Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
-        if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
-          return BingxHttpResponse(
-            statusCode: 200,
-            body: jsonEncode(<String, dynamic>{
-              'code': 0,
-              'msg': 'ok',
-              'data': <String, dynamic>{
-                'orders':
-                    active
-                        ? <Map<String, dynamic>>[
-                          <String, dynamic>{
-                            'orderId': activeOrderId,
-                            'clientOrderId': activeClientOrderId,
-                            'symbol': 'BTC-USDT',
-                            'side': 'BUY',
-                            'positionSide': 'LONG',
-                            'type': 'TRIGGER_LIMIT',
-                            'status': 'NEW',
-                            'price': '100.5',
-                            'stopPrice': '101',
-                            'origQty': '0.01',
-                            'executedQty': '0',
-                            'time': 1,
-                          },
-                        ]
-                        : <Map<String, dynamic>>[],
-              },
-            }),
-          );
-        }
-        if (request.uri.path == '/openApi/swap/v2/trade/order' &&
-            request.method == 'DELETE') {
-          deletes += 1;
-          active = false;
-          return BingxHttpResponse(
-            statusCode: 200,
-            body: jsonEncode(<String, dynamic>{
-              'code': 0,
-              'msg': 'success',
-              'data': <String, dynamic>{
-                'order': <String, dynamic>{'orderID': activeOrderId},
-              },
-            }),
-          );
-        }
-        if (request.uri.path == '/openApi/swap/v2/trade/order' &&
-            request.method == 'POST') {
-          posts += 1;
-          activeOrderId = 'live-order-$posts';
-          activeClientOrderId =
-              Uri.splitQueryString(request.body)['clientOrderId'];
-          active = true;
-          return BingxHttpResponse(
-            statusCode: 200,
-            body: jsonEncode(<String, dynamic>{
-              'code': 0,
-              'msg': 'success',
-              'data': <String, dynamic>{
-                'order': <String, dynamic>{'orderID': activeOrderId},
-              },
-            }),
-          );
-        }
-        return _providerResponse(request);
-      }
-
-      final placed = jsonDecode(
-        await runOneDeterministicOrder(
-          options: first.options,
-          runnerSeedBytes: first.runnerSeed,
-          executeExactOrder: runAuthorizedExactOrder,
-          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
-          requestSender: sender,
-          nowUtc: () => first.now,
-        ),
-      );
-      final cancelled = jsonDecode(
-        await runOneDeterministicOrder(
-          options: <String, String>{
-            ...first.options,
-            'session-cycle-index': '1',
-            'market-evidence-file': second.options['market-evidence-file']!,
-            'last-accepted-sequence': '1',
-            'last-accepted-evidence-hash': firstEvidence.evidenceHashHex,
-          },
-          runnerSeedBytes: first.runnerSeed,
-          executeExactOrder: runAuthorizedExactOrder,
-          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
-          requestSender: sender,
-          nowUtc: () => first.now,
-        ),
-      );
-      expect(placed['state'], 'succeeded');
-      expect(cancelled['state'], 'succeeded');
-      expect(
-        cancelled['contract_version'],
-        'hivra-trading-managed-order-cancellation-evidence-v1',
-      );
-      expect(posts, 1);
-      expect(deletes, 1);
-      expect(active, isFalse);
-
-      final replaced = jsonDecode(
-        await runOneDeterministicOrder(
-          options: <String, String>{
-            ...first.options,
-            'session-cycle-index': '2',
-            'market-evidence-file': third.options['market-evidence-file']!,
-            'last-accepted-sequence': '2',
-            'last-accepted-evidence-hash': secondEvidence.evidenceHashHex,
-          },
-          runnerSeedBytes: first.runnerSeed,
-          executeExactOrder: runAuthorizedExactOrder,
-          cancelManagedOrder: runAuthorizedManagedOrderCancellation,
-          requestSender: sender,
-          nowUtc: () => first.now,
-        ),
-      );
-      expect(replaced['state'], 'succeeded');
-      expect(posts, 2);
-      expect(deletes, 1);
-      expect(active, isTrue);
-      expect(activeClientOrderId, 'hivra-${'5' * 32}');
-    },
-  );
+  }
 
   test(
     'ambiguous managed cancellation reconciles without a second DELETE',
@@ -599,6 +825,9 @@ void main() {
       var clientOrderId = '';
       var deletes = 0;
       Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+        if (request.uri.path.endsWith('/quote/klines')) {
+          return _anchorBars(consumed: true);
+        }
         if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
           return BingxHttpResponse(
             statusCode: 200,
@@ -1086,146 +1315,33 @@ void main() {
   );
 }
 
-BingxFuturesMarketSnapshotInput _reclaimSnapshot({required bool confirmed}) {
-  final start = DateTime.utc(2026, 8, 22, 9, 15);
-  BingxFuturesCandle candle(
-    String timeframe,
-    DateTime closeAt,
-    int minutes,
-    num open,
-    num high,
-    num low,
-    num close,
-  ) => BingxFuturesCandle(
-    timeframe: timeframe,
-    openTimeUtc: closeAt.subtract(Duration(minutes: minutes)).toIso8601String(),
-    closeTimeUtc: closeAt.toIso8601String(),
-    openDecimal: '$open',
-    highDecimal: '$high',
-    lowDecimal: '$low',
-    closeDecimal: '$close',
-    volumeBaseDecimal: '100',
-    volumeQuoteDecimal: '10000',
-    isClosed: true,
-  );
-  final observedAt = DateTime.utc(2026, 8, 22, 12, confirmed ? 5 : 0);
-  return BingxFuturesMarketSnapshotInput(
-    instrument: const BingxFuturesInstrumentMeta(
-      symbol: 'BTC-USDT',
-      baseAsset: 'BTC',
-      quoteAsset: 'USDT',
-      tickSizeDecimal: '0.01',
-      qtyStepDecimal: '0.001',
-      minQtyDecimal: '0.001',
-      maxLeverageDecimal: '10',
-    ),
-    prices: const BingxFuturesPriceSnapshot(
-      lastTradePriceDecimal: '100',
-      markPriceDecimal: '100',
-      indexPriceDecimal: '100',
-    ),
-    candles: [
-      for (var index = 0; index < (confirmed ? 34 : 33); index++)
-        candle(
-          '5m',
-          start.add(Duration(minutes: (index + 1) * 5)),
-          5,
-          index == 33 ? 96 : 101,
-          102,
-          index == 32
-              ? 95
-              : index == 33
-              ? 96
-              : [8, 16, 24].contains(index)
-              ? 98
-              : 100,
-          index == 32
-              ? 96
-              : index == 33
-              ? 100
-              : 101,
-        ),
-      for (var index = 0; index < 220; index++)
-        candle(
-          '15m',
-          start.subtract(Duration(minutes: (220 - index) * 15)),
-          15,
-          100,
-          102,
-          98,
-          100,
-        ),
-      for (var index = 0; index < 24; index++)
-        candle(
-          '1h',
-          start.subtract(Duration(hours: 24 - index)),
-          60,
-          100,
-          104,
-          96,
-          100,
-        ),
-      for (var index = 0; index < 7; index++)
-        candle(
-          '4h',
-          start.subtract(Duration(hours: (7 - index) * 4)),
-          240,
-          100,
-          index == 3 ? 112 : 105,
-          98,
-          100,
-        ),
-      candle('1m', start, 1, 100, 102, 98, 100),
-      candle('1d', DateTime.utc(2026, 8, 22), 1440, 100, 112, 98, 100),
-      candle('1w', DateTime.utc(2026, 8, 17), 10080, 100, 112, 98, 100),
+BingxHttpResponse _anchorBars({bool consumed = false}) => BingxHttpResponse(
+  statusCode: 200,
+  body: jsonEncode({
+    'code': 0,
+    'data': [
+      for (var minute = 0; minute <= 240; minute += 5)
+        {
+          'time':
+              DateTime.utc(
+                2026,
+                8,
+                22,
+                7,
+                55,
+              ).add(Duration(minutes: minute)).millisecondsSinceEpoch,
+          'open': '102',
+          'high': '103',
+          'low': consumed && minute == 240 ? '99' : '101.5',
+          'close': '102',
+          'volume': '10',
+        },
     ],
-    trades: [
-      BingxFuturesTrade(
-        tradeId: 'observed-buy',
-        timestampUtc: observedAt.toIso8601String(),
-        side: 'buy',
-        priceDecimal: '100',
-        quantityDecimal: '1',
-      ),
-    ],
-    openInterest: [
-      BingxFuturesOpenInterestPoint(
-        timestampUtc: observedAt.toIso8601String(),
-        openInterestDecimal: '1000',
-      ),
-    ],
-    funding: BingxFuturesFundingSnapshot(
-      timestampUtc: observedAt.toIso8601String(),
-      fundingRateDecimal: '0',
-      nextFundingAtUtc: DateTime.utc(2026, 8, 22, 16).toIso8601String(),
-    ),
-    liquidityLevels: const [
-      BingxFuturesLiquidityLevel(
-        kind: 'external',
-        side: 'buyside',
-        timeframe: '4h',
-        priceDecimal: '112',
-      ),
-      BingxFuturesLiquidityLevel(
-        kind: 'internal',
-        side: 'sellside',
-        timeframe: '5m',
-        priceDecimal: '98',
-      ),
-    ],
-    sessionVolumes: [
-      for (final session in ['asia', 'london', 'newyork'])
-        BingxFuturesSessionVolumePoint(
-          session: session,
-          bucketStartUtc: DateTime.utc(2026, 8, 22).toIso8601String(),
-          volumeDecimal: '100',
-          deltaDecimal: '10',
-        ),
-    ],
-  );
-}
+  }),
+);
 
 BingxHttpResponse _providerResponse(BingxHttpRequest request) {
+  if (request.uri.path.endsWith('/quote/klines')) return _anchorBars();
   final body = switch (request.uri.path) {
     '/openApi/swap/v3/user/balance' =>
       '{"code":0,"data":[{"asset":"USDT","equity":"1000","availableMargin":"1000"}]}',
@@ -1263,6 +1379,8 @@ _fixture({
   bool testOrder = true,
   bool includeExposureScope = true,
   bool legacySession = false,
+  bool legacyStrategy = false,
+  bool maintenance = true,
   int maxEffects = 1,
   BingxFuturesReplayRunResult? publicRun,
   DateTime? evidenceAtUtc,
@@ -1303,6 +1421,7 @@ _fixture({
     maxEffects: maxEffects,
   );
   final policy = <String, dynamic>{
+    if (!legacyStrategy) 'strategy_version': '4h-sweep-reclaim-5m-v2',
     'runner_build_id': 'runner-build',
     'plugin_id': 'hivra.bingx-futures-trading',
     'plugin_version': '0.2.7-plugins',
@@ -1331,6 +1450,7 @@ _fixture({
             startsAtUtc: now,
             intervalSeconds: 300,
             maxCycles: 12,
+            manageExistingAfterEntryBudget: !legacySession && maintenance,
             signCommitment: signer,
           )!;
   final unsignedAdmission = issue((_) => '0' * 128);
@@ -1422,9 +1542,19 @@ _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': 'micro_sweep_reclaim',
+      'anchor_source': '4h_sweep_reclaim_5m',
       'anchor_executable': true,
       'anchor_lifecycle': 'reclaimed',
+      'atr14_5m_decimal': '2.5',
+      'parent': {
+        'strategy_version': '4h-sweep-reclaim-5m-v2',
+        'timeframe': '4h',
+        'side': 'buy',
+        'low_decimal': '99',
+        'high_decimal': '102',
+        'sweep_at_utc': '2026-08-22T08:00:00Z',
+        'confirmed_at_utc': '2026-08-22T08:00:00Z',
+      },
       'liquidity_event_id': liquidityEventId ?? '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:50:00Z',
       'latest_closed_micro_bar_at_utc': '2026-08-22T11:55:00Z',
@@ -1504,6 +1634,9 @@ _fixture({
       'runner-seed-file': seedFile.path,
       'deterministic-admission-file': admissionFile.path,
       'market-evidence-file': evidenceFile.path,
+      'original-market-evidence-file': evidenceFile.path,
+      'original-market-operation-id':
+          admission.deterministicCycleOperationId(sessionCycleIndex ?? 0)!,
       'deterministic-credential-file': credentialFile.path,
       'deterministic-state-home': '${directory.path}/state',
       'last-accepted-sequence': '0',

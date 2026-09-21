@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../models/bingx_futures_exchange_execution_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
@@ -96,6 +97,7 @@ typedef BingxFuturesOrderSizingCycleRunner =
       required String symbol,
       required num maximumNotionalQuote,
       required String referencePriceDecimal,
+      required BingxFuturesContractRules rules,
     });
 typedef BingxFuturesIntentCycleRunner =
     Future<BingxFuturesIntentUseCaseResult> Function(
@@ -115,6 +117,7 @@ typedef BingxFuturesExecutionCycleRunner =
 class BingxFuturesTradingCycleUseCaseService {
   final BingxFuturesLiveStrategyCycleRunner _runLiveStrategy;
   final BingxFuturesOrderSizingCycleRunner _runSizing;
+  final Future<BingxFuturesContractRules?> Function(String) _loadContractRules;
   final BingxFuturesIntentCycleRunner _runIntent;
   final BingxFuturesExecutionCycleRunner _runExecution;
   final BingxFuturesStrategyNamingService _strategyNaming;
@@ -130,6 +133,7 @@ class BingxFuturesTradingCycleUseCaseService {
         const BingxFuturesStrategyNamingService(),
     BingxFuturesLiveStrategyCycleRunner? liveStrategyRunner,
     BingxFuturesOrderSizingCycleRunner? sizingRunner,
+    Future<BingxFuturesContractRules?> Function(String)? contractRulesLoader,
     BingxFuturesIntentCycleRunner? intentRunner,
     BingxFuturesExecutionCycleRunner? executionRunner,
     DateTime Function()? nowUtc,
@@ -139,14 +143,17 @@ class BingxFuturesTradingCycleUseCaseService {
        assert(intentRunner != null || intentUseCase != null),
        assert(executionRunner != null || executionUseCase != null),
        _runLiveStrategy = liveStrategyRunner ?? liveStrategy!.execute,
+       _loadContractRules =
+           contractRulesLoader ?? orderSizing!.loadContractRules,
        _runSizing =
            sizingRunner ??
            (({
              required String symbol,
              required num maximumNotionalQuote,
              required String referencePriceDecimal,
-           }) => orderSizing!.size(
-             symbol: symbol,
+             required BingxFuturesContractRules rules,
+           }) async => orderSizing!.calculate(
+             rules: rules,
              maximumNotionalQuote: maximumNotionalQuote,
              referencePriceDecimal: referencePriceDecimal,
            )),
@@ -216,13 +223,38 @@ class BingxFuturesTradingCycleUseCaseService {
         decision: decision,
       );
     }
-    final entryPrice = (zoneLow + zoneHigh) / 2;
+    final rules = await _loadContractRules(symbol);
+    if (rules == null ||
+        rules.symbol.trim().toUpperCase() != symbol ||
+        rules.pricePrecision == null ||
+        rules.pricePrecision! < 0 ||
+        rules.pricePrecision! > 8) {
+      return _blocked(
+        BingxFuturesTradingCycleStatus.sizingBlocked,
+        'contract_price_precision_unavailable',
+        'Valid instrument price precision is required.',
+        decision: decision,
+      );
+    }
+    final precision = rules.pricePrecision!;
+    final entryPrice = num.parse(
+      bingxFuturesPriceDecimal((zoneLow + zoneHigh) / 2, precision: precision),
+    );
+    final triggerPrice = bingxFuturesPriceDecimal(
+      decision.side == 'buy' ? zoneHigh : zoneLow,
+      precision: precision,
+      roundUp: decision.side == 'buy',
+    );
     final targets = deriveBingxFuturesLiquidityTargets(
       side: decision.side!,
       entryPrice: entryPrice,
+      zoneLow: zoneLow,
+      zoneHigh: zoneHigh,
+      atr14m5Decimal: decision.atr14m5Decimal,
       stopLossPercent: command.stopLossPercent,
       minimumRiskReward: command.takeProfitRiskReward,
       oppositeLiquidityTargetDecimal: decision.oppositeLiquidityTargetDecimal,
+      pricePrecision: precision,
     );
     if (targets.blockerCode != null) {
       return _blocked(
@@ -235,8 +267,10 @@ class BingxFuturesTradingCycleUseCaseService {
       );
     }
     final sizing = await _runSizing(
+      rules: rules,
       symbol: symbol,
-      maximumNotionalQuote: command.maximumNotionalQuote,
+      maximumNotionalQuote:
+          command.maximumNotionalQuote * targets.notionalScale,
       referencePriceDecimal: _formatDecimal(entryPrice),
     );
     if (sizing.status != BingxFuturesOrderSizingStatus.sized ||
@@ -266,12 +300,9 @@ class BingxFuturesTradingCycleUseCaseService {
           zoneSide: decision.zoneSide!,
           zoneLowDecimal: decision.zoneLowDecimal!,
           zoneHighDecimal: decision.zoneHighDecimal!,
-          zonePriceRule: 'zone_mid',
-          manualEntryPriceDecimal: null,
-          triggerPriceDecimal:
-              decision.side == 'buy'
-                  ? decision.zoneHighDecimal!
-                  : decision.zoneLowDecimal!,
+          zonePriceRule: 'manual',
+          manualEntryPriceDecimal: _formatDecimal(entryPrice),
+          triggerPriceDecimal: triggerPrice,
           stopLossDecimal: targets.stopLossDecimal,
           takeProfitDecimal: targets.takeProfitDecimal,
           createdAtUtc: _nowUtc().toUtc().toIso8601String(),
@@ -498,33 +529,109 @@ class BingxFuturesTradingCycleUseCaseService {
   double? actualRiskReward,
   String? blockerCode,
   String? blockerMessage,
+  double notionalScale,
 })
 deriveBingxFuturesLiquidityTargets({
   required String side,
   required num entryPrice,
+  required num zoneLow,
+  required num zoneHigh,
+  required String? atr14m5Decimal,
   required double stopLossPercent,
   required double minimumRiskReward,
   required String? oppositeLiquidityTargetDecimal,
+  int pricePrecision = 8,
 }) {
-  String decimal(num value) =>
-      value.toStringAsFixed(8).replaceFirst(RegExp(r'\.?0+$'), '');
-
-  final buy = side.trim().toLowerCase() == 'buy';
-  final stopFactor = stopLossPercent / 100;
-  final stopLoss =
-      buy ? entryPrice * (1 - stopFactor) : entryPrice * (1 + stopFactor);
-  final stopLossDecimal = decimal(stopLoss);
+  final normalizedSide = side.trim().toLowerCase();
+  final atr = num.tryParse(atr14m5Decimal ?? '');
+  if (pricePrecision < 0 ||
+      pricePrecision > 8 ||
+      !['buy', 'sell'].contains(normalizedSide) ||
+      !entryPrice.isFinite ||
+      !zoneLow.isFinite ||
+      !zoneHigh.isFinite ||
+      zoneLow <= 0 ||
+      zoneHigh <= zoneLow ||
+      entryPrice <= zoneLow ||
+      entryPrice >= zoneHigh ||
+      atr == null ||
+      !atr.isFinite ||
+      atr <= 0 ||
+      !stopLossPercent.isFinite ||
+      stopLossPercent <= 0 ||
+      stopLossPercent >= 100 ||
+      !minimumRiskReward.isFinite ||
+      minimumRiskReward <= 0) {
+    return (
+      stopLossDecimal: null,
+      takeProfitDecimal: null,
+      actualRiskReward: null,
+      blockerCode: 'structural_stop_unavailable',
+      blockerMessage: 'Valid entry structure and ATR are required.',
+      notionalScale: 0,
+    );
+  }
+  final buy = normalizedSide == 'buy';
+  final structureDistance = buy ? entryPrice - zoneLow : zoneHigh - entryPrice;
+  final distance =
+      structureDistance > atr * 0.8 ? structureDistance : atr * 0.8;
+  final stopLoss = buy ? entryPrice - distance : entryPrice + distance;
+  final scaledStop = stopLoss * math.pow(10, pricePrecision);
+  if (!scaledStop.isFinite) {
+    return (
+      stopLossDecimal: null,
+      takeProfitDecimal: null,
+      actualRiskReward: null,
+      blockerCode: 'structural_stop_invalid',
+      blockerMessage: 'Structural stop is not a valid price.',
+      notionalScale: 0,
+    );
+  }
+  final stopLossDecimal = bingxFuturesPriceDecimal(
+    stopLoss,
+    precision: pricePrecision,
+    roundUp: !buy,
+  );
+  final roundedStop = num.parse(stopLossDecimal);
+  final riskDistance = (roundedStop - entryPrice).abs();
+  if (!roundedStop.isFinite ||
+      roundedStop <= 0 ||
+      riskDistance <= 0 ||
+      (buy ? roundedStop >= entryPrice : roundedStop <= entryPrice)) {
+    return (
+      stopLossDecimal: null,
+      takeProfitDecimal: null,
+      actualRiskReward: null,
+      blockerCode: 'structural_stop_invalid',
+      blockerMessage: 'Structural stop is not a valid price.',
+      notionalScale: 0,
+    );
+  }
+  // The configured percentage bounds loss at maximum notional; a wider
+  // structural stop reduces size, never moves the stop inside the structure.
+  final notionalScale =
+      (entryPrice * stopLossPercent / 100 / riskDistance)
+          .clamp(0, 1)
+          .toDouble();
   final target = num.tryParse(oppositeLiquidityTargetDecimal?.trim() ?? '');
-  if (target == null || target <= 0) {
+  if (target == null || !target.isFinite || target <= 0) {
     return (
       stopLossDecimal: stopLossDecimal,
       takeProfitDecimal: null,
       actualRiskReward: null,
       blockerCode: 'opposite_liquidity_target_unavailable',
       blockerMessage: 'Fresh opposite liquidity is unavailable.',
+      notionalScale: notionalScale,
     );
   }
-  final profitDistance = buy ? target - entryPrice : entryPrice - target;
+  final takeProfitDecimal = bingxFuturesPriceDecimal(
+    target,
+    precision: pricePrecision,
+    roundUp: !buy,
+  );
+  final roundedTarget = num.parse(takeProfitDecimal);
+  final profitDistance =
+      buy ? roundedTarget - entryPrice : entryPrice - roundedTarget;
   if (profitDistance <= 0) {
     return (
       stopLossDecimal: stopLossDecimal,
@@ -532,25 +639,49 @@ deriveBingxFuturesLiquidityTargets({
       actualRiskReward: null,
       blockerCode: 'opposite_liquidity_target_wrong_side',
       blockerMessage: 'Opposite liquidity is not on the profitable side.',
+      notionalScale: notionalScale,
     );
   }
-  final riskDistance = (stopLoss - entryPrice).abs();
   final actualRiskReward = profitDistance / riskDistance;
   if (!actualRiskReward.isFinite || actualRiskReward < minimumRiskReward) {
     return (
       stopLossDecimal: stopLossDecimal,
-      takeProfitDecimal: decimal(target),
+      takeProfitDecimal: takeProfitDecimal,
       actualRiskReward: actualRiskReward,
       blockerCode: 'opposite_liquidity_risk_reward_insufficient',
       blockerMessage:
           'Opposite liquidity does not meet the minimum risk/reward.',
+      notionalScale: notionalScale,
     );
   }
   return (
     stopLossDecimal: stopLossDecimal,
-    takeProfitDecimal: decimal(target),
+    takeProfitDecimal: takeProfitDecimal,
     actualRiskReward: actualRiskReward,
     blockerCode: null,
     blockerMessage: null,
+    notionalScale: notionalScale,
   );
+}
+
+String bingxFuturesPriceDecimal(
+  num value, {
+  required int precision,
+  bool? roundUp,
+}) {
+  if (!value.isFinite || precision < 0 || precision > 8) {
+    throw const FormatException('Invalid instrument price');
+  }
+  final factor = math.pow(10, precision);
+  final scaled = value * factor;
+  final units =
+      roundUp == null
+          ? scaled.round()
+          : roundUp
+          ? scaled.ceil()
+          : scaled.floor();
+  final fixed = (units / factor).toStringAsFixed(precision);
+  return fixed.contains('.')
+      ? fixed.replaceFirst(RegExp(r'\.?0+$'), '')
+      : fixed;
 }

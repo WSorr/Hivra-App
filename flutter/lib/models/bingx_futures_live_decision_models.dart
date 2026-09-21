@@ -49,6 +49,8 @@ class BingxFuturesLiveDecisionResult {
   final String? liquidityEventId;
   final String? liquidityEventAtUtc;
   final String? latestClosedMicroBarAtUtc;
+  final Map<String, dynamic>? parentZone;
+  final String? atr14m5Decimal;
   final String? referencePriceDecimal;
   final String? oppositeLiquidityTargetDecimal;
   final String? oppositeLiquidityTargetSource;
@@ -81,6 +83,8 @@ class BingxFuturesLiveDecisionResult {
     this.liquidityEventId,
     this.liquidityEventAtUtc,
     this.latestClosedMicroBarAtUtc,
+    this.parentZone,
+    this.atr14m5Decimal,
     this.referencePriceDecimal,
     this.oppositeLiquidityTargetDecimal,
     this.oppositeLiquidityTargetSource,

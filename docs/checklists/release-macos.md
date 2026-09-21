@@ -14,7 +14,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] `main` contains the intended release commits.
 - [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/toolchain/verify_environment.sh --full` passes against the checked-in baseline.
-- [ ] `tools/release/preflight.sh` passes before packaging.
+- [ ] `tools/release/preflight.sh --trading-evidence-build-tag <version-tag>` passes before packaging; this validates deterministic evidence, not packaged manual signoff.
 - [ ] `flutter build macos --release` succeeds.
 - [ ] Release packaging used `tools/release/macos_release.sh` with explicit `--channel` (`test` or `public`).
 - [ ] `libhivra_ffi.dylib` inside the app bundle is universal (`x86_64` + `arm64`).
@@ -62,7 +62,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
   - two or more capsule switches complete without repeated password prompts.
   - system logs show no repeated `SecKeychainItemModifyAttributesAndData` for active-seed switching.
 - [ ] Release asset name clearly indicates version and target.
-- [ ] ZIP or DMG was rebuilt from the latest `.app`.
+- [ ] The ZIP or DMG is the exact artifact used for packaged smoke. Rebuilding or repackaging after signoff requires a new digest-bound smoke/signoff.
 - [ ] `SHA256SUMS.txt` was regenerated.
 - [ ] Release notes mention whether the build is signed/notarized or test-only.
 - [ ] `RELEASE-METADATA.txt` was attached or copied into release notes for traceability.

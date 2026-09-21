@@ -100,8 +100,7 @@ class _CapturingRankHandler implements PluginHostContractHandler {
   @override
   Future<PluginHostContractResult?> preflightAsync(
     PluginHostApiRequest request,
-  ) async =>
-      null;
+  ) async => null;
 
   @override
   PluginHostContractResult execute(
@@ -134,6 +133,7 @@ BingxFuturesLiveDecisionResult _decision({
   String oppositeLiquidityTargetDecimal = '70',
 }) {
   return BingxFuturesLiveDecisionResult(
+    atr14m5Decimal: '11.25',
     canPrepareIntent: true,
     decision: BingxTvhDecisionKind.short,
     side: 'sell',

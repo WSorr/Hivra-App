@@ -341,6 +341,8 @@ class BingxFuturesShadowStreamStore {
     final evidence = _evidenceOwner.parseShadowEvidence(
       await checkpoint.readAsBytes(),
       maxEncodedBytes: _maxEvidenceBytes,
+      // Retained facts keep their signed semantics; execution validates anew.
+      requireExecutableProposal: false,
     );
     if (evidence.sequence < maxEntries ||
         evidence.sequence % maxEntries != 0 ||
@@ -386,6 +388,7 @@ class BingxFuturesShadowStreamStore {
       final evidence = _evidenceOwner.parseShadowEvidence(
         await file.readAsBytes(),
         maxEncodedBytes: _maxEvidenceBytes,
+        requireExecutableProposal: false,
       );
       if (int.parse(match.group(1)!) != evidence.sequence ||
           match.group(2) != evidence.evidenceHashHex ||

@@ -13,7 +13,167 @@ import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/services/bingx_futures_trading_cycle_use_case_service.dart';
 
 void main() {
+  group('shared structural stop', () {
+    for (final side in ['buy', 'sell']) {
+      test('$side uses instrument precision before risk and sizing', () {
+        final result = deriveBingxFuturesLiquidityTargets(
+          side: side,
+          entryPrice: 100,
+          zoneLow: 98.876,
+          zoneHigh: 101.124,
+          atr14m5Decimal: '1',
+          stopLossPercent: 1,
+          minimumRiskReward: 2,
+          oppositeLiquidityTargetDecimal: side == 'buy' ? '110.129' : '89.871',
+          pricePrecision: 2,
+        );
+        expect(result.blockerCode, isNull);
+        expect(result.stopLossDecimal, side == 'buy' ? '98.87' : '101.13');
+        expect(result.takeProfitDecimal, side == 'buy' ? '110.12' : '89.88');
+        expect(result.notionalScale, closeTo(1 / 1.13, 1e-10));
+        expect(result.actualRiskReward, closeTo(10.12 / 1.13, 1e-10));
+      });
+    }
+    test('integer price formatting preserves significant zeroes', () {
+      expect(bingxFuturesPriceDecimal(100, precision: 0), '100');
+      expect(
+        bingxFuturesPriceDecimal(100.123, precision: 2, roundUp: true),
+        '100.13',
+      );
+      expect(
+        bingxFuturesPriceDecimal(100.123, precision: 2, roundUp: false),
+        '100.12',
+      );
+    });
+    test('risk reward uses the serialized target rather than extra digits', () {
+      final result = deriveBingxFuturesLiquidityTargets(
+        side: 'buy',
+        entryPrice: 100,
+        zoneLow: 99,
+        zoneHigh: 101,
+        atr14m5Decimal: '1',
+        stopLossPercent: 1,
+        minimumRiskReward: 2.000000001,
+        oppositeLiquidityTargetDecimal: '102.000000004',
+      );
+      expect(result.takeProfitDecimal, '102');
+      expect(result.actualRiskReward, 2);
+      expect(result.blockerCode, 'opposite_liquidity_risk_reward_insufficient');
+    });
+    for (final side in ['buy', 'sell']) {
+      test('$side uses structure and reduces notional to the loss budget', () {
+        final result = deriveBingxFuturesLiquidityTargets(
+          side: side,
+          entryPrice: 100,
+          zoneLow: 95,
+          zoneHigh: 105,
+          atr14m5Decimal: '1',
+          stopLossPercent: 1,
+          minimumRiskReward: 2,
+          oppositeLiquidityTargetDecimal: side == 'buy' ? '120' : '80',
+        );
+        expect(result.blockerCode, isNull);
+        expect(result.stopLossDecimal, side == 'buy' ? '95' : '105');
+        expect(result.actualRiskReward, 4);
+        expect(result.notionalScale, closeTo(0.2, 1e-9));
+      });
+      test('$side ATR floor never moves stop inside the entry structure', () {
+        final result = deriveBingxFuturesLiquidityTargets(
+          side: side,
+          entryPrice: 100,
+          zoneLow: 99,
+          zoneHigh: 101,
+          atr14m5Decimal: '5',
+          stopLossPercent: 10,
+          minimumRiskReward: 2,
+          oppositeLiquidityTargetDecimal: side == 'buy' ? '120' : '80',
+        );
+        expect(result.stopLossDecimal, side == 'buy' ? '96' : '104');
+        expect(result.notionalScale, 1);
+        expect(result.actualRiskReward, 5);
+      });
+    }
+    for (final atr in [null, 'NaN', 'Infinity', '0', '-1']) {
+      test(
+        'missing or invalid ATR $atr cannot fall back to percentage stop',
+        () {
+          final result = deriveBingxFuturesLiquidityTargets(
+            side: 'buy',
+            entryPrice: 100,
+            zoneLow: 99,
+            zoneHigh: 101,
+            atr14m5Decimal: atr,
+            stopLossPercent: 1,
+            minimumRiskReward: 2,
+            oppositeLiquidityTargetDecimal: '120',
+          );
+          expect(result.blockerCode, 'structural_stop_unavailable');
+          expect(result.stopLossDecimal, isNull);
+          expect(result.notionalScale, 0);
+        },
+      );
+    }
+  });
   group('BingxFuturesTradingCycleUseCaseService', () {
+    test('missing instrument precision never prepares or executes', () async {
+      final service = _service(
+        pricePrecision: null,
+        intentRunner: (_) async => throw StateError('unexpected intent'),
+        executionRunner: _executionRunner(
+          onCall: () => fail('unexpected effect'),
+        ),
+      );
+      final result = await service.run(_command(executeEffect: false));
+      expect(result.reasonCode, 'contract_price_precision_unavailable');
+    });
+    test('prepared entry uses the same instrument price as sizing', () async {
+      final service = _service(
+        pricePrecision: 2,
+        decision: _decision(low: '99.012', high: '101.016', atr: '1'),
+        intentRunner: (command) async {
+          expect(command.zonePriceRule, 'manual');
+          expect(command.manualEntryPriceDecimal, '100.01');
+          expect(command.triggerPriceDecimal, '101.02');
+          expect(command.stopLossDecimal, '99.01');
+          return _intentResult(command);
+        },
+        executionRunner: _executionRunner(
+          onCall: () => fail('unexpected effect'),
+        ),
+      );
+      final result = await service.run(_command(executeEffect: false));
+      expect(result.status, BingxFuturesTradingCycleStatus.prepared);
+    });
+    test('wider ATR stop reaches sizing as a smaller notional cap', () async {
+      num? cap;
+      final service = _service(
+        decision: _decision(atr: '25', oppositeLiquidityTargetDecimal: '160'),
+        sizingRunner: ({
+          required rules,
+          required symbol,
+          required maximumNotionalQuote,
+          required referencePriceDecimal,
+        }) async {
+          cap = maximumNotionalQuote;
+          return const BingxFuturesOrderSizingResult(
+            status: BingxFuturesOrderSizingStatus.sized,
+            reasonCode: 'sized',
+            reasonMessage: 'ok',
+            quantityDecimal: '0.5',
+            orderNotionalQuoteDecimal: '50',
+            minimumQuantityDecimal: '0.001',
+            minimumNotionalQuoteDecimal: '2',
+          );
+        },
+        executionRunner: _executionRunner(
+          onCall: () => fail('unexpected effect'),
+        ),
+      );
+      final result = await service.run(_command(executeEffect: false));
+      expect(result.status, BingxFuturesTradingCycleStatus.prepared);
+      expect(cap, 50);
+      expect(result.stopLossDecimal, '80');
+    });
     test(
       'prepares the canonical solo limit intent without an effect',
       () async {
@@ -45,6 +205,7 @@ void main() {
       BingxFuturesIntentCommand? capturedIntent;
       final service = _service(
         sizingRunner: ({
+          required rules,
           required symbol,
           required maximumNotionalQuote,
           required referencePriceDecimal,
@@ -81,6 +242,7 @@ void main() {
       final service = _service(
         decision: _decision(decision: BingxTvhDecisionKind.short, side: 'sell'),
         sizingRunner: ({
+          required rules,
           required symbol,
           required maximumNotionalQuote,
           required referencePriceDecimal,
@@ -394,6 +556,7 @@ void main() {
 }
 
 BingxFuturesTradingCycleUseCaseService _service({
+  int? pricePrecision = 8,
   BingxFuturesLiveDecisionResult? decision,
   BingxFuturesOrderSizingResult sizing = const BingxFuturesOrderSizingResult(
     status: BingxFuturesOrderSizingStatus.sized,
@@ -411,6 +574,14 @@ BingxFuturesTradingCycleUseCaseService _service({
   Duration intentTimeout = const Duration(seconds: 20),
 }) {
   return BingxFuturesTradingCycleUseCaseService(
+    contractRulesLoader:
+        (symbol) async => BingxFuturesContractRules(
+          symbol: symbol,
+          minimumQuantityDecimal: '0.001',
+          minimumNotionalQuoteDecimal: '2',
+          quantityPrecision: 3,
+          pricePrecision: pricePrecision,
+        ),
     liveStrategyRunner:
         liveRunner ?? (command) async => _liveResult(decision ?? _decision()),
     sizingRunner:
@@ -419,6 +590,7 @@ BingxFuturesTradingCycleUseCaseService _service({
           required symbol,
           required maximumNotionalQuote,
           required referencePriceDecimal,
+          required rules,
         }) async => sizing,
     intentRunner: intentRunner ?? (command) async => _intentResult(command),
     executionRunner: executionRunner,
@@ -468,14 +640,18 @@ BingxFuturesLiveDecisionResult _decision({
   String? side = 'buy',
   List<BingxTvhDecisionReason> reasons = const <BingxTvhDecisionReason>[],
   String? oppositeLiquidityTargetDecimal = '120',
+  String? atr = '12.5',
+  String low = '90',
+  String high = '110',
 }) {
   return BingxFuturesLiveDecisionResult(
+    atr14m5Decimal: atr,
     canPrepareIntent: canPrepareIntent,
     decision: decision,
     side: side,
     zoneSide: 'buyside',
-    zoneLowDecimal: '90',
-    zoneHighDecimal: '110',
+    zoneLowDecimal: low,
+    zoneHighDecimal: high,
     zoneConflict: false,
     marketSnapshotHashHex: _hash1,
     featureHashHex: _hash2,

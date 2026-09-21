@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import 'bingx_futures_exchange_models.dart';
+import 'bingx_futures_market_snapshot_models.dart';
 
 enum BingxLiquidityEventEffectClaimStatus { reserved, confirmed }
 
@@ -500,6 +501,7 @@ class BingxFuturesRemoteMandateAdmission {
     required DateTime startsAtUtc,
     required int intervalSeconds,
     required int maxCycles,
+    bool manageExistingAfterEntryBudget = false,
     required String? Function(String commitmentHashHex) signCommitment,
   }) {
     if (mandate.revokedAtUtc != null) return null;
@@ -514,6 +516,7 @@ class BingxFuturesRemoteMandateAdmission {
       intervalSeconds: intervalSeconds,
       maxCycles: maxCycles,
       mandate: mandate,
+      manageExistingAfterEntryBudget: manageExistingAfterEntryBudget,
     );
     if (normalizedStrategy == null || normalizedSession == null) return null;
     final commitmentHashHex = _deriveDeterministicSessionCommitmentHash(
@@ -553,6 +556,7 @@ class BingxFuturesRemoteMandateAdmission {
     'minimum_risk_reward': minimumRiskReward,
     'account_read_scope':
         includeOpenOrders ? exposureReadScope : legacyExposureReadScope,
+    'strategy_version': bingxLiquidityStrategyVersion,
   };
 
   static BingxFuturesRemoteMandateAdmission? parseAndVerify({
@@ -669,6 +673,10 @@ class BingxFuturesRemoteMandateAdmission {
           mandate,
         );
         if (strategyPolicy == null || sessionPolicy == null) return null;
+        if (isLegacyDeterministicSession &&
+            sessionPolicy.containsKey('entry_budget_exhaustion')) {
+          return null;
+        }
       }
       final runnerKeyId = decoded['runner_key_id']?.toString() ?? '';
       final commitmentHashHex =
@@ -760,6 +768,8 @@ class BingxFuturesRemoteMandateAdmission {
 
   bool get isExactOrder => exactOrder != null;
   bool get isDeterministicSession => sessionPolicy != null;
+  bool get managesExistingAfterEntryBudget =>
+      sessionPolicy?['entry_budget_exhaustion'] == 'manage_existing';
   bool get isLegacyDeterministicSession =>
       wireContractVersion == legacyDeterministicSessionContractVersion;
   bool get isDeterministicOrder =>
@@ -874,6 +884,7 @@ class BingxFuturesRemoteMandateAdmission {
     required int intervalSeconds,
     required int maxCycles,
     required BingxFuturesTradingMandate mandate,
+    bool manageExistingAfterEntryBudget = false,
   }) {
     final issued = DateTime.tryParse(mandate.issuedAtUtc)?.toUtc();
     final expires = DateTime.tryParse(mandate.expiresAtUtc)?.toUtc();
@@ -896,6 +907,8 @@ class BingxFuturesRemoteMandateAdmission {
       'interval_seconds': intervalSeconds,
       'max_cycles': maxCycles,
       'stop_on_failure': true,
+      if (manageExistingAfterEntryBudget)
+        'entry_budget_exhaustion': 'manage_existing',
     };
   }
 
@@ -903,14 +916,18 @@ class BingxFuturesRemoteMandateAdmission {
     Map<String, dynamic> value,
     BingxFuturesTradingMandate mandate,
   ) {
-    const keys = <String>{
+    final keys = <String>{
       'starts_at_utc',
       'interval_seconds',
       'max_cycles',
       'stop_on_failure',
+      if (value.containsKey('entry_budget_exhaustion'))
+        'entry_budget_exhaustion',
     };
     if (value.keys.toSet().difference(keys).isNotEmpty ||
         keys.difference(value.keys.toSet()).isNotEmpty ||
+        (value.containsKey('entry_budget_exhaustion') &&
+            value['entry_budget_exhaustion'] != 'manage_existing') ||
         value['stop_on_failure'] is! bool ||
         value['stop_on_failure'] != true) {
       return null;
@@ -926,6 +943,8 @@ class BingxFuturesRemoteMandateAdmission {
       intervalSeconds: interval,
       maxCycles: cycles,
       mandate: mandate,
+      manageExistingAfterEntryBudget:
+          value['entry_budget_exhaustion'] == 'manage_existing',
     );
   }
 
@@ -945,6 +964,7 @@ class BingxFuturesRemoteMandateAdmission {
     if (value.keys.toSet().difference({
           ...keys,
           'account_read_scope',
+          'strategy_version',
         }).isNotEmpty ||
         keys.difference(value.keys.toSet()).isNotEmpty) {
       return null;
@@ -952,6 +972,10 @@ class BingxFuturesRemoteMandateAdmission {
     if (value.containsKey('account_read_scope') &&
         jsonEncode(value['account_read_scope']) !=
             jsonEncode(expectedExposureReadScope)) {
+      return null;
+    }
+    if (value.containsKey('strategy_version') &&
+        value['strategy_version'] != bingxLiquidityStrategyVersion) {
       return null;
     }
     final buildId = value['runner_build_id']?.toString().trim() ?? '';
@@ -990,6 +1014,8 @@ class BingxFuturesRemoteMandateAdmission {
       'minimum_risk_reward': minimumRiskReward,
       if (value.containsKey('account_read_scope'))
         'account_read_scope': expectedExposureReadScope,
+      if (value.containsKey('strategy_version'))
+        'strategy_version': bingxLiquidityStrategyVersion,
     };
   }
 

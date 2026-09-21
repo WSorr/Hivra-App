@@ -4,11 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../models/bingx_futures_market_snapshot_models.dart';
 
-enum BingxTrendDirection {
-  bullish,
-  bearish,
-  neutral,
-}
+enum BingxTrendDirection { bullish, bearish, neutral }
 
 class BingxWhaleActivationEvent {
   final String activationSide; // buy | sell
@@ -91,10 +87,15 @@ class BingxFuturesFeatureExtractorService {
     BingxFuturesMarketSnapshotDigest snapshot,
   ) {
     final candles = _readCandles(snapshot.normalizedSnapshot);
-    final candles15m = candles.where((c) => c.timeframe == '15m').toList()
-      ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
-    final candles5m = candles.where((c) => c.timeframe == '5m').toList()
-      ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
+    final candles15m =
+        candles.where((c) => c.timeframe == '15m').toList()
+          ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
+    final candles5m =
+        candles.where((c) => c.timeframe == '5m').toList()
+          ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
+    final candles4h =
+        candles.where((c) => c.timeframe == '4h').toList()
+          ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
     if (candles15m.length < 200) {
       throw const FormatException('need at least 200 closed candles on 15m');
     }
@@ -104,22 +105,26 @@ class BingxFuturesFeatureExtractorService {
 
     final ema50 = _ema(candles15m.map((c) => c.close).toList(), period: 50);
     final ema200 = _ema(candles15m.map((c) => c.close).toList(), period: 200);
-    final trend = ema50 > ema200
-        ? BingxTrendDirection.bullish
-        : ema50 < ema200
+    final trend =
+        ema50 > ema200
+            ? BingxTrendDirection.bullish
+            : ema50 < ema200
             ? BingxTrendDirection.bearish
             : BingxTrendDirection.neutral;
     final atr14 = _atr(candles5m, period: 14);
-    final detectedLevels = _detectPivotClusterLevels(candles5m);
+    final detectedLevels = _detectPivotClusterLevels(candles4h);
     final tradeDelta = _tradeDelta(snapshot.normalizedSnapshot);
-    final tradeImbalanceRatio =
-        _tradeImbalanceRatio(snapshot.normalizedSnapshot);
+    final tradeImbalanceRatio = _tradeImbalanceRatio(
+      snapshot.normalizedSnapshot,
+    );
     final oiDelta = _openInterestDelta(snapshot.normalizedSnapshot);
     final sessionNetDelta = _sessionNetDelta(snapshot.normalizedSnapshot);
-    final sessionImbalanceRatio =
-        _sessionImbalanceRatio(snapshot.normalizedSnapshot);
-    final sessionEvidenceComplete =
-        _sessionEvidenceComplete(snapshot.normalizedSnapshot);
+    final sessionImbalanceRatio = _sessionImbalanceRatio(
+      snapshot.normalizedSnapshot,
+    );
+    final sessionEvidenceComplete = _sessionEvidenceComplete(
+      snapshot.normalizedSnapshot,
+    );
     final whaleEvents = _detectWhaleActivations(
       snapshot: snapshot.normalizedSnapshot,
       levels: detectedLevels,
@@ -139,38 +144,40 @@ class BingxFuturesFeatureExtractorService {
       'trade_imbalance_ratio_decimal': _fmtDecimal(tradeImbalanceRatio, 8),
       'open_interest_delta_decimal': _fmtDecimal(oiDelta, 8),
       'session_net_delta_decimal': _fmtDecimal(sessionNetDelta, 8),
-      'session_imbalance_ratio_decimal':
-          _fmtDecimal(sessionImbalanceRatio, 8),
+      'session_imbalance_ratio_decimal': _fmtDecimal(sessionImbalanceRatio, 8),
       'session_evidence_complete': sessionEvidenceComplete,
-      'liquidity_levels': detectedLevels
-          .map(
-            (item) => <String, dynamic>{
-              'side': item.side,
-              'class': item.levelClass,
-              'center_price_decimal': item.centerPriceDecimal,
-              'zone_top_decimal': item.zoneTopDecimal,
-              'zone_bottom_decimal': item.zoneBottomDecimal,
-              'pivot_count': item.pivotCount,
-              'breached': item.breached,
-              'anchor_index': item.anchorIndex,
-              'breached_index': item.breachedIndex,
-            },
-          )
-          .toList(),
-      'whale_activations': whaleEvents
-          .map(
-            (item) => <String, dynamic>{
-              'activation_side': item.activationSide,
-              'activation_price_decimal': item.activationPriceDecimal,
-              'activation_size_decimal': item.activationSizeDecimal,
-              'activation_window_start_utc': item.activationWindowStartUtc,
-              'activation_window_end_utc': item.activationWindowEndUtc,
-              'activation_confidence_decimal': item.activationConfidenceDecimal,
-              'linked_liquidity_side': item.linkedLiquiditySide,
-              'linked_liquidity_class': item.linkedLiquidityClass,
-            },
-          )
-          .toList(),
+      'liquidity_levels':
+          detectedLevels
+              .map(
+                (item) => <String, dynamic>{
+                  'side': item.side,
+                  'class': item.levelClass,
+                  'center_price_decimal': item.centerPriceDecimal,
+                  'zone_top_decimal': item.zoneTopDecimal,
+                  'zone_bottom_decimal': item.zoneBottomDecimal,
+                  'pivot_count': item.pivotCount,
+                  'breached': item.breached,
+                  'anchor_index': item.anchorIndex,
+                  'breached_index': item.breachedIndex,
+                },
+              )
+              .toList(),
+      'whale_activations':
+          whaleEvents
+              .map(
+                (item) => <String, dynamic>{
+                  'activation_side': item.activationSide,
+                  'activation_price_decimal': item.activationPriceDecimal,
+                  'activation_size_decimal': item.activationSizeDecimal,
+                  'activation_window_start_utc': item.activationWindowStartUtc,
+                  'activation_window_end_utc': item.activationWindowEndUtc,
+                  'activation_confidence_decimal':
+                      item.activationConfidenceDecimal,
+                  'linked_liquidity_side': item.linkedLiquiditySide,
+                  'linked_liquidity_class': item.linkedLiquidityClass,
+                },
+              )
+              .toList(),
     });
     final featureHashHex = sha256.convert(utf8.encode(canonical)).toString();
 
@@ -191,45 +198,50 @@ class BingxFuturesFeatureExtractorService {
       sessionEvidenceComplete: sessionEvidenceComplete,
       liquidityLevels: detectedLevels,
       whaleActivations: whaleEvents,
-      hasBuyWhaleActivation:
-          whaleEvents.any((item) => item.activationSide == 'buy'),
-      hasSellWhaleActivation:
-          whaleEvents.any((item) => item.activationSide == 'sell'),
+      hasBuyWhaleActivation: whaleEvents.any(
+        (item) => item.activationSide == 'buy',
+      ),
+      hasSellWhaleActivation: whaleEvents.any(
+        (item) => item.activationSide == 'sell',
+      ),
     );
   }
 
   List<BingxDetectedLiquidityLevel> _detectPivotClusterLevels(
-    List<_CandleRow> candles5m,
+    List<_CandleRow> candles,
   ) {
     final highPivots = <_Pivot>[];
     final lowPivots = <_Pivot>[];
     final buyLevels = <_MutableLevel>[];
     final sellLevels = <_MutableLevel>[];
 
-    for (var i = 0; i < candles5m.length; i++) {
+    for (var i = 0; i < candles.length; i++) {
       final p = i - 1;
-      if (p < liqLen || i >= candles5m.length) continue;
-      final band = i < 10
-          ? 0.0
-          : _atr(candles5m, period: 10, endIndex: i) / liqMar;
-      if (_isPivotHigh(candles5m, p, left: liqLen, right: 1)) {
-        final pivot = _Pivot(index: p, price: candles5m[p].high);
+      if (p < liqLen) continue;
+      final band =
+          i < 10 ? 0.0 : _atr(candles, period: 10, endIndex: i) / liqMar;
+      if (_isPivotHigh(candles, p, left: liqLen, right: 1)) {
+        final pivot = _Pivot(index: p, price: candles[p].high);
         highPivots.insert(0, pivot);
         if (highPivots.length > 50) highPivots.removeLast();
-        final cluster = highPivots
-            .where(
-              (item) =>
-                  item.price >= pivot.price - band &&
-                  item.price <= pivot.price + band,
-            )
-            .toList();
+        final cluster =
+            highPivots
+                .where(
+                  (item) =>
+                      item.price >= pivot.price - band &&
+                      item.price <= pivot.price + band,
+                )
+                .toList();
         if (cluster.length > 2 && i >= 10) {
-          final anchor =
-              cluster.map((e) => e.index).reduce((a, b) => a < b ? a : b);
-          final minP =
-              cluster.map((e) => e.price).reduce((a, b) => a < b ? a : b);
-          final maxP =
-              cluster.map((e) => e.price).reduce((a, b) => a > b ? a : b);
+          final anchor = cluster
+              .map((e) => e.index)
+              .reduce((a, b) => a < b ? a : b);
+          final minP = cluster
+              .map((e) => e.price)
+              .reduce((a, b) => a < b ? a : b);
+          final maxP = cluster
+              .map((e) => e.price)
+              .reduce((a, b) => a > b ? a : b);
           final center = (minP + maxP) / 2.0;
           _upsertLevel(
             levels: buyLevels,
@@ -243,24 +255,28 @@ class BingxFuturesFeatureExtractorService {
         }
       }
 
-      if (_isPivotLow(candles5m, p, left: liqLen, right: 1)) {
-        final pivot = _Pivot(index: p, price: candles5m[p].low);
+      if (_isPivotLow(candles, p, left: liqLen, right: 1)) {
+        final pivot = _Pivot(index: p, price: candles[p].low);
         lowPivots.insert(0, pivot);
         if (lowPivots.length > 50) lowPivots.removeLast();
-        final cluster = lowPivots
-            .where(
-              (item) =>
-                  item.price >= pivot.price - band &&
-                  item.price <= pivot.price + band,
-            )
-            .toList();
+        final cluster =
+            lowPivots
+                .where(
+                  (item) =>
+                      item.price >= pivot.price - band &&
+                      item.price <= pivot.price + band,
+                )
+                .toList();
         if (cluster.length > 2 && i >= 10) {
-          final anchor =
-              cluster.map((e) => e.index).reduce((a, b) => a < b ? a : b);
-          final minP =
-              cluster.map((e) => e.price).reduce((a, b) => a < b ? a : b);
-          final maxP =
-              cluster.map((e) => e.price).reduce((a, b) => a > b ? a : b);
+          final anchor = cluster
+              .map((e) => e.index)
+              .reduce((a, b) => a < b ? a : b);
+          final minP = cluster
+              .map((e) => e.price)
+              .reduce((a, b) => a < b ? a : b);
+          final maxP = cluster
+              .map((e) => e.price)
+              .reduce((a, b) => a > b ? a : b);
           final center = (minP + maxP) / 2.0;
           _upsertLevel(
             levels: sellLevels,
@@ -275,23 +291,25 @@ class BingxFuturesFeatureExtractorService {
       }
 
       for (final level in buyLevels) {
-        if (!level.breached && candles5m[i].high > level.top) {
+        if (!level.breached && candles[i].high > level.top) {
           level.breached = true;
           level.breachedIndex = i;
         }
       }
       for (final level in sellLevels) {
-        if (!level.breached && candles5m[i].low < level.bottom) {
+        if (!level.breached && candles[i].low < level.bottom) {
           level.breached = true;
           level.breachedIndex = i;
         }
       }
     }
 
-    final activeBuyside = buyLevels.where((item) => !item.breached).toList()
-      ..sort((a, b) => b.center.compareTo(a.center));
-    final activeSellside = sellLevels.where((item) => !item.breached).toList()
-      ..sort((a, b) => a.center.compareTo(b.center));
+    final activeBuyside =
+        buyLevels.where((item) => !item.breached).toList()
+          ..sort((a, b) => b.center.compareTo(a.center));
+    final activeSellside =
+        sellLevels.where((item) => !item.breached).toList()
+          ..sort((a, b) => a.center.compareTo(b.center));
 
     String classForBuy(_MutableLevel level) {
       if (activeBuyside.isNotEmpty && identical(level, activeBuyside.first)) {
@@ -357,15 +375,18 @@ class BingxFuturesFeatureExtractorService {
     if (tradesRaw is! List || tradesRaw.isEmpty) {
       return const <BingxWhaleActivationEvent>[];
     }
-    final tradeRows = tradesRaw
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList()
-      ..sort((a, b) => (a['timestamp_utc'] as String)
-          .compareTo(b['timestamp_utc'] as String));
-    final quantities = tradeRows
-        .map((item) => _parseDecimal(item['quantity_decimal'] as String))
-        .toList()
-      ..sort();
+    final tradeRows =
+        tradesRaw.map((item) => Map<String, dynamic>.from(item as Map)).toList()
+          ..sort(
+            (a, b) => (a['timestamp_utc'] as String).compareTo(
+              b['timestamp_utc'] as String,
+            ),
+          );
+    final quantities =
+        tradeRows
+            .map((item) => _parseDecimal(item['quantity_decimal'] as String))
+            .toList()
+          ..sort();
     final idx90 = ((quantities.length - 1) * 0.9).floor();
     final q90 = quantities[idx90];
     final priceCandidates = <_LevelCandidate>[
@@ -431,8 +452,9 @@ class BingxFuturesFeatureExtractorService {
       );
     }
     events.sort((a, b) {
-      final byTime =
-          a.activationWindowStartUtc.compareTo(b.activationWindowStartUtc);
+      final byTime = a.activationWindowStartUtc.compareTo(
+        b.activationWindowStartUtc,
+      );
       if (byTime != 0) return byTime;
       final bySide = a.activationSide.compareTo(b.activationSide);
       if (bySide != 0) return bySide;
@@ -442,7 +464,8 @@ class BingxFuturesFeatureExtractorService {
   }
 
   List<_LevelCandidate> _readLiquidityFromSnapshot(
-      Map<String, dynamic> snapshot) {
+    Map<String, dynamic> snapshot,
+  ) {
     final raw = snapshot['liquidity_levels'];
     if (raw is! List) return const <_LevelCandidate>[];
     final rows = <_LevelCandidate>[];
@@ -497,11 +520,13 @@ class BingxFuturesFeatureExtractorService {
   double _openInterestDelta(Map<String, dynamic> snapshot) {
     final raw = snapshot['open_interest'];
     if (raw is! List || raw.length < 2) return 0;
-    final rows = raw
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList()
-      ..sort((a, b) => (a['timestamp_utc'] as String)
-          .compareTo(b['timestamp_utc'] as String));
+    final rows =
+        raw.map((item) => Map<String, dynamic>.from(item as Map)).toList()
+          ..sort(
+            (a, b) => (a['timestamp_utc'] as String).compareTo(
+              b['timestamp_utc'] as String,
+            ),
+          );
     final first = _parseDecimal(rows.first['open_interest_decimal'] as String);
     final last = _parseDecimal(rows.last['open_interest_decimal'] as String);
     return last - first;
@@ -694,10 +719,7 @@ class _Pivot {
   final int index;
   final double price;
 
-  const _Pivot({
-    required this.index,
-    required this.price,
-  });
+  const _Pivot({required this.index, required this.price});
 }
 
 class _MutableLevel {
@@ -717,8 +739,8 @@ class _MutableLevel {
     required this.top,
     required this.bottom,
     required this.pivotCount,
-  })  : breached = false,
-        breachedIndex = null;
+  }) : breached = false,
+       breachedIndex = null;
 }
 
 class _LevelCandidate {

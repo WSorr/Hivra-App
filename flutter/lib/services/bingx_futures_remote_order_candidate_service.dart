@@ -212,14 +212,28 @@ class BingxFuturesRemoteOrderCandidateService {
         high <= low) {
       return _blocked('market_zone_invalid');
     }
-    final entry = (low + high) / 2;
-    final trigger = side == 'buy' ? high : low;
+    final precision = contractRules.pricePrecision;
+    if (precision == null || precision < 0 || precision > 8) {
+      return _blocked('contract_price_precision_unavailable');
+    }
+    final entry = num.parse(
+      bingxFuturesPriceDecimal((low + high) / 2, precision: precision),
+    );
+    final trigger = bingxFuturesPriceDecimal(
+      side == 'buy' ? high : low,
+      precision: precision,
+      roundUp: side == 'buy',
+    );
     final targets = deriveBingxFuturesLiquidityTargets(
       side: side,
       entryPrice: entry,
+      zoneLow: low,
+      zoneHigh: high,
+      atr14m5Decimal: zone['atr14_5m_decimal']?.toString(),
       stopLossPercent: stopLossPercent,
       minimumRiskReward: minimumRiskReward,
       oppositeLiquidityTargetDecimal: target['price_decimal']?.toString(),
+      pricePrecision: precision,
     );
     if (targets.blockerCode != null ||
         targets.stopLossDecimal == null ||
@@ -231,7 +245,7 @@ class BingxFuturesRemoteOrderCandidateService {
       return _blocked('mandate_notional_invalid');
     }
     final sizing = _sizing.calculate(
-      maximumNotionalQuote: maxNotional,
+      maximumNotionalQuote: maxNotional * targets.notionalScale,
       referencePriceDecimal: _decimal(entry),
       rules: contractRules,
     );
@@ -298,7 +312,7 @@ class BingxFuturesRemoteOrderCandidateService {
       'client_order_id': 'hivra-${liquidityEventId.substring(0, 32)}',
       'quantity_decimal': sizing.quantityDecimal,
       'limit_price_decimal': _decimal(entry),
-      'trigger_price_decimal': _decimal(trigger),
+      'trigger_price_decimal': trigger,
       'stop_loss_decimal': targets.stopLossDecimal,
       'take_profit_decimal': targets.takeProfitDecimal,
       'liquidity_event_id': liquidityEventId,

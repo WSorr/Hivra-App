@@ -68,17 +68,43 @@ void main() {
 
     test('later pivot cannot rewrite a breached cluster', () {
       final candles = List<BingxFuturesCandle>.generate(46, (index) {
-        final start = DateTime.utc(2026, 4, 25, 6).add(Duration(minutes: index * 5));
-        final high = [8, 16, 24].contains(index) ? 101.0 :
-            index == 35 ? 110.0 : index == 44 ? 102.0 : 99.0;
-        return _singleCandle('5m', start.toIso8601String(),
-            start.add(const Duration(minutes: 5)).toIso8601String(),
-            97, high, 95, 97);
+        final start = DateTime.utc(
+          2026,
+          4,
+          25,
+          6,
+        ).add(Duration(minutes: index * 5));
+        final high =
+            [8, 16, 24].contains(index)
+                ? 101.0
+                : index == 35
+                ? 110.0
+                : index == 44
+                ? 102.0
+                : 99.0;
+        return _singleCandle(
+          '5m',
+          start.toIso8601String(),
+          start.add(const Duration(minutes: 5)).toIso8601String(),
+          97,
+          high,
+          95,
+          97,
+        );
       });
-      BingxDetectedLiquidityLevel cluster(int count) => featureService.extract(
-        snapshotService.build(_buildInput(permuted: false,
-          microCandles: candles.take(count).toList())),
-      ).liquidityLevels.singleWhere((level) => level.side == 'buyside' && level.anchorIndex == 8);
+      BingxDetectedLiquidityLevel cluster(int count) => featureService
+          .extract(
+            snapshotService.build(
+              _buildInput(
+                permuted: false,
+                microCandles: candles.take(count).toList(),
+              ),
+            ),
+          )
+          .liquidityLevels
+          .singleWhere(
+            (level) => level.side == 'buyside' && level.anchorIndex == 8,
+          );
       final before = cluster(36);
       final after = cluster(46);
       expect(before.breached, isTrue);
@@ -130,10 +156,9 @@ void main() {
     });
 
     test('fails when 15m candles are insufficient for ema200', () {
-      final digest = snapshotService.build(_buildInput(
-        permuted: false,
-        fifteenMinuteCount: 80,
-      ));
+      final digest = snapshotService.build(
+        _buildInput(permuted: false, fifteenMinuteCount: 80),
+      );
 
       expect(
         () => featureService.extract(digest),
@@ -160,17 +185,62 @@ BingxFuturesMarketSnapshotInput _buildInput({
 }) {
   final candles = <BingxFuturesCandle>[
     ..._generate15mCandles(count: fifteenMinuteCount),
-    ...microCandles ?? _generate5mCandles(count: 80),
-    _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z', 102,
-        103, 101, 102.2),
+    ..._generate5mCandles(count: 80),
+    for (final (index, bar)
+        in (microCandles ?? _generate5mCandles(count: 80)).indexed)
+      _singleCandle(
+        '4h',
+        DateTime.utc(
+          2026,
+          4,
+          1,
+        ).add(Duration(hours: index * 4)).toIso8601String(),
+        DateTime.utc(
+          2026,
+          4,
+          1,
+        ).add(Duration(hours: (index + 1) * 4)).toIso8601String(),
+        double.parse(bar.openDecimal),
+        double.parse(bar.highDecimal),
+        double.parse(bar.lowDecimal),
+        double.parse(bar.closeDecimal),
+      ),
     _singleCandle(
-        '1h', '2026-04-25T09:00:00Z', '2026-04-25T10:00:00Z', 99, 104, 98, 102),
-    _singleCandle('4h', '2026-04-25T08:00:00Z', '2026-04-25T12:00:00Z', 97, 105,
-        96, 102.5),
-    _singleCandle('1d', '2026-04-24T00:00:00Z', '2026-04-25T00:00:00Z', 95, 106,
-        94, 101.8),
-    _singleCandle('1w', '2026-04-18T00:00:00Z', '2026-04-25T00:00:00Z', 92, 108,
-        90, 101.8),
+      '1m',
+      '2026-04-25T09:59:00Z',
+      '2026-04-25T10:00:00Z',
+      102,
+      103,
+      101,
+      102.2,
+    ),
+    _singleCandle(
+      '1h',
+      '2026-04-25T09:00:00Z',
+      '2026-04-25T10:00:00Z',
+      99,
+      104,
+      98,
+      102,
+    ),
+    _singleCandle(
+      '1d',
+      '2026-04-24T00:00:00Z',
+      '2026-04-25T00:00:00Z',
+      95,
+      106,
+      94,
+      101.8,
+    ),
+    _singleCandle(
+      '1w',
+      '2026-04-18T00:00:00Z',
+      '2026-04-25T00:00:00Z',
+      92,
+      108,
+      90,
+      101.8,
+    ),
   ];
   final trades = <BingxFuturesTrade>[
     const BingxFuturesTrade(
@@ -331,20 +401,22 @@ BingxFuturesMarketSnapshotInput _buildInput({
       indexPriceDecimal: '102.40',
     ),
     candles: permuted ? candles.reversed.toList() : candles,
-    trades: (permuted ? trades.reversed : trades)
-        .map(
-          (trade) => BingxFuturesTrade(
-            tradeId: trade.tradeId,
-            timestampUtc: trade.timestampUtc,
-            side: trade.side,
-            priceDecimal:
-                (double.parse(trade.priceDecimal) * tradePriceScale).toString(),
-            quantityDecimal:
-                (double.parse(trade.quantityDecimal) * tradeQuantityScale)
-                    .toString(),
-          ),
-        )
-        .toList(),
+    trades:
+        (permuted ? trades.reversed : trades)
+            .map(
+              (trade) => BingxFuturesTrade(
+                tradeId: trade.tradeId,
+                timestampUtc: trade.timestampUtc,
+                side: trade.side,
+                priceDecimal:
+                    (double.parse(trade.priceDecimal) * tradePriceScale)
+                        .toString(),
+                quantityDecimal:
+                    (double.parse(trade.quantityDecimal) * tradeQuantityScale)
+                        .toString(),
+              ),
+            )
+            .toList(),
     openInterest: permuted ? openInterest.reversed.toList() : openInterest,
     funding: const BingxFuturesFundingSnapshot(
       timestampUtc: '2026-04-25T10:00:00Z',

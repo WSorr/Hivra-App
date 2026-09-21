@@ -158,6 +158,31 @@ void main() {
   );
 
   group('BingxFuturesOrderSizingService', () {
+    for (final quantity in [10, 100, 1000]) {
+      test('preserves integer lot quantity $quantity and its notional', () {
+        final service = BingxFuturesOrderSizingService(
+          exchange: BingxFuturesExchangeService(),
+        );
+        final result = service.calculate(
+          maximumNotionalQuote: quantity * 0.1,
+          referencePriceDecimal: '0.1',
+          rules: const BingxFuturesContractRules(
+            symbol: 'DOGE-USDT',
+            minimumQuantityDecimal: '10',
+            minimumNotionalQuoteDecimal: '1',
+            quantityPrecision: 0,
+            pricePrecision: 6,
+          ),
+        );
+        expect(result.status, BingxFuturesOrderSizingStatus.sized);
+        expect(result.quantityDecimal, '$quantity');
+        expect(result.minimumQuantityDecimal, '10');
+        expect(
+          num.parse(result.quantityDecimal!) * 0.1,
+          num.parse(result.orderNotionalQuoteDecimal!),
+        );
+      });
+    }
     final service = BingxFuturesOrderSizingService(
       exchange: BingxFuturesExchangeService(),
     );

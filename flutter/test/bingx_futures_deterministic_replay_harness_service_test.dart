@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:hivra_app/services/bingx_futures_shadow_market_proposal_codec.dart';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -42,6 +43,45 @@ void main() {
           reason: 'fixture=${fixture.id}',
         );
       }
+    });
+
+    test('reference scenario keeps zones visible before entry is ready', () {
+      final reference =
+          const BingxFuturesDeterministicReplayHarnessService()
+              .runSweepReclaimReferenceScenario();
+
+      expect(reference.waiting.canPrepareIntent, isFalse);
+      expect(
+        reference.ready.canPrepareIntent,
+        isTrue,
+        reason: reference.ready.canonicalJson,
+      );
+      expect(
+        service
+            .replayLiveDecision(
+              fixtureId: 'live:BTC-USDT',
+              decision: reference.waiting,
+            )
+            .marketProposalStatus,
+        'BLOCKED',
+      );
+      expect(
+        service
+            .replayLiveDecision(
+              fixtureId: 'live:BTC-USDT',
+              decision: reference.ready,
+            )
+            .marketProposalStatus,
+        'READY',
+      );
+      expect(
+        reference.waiting.observedLiquidityLevels
+            .map((level) => level.side)
+            .toSet(),
+        containsAll(<String>{'buyside', 'sellside'}),
+      );
+      expect(reference.ready.zoneAnchorSource, '4h_sweep_reclaim_5m');
+      expect(reference.ready.zoneAnchorExecutable, isTrue);
     });
 
     test('is bit-stable across repeated replay cycles', () {
@@ -125,10 +165,23 @@ void main() {
             )
             as Map,
       );
-      expect(evidence.evidenceHashHex, golden['expected_evidence_hash_hex']);
-      expect(evidence.semanticMap, golden['semantic_fields']);
-      expect(evidence.semanticJson, golden['expected_semantic_json']);
-      expect(utf8.decode(evidence.wireBytes), golden['expected_wire_utf8']);
+      final historical = service.parseShadowEvidence(
+        utf8.encode(golden['expected_wire_utf8'] as String),
+      );
+      expect(historical.evidenceHashHex, golden['expected_evidence_hash_hex']);
+      expect(historical.semanticMap, golden['semantic_fields']);
+      expect(historical.semanticJson, golden['expected_semantic_json']);
+      expect(
+        await service.authenticateShadowEvidence(
+          evidence: historical,
+          trustedRunnerKey: publicKey,
+        ),
+        isTrue,
+      );
+      expect(
+        historical.policyHashHex,
+        isNot(service.publicStrategyPolicyHashHex()),
+      );
       expect(_hex(publicKey.bytes), golden['runner_public_key_hex']);
       expect(
         await _verify(
@@ -168,9 +221,19 @@ void main() {
           'conflict': false,
           'target_retest_pct': 0.01,
           'needs_farther_retest': false,
-          'anchor_source': 'micro_sweep_reclaim',
+          'anchor_source': '4h_sweep_reclaim_5m',
           'anchor_executable': true,
-          'anchor_lifecycle': 'fresh',
+          'anchor_lifecycle': 'reclaimed',
+          'atr14_5m_decimal': '1.25',
+          'parent': {
+            'strategy_version': '4h-sweep-reclaim-5m-v2',
+            'timeframe': '4h',
+            'side': 'buy',
+            'low_decimal': '99',
+            'high_decimal': '102',
+            'sweep_at_utc': '2026-08-22T08:00:00Z',
+            'confirmed_at_utc': '2026-08-22T08:00:00Z',
+          },
           'liquidity_event_id': '4'.padLeft(64, '4'),
           'liquidity_event_at_utc': '2026-08-22T10:00:00Z',
           'latest_closed_micro_bar_at_utc': '2026-08-22T10:05:00Z',
@@ -186,6 +249,45 @@ void main() {
         ],
       };
       final proposalJson = jsonEncode(proposal);
+      final validZone = proposal['zone'] as Map<String, dynamic>;
+      final validParent = validZone['parent'] as Map<String, dynamic>;
+      for (final mutation in <Map<String, dynamic>>[
+        {...validZone, 'atr14_5m_decimal': null},
+        {...validZone, 'atr14_5m_decimal': 'NaN'},
+        {...validZone, 'atr14_5m_decimal': '0'},
+        {...validZone, 'parent': null},
+        {...validZone, 'anchor_source': 'micro_liquidity_void'},
+        {...validZone, 'low_decimal': '98'},
+        {
+          ...validZone,
+          'parent': {...validParent, 'side': 'sell'},
+        },
+        {
+          ...validZone,
+          'parent': {...validParent, 'strategy_version': 'micro-v1'},
+        },
+        {
+          ...validZone,
+          'parent': {
+            ...validParent,
+            'confirmed_at_utc': validZone['liquidity_event_at_utc'],
+          },
+        },
+      ]) {
+        final invalid = jsonEncode({...proposal, 'zone': mutation});
+        expect(
+          const BingxFuturesShadowMarketProposalCodec().validate(
+            status: 'READY',
+            proposalJson: invalid,
+            decisionHashHex: sha256.convert(utf8.encode(invalid)).toString(),
+            decision: 'long',
+            marketSnapshotHashHex:
+                proposal['market_snapshot_hash_hex'] as String,
+            featureHashHex: proposal['feature_hash_hex'] as String,
+          ),
+          isFalse,
+        );
+      }
       final run = BingxFuturesReplayRunResult(
         fixtureId: 'ready',
         marketSnapshotHashHex: '1'.padLeft(64, '1'),
@@ -896,6 +998,7 @@ class _PublicMarketDataStub implements BingxFuturesPublicMarketDataPort {
     required String symbol,
     required String interval,
     int limit = 120,
+    int? endTimeMs,
   }) => throw UnimplementedError();
 
   @override

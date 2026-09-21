@@ -356,9 +356,13 @@ Future<String> runAuthorizedExactOrder({
   final effects = context.effects;
   ExternalEffectOperation? existing;
   ExternalEffectOperation? semanticClaim;
+  var attemptedPlacements = 0;
   for (final operation in await effects.list(
     pluginId: bingxFuturesTradingPluginId,
   )) {
+    if (_isAttemptedSessionPlacement(operation, admission)) {
+      attemptedPlacements++;
+    }
     if (operation.operationId == effectOperationId) {
       existing = operation;
       continue;
@@ -375,6 +379,15 @@ Future<String> runAuthorizedExactOrder({
     return _blockedDeterministicCycleEvidence(
       effectOperationId,
       'liquidity_event_already_claimed',
+    );
+  }
+  // Retained delivery attempts consume authority even without a receipt.
+  // Reconciliation of the same attempt does not authorize another placement.
+  if ((existing == null || existing.attemptCount == 0) &&
+      attemptedPlacements >= admission.mandate.maxEffects) {
+    return _blockedDeterministicCycleEvidence(
+      effectOperationId,
+      'trading_mandate_effect_budget_exhausted',
     );
   }
   if (existing == null && !admission.mandate.isActiveAt(now().toUtc())) {
@@ -503,13 +516,29 @@ Future<String> runAuthorizedManagedOrderCancellation({
     clockMs: clockMs,
   );
   ExternalEffectOperation? placement;
+  var attemptedPlacements = 0;
+  var cancellationAttempted = false;
   for (final operation in await context.effects.list(
     pluginId: bingxFuturesTradingPluginId,
   )) {
+    if (_isAttemptedSessionPlacement(operation, admission)) {
+      attemptedPlacements++;
+    }
+    if (operation.operationId == effectOperationId &&
+        operation.attemptCount > 0) {
+      cancellationAttempted = true;
+    }
     if (operation.operationId == placementOperationId) {
       placement = operation;
-      break;
     }
+  }
+  if (!cancellationAttempted &&
+      !admission.managesExistingAfterEntryBudget &&
+      attemptedPlacements >= admission.mandate.maxEffects) {
+    return _blockedDeterministicCycleEvidence(
+      effectOperationId,
+      'trading_mandate_effect_budget_exhausted',
+    );
   }
   final clientOrderId = order.clientOrderId?.trim() ?? '';
   if (placement == null ||
@@ -652,6 +681,18 @@ Future<String> reconcileAuthorizedExactOrder({
       ? _managedOrderCancellationEvidence(operation)
       : _exactOrderEvidence(operation, admission.mandate.testOrder);
 }
+
+bool _isAttemptedSessionPlacement(
+  ExternalEffectOperation operation,
+  BingxFuturesRemoteMandateAdmission admission,
+) =>
+    operation.ownerCapsuleHex == admission.mandate.capsuleRootHex &&
+    operation.providerId == BingxFuturesExternalEffectAdapter.providerId &&
+    operation.accountBindingId == admission.mandate.accountBindingHashHex &&
+    operation.effectKind ==
+        BingxFuturesExternalEffectAdapter.exactOrderEffectKind &&
+    operation.approvalEvidenceHashHex == admission.commitmentHashHex &&
+    operation.attemptCount > 0;
 
 String _noEffectRecoveryEvidence(String operationId, String state) =>
     jsonEncode(<String, dynamic>{

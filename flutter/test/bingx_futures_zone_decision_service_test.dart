@@ -3,6 +3,171 @@ import 'package:hivra_app/services/bingx_futures_zone_decision_service.dart';
 import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 
 void main() {
+  group('original anchor revalidation', () {
+    const service = BingxFuturesZoneDecisionService();
+    final event = DateTime.utc(2026, 9, 20, 12);
+    BingxFuturesCandle bar(
+      int index, {
+      num low = 101,
+      num high = 103,
+      bool closed = true,
+    }) {
+      final close = event.add(Duration(minutes: index * 5));
+      return BingxFuturesCandle(
+        timeframe: '5m',
+        openTimeUtc:
+            close.subtract(const Duration(minutes: 5)).toIso8601String(),
+        closeTimeUtc: close.toIso8601String(),
+        openDecimal: '102',
+        highDecimal: '$high',
+        lowDecimal: '$low',
+        closeDecimal: '102',
+        volumeBaseDecimal: '1',
+        volumeQuoteDecimal: '102',
+        isClosed: closed,
+      );
+    }
+
+    String check(
+      List<BingxFuturesCandle> bars, {
+      String side = 'buy',
+      String source = 'micro_sweep_reclaim',
+      int age = 2,
+    }) => service.revalidateAnchor(
+      side: side,
+      source: source,
+      zoneLow: 100,
+      zoneHigh: 102,
+      eventAtUtc: event,
+      nowUtc: event.add(Duration(minutes: age * 5)),
+      candles: bars,
+    );
+
+    test('reclaim consumes only a later strict sweep on the original side', () {
+      expect(
+        check([bar(0, low: 90), bar(1, low: 100), bar(2)]),
+        'anchor_valid',
+      );
+      expect(check([bar(0), bar(1, low: 99), bar(2)]), 'anchor_consumed');
+      expect(
+        check([bar(0), bar(1, high: 102), bar(2, high: 102)], side: 'sell'),
+        'anchor_valid',
+      );
+      expect(
+        check([bar(0), bar(1), bar(2, high: 102)], side: 'sell'),
+        'anchor_consumed',
+      );
+    });
+
+    test(
+      'HTF revalidation requires parent binding and continuous parent coverage',
+      () {
+        final parent = <String, dynamic>{
+          'strategy_version': bingxLiquidityStrategyVersion,
+          'timeframe': '4h',
+          'side': 'buy',
+          'low_decimal': '99',
+          'high_decimal': '104',
+          'confirmed_at_utc': event.toIso8601String(),
+        };
+        String verify(
+          List<BingxFuturesCandle> bars,
+          Map<String, dynamic>? bound,
+        ) => service.revalidateAnchor(
+          side: 'buy',
+          source: '4h_sweep_reclaim_5m',
+          zoneLow: 100,
+          zoneHigh: 102,
+          eventAtUtc: event.add(const Duration(minutes: 5)),
+          nowUtc: event.add(const Duration(minutes: 10)),
+          candles: bars,
+          parentZone: bound,
+        );
+        expect(verify([bar(0), bar(1), bar(2)], parent), 'anchor_valid');
+        expect(
+          verify([bar(0), bar(1), bar(2, low: 99.5)], parent),
+          'anchor_consumed',
+        );
+        expect(
+          verify([bar(0), bar(1, low: 98), bar(2)], parent),
+          'anchor_consumed',
+        );
+        expect(verify([bar(1), bar(2)], parent), 'anchor_unavailable');
+        expect(verify([bar(0), bar(1), bar(2)], null), 'anchor_unavailable');
+        expect(
+          verify([bar(0), bar(1), bar(2)], {...parent, 'side': 'sell'}),
+          'anchor_unavailable',
+        );
+      },
+    );
+    test('void consumes on inclusive near-edge touch for either side', () {
+      expect(
+        check([
+          bar(0),
+          bar(1, low: 103),
+          bar(2, low: 103),
+        ], source: 'micro_liquidity_void'),
+        'anchor_valid',
+      );
+      expect(
+        check([
+          bar(0),
+          bar(1, low: 102),
+          bar(2, low: 103),
+        ], source: 'micro_liquidity_void'),
+        'anchor_consumed',
+      );
+      expect(
+        check(
+          [bar(0), bar(1, low: 98, high: 99), bar(2, low: 98, high: 99)],
+          source: 'micro_liquidity_void',
+          side: 'sell',
+        ),
+        'anchor_valid',
+      );
+      expect(
+        check(
+          [bar(0), bar(1, low: 98, high: 100), bar(2, low: 98, high: 99)],
+          source: 'micro_liquidity_void',
+          side: 'sell',
+        ),
+        'anchor_consumed',
+      );
+    });
+    test(
+      'missing, stale, duplicate and gapped coverage cannot authorize cancellation',
+      () {
+        for (final bars in <List<BingxFuturesCandle>>[
+          [],
+          [bar(1), bar(2)],
+          [bar(0), bar(1)],
+          [bar(0), bar(1), bar(1), bar(2)],
+          [bar(0), bar(2, low: 99)],
+          [bar(0), bar(1), bar(2), bar(3)],
+        ]) {
+          expect(check(bars), 'anchor_unavailable');
+        }
+      },
+    );
+    test('forming candle does not consume a confirmed anchor', () {
+      expect(
+        check([bar(0), bar(1), bar(2), bar(3, low: 90, closed: false)]),
+        'anchor_valid',
+      );
+    });
+    test('only untouched void expires after 24 closed bars', () {
+      final bars = List.generate(26, (i) => bar(i, low: 103));
+      expect(
+        check(bars.take(25).toList(), source: 'micro_liquidity_void', age: 24),
+        'anchor_valid',
+      );
+      expect(
+        check(bars, source: 'micro_liquidity_void', age: 25),
+        'anchor_expired',
+      );
+      expect(check(bars, age: 25), 'anchor_valid');
+    });
+  });
   group('BingxFuturesZoneDecisionService', () {
     const service = BingxFuturesZoneDecisionService();
 
@@ -659,40 +824,59 @@ void main() {
       );
     });
 
-    test('current sweep reclaim is an executable new event', () {
-      final result = service.decide(input: _microReclaimInput(side: 'buy'));
+    test('4h sweep requires a later 5m confirmation inside its bounds', () {
+      final result = service.decide(input: _htfReclaimInput(side: 'buy'));
 
-      expect(result.anchorSource, 'micro_sweep_reclaim');
+      expect(result.anchorSource, '4h_sweep_reclaim_5m');
       expect(result.anchorExecutable, isTrue);
       expect(result.anchorLifecycle, 'reclaimed');
-      expect(result.zoneLow, 90);
-      expect(result.zoneHigh, 92);
+      expect(result.zoneLow, 88.5);
+      expect(result.zoneHigh, 89.8);
+      expect(result.parentZone!['low_decimal'], '88.00000000');
+      expect(result.parentZone!['high_decimal'], '90.00000000');
     });
 
-    test('uses exact fresh bullish liquidity void as buy entry zone', () {
+    test(
+      'parent binding rejects missing, conflicting and noncausal evidence',
+      () {
+        for (final side in ['buy', 'sell']) {
+          expect(
+            service
+                .decide(input: _htfReclaimInput(side: side))
+                .anchorExecutable,
+            isTrue,
+          );
+          for (final input in [
+            _htfReclaimInput(side: side, missingParentTimes: true),
+            _htfReclaimInput(side: side, conflictingParent: true),
+            _htfReclaimInput(side: side, microOutside: true),
+            _htfReclaimInput(side: side, microBeforeParent: true),
+            _htfReclaimInput(side: side, gapped: true),
+            _htfReclaimInput(side: side, reswept: true),
+            _htfReclaimInput(side: side, clusters: []),
+          ]) {
+            expect(service.decide(input: input).anchorExecutable, isFalse);
+          }
+        }
+      },
+    );
+
+    test('fresh bullish void cannot authorize a standalone entry', () {
       final first = service.decide(input: _liquidityVoidInput(side: 'buy'));
       final second = service.decide(input: _liquidityVoidInput(side: 'buy'));
 
-      expect(first.anchorSource, 'micro_liquidity_void');
-      expect(first.anchorExecutable, isTrue);
-      expect(first.anchorLifecycle, 'fresh');
-      expect(first.zoneLow, 100);
-      expect(first.zoneHigh, 104);
-      expect(first.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(first.anchorExecutable, isFalse);
+      expect(first.liquidityEventId, isNull);
       expect(second.liquidityEventId, first.liquidityEventId);
       expect(second.zoneLow, first.zoneLow);
       expect(second.zoneHigh, first.zoneHigh);
     });
 
-    test('uses exact fresh bearish liquidity void as sell entry zone', () {
+    test('fresh bearish void cannot authorize a standalone entry', () {
       final result = service.decide(input: _liquidityVoidInput(side: 'sell'));
 
-      expect(result.anchorSource, 'micro_liquidity_void');
-      expect(result.anchorExecutable, isTrue);
-      expect(result.anchorLifecycle, 'fresh');
-      expect(result.zoneLow, 96);
-      expect(result.zoneHigh, 100);
-      expect(result.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(result.anchorExecutable, isFalse);
+      expect(result.liquidityEventId, isNull);
     });
 
     test('does not reuse a liquidity void after price trades into it', () {
@@ -709,7 +893,7 @@ void main() {
       'successive closed snapshots wait for reclaim and replay the same event',
       () {
         final untouched = service.decide(
-          input: _microReclaimInput(
+          input: _htfReclaimInput(
             side: 'buy',
             visibleBars: 20,
             delayedReclaim: true,
@@ -717,13 +901,13 @@ void main() {
           ),
         );
         final swept = service.decide(
-          input: _microReclaimInput(
+          input: _htfReclaimInput(
             side: 'buy',
             visibleBars: 21,
             delayedReclaim: true,
           ),
         );
-        final confirmedInput = _microReclaimInput(
+        final confirmedInput = _htfReclaimInput(
           side: 'buy',
           visibleBars: 22,
           delayedReclaim: true,
@@ -744,13 +928,13 @@ void main() {
 
     test('closed liquidity event zone ignores live quote drift', () {
       final first = service.decide(
-        input: _microReclaimInput(side: 'sell', midPrice: 96),
+        input: _htfReclaimInput(side: 'sell', midPrice: 96),
       );
       final second = service.decide(
-        input: _microReclaimInput(side: 'sell', midPrice: 96.4),
+        input: _htfReclaimInput(side: 'sell', midPrice: 96.4),
       );
 
-      expect(first.anchorSource, 'micro_sweep_reclaim');
+      expect(first.anchorSource, '4h_sweep_reclaim_5m');
       expect(second.anchorSource, first.anchorSource);
       expect(first.liquidityEventId, isNotNull);
       expect(second.liquidityEventId, first.liquidityEventId);
@@ -761,7 +945,7 @@ void main() {
 
     test('rejects reclaim candle whose body is too small relative to ATR', () {
       final result = service.decide(
-        input: _microReclaimInput(side: 'sell', weakBody: true),
+        input: _htfReclaimInput(side: 'sell', weakBody: true),
       );
 
       expect(result.anchorSource, 'internal_diagnostic');
@@ -770,22 +954,135 @@ void main() {
 
     test('expires an unreclaimed sweep after the bounded bar window', () {
       final result = service.decide(
-        input: _microReclaimInput(side: 'buy', expired: true),
+        input: _htfReclaimInput(side: 'buy', expired: true),
       );
 
       expect(result.anchorSource, 'internal_diagnostic');
       expect(result.anchorExecutable, isFalse);
     });
 
-    test('invalidates a sweep after more than two failed reclaims', () {
+    test('later 4h sweep invalidates the original parent', () {
       final result = service.decide(
-        input: _microReclaimInput(side: 'sell', excessiveRetests: true),
+        input: _htfReclaimInput(side: 'sell', reswept: true),
       );
 
       expect(result.anchorSource, 'internal_diagnostic');
       expect(result.anchorExecutable, isFalse);
     });
   });
+}
+
+BingxFuturesZoneDecisionInput _htfReclaimInput({
+  required String side,
+  num midPrice = 96,
+  bool weakBody = false,
+  bool expired = false,
+  bool reswept = false,
+  bool delayedReclaim = false,
+  int visibleBars = 30,
+  List<BingxDetectedLiquidityLevel>? clusters,
+  bool missingParentTimes = false,
+  bool microOutside = false,
+  bool microBeforeParent = false,
+  bool gapped = false,
+  bool conflictingParent = false,
+}) {
+  final buy = side == 'buy';
+  final highs = List<num>.filled(visibleBars, 99);
+  final lows = List<num>.filled(visibleBars, 91);
+  final opens = List<num>.filled(visibleBars, 95);
+  final closes = List<num>.filled(visibleBars, 95);
+  if (visibleBars > 20) {
+    highs[20] = buy ? 96 : 102;
+    lows[20] = buy ? 88 : 94;
+    opens[20] = buy ? 89 : 101;
+    closes[20] = expired || delayedReclaim ? opens[20] : (buy ? 91 : 99);
+  }
+  if (expired) {
+    for (var i = 21; i < visibleBars; i++) {
+      highs[i] = buy ? 89.9 : 102;
+      lows[i] = buy ? 88 : 100.1;
+      opens[i] = closes[i] = buy ? 89 : 101;
+    }
+  }
+  if (delayedReclaim && visibleBars > 21) {
+    opens[21] = buy ? 89 : 101;
+    closes[21] = buy ? 91 : 99;
+    lows[21] = buy ? 89 : 94;
+    highs[21] = buy ? 96 : 101;
+  }
+  if (reswept && visibleBars > 25) {
+    if (buy) {
+      lows[25] = 87;
+    } else {
+      highs[25] = 103;
+    }
+  }
+  if (conflictingParent) {
+    highs[20] = 102;
+    lows[20] = 88;
+    closes[20] = 95;
+  }
+  final start = DateTime.utc(2026, 9, 1);
+  final times = List.generate(
+    visibleBars,
+    (i) => start.add(Duration(hours: 4 * i)).toIso8601String(),
+  );
+  final parentIndex = delayedReclaim ? 21 : 20;
+  final known = start.add(Duration(hours: 4 * parentIndex));
+  final microStart = known.subtract(const Duration(minutes: 100));
+  final microCount = ((visibleBars - 1 - parentIndex) * 48 + 25).clamp(25, 600);
+  final microHighs = List<num>.filled(microCount, buy ? 89.8 : 101.5);
+  final microLows = List<num>.filled(microCount, buy ? 88.5 : 100.2);
+  final microOpens = List<num>.filled(microCount, buy ? 89 : 101);
+  final microCloses = List<num>.from(microOpens);
+  final confirmation = microBeforeParent ? 19 : 21;
+  microOpens[confirmation] = buy ? 88.6 : 101.3;
+  microCloses[confirmation] =
+      weakBody ? microOpens[confirmation] : (buy ? 89.6 : 100.3);
+  if (microOutside) microHighs[confirmation] = buy ? 90.1 : 102.1;
+  final microTimes = List.generate(
+    microCount,
+    (i) => microStart.add(Duration(minutes: 5 * i)).toIso8601String(),
+  );
+  if (gapped) microTimes[22] = microTimes[21];
+  return BingxFuturesZoneDecisionInput(
+    symbol: 'DOGE-USDT',
+    midPrice: midPrice,
+    fallbackSide: side,
+    requiredSide: side,
+    detectedLiquidityLevels:
+        clusters ??
+        [
+          buy
+              ? _cluster()
+              : _cluster(side: 'buyside', bottom: '98', top: '100'),
+          if (conflictingParent)
+            buy
+                ? _cluster(side: 'buyside', bottom: '98', top: '100')
+                : _cluster(),
+        ],
+    microHighs: microHighs,
+    microLows: microLows,
+    microOpens: microOpens,
+    microCloses: microCloses,
+    microCloseTimesUtc: microTimes,
+    macroHighs: List<num>.filled(40, 105),
+    macroLows: List<num>.filled(40, 85),
+    higherHighs: highs,
+    higherLows: lows,
+    higherOpens: opens,
+    higherCloses: closes,
+    higherCloseTimesUtc: missingParentTimes ? [] : times,
+    dailyHighs: const [],
+    dailyLows: const [],
+    dailyCloses: const [],
+    weeklyHighs: const [],
+    weeklyLows: const [],
+    recentMicroBars: 10,
+    zoneNearBps: 15,
+    zoneFarBps: 35,
+  );
 }
 
 BingxDetectedLiquidityLevel _cluster({

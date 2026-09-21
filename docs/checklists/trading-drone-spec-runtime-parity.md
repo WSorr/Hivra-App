@@ -2,7 +2,11 @@
 
 Use this checklist after any trading-drone logic change and before release packaging.
 
-## Current Runtime Status (2026-06-14)
+## Implementation Coverage
+
+Current acceptance and deployment status is owned by
+`docs/development-control.md`. `DONE` below describes code wiring, not packaged
+signoff, deployment permission, or demonstrated strategy quality.
 
 Legend:
 - `DONE`: implemented and wired in live runtime path
@@ -20,7 +24,7 @@ Legend:
 | Side/zone provenance linked to TVH decision hash | DONE | `snapshot/feature/tvh/live` hashes are propagated into host result and decision/execution envelopes | Keep provenance envelope regression tests green |
 | Trend bundle + far-retest continuation gate | DONE | `BingxFuturesLiveDecisionService` emits `trend_15m/4h/1d` and deterministic `trend_gate_*` block codes | Keep live-decision regressions green |
 | Momentum-missed continuation gate | DONE | `BingxFuturesLiveDecisionService` blocks untouched far pending entries with deterministic `momentum_gate_*_missed_retest` codes | Keep missed-retest regressions green |
-| Liquidity entry lifecycle gate | DONE | `BingxFuturesZoneDecisionService` accepts only a bounded closed-candle micro sweep/reclaim or fresh untouched 5m liquidity void; HTF pivots remain target-only and internal fallback levels are diagnostic-only | Keep sweep/reclaim, exact-void, touch/expiry, and non-executable-fallback regressions green |
+| Liquidity entry lifecycle gate | DONE | `BingxFuturesZoneDecisionService` selects a closed 4h sweep/reclaim parent and requires subsequent 5m confirmation inside it; independent micro/void entry is removed | Verify parent binding, continuous paginated history, invalidation, and old-authority rejection; packaged/VPS acceptance remains pending |
 | Pending-zone evidence projection | DONE | `TradingDroneScreen` labels exact microstructure bounds as pending rather than current price and projects source, formation time, age, signed distance, and mandatory Run Intent revalidation from the matching existing live decision | Keep formatter, malformed-evidence fallback, and live-decision reference-price regressions green; manually verify symbol reset in packaged smoke |
 | Public liquidity confluence proxies | DONE | `BingxFuturesLiveSnapshotBuilderService` deterministically emits at most three bounded `liquidation_proxy` levels per side; `BingxFuturesZoneDecisionService` uses them only to rank valid closed-structure candidates and never as entry authority | Keep permutation, bounded-output, structural-ranking, stale/crossed-depth, force-order isolation, and proxy-only no-authority regressions green |
 | Live public shadow probe | DONE | The existing replay harness signs canonical public observations through `BingxFuturesPublicMarketDataPort`; run-count `1` remains the one-shot compatibility path and accepts no Capsule, credential, mandate, account state, or effect owner | Unbounded daemon operation, deployment, leases, account reads, and remote effects remain unauthorized |
@@ -87,15 +91,15 @@ Legend:
 - [ ] Feature extractor computes trend (EMA50/EMA200 15m), ATR14(5m), liquidity levels, and large-flow context deterministically.
 - [ ] Live decision emits trend bundle (`trend_15m`, `trend_4h`, `trend_1d`) and deterministic trend-gate status.
 - [ ] Live decision blocks missed continuation retests before host intent preparation.
-- [ ] HTF pivots are target/context only; they never authorize entry.
+- [ ] Untouched HTF pivots alone never authorize entry; the selected 4h sweep/reclaim parent requires subsequent 5m confirmation.
 - [ ] The `4h` lifecycle window covers at least 80 days of closed candles.
 - [ ] `sweep_origin`, immediate `post_sweep_reaction`, and `consumed` levels cannot silently enter the fresh candidate set.
-- [ ] Entry requires a current `sweep -> reclaim -> displacement` event or a
-      fresh untouched 5m liquidity void with exact gap bounds.
+- [ ] Entry follows the canonical HTF-first contract; no independent 5m or
+      void fallback is executable. Insufficient history remains unavailable.
 - [ ] Internal older/recent high/low fallback is diagnostic-only and cannot authorize an intent.
 - [ ] Liquidation, force-order, and orderbook proxy levels may rank valid structural candidates but cannot authorize an intent or become its anchor.
-- [ ] Trend, OI, session evidence, and large-flow activation remain context; recent aggressive-volume imbalance owns directional activation.
-- [ ] Missing executable liquidity anchor emits `liquidity_anchor_unavailable` and makes managed-order revalidation cancel-only.
+- [ ] The 4h parent determines direction; recent aggressive-volume eligibility cannot reverse it. Planned 1D/1W/1M observation adds no authority.
+- [ ] Missing executable liquidity anchor emits `liquidity_anchor_unavailable`; it does not authorize cancellation of an existing order.
 - [ ] Pending-zone fields cannot be mistaken for current price: source, formation time, age, signed distance, and Run Intent revalidation are visible, and changing symbol clears prior evidence.
 - [ ] A blocked or conflicting foreground cycle clears executable zone, sizing,
       risk-target, and strategy-tag fields while retaining its exact blocking notice.
@@ -111,15 +115,15 @@ Legend:
 - [ ] Zone-pending execution recomputes the live decision; a monotonic later bar may confirm the same exact event binding within 1 bp boundary drift, while backward time, changed/expired/consumed binding, side change, zone-side change, malformed decimals, or material drift fail closed.
 - [ ] One LIVE `liquidity_event_id` can reserve at most one exchange effect across double-click, retry, restart, and reconnect; TEST validation creates no effect claim.
 - [ ] The Capsule-scoped event-claim journal is bounded and fails closed rather than evicting authority evidence.
-- [ ] Managed open orders are revalidated against fresh live TVH snapshots before being left active.
+- [ ] Managed open orders are revalidated against their original signed parent/entry with fresh continuous history, not a new candidate zone.
 - [ ] VPS cancellation is journaled, ownership-bound, and completed in a
       separate cycle before a fresh event can place another order.
-- [ ] `NO_SIGNAL` managed orders receive a side-locked structural revalidation; transient flow failure alone neither cancels nor preserves them blindly.
+- [ ] `NO_SIGNAL` does not bypass original-anchor revalidation; missing history or proof cannot authorize cancellation.
 - [ ] Structural-only revalidation can keep/cancel but cannot create or replace an order.
 - [ ] Every managed open order retains capsule-scoped intent/decision provenance across restart.
-- [ ] Stale-zone replacement is same-side only and passes fresh market, host,
-  risk, idempotency, and exchange gates.
-- [ ] Market-dead and side-flip cancellations never auto-replace.
+- [ ] A later replacement requires a fresh event and recalculated sizing through normal market, host, risk, idempotency, and exchange gates.
+- [ ] A changed side or blocked new proposal alone never cancels or replaces the original order.
+- [ ] Structural/ATR stop parity is verified against the shared target calculation; configured percentage stops alone do not close this requirement.
 - [ ] Observability envelopes are emitted (`drone.decision.envelope`, `drone.execution.envelope`).
 
 ## Runtime Boundary Checks
@@ -159,4 +163,5 @@ Legend:
 - [ ] Retry/transient failure path exercised and execution envelope logged.
 - [ ] Exchange execution receipt path is traceable to decision hash.
 - [ ] macOS + Android results are recorded with build id/tag and date.
-- [ ] Evidence rows are appended to `docs/checklists/trading-drone-evidence-log.md` for each platform/mode cycle.
+- [ ] Deterministic parity rows are recorded in `docs/checklists/trading-drone-evidence-log.md`; they are not proof of a device run.
+- [ ] Actual packaged smoke results and exact artifact digests are recorded separately in `docs/checklists/release-manual-signoff-log.md`.

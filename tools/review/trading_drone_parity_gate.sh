@@ -129,8 +129,6 @@ liquidity_sequence_is_canonical() {
     rg -q "'liquidation_proxy'" "$2" &&
     rg -q '_applyLiquidationConfluence' "$3" &&
     rg -q 'level\.weight \+ bonus' "$3" &&
-    rg -q "anchorSource = 'micro_liquidity_void'" "$3" &&
-    rg -q 'zoneLow = microReclaim\.zoneLow' "$3" &&
     ! rg -q "anchorSource = ['\"]liquidation_proxy['\"]" "$3" &&
     rg -q "code: 'market_volume_activation_unavailable'" "$4" &&
     rg -q 'oppositeLiquidityTargetDecimal: decision\.oppositeLiquidityTargetDecimal' "$4" &&
@@ -528,7 +526,7 @@ runner_prepared_session_activation_is_fail_closed() {
     printf '%s\n' "$body" | rg -q 'refused a revoked session' &&
     printf '%s\n' "$body" | rg -q 'require_retained_exchange_credential_binding' &&
     printf '%s\n' "$body" | rg -q 'prepare_deterministic_session_cycle' &&
-    printf '%s\n' "$body" | rg -Fq 'activate)' &&
+    printf '%s\n' "$body" | rg -q '(^|[[:space:]])activate([[:space:]\\)]|$)' &&
     rg -q 'deterministic session has not been explicitly activated' "$1" &&
     printf '%s\n' "$body" | rg -q 'scheduler=false effect=false' &&
     ! printf '%s\n' "$body" | rg -q 'systemctl (enable|start)|execute_deterministic_order_once|capture_deterministic_market_evidence_once' &&
@@ -696,7 +694,7 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'deterministic observation requires an inactive public-shadow runner' "$1" &&
     rg -q 'deterministic observation requires a disabled public-shadow runner' "$1" &&
     rg -q '^TRANSIENT_TASKS_MAX="32"$' "$1" &&
-    [ "$(rg -c -F -- '--property="TasksMax=$TRANSIENT_TASKS_MAX"' "$1")" -eq 5 ] &&
+    [ "$(rg -c -F -- '--property="TasksMax=$TRANSIENT_TASKS_MAX"' "$1")" -eq 6 ] &&
     rg -q 'LoadCredentialEncrypted="runner-seed:' "$1" &&
     rg -q 'deterministic public-market observation failed' "$1" &&
     rg -q '"market_symbol": symbol' "$1" &&
@@ -1457,7 +1455,7 @@ sed 's/publicSessionStream\.snapshotFor(symbol)/null/' \
   "$TRADING_MODULE" > "$LOCAL_SESSION_WIRING_MUTATION"
 sed "s/final longReady = longTradeOk && normalizedRequiredSide != 'sell';/final longReady = longTradeOk \&\& longSessionAligned \&\& normalizedRequiredSide != 'sell';/" \
   "$TVH_RULE_ENGINE" > "$LIQUIDITY_AUTHORITY_MUTATION"
-sed "s/anchorSource = 'micro_liquidity_void';/anchorSource = 'liquidation_proxy';/" \
+sed "s/anchorSource = '4h_sweep_reclaim_5m';/anchorSource = 'liquidation_proxy';/" \
   "$ZONE_DECISION" > "$LIQUIDATION_ANCHOR_MUTATION"
 sed 's/oppositeLiquidityTargetDecimal: decision\.oppositeLiquidityTargetDecimal/oppositeLiquidityTargetDecimal: null/' \
   "$TRADING_CYCLE" > "$LIQUIDITY_TARGET_MUTATION"

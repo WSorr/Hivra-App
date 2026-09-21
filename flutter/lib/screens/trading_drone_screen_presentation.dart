@@ -847,7 +847,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                         .map(
                           (value) => DropdownMenuItem<double>(
                             value: value,
-                            child: Text('SL ${value.toStringAsFixed(0)}%'),
+                            child: Text(
+                              'Loss budget ${value.toStringAsFixed(0)}%',
+                            ),
                           ),
                         )
                         .toList(growable: false),
@@ -984,6 +986,90 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
               Text(
                 formatBingxFuturesLiquidityObservation(_displayedZoneDecision),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10251F),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF2A766B)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'REFERENCE · ZONES ARE NOT ENTRIES · READ ONLY',
+                      style: TextStyle(
+                        color: Color(0xFF6FE3C1),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Buyside and sellside liquidity remain visible as market '
+                      'observations. They become an entry only after a closed '
+                      '4h sweep/reclaim and a subsequent closed 5m confirmation.',
+                      style: TextStyle(color: Color(0xFFC1D8D5), fontSize: 12),
+                    ),
+                    const Divider(color: Color(0xFF2A766B), height: 20),
+                    Text(
+                      _TradingDroneScreenState
+                              ._sweepReclaimReference
+                              .waiting
+                              .canPrepareIntent
+                          ? 'UNEXPECTED READY · reference drift'
+                          : 'OBSERVE · no 5m confirmation',
+                      style: const TextStyle(
+                        color: Color(0xFFF2C96D),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      formatBingxFuturesLiquidityObservation(
+                        _TradingDroneScreenState._sweepReclaimReference.waiting,
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFFC1CAD8),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const Divider(color: Color(0xFF2A766B), height: 20),
+                    Text(
+                      _TradingDroneScreenState
+                              ._sweepReclaimReference
+                              .ready
+                              .canPrepareIntent
+                          ? 'READY · closed 5m reclaim confirmed'
+                          : 'BLOCKED · reference drift',
+                      style: const TextStyle(
+                        color: Color(0xFF6FE3C1),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      formatBingxFuturesZoneEvidence(
+                        _TradingDroneScreenState._sweepReclaimReference.ready,
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFFDCEBE7),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Synthetic proof only. No exchange, mandate, journal, '
+                      'or VPS effect is created.',
+                      style: TextStyle(color: Color(0xFF97A3B5), fontSize: 11),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
               const Text(

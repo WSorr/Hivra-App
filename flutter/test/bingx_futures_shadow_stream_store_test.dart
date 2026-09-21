@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
@@ -28,6 +30,83 @@ void main() {
     tearDown(() async {
       if (await temp.exists()) await temp.delete(recursive: true);
     });
+
+    for (final tamper in [false, true]) {
+      test(
+        'retained pre-upgrade proposal continues only if authentic: tamper=$tamper',
+        () async {
+          final store = BingxFuturesShadowStreamStore(directory: temp);
+          final original = await store.append(
+            trustedRunnerKey: publicKey,
+            produce: produce,
+          );
+          final proposal = jsonEncode({
+            'schema_version': 2,
+            'contract': 'bingx_futures_live_decision_v2',
+            'market_snapshot_hash_hex': '3' * 64,
+            'feature_hash_hex': '4' * 64,
+            'tvh_decision_hash_hex': '6' * 64,
+            'decision': 'long',
+            'can_prepare_intent': true,
+            'trend_bundle': {
+              'trend_15m': 'bullish',
+              'trend_4h': 'bull',
+              'trend_1d': 'bull',
+            },
+            'trend_gate': {'blocked': false, 'code': 'ok'},
+            'side': 'buy',
+            'zone_evaluation_side': 'buy',
+            'zone': {
+              'low_decimal': '99',
+              'high_decimal': '101',
+              'anchor_source': 'micro_sweep_reclaim',
+            },
+            'profit_target': {'price_decimal': '110'},
+            'reason_codes': [
+              {'code': 'historical_ready', 'passed': true},
+            ],
+          });
+          var retained = await _evidence(
+            1,
+            _emptyEvidenceHash,
+            signingKey,
+            publicKey,
+            proposalJson: proposal,
+          );
+          const owner = BingxFuturesDeterministicReplayHarnessService();
+          expect(
+            () => owner.parseShadowEvidence(retained.wireBytes),
+            throwsFormatException,
+          );
+          if (tamper) retained = retained.withSignature('0' * 128);
+          final files = await _evidenceFiles(temp);
+          expect(files.single.path, contains(original.evidenceHashHex));
+          await files.single.delete();
+          await File(
+            '${temp.path}/evidence/000000000001-${retained.evidenceHashHex}.json',
+          ).writeAsBytes(retained.wireBytes);
+          final resumed = BingxFuturesShadowStreamStore(directory: temp);
+          if (tamper) {
+            await expectLater(
+              resumed.append(
+                trustedRunnerKey: publicKey,
+                produce:
+                  (_, _) async =>
+                        throw StateError('must reject before producing'),
+              ),
+              throwsFormatException,
+            );
+          } else {
+            final next = await resumed.append(
+              trustedRunnerKey: publicKey,
+              produce: produce,
+            );
+            expect(next.sequence, 2);
+            expect(next.previousEvidenceHashHex, retained.evidenceHashHex);
+          }
+        },
+      );
+    }
 
     test('continues one authenticated immutable chain after restart', () async {
       final firstStore = BingxFuturesShadowStreamStore(directory: temp);
@@ -731,9 +810,17 @@ Future<BingxFuturesShadowEvidence> _evidence(
   SimpleKeyPair signingKey,
   SimplePublicKey publicKey, {
   String? decisionHashHex,
+  String? proposalJson,
 }) async {
   const owner = BingxFuturesDeterministicReplayHarnessService();
   final unsigned = BingxFuturesShadowEvidence(
+    contractVersion:
+        proposalJson == null
+            ? 'trading-shadow-evidence-v1'
+            : 'trading-shadow-evidence-v2',
+    marketSymbol: proposalJson == null ? null : 'DOGE-USDT',
+    marketProposalStatus: proposalJson == null ? null : 'READY',
+    marketProposalJson: proposalJson,
     runnerBuildId: 'runner-build-test',
     pluginId: 'hivra.bingx-futures-trading',
     pluginVersion: '0.2.7-plugins',
@@ -742,7 +829,10 @@ Future<BingxFuturesShadowEvidence> _evidence(
     policyHashHex: '2' * 64,
     marketSnapshotHashHex: '3' * 64,
     featureHashHex: '4' * 64,
-    decisionHashHex: decisionHashHex ?? '5' * 64,
+    decisionHashHex:
+        proposalJson == null
+            ? decisionHashHex ?? '5' * 64
+            : sha256.convert(utf8.encode(proposalJson)).toString(),
     decision: 'long',
     observedAtEpochMs: 1770000000000 + sequence,
     validUntilEpochMs: 1770000060000 + sequence,

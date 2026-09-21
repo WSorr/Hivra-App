@@ -395,8 +395,9 @@ prepare_deterministic_session_cycle() {
   local issued_at="$6"
   local expires_at="$7"
   local mode="${8:-cycle}"
+  local entry_budget_policy="${9:-stop}"
   python3 - "$state" "$session_operation_id" "$max_cycles" "$max_effects" \
-    "$interval_seconds" "$issued_at" "$expires_at" "$mode" <<'PY'
+    "$interval_seconds" "$issued_at" "$expires_at" "$mode" "$entry_budget_policy" <<'PY'
 import datetime
 import hashlib
 import json
@@ -406,7 +407,9 @@ import re
 import stat
 import sys
 
-path, session_id, raw_cycles, raw_effects, raw_interval, issued_raw, expires_raw, mode = sys.argv[1:]
+path, session_id, raw_cycles, raw_effects, raw_interval, issued_raw, expires_raw, mode, budget_policy = sys.argv[1:]
+if budget_policy not in ("stop", "manage_existing"):
+    raise SystemExit("invalid signed entry budget policy")
 hex64 = re.compile(r"[0-9a-f]{64}")
 if hex64.fullmatch(session_id) is None:
     raise SystemExit("deterministic session state received an invalid session id")
@@ -521,7 +524,7 @@ if mode == "inspect":
           f"last_cycle={last or 'none'}")
     raise SystemExit(0)
 if value["state"] == "active" and (
-    now >= expires or value["consumed_effects"] >= max_effects
+    now >= expires or (value["consumed_effects"] >= max_effects and budget_policy == "stop")
 ):
     value["state"] = "stopped"
     write_state(value)
@@ -533,7 +536,7 @@ if mode == "activate":
     raise SystemExit(0)
 if index >= max_cycles:
     raise SystemExit("deterministic session active state exceeded its cycle bound")
-if value["consumed_effects"] >= max_effects:
+if value["consumed_effects"] >= max_effects and budget_policy == "stop":
     raise SystemExit("deterministic session exhausted its effect bound")
 eligible = issued + datetime.timedelta(seconds=interval * index)
 if now < eligible:
@@ -766,6 +769,7 @@ settle_missed_deterministic_session_cycles() {
   local target_index="$4"
   local max_cycles="$5"
   local max_effects="$6"
+  local entry_budget_policy="${7:-stop}"
   [[ "$first_index" =~ ^[0-9]+$ ]] &&
     [[ "$target_index" =~ ^[0-9]+$ ]] &&
     [[ "$max_cycles" =~ ^[0-9]+$ ]] &&
@@ -804,7 +808,7 @@ settle_missed_deterministic_session_cycles() {
     fi
     session_status="$(advance_deterministic_session_cycle \
       "$state" "$session_operation_id" "$index" "$operation_id" \
-      "blocked:missed_while_paused" "$max_cycles" "$max_effects")" ||
+      "blocked:missed_while_paused" "$max_cycles" "$max_effects" "$entry_budget_policy")" ||
       die "missed session settlement could not advance canonical state"
     index=$((index + 1))
   done
@@ -819,15 +823,18 @@ advance_deterministic_session_cycle() {
   local outcome="$5"
   local max_cycles="$6"
   local max_effects="$7"
+  local entry_budget_policy="${8:-stop}"
   python3 - "$state" "$session_operation_id" "$cycle_index" \
-    "$cycle_operation_id" "$outcome" "$max_cycles" "$max_effects" <<'PY'
+    "$cycle_operation_id" "$outcome" "$max_cycles" "$max_effects" "$entry_budget_policy" <<'PY'
 import hashlib
 import json
 import os
 import pathlib
 import sys
 
-path, session_id, raw_index, cycle_id, outcome, raw_cycles, raw_effects = sys.argv[1:]
+path, session_id, raw_index, cycle_id, outcome, raw_cycles, raw_effects, budget_policy = sys.argv[1:]
+if budget_policy not in ("stop", "manage_existing"):
+    raise SystemExit("invalid signed entry budget policy")
 index = int(raw_index)
 max_cycles = int(raw_cycles)
 max_effects = int(raw_effects)
@@ -864,7 +871,7 @@ next_index = index + 1
 next_state = "active"
 if next_index == max_cycles:
     next_state = "completed"
-elif consumed == max_effects:
+elif consumed == max_effects and budget_policy == "stop":
     next_state = "stopped"
 elif (
     outcome.startswith("effect:unresolved:")
@@ -2146,6 +2153,7 @@ else:
         "package_digest_hex", "host_abi", "stop_loss_percent",
         "minimum_risk_reward",
         *(["account_read_scope"] if isinstance(policy, dict) and "account_read_scope" in policy else []),
+        *(["strategy_version"] if isinstance(policy, dict) and "strategy_version" in policy else []),
     ]
     if not isinstance(policy, dict) or list(policy) != expected_policy:
         raise SystemExit("deterministic strategy policy is not canonical")
@@ -2168,7 +2176,12 @@ else:
             raise SystemExit(f"invalid deterministic policy {key}")
     if is_deterministic_session:
         session = value.get("session_policy")
-        if not isinstance(session, dict) or list(session) != ["starts_at_utc", "interval_seconds", "max_cycles", "stop_on_failure"]:
+        session_keys = ["starts_at_utc", "interval_seconds", "max_cycles", "stop_on_failure"]
+        if isinstance(session, dict) and "entry_budget_exhaustion" in session:
+            if value["contract_version"] != "trading-remote-mandate-admission-v6" or session["entry_budget_exhaustion"] != "manage_existing":
+                raise SystemExit("invalid signed entry budget policy")
+            session_keys.append("entry_budget_exhaustion")
+        if not isinstance(session, dict) or list(session) != session_keys:
             raise SystemExit("deterministic session policy is not canonical")
         interval = session["interval_seconds"]
         cycles = session["max_cycles"]
@@ -2323,6 +2336,9 @@ else:
         )
         pathlib.Path(work, "session-max-cycles").write_text(
             str(value["session_policy"]["max_cycles"]), encoding="ascii"
+        )
+        pathlib.Path(work, "session-entry-budget-policy").write_text(
+            value["session_policy"].get("entry_budget_exhaustion", "stop"), encoding="ascii"
         )
 pathlib.Path(work, "max-uses").write_text(str(value["max_uses"]), encoding="ascii")
 pathlib.Path(work, "mandate-max-effects").write_text(
@@ -2655,7 +2671,8 @@ admit_remote_mandate() {
             "$(cat "$work/retained/mandate-max-effects")" \
             "$(cat "$work/retained/session-interval-seconds")" \
             "$(cat "$work/retained/session-starts-at")" \
-            "$(cat "$work/retained/expires-at")" activate)" ||
+            "$(cat "$work/retained/expires-at")" activate \
+            "$(cat "$work/retained/session-entry-budget-policy")")" ||
             die "mandate admission refused invalid retained session state"
           local retained_session_revoked
           retained_session_revoked="$(verified_retained_session_revocation \
@@ -2984,7 +3001,8 @@ activate_prepared_session() {
     "$(cat "$work/verified/mandate-max-effects")" \
     "$(cat "$work/verified/session-interval-seconds")" \
     "$(cat "$work/verified/session-starts-at")" \
-    "$(cat "$work/verified/expires-at")" activate)" ||
+    "$(cat "$work/verified/expires-at")" activate \
+    "$(cat "$work/verified/session-entry-budget-policy")")" ||
     die "prepared session activation could not create canonical state"
   case "$session_status" in
     active:*) ;;
@@ -3038,13 +3056,14 @@ run_prepared_session_scheduler() {
   require_retained_exchange_credential_binding \
     "$(cat "$work/verified/account-binding")"
   local session_id session_max_cycles mandate_max_effects interval_seconds
-  local session_starts_at expires_at
+  local session_starts_at expires_at entry_budget_policy
   session_id="$(cat "$work/verified/operation-id")"
   session_max_cycles="$(cat "$work/verified/session-max-cycles")"
   mandate_max_effects="$(cat "$work/verified/mandate-max-effects")"
   interval_seconds="$(cat "$work/verified/session-interval-seconds")"
   session_starts_at="$(cat "$work/verified/session-starts-at")"
   expires_at="$(cat "$work/verified/expires-at")"
+  entry_budget_policy="$(cat "$work/verified/session-entry-budget-policy")"
   trap - EXIT INT TERM
   rm -rf "$work"
 
@@ -3090,7 +3109,7 @@ run_prepared_session_scheduler() {
         settled_status="$(settle_missed_deterministic_session_cycles \
           "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
           "$skipped_from" "$skipped_to" "$session_max_cycles" \
-          "$mandate_max_effects")" ||
+          "$mandate_max_effects" "$entry_budget_policy")" ||
           die "prepared session scheduler could not settle missed slots"
         echo "PASS trading-runner-artifact: prepared session scheduler skipped missed slots session_operation_id=$session_id from=$skipped_from to=$skipped_to status=$settled_status provider_request=false effect=false"
         ;;
@@ -3238,7 +3257,8 @@ prepared_session_service_status() {
     "$(cat "$work/verified/mandate-max-effects")" \
     "$(cat "$work/verified/session-interval-seconds")" \
     "$(cat "$work/verified/session-starts-at")" \
-    "$(cat "$work/verified/expires-at")" inspect)" ||
+    "$(cat "$work/verified/expires-at")" inspect \
+    "$(cat "$work/verified/session-entry-budget-policy")")" ||
     die "session status could not validate retained state"
   last_cycle="${summary##*last_cycle=}"
   outcome="none"
@@ -3278,6 +3298,43 @@ prepared_session_service_status() {
   fi
 }
 
+read_completed_session_effects() {
+  local mandate="$1"
+  local unit="hivra-trading-effect-read-$$-$RANDOM"
+  # The canonical journal reader may maintain storage metadata. Keep that work
+  # in the existing state sandbox, not the read-only scheduler namespace.
+  systemd-run --unit="$unit" --service-type=exec --wait --pipe --collect --quiet \
+    --property=DynamicUser=yes \
+    --property="StateDirectory=$(effect_state_directory deterministic)" \
+    --property=StateDirectoryMode=0700 \
+    --property="LoadCredential=deterministic-admission:$mandate" \
+    --property=RuntimeMaxSec=90s \
+    --property=MemoryMax=160M \
+    --property=MemorySwapMax=0 \
+    --property="TasksMax=$TRANSIENT_TASKS_MAX" \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=PrivateNetwork=yes \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=yes \
+    --property=ProtectKernelTunables=yes \
+    --property=ProtectKernelModules=yes \
+    --property=ProtectKernelLogs=yes \
+    --property=ProtectControlGroups=yes \
+    --property=RestrictSUIDSGID=yes \
+    --property=RestrictNamespaces=yes \
+    --property=LockPersonality=yes \
+    --property=CapabilityBoundingSet= \
+    --property=AmbientCapabilities= \
+    --property=RestrictAddressFamilies=AF_UNIX \
+    "$EFFECT_BINARY_INSTALL_PATH" \
+      --mode completed-session-effects \
+      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
+      --deterministic-admission-file "/run/credentials/$unit.service/deterministic-admission" \
+      --deterministic-state-home "$(effect_state_home deterministic)"
+}
+
 export_completed_session_effects() {
   local directory="$1"
   require_expected_runner_key_id
@@ -3303,11 +3360,7 @@ export_completed_session_effects() {
     die "completed effect export refused another session"
   local output
   output="$(
-    "$EFFECT_BINARY_INSTALL_PATH" \
-      --mode completed-session-effects \
-      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
-      --deterministic-admission-file "$mandate" \
-      --deterministic-state-home "$(effect_state_home deterministic)"
+    read_completed_session_effects "$mandate"
   )" || die "completed effect export failed"
   [ "${#output}" -le 65536 ] || die "completed effect export is oversized"
   trap - EXIT INT TERM
@@ -4227,7 +4280,8 @@ execute_deterministic_order_once() {
         "$(cat "$work/verified/mandate-max-effects")" \
         "$(cat "$work/verified/session-interval-seconds")" \
         "$(cat "$work/verified/session-starts-at")" \
-        "$(cat "$work/verified/expires-at")")" ||
+        "$(cat "$work/verified/expires-at")" cycle \
+        "$(cat "$work/verified/session-entry-budget-policy")")" ||
         die "deterministic session is not eligible for its next cycle"
       case "$session_status" in
         ready:*) cycle_index="${session_status#ready:}"; cycle_index="${cycle_index%%:*}" ;;
@@ -4265,7 +4319,8 @@ execute_deterministic_order_once() {
         "$STATE_DIRECTORY/deterministic-session.v1.json" \
         "$admission_operation_id" "$cycle_index" "$operation_id" \
         "$replay_outcome" "$(cat "$work/verified/session-max-cycles")" \
-        "$(cat "$work/verified/mandate-max-effects")")" ||
+        "$(cat "$work/verified/mandate-max-effects")" \
+        "$(cat "$work/verified/session-entry-budget-policy")")" ||
         die "deterministic session could not reconcile its retained cycle"
     fi
     trap - EXIT INT TERM
@@ -4320,12 +4375,45 @@ PY
 )" || die "deterministic market evidence continuity is invalid"
   local last_sequence last_hash
   read -r last_sequence last_hash <<<"$continuity"
-  local -a session_cycle_args=()
-  if [ -n "$cycle_index" ]; then
-    session_cycle_args=(--session-cycle-index "$cycle_index")
-  fi
   local transient_name="hivra-trading-deterministic-${operation_id:0:12}-$$"
   local credential_dir="/run/credentials/$transient_name.service"
+  local -a session_cycle_args=()
+  local -a original_market_credentials=()
+  if [ -n "$cycle_index" ]; then
+    session_cycle_args=(--session-cycle-index "$cycle_index")
+    read_completed_session_effects "$mandate" \
+      >"$work/completed-effects.json" || die "original observation selection requires verified effects"
+    local original_operation
+    original_operation="$(python3 - "$work/completed-effects.json" "$admission_operation_id" "$cycle_index" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+path, session, current = sys.argv[1:]
+source = pathlib.Path(path)
+if source.stat().st_size > 65536:
+    raise SystemExit("completed effects exceed bounded selection")
+operations = json.loads(source.read_text())
+ids = {operation["operation_id"] for operation in operations
+       if operation["effect_kind"] == "place-exact-order" and operation["state"] == "succeeded"}
+for index in range(int(current) - 1, -1, -1):
+    identity = hashlib.sha256(b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+        json.dumps({"session_operation_id": session, "cycle_index": index}, separators=(",", ":")).encode()).hexdigest()
+    if identity in ids:
+        print(identity)
+        break
+PY
+    )" || die "original observation selection failed"
+    if [ -n "$original_operation" ]; then
+      local original_evidence="$observation_dir/$original_operation.json"
+      [ -f "$original_evidence" ] && [ ! -L "$original_evidence" ] &&
+        [ "$(file_size "$original_evidence")" -le 8192 ] ||
+        die "original observation is unavailable"
+      original_market_credentials=(--property="LoadCredential=original-market:$original_evidence")
+      session_cycle_args+=(--original-market-operation-id "$original_operation" \
+        --original-market-evidence-file "$credential_dir/original-market")
+    fi
+  fi
   if ! systemd-run \
     --unit="$transient_name" \
     --service-type=exec \
@@ -4337,6 +4425,7 @@ PY
     --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
     --property="LoadCredential=deterministic-admission:$mandate" \
     --property="LoadCredential=market-evidence:$evidence" \
+    "${original_market_credentials[@]}" \
     --property=RuntimeMaxSec=90s \
     --property=TimeoutStartSec=90s \
     --property=TimeoutStopSec=10s \
@@ -4395,7 +4484,8 @@ PY
       "$STATE_DIRECTORY/deterministic-session.v1.json" \
       "$admission_operation_id" "$cycle_index" "$operation_id" "$outcome" \
       "$(cat "$work/verified/session-max-cycles")" \
-      "$(cat "$work/verified/mandate-max-effects")")" ||
+      "$(cat "$work/verified/mandate-max-effects")" \
+      "$(cat "$work/verified/session-entry-budget-policy")")" ||
       die "deterministic session could not commit its completed cycle"
   fi
   trap - EXIT INT TERM
@@ -4475,7 +4565,8 @@ recover_deterministic_session_once() {
           advance_deterministic_session_cycle \
             "$session_state" "$session_id" "$cycle_index" "$operation_id" \
             "$retained_outcome" "$(cat "$work/verified/session-max-cycles")" \
-            "$(cat "$work/verified/mandate-max-effects")" >/dev/null ||
+            "$(cat "$work/verified/mandate-max-effects")" \
+            "$(cat "$work/verified/session-entry-budget-policy")" >/dev/null ||
             die "deterministic recovery could not commit retained cycle"
         fi
         echo "PASS trading-runner-artifact: deterministic recovery committed retained result operation_id=$operation_id outcome=$retained_outcome effect_repeated=false"
@@ -4553,7 +4644,8 @@ recover_deterministic_session_once() {
         advance_deterministic_session_cycle \
           "$session_state" "$session_id" "$cycle_index" "$operation_id" \
           "$outcome" "$(cat "$work/verified/session-max-cycles")" \
-          "$(cat "$work/verified/mandate-max-effects")" >/dev/null ||
+          "$(cat "$work/verified/mandate-max-effects")" \
+          "$(cat "$work/verified/session-entry-budget-policy")" >/dev/null ||
           die "deterministic recovery could not commit its cycle"
       fi
       ;;
@@ -5265,6 +5357,7 @@ PY
       printf '%s' "$session_id" > "$3/operation-id"
       printf '%064d' 0 > "$3/capsule-root"
       printf '4' > "$3/session-max-cycles"
+      printf 'stop' > "$3/session-entry-budget-policy"
       printf '1' > "$3/mandate-max-effects"
       printf '60' > "$3/session-interval-seconds"
       printf '2000-01-01T00:00:00.000Z' > "$3/session-starts-at"
@@ -5339,6 +5432,47 @@ PY
     die "self-test accepted mutated deterministic session state"
   fi
   local future_session_state="$root/future-deterministic-session.v1.json"
+  local maintenance_case
+  for maintenance_case in completed expired unresolved; do
+    local managed_state="$root/budget-$maintenance_case.json"
+    prepare_deterministic_session_cycle "$managed_state" "$session_id" 4 1 60 \
+      "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate manage_existing >/dev/null
+    [ "$(advance_deterministic_session_cycle "$managed_state" "$session_id" \
+      0 "$session_cycle_0" "effect:succeeded:test=false" 4 1 manage_existing)" = "active:1:1" ] ||
+      die "self-test stopped signed maintenance at entry budget"
+    [ "$(prepare_deterministic_session_cycle "$managed_state" "$session_id" 4 1 60 \
+      "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" cycle manage_existing)" = "ready:1:1" ] ||
+      die "self-test lost maintenance across restart"
+    if advance_deterministic_session_cycle "$managed_state" "$session_id" \
+      1 "$session_cycle_1" "effect:succeeded:test=false" 4 1 manage_existing >/dev/null 2>&1; then
+      die "self-test exceeded placement budget during maintenance"
+    fi
+    if [ "$maintenance_case" = expired ]; then
+      [ "$(prepare_deterministic_session_cycle "$managed_state" "$session_id" 4 1 60 \
+        "2000-01-01T00:00:00.000Z" "2000-01-02T00:00:00.000Z" cycle manage_existing)" = "terminal:stopped:1:1" ] ||
+        die "self-test extended maintenance past expiry"
+    elif [ "$maintenance_case" = unresolved ]; then
+      [ "$(advance_deterministic_session_cycle "$managed_state" "$session_id" \
+        1 "$session_cycle_1" "maintenance:unresolved:cancel" 4 1 manage_existing)" = "stopped:2:1" ] ||
+        die "self-test continued uncertain cancellation"
+    else
+      [ "$(advance_deterministic_session_cycle "$managed_state" "$session_id" \
+        1 "$session_cycle_1" "maintenance:succeeded:cancel" 4 1 manage_existing)" = "active:2:1" ] ||
+        die "self-test charged cancellation as an entry"
+      advance_deterministic_session_cycle "$managed_state" "$session_id" 2 \
+        "$(derive_deterministic_session_cycle_operation_id "$session_id" 2)" \
+        "blocked:trading_mandate_effect_budget_exhausted" 4 1 manage_existing >/dev/null
+      [ "$(advance_deterministic_session_cycle "$managed_state" "$session_id" 3 \
+        "$(derive_deterministic_session_cycle_operation_id "$session_id" 3)" \
+        "blocked:trading_mandate_effect_budget_exhausted" 4 1 manage_existing)" = "completed:4:1" ] ||
+        die "self-test extended maintenance past cycle limit"
+    fi
+    case "$(prepare_deterministic_session_cycle "$managed_state" "$session_id" 4 1 60 \
+      "2000-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" activate manage_existing)" in
+      terminal:*) ;;
+      *) die "self-test resurrected ended maintenance" ;;
+    esac
+  done
   [ "$(prepare_deterministic_session_cycle \
     "$future_session_state" "$(printf 'future-session' | sha256_stdin)" \
     2 1 300 "2998-01-01T00:00:00.000Z" "2999-01-01T00:00:00.000Z" \
@@ -6099,6 +6233,43 @@ PY
     die "self-test lost deterministic session operation kind"
   [ "$(cat "$mandate_test/session-verified/session-max-cycles")" = 12 ] ||
     die "self-test lost deterministic session cycle bound"
+  [ "$(cat "$mandate_test/session-verified/session-entry-budget-policy")" = stop ] ||
+    die "self-test expanded old signed session authority"
+  python3 - "$mandate_test" <<'PY'
+import hashlib
+import json
+import pathlib
+import subprocess
+import sys
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "session-metadata.json").read_text())
+semantic = metadata["semantic"]
+semantic["session_policy"]["entry_budget_exhaustion"] = "manage_existing"
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-mandate-admission:v6\n" +
+    json.dumps(semantic, separators=(",", ":")).encode()
+).hexdigest()
+(root / "maintenance-digest.bin").write_bytes(bytes.fromhex(commitment))
+subprocess.run(["openssl", "pkeyutl", "-sign", "-inkey", str(root / "capsule.pem"),
+               "-rawin", "-in", str(root / "maintenance-digest.bin"),
+               "-out", str(root / "maintenance-signature.bin")], check=True)
+artifact = json.loads((root / "session-admission.json").read_text())
+artifact["session_policy"] = semantic["session_policy"]
+artifact["operation_id"] = artifact["commitment_hash_hex"] = commitment
+artifact["signature_hex"] = (root / "maintenance-signature.bin").read_bytes().hex()
+(root / "maintenance-admission.json").write_text(json.dumps(artifact, separators=(",", ":")))
+del artifact["session_policy"]["entry_budget_exhaustion"]
+(root / "maintenance-mutated.json").write_text(json.dumps(artifact, separators=(",", ":")))
+PY
+  mkdir "$mandate_test/maintenance-verified" "$mandate_test/maintenance-mutated"
+  verify_remote_mandate_artifact "$mandate_test/maintenance-admission.json" \
+    "$expected_runner" "$mandate_test/maintenance-verified"
+  [ "$(cat "$mandate_test/maintenance-verified/session-entry-budget-policy")" = manage_existing ] ||
+    die "self-test lost signed maintenance authority"
+  if (verify_remote_mandate_artifact "$mandate_test/maintenance-mutated.json" \
+    "$expected_runner" "$mandate_test/maintenance-mutated") >/dev/null 2>&1; then
+    die "self-test accepted unsigned maintenance policy mutation"
+  fi
   local scope_mutation
   for scope_mutation in removed widened reordered; do
     python3 - "$mandate_test" "$scope_mutation" <<'PY'

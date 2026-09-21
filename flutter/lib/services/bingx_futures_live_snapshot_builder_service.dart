@@ -1,6 +1,7 @@
 import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
 import 'bingx_futures_public_market_data_port.dart';
+import 'bingx_futures_live_decision_service.dart';
 
 DateTime _systemClockUtc() => DateTime.now().toUtc();
 
@@ -168,12 +169,12 @@ class BingxFuturesLiveSnapshotBuilderService {
     try {
       final observationTime = _clockUtc().toUtc();
       final allCandles = <BingxFuturesCandle>[
-        ..._mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
-        ..._mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
-        ..._mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
-        ..._mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
-        ..._mapCandles('1d', k1d.klines, observedAtUtc: observationTime),
-        ..._mapCandles('1w', k1w.klines, observedAtUtc: observationTime),
+        ...mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
+        ...mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
+        ...mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
+        ...mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
+        ...mapCandles('1d', k1d.klines, observedAtUtc: observationTime),
+        ...mapCandles('1w', k1w.klines, observedAtUtc: observationTime),
       ];
       final tradeRows = _mapTrades(trades.trades);
       final openInterestRows = _buildOpenInterestRows(
@@ -206,25 +207,49 @@ class BingxFuturesLiveSnapshotBuilderService {
       final orderBookLevels = _mapOrderBook(depth);
 
       final instrument = _buildInstrumentMeta(normalizedSymbol);
+      final snapshotInput = BingxFuturesMarketSnapshotInput(
+        instrument: instrument,
+        prices: BingxFuturesPriceSnapshot(
+          lastTradePriceDecimal: price.priceDecimal!,
+          markPriceDecimal: premium.markPriceDecimal ?? price.priceDecimal!,
+          indexPriceDecimal: premium.indexPriceDecimal ?? price.priceDecimal!,
+        ),
+        candles: allCandles,
+        trades: tradeRows,
+        openInterest: openInterestRows,
+        funding: funding,
+        liquidityLevels: liquidity,
+        sessionVolumes: sessions,
+        orderBookTopLevels: orderBookLevels,
+      );
+      Map<String, dynamic>? parent;
+      try {
+        parent =
+            const BingxFuturesLiveDecisionService()
+                .decidePublicMarket(snapshotInput: snapshotInput)
+                .parentZone;
+      } on FormatException {
+        // Preserve the original snapshot for the decision owner's diagnostics.
+        // An invalid snapshot must never gain execution authority by hydration.
+      }
+      if (parent != null) {
+        final history = await loadMicroHistory(
+          exchange: exchange,
+          symbol: normalizedSymbol,
+          fromUtc: DateTime.parse(
+            parent['confirmed_at_utc'] as String,
+          ).subtract(const Duration(minutes: 75)),
+          observedAtUtc: observationTime,
+          initial: k5m.klines,
+        );
+        allCandles.removeWhere((c) => c.timeframe == '5m');
+        allCandles.addAll(history);
+      }
       return BingxFuturesLiveSnapshotBuildResult(
         isSuccess: true,
         errorCode: '0',
         errorMessage: 'ok',
-        snapshotInput: BingxFuturesMarketSnapshotInput(
-          instrument: instrument,
-          prices: BingxFuturesPriceSnapshot(
-            lastTradePriceDecimal: price.priceDecimal!,
-            markPriceDecimal: premium.markPriceDecimal ?? price.priceDecimal!,
-            indexPriceDecimal: premium.indexPriceDecimal ?? price.priceDecimal!,
-          ),
-          candles: allCandles,
-          trades: tradeRows,
-          openInterest: openInterestRows,
-          funding: funding,
-          liquidityLevels: liquidity,
-          sessionVolumes: sessions,
-          orderBookTopLevels: orderBookLevels,
-        ),
+        snapshotInput: snapshotInput,
         symbol: normalizedSymbol,
       );
     } on FormatException catch (error) {
@@ -234,6 +259,97 @@ class BingxFuturesLiveSnapshotBuilderService {
         message: error.message,
       );
     }
+  }
+
+  /// One bounded history reader for new entries and original-order revalidation.
+  /// Coverage failure is not evidence that a zone was consumed.
+  Future<List<BingxFuturesCandle>> loadMicroHistory({
+    required BingxFuturesPublicMarketDataPort exchange,
+    required String symbol,
+    required DateTime fromUtc,
+    required DateTime observedAtUtc,
+    List<BingxFuturesPublicKline>? initial,
+  }) async {
+    const step = 300000;
+    final end = observedAtUtc.toUtc().millisecondsSinceEpoch ~/ step * step;
+    final start = fromUtc.toUtc().millisecondsSinceEpoch ~/ step * step - step;
+    if (start <= 0 ||
+        start >= end ||
+        end - start > const Duration(days: 84).inMilliseconds) {
+      throw const FormatException('micro_history_window_unavailable');
+    }
+    final rows = <int, BingxFuturesPublicKline>{};
+    // BingX rounds a non-aligned endTime forward to the next candle.
+    var cursor = end - step;
+    var seed = initial;
+    for (var page = 0; page < 26; page++) {
+      List<BingxFuturesPublicKline> bars;
+      if (seed != null) {
+        bars = seed;
+        seed = null;
+      } else {
+        final result = await exchange.getPublicKlines(
+          symbol: symbol,
+          interval: '5m',
+          limit: 1000,
+          endTimeMs: cursor,
+        );
+        if (!result.isSuccess ||
+            result.symbol != symbol ||
+            result.interval != '5m' ||
+            result.klines.length > 1000) {
+          throw const FormatException('micro_history_read_unavailable');
+        }
+        bars = result.klines;
+        if (bars.any((bar) => bar.openTimeMs > cursor)) {
+          throw const FormatException('micro_history_cursor_ignored');
+        }
+      }
+      final closed = bars.where((bar) => bar.openTimeMs + step <= end).toList();
+      if (closed.isEmpty) {
+        throw const FormatException('micro_history_read_unavailable');
+      }
+      var earliest = cursor + 1;
+      for (final bar in closed) {
+        final at = bar.openTimeMs;
+        final open = num.tryParse(bar.openDecimal);
+        final high = num.tryParse(bar.highDecimal);
+        final low = num.tryParse(bar.lowDecimal);
+        final close = num.tryParse(bar.closeDecimal);
+        if ([
+              open,
+              high,
+              low,
+              close,
+            ].any((v) => v == null || !v.isFinite || v <= 0) ||
+            high! < low! ||
+            open! < low ||
+            open > high ||
+            close! < low ||
+            close > high) {
+          throw const FormatException('micro_history_invalid_ohlc');
+        }
+        if (at % step != 0 || rows.containsKey(at)) {
+          throw const FormatException('micro_history_duplicate_or_unaligned');
+        }
+        rows[at] = bar;
+        if (at < earliest) earliest = at;
+      }
+      if (earliest > cursor) {
+        throw const FormatException('micro_history_no_progress');
+      }
+      if (earliest <= start) {
+        final covered = <BingxFuturesPublicKline>[];
+        for (var at = start; at < end; at += step) {
+          final bar = rows[at];
+          if (bar == null) throw const FormatException('micro_history_gap');
+          covered.add(bar);
+        }
+        return mapCandles('5m', covered, observedAtUtc: observedAtUtc);
+      }
+      cursor = earliest - step;
+    }
+    throw const FormatException('micro_history_page_budget_exhausted');
   }
 
   BingxFuturesInstrumentMeta _buildInstrumentMeta(String symbol) {
@@ -266,7 +382,7 @@ class BingxFuturesLiveSnapshotBuilderService {
     );
   }
 
-  List<BingxFuturesCandle> _mapCandles(
+  List<BingxFuturesCandle> mapCandles(
     String timeframe,
     List<BingxFuturesPublicKline> input, {
     DateTime? observedAtUtc,
@@ -714,6 +830,142 @@ class BingxFuturesLiveSnapshotBuilderService {
           ),
         )
         .toList(growable: false);
+  }
+
+  static BingxFuturesMarketSnapshotInput buildSweepReclaimReference({
+    required bool confirmed,
+  }) {
+    final start = DateTime.utc(2026, 8, 22, 6, 40);
+    BingxFuturesCandle candle(
+      String timeframe,
+      DateTime closeAt,
+      int minutes, [
+      num open = 100,
+      num high = 102,
+      num low = 98,
+      num close = 100,
+    ]) => BingxFuturesCandle(
+      timeframe: timeframe,
+      openTimeUtc:
+          closeAt.subtract(Duration(minutes: minutes)).toIso8601String(),
+      closeTimeUtc: closeAt.toIso8601String(),
+      openDecimal: '$open',
+      highDecimal: '$high',
+      lowDecimal: '$low',
+      closeDecimal: '$close',
+      volumeBaseDecimal: '100',
+      volumeQuoteDecimal: '10000',
+      isClosed: true,
+    );
+    final observedAt = DateTime.utc(2026, 8, 22, 12, confirmed ? 5 : 0);
+    return BingxFuturesMarketSnapshotInput(
+      instrument: const BingxFuturesInstrumentMeta(
+        symbol: 'BTC-USDT',
+        baseAsset: 'BTC',
+        quoteAsset: 'USDT',
+        tickSizeDecimal: '0.01',
+        qtyStepDecimal: '0.001',
+        minQtyDecimal: '0.001',
+        maxLeverageDecimal: '10',
+      ),
+      prices: const BingxFuturesPriceSnapshot(
+        lastTradePriceDecimal: '100',
+        markPriceDecimal: '100',
+        indexPriceDecimal: '100',
+      ),
+      candles: [
+        for (var index = 0; index < (confirmed ? 65 : 64); index++)
+          candle(
+            '5m',
+            start.add(Duration(minutes: (index + 1) * 5)),
+            5,
+            index == 64 ? 91.5 : 101,
+            index == 64 ? 94 : 102,
+            index == 64 ? 91 : 100,
+            index == 64 ? 93.5 : 101,
+          ),
+        for (var index = 0; index < 220; index++)
+          candle(
+            '15m',
+            start.subtract(Duration(minutes: (220 - index) * 15)),
+            15,
+          ),
+        for (var index = 0; index < 24; index++)
+          candle(
+            '1h',
+            start.subtract(Duration(hours: 24 - index)),
+            60,
+            100,
+            104,
+            96,
+          ),
+        for (var index = 0; index < 34; index++)
+          candle(
+            '4h',
+            DateTime.utc(
+              2026,
+              8,
+              22,
+              12,
+            ).subtract(Duration(hours: (33 - index) * 4)),
+            240,
+            index == 32 ? 94 : 101,
+            <int>{8, 16, 24}.contains(index) ? 108 : 102,
+            index == 32
+                ? 90
+                : <int>{8, 16, 24}.contains(index)
+                ? 98
+                : 100,
+            index == 32 ? 100 : 101,
+          ),
+        candle('1m', start, 1),
+        candle('1d', DateTime.utc(2026, 8, 22), 1440, 100, 112, 98, 100),
+        candle('1w', DateTime.utc(2026, 8, 17), 10080, 100, 112, 98, 100),
+      ],
+      trades: [
+        BingxFuturesTrade(
+          tradeId: 'observed-buy',
+          timestampUtc: observedAt.toIso8601String(),
+          side: 'buy',
+          priceDecimal: '100',
+          quantityDecimal: '1',
+        ),
+      ],
+      openInterest: [
+        BingxFuturesOpenInterestPoint(
+          timestampUtc: observedAt.toIso8601String(),
+          openInterestDecimal: '1000',
+        ),
+      ],
+      funding: BingxFuturesFundingSnapshot(
+        timestampUtc: observedAt.toIso8601String(),
+        fundingRateDecimal: '0',
+        nextFundingAtUtc: DateTime.utc(2026, 8, 22, 16).toIso8601String(),
+      ),
+      liquidityLevels: const [
+        BingxFuturesLiquidityLevel(
+          kind: 'external',
+          side: 'buyside',
+          timeframe: '4h',
+          priceDecimal: '112',
+        ),
+        BingxFuturesLiquidityLevel(
+          kind: 'internal',
+          side: 'sellside',
+          timeframe: '5m',
+          priceDecimal: '98',
+        ),
+      ],
+      sessionVolumes: [
+        for (final session in <String>['asia', 'london', 'newyork'])
+          BingxFuturesSessionVolumePoint(
+            session: session,
+            bucketStartUtc: DateTime.utc(2026, 8, 22).toIso8601String(),
+            volumeDecimal: '100',
+            deltaDecimal: '10',
+          ),
+      ],
+    );
   }
 
   num _openInterestDeltaPct(List<BingxFuturesOpenInterestPoint> values) {

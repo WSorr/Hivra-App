@@ -9,6 +9,7 @@ abstract interface class BingxFuturesPublicMarketDataPort {
     required String symbol,
     required String interval,
     int limit = 120,
+    int? endTimeMs,
   });
 
   Future<BingxFuturesPublicOrderBookResult> getPublicDepth({

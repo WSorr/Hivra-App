@@ -298,14 +298,13 @@ void main() {
       expect(notice, contains('No active drone orders · 1 needs review'));
       expect(notice, contains('not recreate'));
       expect(notice, isNot(contains('live-client')));
-      expect(details, contains('may mean filled'));
-      expect(details, contains('A fill alone does not verify a position or PnL'));
+      expect(details, contains('Order outcomes needing review:'));
       expect(details, contains('DOGE-USDT · live-client'));
       expect(
         details,
         contains('BingX reports FAILED; final outcome unverified'),
       );
-      expect(details, contains('Test records are retained separately'));
+      expect(details, contains('Test records are separate from live orders'));
       expect(details, contains('ZIL-USDT position closed · net -0.83 USDT'));
       expect(details, isNot(contains('test-client')));
       expect(tradingReconciliationNotice(result, 'capsule-b'), isNull);
@@ -372,18 +371,18 @@ void main() {
 
     final notice = tradingReconciliationNotice(result, 'capsule-a')!;
     final details = tradingReconciliationDetails(result, 'capsule-a')!;
-    expect(notice, contains('2 need review'));
+    expect(notice, contains('1 needs review'));
     expect(notice, contains('1 filled order'));
-    expect(notice, isNot(contains('No unresolved records')));
-    expect(
-      details,
-      contains('filled-no-position · order filled; position/PnL unverified'),
-    );
+    expect(notice, isNot(contains('other account')));
+    expect(notice, isNot(contains('other-account')));
+    expect(details, contains('Filled orders needing position review:'));
+    expect(details, contains('filled-no-position'));
     expect(details, contains('did not provide a usable position ID'));
     expect(details, isNot(contains('ZIL-USDT position closed')));
+    expect(details, isNot(contains('other-account')));
   });
 
-  test('account changes stay concise until reconciliation details expand', () {
+  test('a previous API key does not populate current order review', () {
     const state = BingxFuturesOrderTrackingState(
       trackedSymbol: null,
       trackedOrderId: null,
@@ -420,12 +419,13 @@ void main() {
     );
 
     final notice = tradingReconciliationNotice(result, 'capsule-a')!;
-    final details = tradingReconciliationDetails(result, 'capsule-a')!;
-    expect(notice, contains('earlier records belong to another BingX account'));
+    final details = tradingReconciliationDetails(result, 'capsule-a');
+    expect(notice, contains('Nothing to review with this key'));
     expect(notice, isNot(contains('2091062608844660736')));
     expect(notice, isNot(contains('account_binding_mismatch')));
-    expect(details, contains('2091062608844660736'));
-    expect(details, contains('different BingX account'));
+    expect(notice, isNot(contains('another account')));
+    expect(details, isNull);
+    expect(tradingReconciliationNotice(result, 'capsule-b'), isNull);
   });
 
   test('paused process does not imply disabled startup', () {
@@ -525,6 +525,13 @@ void main() {
     expect(managed, contains('this Runner already has a pending order'));
     expect(external, contains('not owned by this session'));
     expect(unknown, contains('could not be verified'));
+    final unavailable = tradingRemoteRunnerStatusLabel(
+      '${prefix}blocked:managed_order_revalidation_unavailable',
+      authorizedMaxEffects: 2,
+    );
+    expect(unavailable, contains('Pending order retained'));
+    expect(unavailable, contains('could not confirm its zone'));
+    expect(unavailable, isNot(contains('Provider receipt confirmed')));
   });
 
   test('operator-owned order conflict explains automatic Runner pause', () {
@@ -721,7 +728,7 @@ void main() {
     final summary = tradingRemoteRunnerSessionDetailsLabel(verifiedSession);
     expect(summary, contains('SOL-USDT · LIVE'));
     expect(summary, contains('Limit 17 USDT · Up to 1 exchange request'));
-    expect(summary, contains('SL 2% · Minimum R:R 2.5'));
+    expect(summary, contains('Loss budget 2% · Minimum R:R 2.5'));
     expect(summary, contains('Checks every 5 min · Up to 24 checks'));
     expect(summary, contains('Capsule aaaaaaaa · Account bbbbbbbb'));
 
@@ -840,7 +847,7 @@ void main() {
       ),
       allOf(
         contains('Exchange requests used: 1 of 1 · Remaining: 0'),
-        contains('exchange-request limit was reached'),
+        contains('Session ended with no entry attempts remaining'),
         contains('does not automatically adopt'),
         contains('provider receipt does not prove the order is still open'),
         contains('Check Open Orders'),
@@ -849,8 +856,16 @@ void main() {
   });
 
   test('order budget copy explains the finite Runner session', () {
-    expect(tradingOrderBudgetNotice(1), contains('stops after its first'));
-    expect(tradingOrderBudgetNotice(4), contains('stops after 4'));
+    expect(
+      tradingOrderBudgetNotice(1),
+      contains('At most 1 new entry attempt'),
+    );
+    expect(
+      tradingOrderBudgetNotice(4),
+      contains('At most 4 new entry attempts'),
+    );
+    expect(tradingOrderBudgetNotice(1), contains('continue checks'));
+    expect(tradingOrderBudgetNotice(1), contains('original stop policy'));
   });
 
   test('runner summary distinguishes configuration and live status', () {

@@ -532,10 +532,13 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
               'First check: ${startsAtUtc.toIso8601String()}\n'
               'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
               'Maximum checks: $maxCycles\n'
-              'Maximum exchange effects: ${activeMandate.maxEffects}\n'
+              'Maximum entry attempts: ${activeMandate.maxEffects}\n'
+              'After that limit: continue checks and permitted cancellation '
+              'of this session\'s pending orders, without new entries.\n'
               'Exchange leverage: long ${leverage.longLeverage}x, '
               'short ${leverage.shortLeverage}x\n'
-              'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}%\n'
+              'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional\n'
+              'Stop: entry structure / ATR; wider stops reduce order size.\n'
               'Authorized reads: balance, positions, realized PnL, and '
               '${activeMandate.symbol} leverage and margin mode.\n'
               'Expires: ${activeMandate.expiresAtUtc}\n\n'
@@ -575,6 +578,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
           startsAtUtc: startsAtUtc,
           intervalSeconds: intervalSeconds,
           maxCycles: maxCycles,
+          manageExistingAfterEntryBudget: true,
           signCommitment: _module.signRootCommitment,
         );
     if (admission == null ||
@@ -697,7 +701,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                           '${mandate.testOrder ? "TEST" : "LIVE"}\n'
                           'Max order: '
                           '${mandate.maxOrderNotionalQuoteDecimal} USDT · '
-                          'Stop loss: ${_stopLossPercent.toStringAsFixed(1)}% · '
+                          'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional · '
                           'Minimum RR: '
                           '${_takeProfitRiskReward.toStringAsFixed(1)}',
                         ),
@@ -1169,6 +1173,10 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
     'blocked:managed_order_active' =>
       'No new order: this Runner already has a pending order for the VPS '
           'market. It will not create a duplicate.',
+    'blocked:managed_order_revalidation_unavailable' =>
+      'Pending order retained: this check could not confirm its zone. '
+          'A blocked new entry does not authorize cancellation. '
+          'Review the pending order on the exchange.',
     'blocked:external_order_active' =>
       fields['active'] == 'inactive'
           ? 'Runner paused: the exchange has an order for this VPS market '
@@ -1209,9 +1217,12 @@ String tradingRemoteRunnerStatusLabel(String raw, {int? authorizedMaxEffects}) {
           'Remaining: $remainingEffects',
     'Last retained result: $result',
     if (terminal && remainingEffects == 0)
-      'Session ended because its exchange-request limit was reached. '
+      'Session ended with no entry attempts remaining. '
           'Check any open order before authorizing a new session; new authority '
           'does not automatically adopt an earlier session\'s order.',
+    if (!terminal && remainingEffects == 0)
+      'Entry budget exhausted: no new orders. Only checks and authorized '
+          'pending-order maintenance remain within this session.',
     if (terminal && outcome == 'effect:succeeded:test=false')
       'The provider receipt does not prove the order is still open. '
           'Check Open Orders to read its current status; this stopped '
@@ -1301,7 +1312,7 @@ String tradingRemoteRunnerSessionDetailsLabel(
     '${session.mandate.symbol} · ${session.mandate.testOrder ? "TEST" : "LIVE"}',
     'Limit ${session.mandate.maxOrderNotionalQuoteDecimal} USDT · '
         'Up to ${session.mandate.maxEffects} exchange request${session.mandate.maxEffects == 1 ? "" : "s"}',
-    'SL ${number(strategy['stop_loss_percent'])}% · '
+    '${strategy['strategy_version'] == null ? 'SL' : 'Loss budget'} ${number(strategy['stop_loss_percent'])}% · '
         'Minimum R:R ${number(strategy['minimum_risk_reward'])}',
     'Checks every ${intervalSeconds ~/ 60} min · '
         'Up to ${policy['max_cycles']} checks',

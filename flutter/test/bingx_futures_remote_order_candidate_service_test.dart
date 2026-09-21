@@ -14,6 +14,44 @@ import 'package:hivra_app/services/bingx_futures_remote_order_candidate_service.
 
 void main() {
   group('BingxFuturesRemoteOrderCandidateService', () {
+    test(
+      'coarse price grid cannot move entry onto the zone boundary',
+      () async {
+        final fixture = await _fixture();
+        final result = await _compose(
+          fixture,
+          rules: const BingxFuturesContractRules(
+            symbol: 'BTC-USDT',
+            minimumQuantityDecimal: '0.001',
+            minimumNotionalQuoteDecimal: '2',
+            quantityPrecision: 3,
+            pricePrecision: 0,
+          ),
+        );
+        expect(result.status, BingxFuturesRemoteOrderCandidateStatus.blocked);
+        expect(result.reasonCode, 'structural_stop_unavailable');
+        expect(result.canonicalJson, isNull);
+      },
+    );
+    test(
+      'structural stop reduces remote size without raising signed loss budget',
+      () async {
+        final fixture = await _fixture();
+        final result = await _compose(fixture, stopLossPercent: 0.5);
+        expect(result.status, BingxFuturesRemoteOrderCandidateStatus.ready);
+        final candidate =
+            jsonDecode(result.canonicalJson!) as Map<String, dynamic>;
+        final entry = num.parse(candidate['limit_price_decimal'] as String);
+        final stop = num.parse(candidate['stop_loss_decimal'] as String);
+        final quantity = num.parse(candidate['quantity_decimal'] as String);
+        expect((entry - stop).abs(), 1);
+        expect(quantity, lessThan(0.09));
+        expect(
+          quantity * (entry - stop).abs(),
+          lessThanOrEqualTo(10 * 0.5 / 100),
+        );
+      },
+    );
     test('composes one bounded candidate from exact verified inputs', () async {
       final fixture = await _fixture();
       final result = await fixture.service.compose(
@@ -93,6 +131,7 @@ void main() {
             includeOpenOrders: false,
           );
       expect(canonicalPolicy, <String, dynamic>{
+        'strategy_version': '4h-sweep-reclaim-5m-v2',
         'runner_build_id': 'systemd-public-shadow-v1',
         'plugin_id': 'hivra.bingx-futures-trading',
         'plugin_version': '0.2.4',
@@ -170,9 +209,84 @@ void main() {
       );
     });
 
-    test('binds a bounded session and derives exact cycle identities', () async {
-      final fixture = await _fixture();
-      final admission =
+    for (final maintenance in [false, true]) {
+      test('binds bounded session with maintenance=$maintenance', () async {
+        final fixture = await _fixture();
+        final admission =
+            BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+              mandate: fixture.mandate,
+              runnerKeyId: '7' * 64,
+              strategyPolicy:
+                  BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                    stopLossPercent: 5,
+                    minimumRiskReward: 2,
+                    includeOpenOrders: true,
+                  ),
+              startsAtUtc: fixture.now,
+              intervalSeconds: 300,
+              maxCycles: 12,
+              manageExistingAfterEntryBudget: maintenance,
+              signCommitment: (_) => '8' * 128,
+            );
+
+        expect(admission, isNotNull);
+        expect(admission!.isDeterministicSession, isTrue);
+        expect(admission.isDeterministicOrder, isFalse);
+        expect(admission.authorizedUses, 12);
+        expect(admission.deterministicCycleOperationId(0), hasLength(64));
+        expect(
+          admission.deterministicCycleOperationId(1),
+          isNot(admission.deterministicCycleOperationId(0)),
+        );
+        expect(admission.deterministicCycleOperationId(12), isNull);
+        final reparsed = BingxFuturesRemoteMandateAdmission.parseAndVerify(
+          untrustedWireBytes: utf8.encode(admission.canonicalJson),
+          verifySignature:
+              ({
+                required messageHashHex,
+                required participantIdHex,
+                required signatureHex,
+              }) => true,
+        );
+        expect(reparsed?.canonicalJson, admission.canonicalJson);
+        expect(reparsed?.managesExistingAfterEntryBudget, maintenance);
+        final changedAuthority = jsonDecode(admission.canonicalJson);
+        if (maintenance) {
+          changedAuthority['session_policy'].remove('entry_budget_exhaustion');
+        } else {
+          changedAuthority['session_policy']['entry_budget_exhaustion'] =
+              'manage_existing';
+        }
+        expect(
+          BingxFuturesRemoteMandateAdmission.parseAndVerify(
+            untrustedWireBytes: utf8.encode(jsonEncode(changedAuthority)),
+            verifySignature:
+                ({
+                  required messageHashHex,
+                  required participantIdHex,
+                  required signatureHex,
+                }) => true,
+          ),
+          isNull,
+          reason: 'Maintenance cannot be granted or removed without resigning',
+        );
+
+        final mutated = jsonDecode(admission.canonicalJson);
+        mutated['session_policy']['max_cycles'] = 13;
+        mutated['max_uses'] = 13;
+        expect(
+          BingxFuturesRemoteMandateAdmission.parseAndVerify(
+            untrustedWireBytes: utf8.encode(jsonEncode(mutated)),
+            verifySignature:
+                ({
+                  required messageHashHex,
+                  required participantIdHex,
+                  required signatureHex,
+                }) => true,
+          ),
+          isNull,
+        );
+        expect(
           BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
             mandate: fixture.mandate,
             runnerKeyId: '7' * 64,
@@ -183,66 +297,14 @@ void main() {
                   includeOpenOrders: true,
                 ),
             startsAtUtc: fixture.now,
-            intervalSeconds: 300,
+            intervalSeconds: 30,
             maxCycles: 12,
             signCommitment: (_) => '8' * 128,
-          );
-
-      expect(admission, isNotNull);
-      expect(admission!.isDeterministicSession, isTrue);
-      expect(admission.isDeterministicOrder, isFalse);
-      expect(admission.authorizedUses, 12);
-      expect(admission.deterministicCycleOperationId(0), hasLength(64));
-      expect(
-        admission.deterministicCycleOperationId(1),
-        isNot(admission.deterministicCycleOperationId(0)),
-      );
-      expect(admission.deterministicCycleOperationId(12), isNull);
-      final reparsed = BingxFuturesRemoteMandateAdmission.parseAndVerify(
-        untrustedWireBytes: utf8.encode(admission.canonicalJson),
-        verifySignature:
-            ({
-              required messageHashHex,
-              required participantIdHex,
-              required signatureHex,
-            }) => true,
-      );
-      expect(reparsed?.canonicalJson, admission.canonicalJson);
-
-      final mutated = jsonDecode(admission.canonicalJson);
-      mutated['session_policy']['max_cycles'] = 13;
-      mutated['max_uses'] = 13;
-      expect(
-        BingxFuturesRemoteMandateAdmission.parseAndVerify(
-          untrustedWireBytes: utf8.encode(jsonEncode(mutated)),
-          verifySignature:
-              ({
-                required messageHashHex,
-                required participantIdHex,
-                required signatureHex,
-              }) => true,
-        ),
-        isNull,
-      );
-      expect(
-        BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
-          mandate: fixture.mandate,
-          runnerKeyId: '7' * 64,
-          strategyPolicy:
-              BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
-                stopLossPercent: 5,
-                minimumRiskReward: 2,
-                includeOpenOrders: true,
-              ),
-          startsAtUtc: fixture.now,
-          intervalSeconds: 30,
-          maxCycles: 12,
-          signCommitment: (_) => '8' * 128,
-        ),
-        isNull,
-      );
-    });
-
+          ),
+          isNull,
+        );
+      });
+    }
     test('session revocation binds exact session runner and Capsule', () async {
       final fixture = await _fixture();
       final session =
@@ -398,7 +460,7 @@ void main() {
     });
 
     test('rejects a risk decision outside the mandate', () async {
-      final fixture = await _fixture(maxRiskPerTradePercent: 0.01);
+      final fixture = await _fixture(maxRiskPerTradePercent: 0.005);
       final result = await _compose(fixture);
       expect(result.status, BingxFuturesRemoteOrderCandidateStatus.blocked);
       expect(result.reasonCode, 'risk_per_trade_exceeded');
@@ -435,6 +497,8 @@ Future<BingxFuturesRemoteOrderCandidateResult> _compose(
   BingxFuturesExchangeRiskInput accountRisk = _completeRisk,
   DateTime? accountRiskObservedAt,
   DateTime? now,
+  double stopLossPercent = 5,
+  BingxFuturesContractRules rules = _rules,
 }) => fixture.service.compose(
   untrustedMarketEvidenceBytes: fixture.evidence.wireBytes,
   trustedRunnerKey: fixture.publicKey,
@@ -448,9 +512,9 @@ Future<BingxFuturesRemoteOrderCandidateResult> _compose(
   mandate: fixture.mandate,
   accountRisk: accountRisk,
   accountRiskObservedAtUtc: accountRiskObservedAt ?? fixture.now,
-  contractRules: _rules,
+  contractRules: rules,
   nowUtc: now ?? fixture.now,
-  stopLossPercent: 5,
+  stopLossPercent: stopLossPercent,
   minimumRiskReward: 2,
 );
 
@@ -488,9 +552,19 @@ Future<_CandidateFixture> _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': 'micro_sweep_reclaim',
+      'anchor_source': '4h_sweep_reclaim_5m',
       'anchor_executable': true,
-      'anchor_lifecycle': 'fresh',
+      'anchor_lifecycle': 'reclaimed',
+      'atr14_5m_decimal': '1.25',
+      'parent': {
+        'strategy_version': '4h-sweep-reclaim-5m-v2',
+        'timeframe': '4h',
+        'side': 'buy',
+        'low_decimal': '99',
+        'high_decimal': '102',
+        'sweep_at_utc': '2026-08-22T08:00:00Z',
+        'confirmed_at_utc': '2026-08-22T08:00:00Z',
+      },
       'liquidity_event_id': '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:50:00Z',
       'latest_closed_micro_bar_at_utc': '2026-08-22T11:55:00Z',

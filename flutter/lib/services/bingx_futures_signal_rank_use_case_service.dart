@@ -35,14 +35,17 @@ class BingxFuturesSignalRankUseCaseService {
       ),
     );
     final entriesRaw = response.result?['entries'];
-    final entries = entriesRaw is List
-        ? entriesRaw
-            .whereType<Map>()
-            .map((entry) => BingxFuturesSignalRankEntry.fromJson(
-                  Map<String, dynamic>.from(entry),
-                ))
-            .toList(growable: false)
-        : const <BingxFuturesSignalRankEntry>[];
+    final entries =
+        entriesRaw is List
+            ? entriesRaw
+                .whereType<Map>()
+                .map(
+                  (entry) => BingxFuturesSignalRankEntry.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ),
+                )
+                .toList(growable: false)
+            : const <BingxFuturesSignalRankEntry>[];
     return BingxFuturesSignalRankResult(
       response: response,
       entries: List<BingxFuturesSignalRankEntry>.unmodifiable(entries),
@@ -77,6 +80,9 @@ class BingxFuturesSignalRankUseCaseService {
               : deriveBingxFuturesLiquidityTargets(
                 side: decision.side!,
                 entryPrice: (zoneLow + zoneHigh) / 2,
+                zoneLow: zoneLow,
+                zoneHigh: zoneHigh,
+                atr14m5Decimal: decision.atr14m5Decimal,
                 stopLossPercent: stopLossPercent,
                 minimumRiskReward: minimumRiskReward,
                 oppositeLiquidityTargetDecimal:
@@ -91,9 +97,10 @@ class BingxFuturesSignalRankUseCaseService {
     return <String, dynamic>{
       'symbol': item.symbol.trim().toUpperCase(),
       'can_prepare_intent': canPrepareIntent,
-      'decision': decision.decision.name == 'noSignal'
-          ? 'no_signal'
-          : decision.decision.name,
+      'decision':
+          decision.decision.name == 'noSignal'
+              ? 'no_signal'
+              : decision.decision.name,
       'side': decision.side,
       'zone_low_decimal': decision.zoneLowDecimal,
       'zone_high_decimal': decision.zoneHighDecimal,

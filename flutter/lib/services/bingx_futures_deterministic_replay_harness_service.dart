@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 
 import '../models/bingx_futures_market_snapshot_models.dart';
+import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_tvh_rule_models.dart';
 import 'bingx_futures_feature_extractor_service.dart';
 import 'bingx_futures_live_decision_service.dart';
@@ -304,6 +305,29 @@ class BingxFuturesDeterministicReplayHarnessService {
       snapshotInput: snapshotInput,
       policy: _policy,
     );
+    return replayLiveDecision(fixtureId: fixtureId, decision: decision);
+  }
+
+  ({
+    BingxFuturesLiveDecisionResult waiting,
+    BingxFuturesLiveDecisionResult ready,
+  })
+  runSweepReclaimReferenceScenario() {
+    BingxFuturesLiveDecisionResult decide(bool confirmed) =>
+        _liveDecisionService.decidePublicMarket(
+          snapshotInput:
+              BingxFuturesLiveSnapshotBuilderService.buildSweepReclaimReference(
+                confirmed: confirmed,
+              ),
+          policy: _policy,
+        );
+    return (waiting: decide(false), ready: decide(true));
+  }
+
+  BingxFuturesReplayRunResult replayLiveDecision({
+    required String fixtureId,
+    required BingxFuturesLiveDecisionResult decision,
+  }) {
     return BingxFuturesReplayRunResult(
       fixtureId: fixtureId,
       marketSnapshotHashHex: decision.marketSnapshotHashHex,
@@ -337,6 +361,7 @@ class BingxFuturesDeterministicReplayHarnessService {
 
   String publicStrategyPolicyHashHex() {
     final canonical = jsonEncode(<String, dynamic>{
+      'strategy_version': bingxLiquidityStrategyVersion,
       'min_abs_trade_imbalance_ratio': _policy.minAbsTradeImbalanceRatio,
       'max_abs_funding_rate': _policy.maxAbsFundingRate,
     });
@@ -646,6 +671,7 @@ class BingxFuturesDeterministicReplayHarnessService {
   BingxFuturesShadowEvidence parseShadowEvidence(
     List<int> untrustedWireBytes, {
     int maxEncodedBytes = 8192,
+    bool requireExecutableProposal = true,
   }) {
     if (untrustedWireBytes.isEmpty ||
         untrustedWireBytes.length > maxEncodedBytes) {
@@ -702,6 +728,7 @@ class BingxFuturesDeterministicReplayHarnessService {
     if (contractVersion == _shadowEvidenceV2 &&
         (!_isMarketSymbol(evidence.marketSymbol) ||
             !_marketProposalCodec.validate(
+              requireExecutableProposal: requireExecutableProposal,
               status: evidence.marketProposalStatus,
               proposalJson: evidence.marketProposalJson,
               decisionHashHex: evidence.decisionHashHex,
