@@ -85,7 +85,7 @@ void main() {
     );
   });
 
-  test('terminal reconciliation priority requires a retained reference', () {
+  test('only unresolved publication receives reconciliation priority', () {
     final unresolved = _operation(
       state: ExternalEffectState.unresolved,
       withReceipt: false,
@@ -139,6 +139,12 @@ void main() {
       );
       expect(
         MoltbookPublicationService.requiresReconciliation(boundFailure),
+        isFalse,
+      );
+      expect(
+        MoltbookPublicationService.canManuallyReconcileTerminalFailure(
+          boundFailure,
+        ),
         isTrue,
       );
     }
