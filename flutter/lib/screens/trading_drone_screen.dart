@@ -13,10 +13,11 @@ import '../models/bingx_futures_risk_models.dart';
 import '../models/bingx_futures_signal_rank_models.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
-import '../services/trading_drone_module_service.dart';
+import '../services/bingx_futures_deterministic_replay_harness_service.dart';
 import '../services/bingx_futures_trading_cycle_use_case_service.dart';
 import '../services/bingx_futures_mode_orchestrator_service.dart';
 import '../services/bingx_futures_remote_runner_provisioning_service.dart';
+import '../services/trading_drone_module_service.dart';
 import '../utils/bingx_futures_zone_evidence_formatter.dart';
 
 part 'trading_drone_screen_remote_session.dart';
@@ -758,6 +759,9 @@ class TradingDroneScreen extends StatefulWidget {
 }
 
 class _TradingDroneScreenState extends State<TradingDroneScreen> {
+  static final _sweepReclaimReference =
+      const BingxFuturesDeterministicReplayHarnessService()
+          .runSweepReclaimReferenceScenario();
   static const Duration _openOrdersPollInterval = Duration(seconds: 12);
   static const double _zoneNearBps = 15.0;
   static const double _zoneFarBps = 35.0;

@@ -45,6 +45,45 @@ void main() {
       }
     });
 
+    test('reference scenario keeps zones visible before entry is ready', () {
+      final reference =
+          const BingxFuturesDeterministicReplayHarnessService()
+              .runSweepReclaimReferenceScenario();
+
+      expect(reference.waiting.canPrepareIntent, isFalse);
+      expect(
+        reference.ready.canPrepareIntent,
+        isTrue,
+        reason: reference.ready.canonicalJson,
+      );
+      expect(
+        service
+            .replayLiveDecision(
+              fixtureId: 'live:BTC-USDT',
+              decision: reference.waiting,
+            )
+            .marketProposalStatus,
+        'BLOCKED',
+      );
+      expect(
+        service
+            .replayLiveDecision(
+              fixtureId: 'live:BTC-USDT',
+              decision: reference.ready,
+            )
+            .marketProposalStatus,
+        'READY',
+      );
+      expect(
+        reference.waiting.observedLiquidityLevels
+            .map((level) => level.side)
+            .toSet(),
+        containsAll(<String>{'buyside', 'sellside'}),
+      );
+      expect(reference.ready.zoneAnchorSource, '4h_sweep_reclaim_5m');
+      expect(reference.ready.zoneAnchorExecutable, isTrue);
+    });
+
     test('is bit-stable across repeated replay cycles', () {
       final runs = service.runMany(fixtures: fixtures, repeat: 4);
       final byFixture = <String, List<BingxFuturesReplayRunResult>>{};

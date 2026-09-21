@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 
 import '../models/bingx_futures_market_snapshot_models.dart';
+import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_tvh_rule_models.dart';
 import 'bingx_futures_feature_extractor_service.dart';
 import 'bingx_futures_live_decision_service.dart';
@@ -304,6 +305,29 @@ class BingxFuturesDeterministicReplayHarnessService {
       snapshotInput: snapshotInput,
       policy: _policy,
     );
+    return replayLiveDecision(fixtureId: fixtureId, decision: decision);
+  }
+
+  ({
+    BingxFuturesLiveDecisionResult waiting,
+    BingxFuturesLiveDecisionResult ready,
+  })
+  runSweepReclaimReferenceScenario() {
+    BingxFuturesLiveDecisionResult decide(bool confirmed) =>
+        _liveDecisionService.decidePublicMarket(
+          snapshotInput:
+              BingxFuturesLiveSnapshotBuilderService.buildSweepReclaimReference(
+                confirmed: confirmed,
+              ),
+          policy: _policy,
+        );
+    return (waiting: decide(false), ready: decide(true));
+  }
+
+  BingxFuturesReplayRunResult replayLiveDecision({
+    required String fixtureId,
+    required BingxFuturesLiveDecisionResult decision,
+  }) {
     return BingxFuturesReplayRunResult(
       fixtureId: fixtureId,
       marketSnapshotHashHex: decision.marketSnapshotHashHex,

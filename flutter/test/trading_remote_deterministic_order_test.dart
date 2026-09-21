@@ -6,7 +6,6 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
-import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
@@ -209,13 +208,14 @@ void main() {
     'closed-candle reclaim reaches one remote effect and survives recovery',
     () async {
       const strategy = BingxFuturesDeterministicReplayHarnessService();
-      final before = strategy.runPublicLiveMarket(
+      final reference = strategy.runSweepReclaimReferenceScenario();
+      final before = strategy.replayLiveDecision(
         fixtureId: 'live:BTC-USDT',
-        snapshotInput: _reclaimSnapshot(confirmed: false),
+        decision: reference.waiting,
       );
-      final after = strategy.runPublicLiveMarket(
+      final after = strategy.replayLiveDecision(
         fixtureId: 'live:BTC-USDT',
-        snapshotInput: _reclaimSnapshot(confirmed: true),
+        decision: reference.ready,
       );
       expect(
         before.marketProposalStatus,
@@ -457,9 +457,9 @@ void main() {
         final evidence = harness.parseShadowEvidence(
           await File(fixture.options['market-evidence-file']!).readAsBytes(),
         );
-        final blockedRun = harness.runPublicLiveMarket(
+        final blockedRun = harness.replayLiveDecision(
           fixtureId: 'live:BTC-USDT',
-          snapshotInput: _reclaimSnapshot(confirmed: false),
+          decision: harness.runSweepReclaimReferenceScenario().waiting,
         );
         expect(blockedRun.marketProposalStatus, 'BLOCKED');
         final next = await _fixture(
@@ -1312,144 +1312,6 @@ void main() {
         hasLength(1),
       );
     },
-  );
-}
-
-BingxFuturesMarketSnapshotInput _reclaimSnapshot({required bool confirmed}) {
-  final start = DateTime.utc(2026, 8, 22, 6, 40);
-  BingxFuturesCandle candle(
-    String timeframe,
-    DateTime closeAt,
-    int minutes,
-    num open,
-    num high,
-    num low,
-    num close,
-  ) => BingxFuturesCandle(
-    timeframe: timeframe,
-    openTimeUtc: closeAt.subtract(Duration(minutes: minutes)).toIso8601String(),
-    closeTimeUtc: closeAt.toIso8601String(),
-    openDecimal: '$open',
-    highDecimal: '$high',
-    lowDecimal: '$low',
-    closeDecimal: '$close',
-    volumeBaseDecimal: '100',
-    volumeQuoteDecimal: '10000',
-    isClosed: true,
-  );
-  final observedAt = DateTime.utc(2026, 8, 22, 12, confirmed ? 5 : 0);
-  return BingxFuturesMarketSnapshotInput(
-    instrument: const BingxFuturesInstrumentMeta(
-      symbol: 'BTC-USDT',
-      baseAsset: 'BTC',
-      quoteAsset: 'USDT',
-      tickSizeDecimal: '0.01',
-      qtyStepDecimal: '0.001',
-      minQtyDecimal: '0.001',
-      maxLeverageDecimal: '10',
-    ),
-    prices: const BingxFuturesPriceSnapshot(
-      lastTradePriceDecimal: '100',
-      markPriceDecimal: '100',
-      indexPriceDecimal: '100',
-    ),
-    candles: [
-      for (var index = 0; index < (confirmed ? 65 : 64); index++)
-        candle(
-          '5m',
-          start.add(Duration(minutes: (index + 1) * 5)),
-          5,
-          index == 64 ? 91.5 : 101,
-          index == 64 ? 94 : 102,
-          index == 64 ? 91 : 100,
-          index == 64 ? 93.5 : 101,
-        ),
-      for (var index = 0; index < 220; index++)
-        candle(
-          '15m',
-          start.subtract(Duration(minutes: (220 - index) * 15)),
-          15,
-          100,
-          102,
-          98,
-          100,
-        ),
-      for (var index = 0; index < 24; index++)
-        candle(
-          '1h',
-          start.subtract(Duration(hours: 24 - index)),
-          60,
-          100,
-          104,
-          96,
-          100,
-        ),
-      for (var index = 0; index < 34; index++)
-        candle(
-          '4h',
-          DateTime.utc(
-            2026,
-            8,
-            22,
-            12,
-          ).subtract(Duration(hours: (33 - index) * 4)),
-          240,
-          index == 32 ? 94 : 101,
-          index == 27 ? 112 : 102,
-          index == 32
-              ? 90
-              : [8, 16, 24].contains(index)
-              ? 98
-              : 100,
-          index == 32 ? 100 : 101,
-        ),
-      candle('1m', start, 1, 100, 102, 98, 100),
-      candle('1d', DateTime.utc(2026, 8, 22), 1440, 100, 112, 98, 100),
-      candle('1w', DateTime.utc(2026, 8, 17), 10080, 100, 112, 98, 100),
-    ],
-    trades: [
-      BingxFuturesTrade(
-        tradeId: 'observed-buy',
-        timestampUtc: observedAt.toIso8601String(),
-        side: 'buy',
-        priceDecimal: '100',
-        quantityDecimal: '1',
-      ),
-    ],
-    openInterest: [
-      BingxFuturesOpenInterestPoint(
-        timestampUtc: observedAt.toIso8601String(),
-        openInterestDecimal: '1000',
-      ),
-    ],
-    funding: BingxFuturesFundingSnapshot(
-      timestampUtc: observedAt.toIso8601String(),
-      fundingRateDecimal: '0',
-      nextFundingAtUtc: DateTime.utc(2026, 8, 22, 16).toIso8601String(),
-    ),
-    liquidityLevels: const [
-      BingxFuturesLiquidityLevel(
-        kind: 'external',
-        side: 'buyside',
-        timeframe: '4h',
-        priceDecimal: '112',
-      ),
-      BingxFuturesLiquidityLevel(
-        kind: 'internal',
-        side: 'sellside',
-        timeframe: '5m',
-        priceDecimal: '98',
-      ),
-    ],
-    sessionVolumes: [
-      for (final session in ['asia', 'london', 'newyork'])
-        BingxFuturesSessionVolumePoint(
-          session: session,
-          bucketStartUtc: DateTime.utc(2026, 8, 22).toIso8601String(),
-          volumeDecimal: '100',
-          deltaDecimal: '10',
-        ),
-    ],
   );
 }
 
