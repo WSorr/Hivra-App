@@ -57,11 +57,13 @@ This directory contains deterministic release helpers for Hivra.
   - GitHub publication requires signed-off rows for both macOS and Android.
   - Trading acceptance is fail-closed across five separate fields. Packaged
     READY/BLOCKED behavior and risk rejection are required on both platforms.
-    Provider receipt, restart reconciliation, and duplicate suppression prove
-    the single canonical effect lifecycle and must pass on at least one
-    packaged platform; the other platform records `N/A`. A broad Trading
-    `PASS` from the retired table format is rejected.
-    - `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform all`
+    For a `public` release, provider receipt, restart reconciliation, and
+    duplicate suppression prove the single canonical effect lifecycle and must
+    pass on at least one packaged platform; the other platform records `N/A`.
+    A `test` prerelease may record `N/A` for all three live-effect fields so
+    testers can collect rare market evidence without weakening runtime guards.
+    A broad Trading `PASS` from the retired table format is rejected.
+    - `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform all --channel <test|public>`
 
 - `publish_github_release.sh`
   - The only approved GitHub Release publication path.

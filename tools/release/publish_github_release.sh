@@ -241,7 +241,8 @@ info "Automated preflight"
 info "Manual signoff gate"
 "$ROOT/tools/release/check_manual_release_signoff.sh" \
   --build-tag "$VERSION" \
-  --platform all
+  --platform all \
+  --channel "$CHANNEL"
 
 git rev-parse --verify "$VERSION^{tag}" >/dev/null 2>&1 ||
   git rev-parse --verify "$VERSION^{commit}" >/dev/null 2>&1 ||

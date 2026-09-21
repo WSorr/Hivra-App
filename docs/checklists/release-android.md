@@ -6,7 +6,7 @@ Publishing is blocked until this checklist is reflected in
 `docs/checklists/release-manual-signoff-log.md` and validated with:
 
 ```bash
-tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform Android
+tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform Android --channel <test|public>
 ```
 
 ## Build
@@ -32,11 +32,13 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Trading Drone smoke gate completed:
   - packaged READY and BLOCKED paths exercised
   - risk rejection exercised
-  - successful provider receipt observed for the exact effect on at least one
-    packaged platform
-  - the same effect reconciled after app restart on that platform
-  - duplicate attempt suppressed without a second provider effect on that
-    platform
+  - for `public`, successful provider receipt observed for the exact effect on
+    at least one packaged platform
+  - for `public`, the same effect reconciled after app restart on that platform
+  - for `public`, duplicate attempt suppressed without a second provider effect
+    on that platform
+  - for `test`, unavailable live-effect evidence is recorded as `N/A`, never
+    inferred from a paused scan or deterministic fixture
 - [ ] Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log.md` (via `tools/release/record_trading_drone_evidence.sh`).
 - [ ] Trading Drone evidence coverage validated for this build tag via `tools/release/check_trading_drone_evidence.sh --build-tag <version-tag>`.
 - [ ] Trading drone spec/runtime parity checklist was completed (`docs/checklists/trading-drone-spec-runtime-parity.md`).
@@ -51,7 +53,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 ## Publish
 
 - [ ] Manual Android signoff row was recorded in `docs/checklists/release-manual-signoff-log.md`.
-- [ ] Manual Android signoff was validated with `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform Android`.
+- [ ] Manual Android signoff was validated with `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform Android --channel <test|public>`.
 - [ ] GitHub publication used `tools/release/publish_github_release.sh` after both macOS and Android signoff rows existed.
 - [ ] Release asset name clearly indicates version and target.
 - [ ] Checksums were generated for published APK assets.

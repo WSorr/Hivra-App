@@ -6,11 +6,12 @@ LOG_FILE="${HIVRA_MANUAL_SIGNOFF_LOG:-$ROOT/docs/checklists/release-manual-signo
 
 BUILD_TAG=""
 PLATFORM=""
+CHANNEL=""
 
 usage() {
   cat <<'USAGE'
 Usage:
-  tools/release/check_manual_release_signoff.sh --build-tag <tag> --platform <macOS|Android|all>
+  tools/release/check_manual_release_signoff.sh --build-tag <tag> --platform <macOS|Android|all> --channel <test|public>
   tools/release/check_manual_release_signoff.sh --self-test
 
 Environment:
@@ -138,7 +139,13 @@ check_shared_trading_effect() {
 run_check() {
   [ -n "$BUILD_TAG" ] || die "--build-tag is required"
   [ -n "$PLATFORM" ] || die "--platform is required"
+  [ -n "$CHANNEL" ] || die "--channel is required"
   [ -f "$LOG_FILE" ] || die "signoff log not found: $LOG_FILE"
+
+  case "$CHANNEL" in
+    test|public) ;;
+    *) die "--channel must be test or public" ;;
+  esac
 
   case "$PLATFORM" in
     macOS|Android)
@@ -147,9 +154,11 @@ run_check() {
     all)
       check_platform macOS
       check_platform Android
-      check_shared_trading_effect 10 "Trading Provider Receipt"
-      check_shared_trading_effect 11 "Trading Restart Reconciliation"
-      check_shared_trading_effect 12 "Trading Duplicate Suppression"
+      if [ "$CHANNEL" = "public" ]; then
+        check_shared_trading_effect 10 "Trading Provider Receipt"
+        check_shared_trading_effect 11 "Trading Restart Reconciliation"
+        check_shared_trading_effect 12 "Trading Duplicate Suppression"
+      fi
       ;;
     *)
       die "--platform must be macOS, Android, or all"
@@ -173,25 +182,29 @@ EOF
 
   HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
     --build-tag v-selftest \
-    --platform all >/dev/null
+    --platform all \
+    --channel public >/dev/null
 
   if HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
     --build-tag v-missing \
-    --platform all >/dev/null 2>&1; then
+    --platform all \
+    --channel public >/dev/null 2>&1; then
     rm -f "$tmp"
     die "self-test expected missing build tag to fail"
   fi
 
   if HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
     --build-tag v-invalid \
-    --platform macOS >/dev/null 2>&1; then
+    --platform macOS \
+    --channel public >/dev/null 2>&1; then
     rm -f "$tmp"
     die "self-test expected invalidated evidence to fail"
   fi
 
   if HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
     --build-tag v-retired \
-    --platform macOS >/dev/null 2>&1; then
+    --platform macOS \
+    --channel public >/dev/null 2>&1; then
     rm -f "$tmp"
     die "self-test expected retired broad Trading Smoke layout to fail"
   fi
@@ -206,7 +219,8 @@ EOF
     ' "$tmp" > "$mutated"
     if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
       --build-tag v-selftest \
-      --platform macOS >/dev/null 2>&1; then
+      --platform macOS \
+      --channel public >/dev/null 2>&1; then
       rm -f "$tmp" "$mutated"
       die "self-test expected Trading field $field mutation to fail"
     fi
@@ -219,9 +233,14 @@ EOF
       $2 ~ /^[[:space:]]*v-selftest[[:space:]]*$/ { $field = " N/A " }
       { print }
     ' "$tmp" > "$mutated"
+    HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
+      --build-tag v-selftest \
+      --platform all \
+      --channel test >/dev/null
     if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
       --build-tag v-selftest \
-      --platform all >/dev/null 2>&1; then
+      --platform all \
+      --channel public >/dev/null 2>&1; then
       rm -f "$tmp" "$mutated"
       die "self-test expected shared Trading field $field without PASS to fail"
     fi
@@ -235,7 +254,8 @@ EOF
   ' "$tmp" > "$mutated"
   HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
     --build-tag v-selftest \
-    --platform macOS >/dev/null
+    --platform macOS \
+    --channel public >/dev/null
   rm -f "$mutated"
 
   rm -f "$tmp"
@@ -250,6 +270,10 @@ while [ $# -gt 0 ]; do
       ;;
     --platform)
       PLATFORM="${2:-}"
+      shift 2
+      ;;
+    --channel)
+      CHANNEL="${2:-}"
       shift 2
       ;;
     --self-test)
