@@ -231,7 +231,11 @@ class BingxFuturesZoneDecisionService {
     required List<BingxFuturesCandle> candles,
     Map<String, dynamic>? parentZone,
   }) {
-    const interval = Duration(minutes: 5);
+    final isCurrentStrategy = source == '4h_sweep_reclaim_15m';
+    final isLegacyParentStrategy = source == '4h_sweep_reclaim_5m';
+    final isParentStrategy = isCurrentStrategy || isLegacyParentStrategy;
+    final interval = Duration(minutes: isCurrentStrategy ? 15 : 5);
+    final timeframe = isCurrentStrategy ? '15m' : '5m';
     final now = nowUtc.toUtc();
     final event = eventAtUtc.toUtc();
     if (!const {'buy', 'sell'}.contains(side) ||
@@ -239,6 +243,7 @@ class BingxFuturesZoneDecisionService {
           'micro_sweep_reclaim',
           'micro_liquidity_void',
           '4h_sweep_reclaim_5m',
+          '4h_sweep_reclaim_15m',
         }.contains(source) ||
         !zoneLow.isFinite ||
         !zoneHigh.isFinite ||
@@ -250,14 +255,16 @@ class BingxFuturesZoneDecisionService {
     DateTime? parentAt;
     num? parentLow;
     num? parentHigh;
-    if (source == '4h_sweep_reclaim_5m') {
+    if (isParentStrategy) {
       parentAt =
           DateTime.tryParse(
             parentZone?['confirmed_at_utc']?.toString() ?? '',
           )?.toUtc();
       parentLow = num.tryParse(parentZone?['low_decimal']?.toString() ?? '');
       parentHigh = num.tryParse(parentZone?['high_decimal']?.toString() ?? '');
-      if (parentZone?['strategy_version'] != strategyVersion ||
+      final expectedStrategyVersion =
+          isCurrentStrategy ? strategyVersion : '4h-sweep-reclaim-5m-v2';
+      if (parentZone?['strategy_version'] != expectedStrategyVersion ||
           parentZone?['timeframe'] != '4h' ||
           parentZone?['side'] != side ||
           parentAt == null ||
@@ -273,7 +280,7 @@ class BingxFuturesZoneDecisionService {
       }
     }
     final closed =
-        candles.where((c) => c.timeframe == '5m' && c.isClosed).toList();
+        candles.where((c) => c.timeframe == timeframe && c.isClosed).toList();
     closed.sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
     final coverageStart = parentAt ?? event;
     var previous = coverageStart;
@@ -320,7 +327,8 @@ class BingxFuturesZoneDecisionService {
     }
     if (consumed) return 'anchor_consumed';
     if (source == 'micro_liquidity_void' &&
-        previous.difference(event).inMinutes ~/ 5 > _liquidityVoidMaxAgeBars) {
+        previous.difference(event).inMinutes ~/ interval.inMinutes >
+            _liquidityVoidMaxAgeBars) {
       return 'anchor_expired';
     }
     return 'anchor_valid';
@@ -670,7 +678,7 @@ class BingxFuturesZoneDecisionService {
       var anchorHigh = olderHigh;
       if (microReclaim != null) {
         anchorHigh = microReclaim.anchorPrice;
-        anchorSource = '4h_sweep_reclaim_5m';
+        anchorSource = '4h_sweep_reclaim_15m';
         anchorExecutable = true;
         anchorLifecycle = 'reclaimed';
         liquidityEventAtUtc = _atOrNull(
@@ -687,7 +695,7 @@ class BingxFuturesZoneDecisionService {
       var anchorLow = olderLow;
       if (microReclaim != null) {
         anchorLow = microReclaim.anchorPrice;
-        anchorSource = '4h_sweep_reclaim_5m';
+        anchorSource = '4h_sweep_reclaim_15m';
         anchorExecutable = true;
         anchorLifecycle = 'reclaimed';
         liquidityEventAtUtc = _atOrNull(
@@ -859,7 +867,7 @@ class BingxFuturesZoneDecisionService {
         ) ||
         !_continuousTimes(
           input.microCloseTimesUtc,
-          const Duration(minutes: 5),
+          const Duration(minutes: 15),
           count,
         )) {
       return null;

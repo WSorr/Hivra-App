@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
+import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/services/bingx_futures_remote_runner_identity_service.dart';
 import 'package:hivra_app/services/bingx_futures_remote_runner_provisioning_service.dart';
@@ -164,9 +166,39 @@ void main() {
       final canonicalSessionJson = jsonEncode(<String, dynamic>{
         'operation_id': sessionOperationId,
         'runner_key_id': profile.runnerKeyId,
+        'strategy_policy': <String, dynamic>{
+          'runner_build_id':
+              BingxFuturesRemoteMandateAdmission.deterministicRunnerBuildId,
+          'strategy_version': bingxLiquidityStrategyVersion,
+        },
       });
+      await expectLater(
+        service.deploySession(
+          profile: profile,
+          accountBindingHashHex: accountHash,
+          canonicalSessionJson: canonicalSessionJson,
+          apiKey: 'key',
+          apiSecret: 'secret',
+        ),
+        throwsStateError,
+      );
+      expect(host.deployCalls, 0);
+      final compatibleProfile = BingxFuturesRemoteRunnerProfile(
+        profileId: profile.profileId,
+        capsuleHex: profile.capsuleHex,
+        accountBindingHashHex: profile.accountBindingHashHex,
+        host: profile.host,
+        port: profile.port,
+        sshUsername: profile.sshUsername,
+        hostKeyAlgorithm: profile.hostKeyAlgorithm,
+        hostKeyFingerprint: profile.hostKeyFingerprint,
+        runnerKeyId: profile.runnerKeyId,
+        runnerBuildId:
+            BingxFuturesRemoteMandateAdmission.deterministicRunnerBuildId,
+        createdAtUtc: profile.createdAtUtc,
+      );
       await service.deploySession(
-        profile: profile,
+        profile: compatibleProfile,
         accountBindingHashHex: accountHash,
         canonicalSessionJson: canonicalSessionJson,
         apiKey: 'key',

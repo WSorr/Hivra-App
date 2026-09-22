@@ -1320,7 +1320,7 @@ BingxHttpResponse _anchorBars({bool consumed = false}) => BingxHttpResponse(
   body: jsonEncode({
     'code': 0,
     'data': [
-      for (var minute = 0; minute <= 240; minute += 5)
+      for (var minute = 0; minute <= 240; minute += 15)
         {
           'time':
               DateTime.utc(
@@ -1328,7 +1328,7 @@ BingxHttpResponse _anchorBars({bool consumed = false}) => BingxHttpResponse(
                 8,
                 22,
                 7,
-                55,
+                45,
               ).add(Duration(minutes: minute)).millisecondsSinceEpoch,
           'open': '102',
           'high': '103',
@@ -1421,7 +1421,7 @@ _fixture({
     maxEffects: maxEffects,
   );
   final policy = <String, dynamic>{
-    if (!legacyStrategy) 'strategy_version': '4h-sweep-reclaim-5m-v2',
+    if (!legacyStrategy) 'strategy_version': '4h-sweep-reclaim-15m-v3',
     'runner_build_id': 'runner-build',
     'plugin_id': 'hivra.bingx-futures-trading',
     'plugin_version': '0.2.7-plugins',
@@ -1542,12 +1542,12 @@ _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': '4h_sweep_reclaim_5m',
+      'anchor_source': '4h_sweep_reclaim_15m',
       'anchor_executable': true,
       'anchor_lifecycle': 'reclaimed',
       'atr14_5m_decimal': '2.5',
       'parent': {
-        'strategy_version': '4h-sweep-reclaim-5m-v2',
+        'strategy_version': '4h-sweep-reclaim-15m-v3',
         'timeframe': '4h',
         'side': 'buy',
         'low_decimal': '99',
@@ -1556,8 +1556,8 @@ _fixture({
         'confirmed_at_utc': '2026-08-22T08:00:00Z',
       },
       'liquidity_event_id': liquidityEventId ?? '4' * 64,
-      'liquidity_event_at_utc': '2026-08-22T11:50:00Z',
-      'latest_closed_micro_bar_at_utc': '2026-08-22T11:55:00Z',
+      'liquidity_event_at_utc': '2026-08-22T11:45:00Z',
+      'latest_closed_micro_bar_at_utc': '2026-08-22T12:00:00Z',
     },
     'profit_target': <String, dynamic>{
       'kind': 'opposite_external_liquidity',

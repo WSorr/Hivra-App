@@ -26,7 +26,7 @@ Status date: 2026-09-21
   onboarding requires no Git or terminal work.
   A conflicting external order now pauses the Runner after one retained check
   instead of exhausting the signed session. Current source recomputes fresh
-  entry authority from a closed 4h sweep/reclaim with subsequent 5m confirmation;
+  entry authority from a closed 4h sweep/reclaim with subsequent 15m confirmation;
   micro-only and void entry are removed locally, not deployed. A stale Runner-managed
   order is canceled through the existing effect journal, and a replacement may
   be placed only by the next cycle. Packaged and live VPS evidence for this
@@ -61,7 +61,7 @@ outcome they attest.
 ## Active Outcome: Trading 24/7
 
 The approved local strategy replacement is HTF-first: a 4h parent liquidity
-zone has priority over conflicting 1h context; 5m confirms entry inside it.
+zone has priority over conflicting 1h context; 15m confirms entry inside it.
 Only sweep/reclaim is selected. Implementation binds parent evidence and
 strategy version through the existing decision and authorization paths.
 Candidate `ec9496b` was deployed for an explicitly authorized VPS trial, but
@@ -109,10 +109,10 @@ tests pass; this has not been deployed. New session authorization explicitly
 signs bounded post-budget checks and pending-order cancellation. Existing
 sessions retain their original stop policy. Pending-order revalidation now binds
 the retained signed placement observation to the exact journal-owned order and
-checks its original signed parent/entry against continuous closed 5m candles through
+checks its original signed parent/entry against continuous closed 15m candles through
 the existing zone owner. A different or blocked new-entry proposal is not a
 cancellation reason. Missing proof/history or partial execution retains the
-order as revalidation unavailable. Local source now extends 5m coverage back to
+order as revalidation unavailable. Local source now extends 15m coverage back to
 the selected or retained parent through one bounded reader; packaged and live
 acceptance of this history extension remains pending.
 Order-to-position protection continuity and packaged/VPS

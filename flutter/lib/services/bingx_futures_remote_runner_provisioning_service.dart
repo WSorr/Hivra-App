@@ -8,6 +8,8 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
+import '../models/bingx_futures_market_snapshot_models.dart';
+import '../models/bingx_futures_order_tracking_models.dart';
 import '../models/external_effect_models.dart';
 import '../models/plugin_contract_ids.dart';
 import 'bingx_futures_remote_runner_identity_service.dart';
@@ -1163,6 +1165,18 @@ class BingxFuturesRemoteRunnerProvisioningService {
     if (profile.capsuleHex != capsuleHex ||
         profile.accountBindingHashHex != accountHash) {
       throw StateError('Remote Runner profile belongs to another authority.');
+    }
+    final decoded = jsonDecode(canonicalSessionJson);
+    final strategyPolicy =
+        decoded is Map<String, dynamic> ? decoded['strategy_policy'] : null;
+    if (profile.runnerBuildId !=
+            BingxFuturesRemoteMandateAdmission.deterministicRunnerBuildId ||
+        strategyPolicy is! Map<String, dynamic> ||
+        strategyPolicy['runner_build_id'] != profile.runnerBuildId ||
+        strategyPolicy['strategy_version'] != bingxLiquidityStrategyVersion) {
+      throw StateError(
+        'Remote Runner update required before authorizing this strategy.',
+      );
     }
     await _host.deploySession(
       profile: profile,

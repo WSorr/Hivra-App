@@ -9,6 +9,7 @@ import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 import 'package:hivra_app/services/bingx_futures_mode_orchestrator_service.dart';
+import 'package:hivra_app/services/bingx_futures_remote_runner_provisioning_service.dart';
 
 void main() {
   const remoteSessionId =
@@ -461,6 +462,41 @@ void main() {
         'active=inactive enabled=enabled enabled=disabled',
       ),
       contains('Runner status unknown'),
+    );
+  });
+
+  test('session selection rejects a Runner from another strategy build', () {
+    BingxFuturesRemoteRunnerProfile profile(String runnerBuildId) =>
+        BingxFuturesRemoteRunnerProfile(
+          profileId: 'a' * 64,
+          capsuleHex: 'b' * 64,
+          accountBindingHashHex: 'c' * 64,
+          host: 'runner.example',
+          port: 22,
+          sshUsername: 'hivra-runner',
+          hostKeyAlgorithm: 'ssh-ed25519',
+          hostKeyFingerprint:
+              'SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          runnerKeyId: 'd' * 64,
+          runnerBuildId: runnerBuildId,
+          createdAtUtc: DateTime.utc(2026, 9, 22),
+        );
+
+    expect(
+      tradingRemoteRunnerProfileIsCompatible(
+        profile: profile(
+          BingxFuturesRemoteMandateAdmission.deterministicRunnerBuildId,
+        ),
+        accountBindingHashHex: 'c' * 64,
+      ),
+      isTrue,
+    );
+    expect(
+      tradingRemoteRunnerProfileIsCompatible(
+        profile: profile('systemd-public-shadow-v1'),
+        accountBindingHashHex: 'c' * 64,
+      ),
+      isFalse,
     );
   });
 

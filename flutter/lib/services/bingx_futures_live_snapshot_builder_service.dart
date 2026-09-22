@@ -238,11 +238,11 @@ class BingxFuturesLiveSnapshotBuilderService {
           symbol: normalizedSymbol,
           fromUtc: DateTime.parse(
             parent['confirmed_at_utc'] as String,
-          ).subtract(const Duration(minutes: 75)),
+          ).subtract(const Duration(minutes: 225)),
           observedAtUtc: observationTime,
-          initial: k5m.klines,
+          initial: k15m.klines,
         );
-        allCandles.removeWhere((c) => c.timeframe == '5m');
+        allCandles.removeWhere((c) => c.timeframe == '15m');
         allCandles.addAll(history);
       }
       return BingxFuturesLiveSnapshotBuildResult(
@@ -261,7 +261,7 @@ class BingxFuturesLiveSnapshotBuilderService {
     }
   }
 
-  /// One bounded history reader for new entries and original-order revalidation.
+  /// One bounded 15m history reader for entries and original-order revalidation.
   /// Coverage failure is not evidence that a zone was consumed.
   Future<List<BingxFuturesCandle>> loadMicroHistory({
     required BingxFuturesPublicMarketDataPort exchange,
@@ -270,7 +270,7 @@ class BingxFuturesLiveSnapshotBuilderService {
     required DateTime observedAtUtc,
     List<BingxFuturesPublicKline>? initial,
   }) async {
-    const step = 300000;
+    const step = 900000;
     final end = observedAtUtc.toUtc().millisecondsSinceEpoch ~/ step * step;
     final start = fromUtc.toUtc().millisecondsSinceEpoch ~/ step * step - step;
     if (start <= 0 ||
@@ -290,13 +290,13 @@ class BingxFuturesLiveSnapshotBuilderService {
       } else {
         final result = await exchange.getPublicKlines(
           symbol: symbol,
-          interval: '5m',
+          interval: '15m',
           limit: 1000,
           endTimeMs: cursor,
         );
         if (!result.isSuccess ||
             result.symbol != symbol ||
-            result.interval != '5m' ||
+            result.interval != '15m' ||
             result.klines.length > 1000) {
           throw const FormatException('micro_history_read_unavailable');
         }
@@ -345,7 +345,7 @@ class BingxFuturesLiveSnapshotBuilderService {
           if (bar == null) throw const FormatException('micro_history_gap');
           covered.add(bar);
         }
-        return mapCandles('5m', covered, observedAtUtc: observedAtUtc);
+        return mapCandles('15m', covered, observedAtUtc: observedAtUtc);
       }
       cursor = earliest - step;
     }
@@ -857,7 +857,8 @@ class BingxFuturesLiveSnapshotBuilderService {
       volumeQuoteDecimal: '10000',
       isClosed: true,
     );
-    final observedAt = DateTime.utc(2026, 8, 22, 12, confirmed ? 5 : 0);
+    final observedAt = DateTime.utc(2026, 8, 22, 12, confirmed ? 15 : 0);
+    final confirmationBars = confirmed ? 221 : 220;
     return BingxFuturesMarketSnapshotInput(
       instrument: const BingxFuturesInstrumentMeta(
         symbol: 'BTC-USDT',
@@ -884,11 +885,17 @@ class BingxFuturesLiveSnapshotBuilderService {
             index == 64 ? 91 : 100,
             index == 64 ? 93.5 : 101,
           ),
-        for (var index = 0; index < 220; index++)
+        for (var index = 0; index < confirmationBars; index++)
           candle(
             '15m',
-            start.subtract(Duration(minutes: (220 - index) * 15)),
+            observedAt.subtract(
+              Duration(minutes: (confirmationBars - 1 - index) * 15),
+            ),
             15,
+            confirmed && index == confirmationBars - 1 ? 91.5 : 101,
+            confirmed && index == confirmationBars - 1 ? 94 : 102,
+            confirmed && index == confirmationBars - 1 ? 91 : 100,
+            confirmed && index == confirmationBars - 1 ? 93.5 : 101,
           ),
         for (var index = 0; index < 24; index++)
           candle(

@@ -80,7 +80,7 @@ void main() {
             .toSet(),
         containsAll(<String>{'buyside', 'sellside'}),
       );
-      expect(reference.ready.zoneAnchorSource, '4h_sweep_reclaim_5m');
+      expect(reference.ready.zoneAnchorSource, '4h_sweep_reclaim_15m');
       expect(reference.ready.zoneAnchorExecutable, isTrue);
     });
 
@@ -221,12 +221,12 @@ void main() {
           'conflict': false,
           'target_retest_pct': 0.01,
           'needs_farther_retest': false,
-          'anchor_source': '4h_sweep_reclaim_5m',
+          'anchor_source': '4h_sweep_reclaim_15m',
           'anchor_executable': true,
           'anchor_lifecycle': 'reclaimed',
           'atr14_5m_decimal': '1.25',
           'parent': {
-            'strategy_version': '4h-sweep-reclaim-5m-v2',
+            'strategy_version': '4h-sweep-reclaim-15m-v3',
             'timeframe': '4h',
             'side': 'buy',
             'low_decimal': '99',
@@ -236,7 +236,7 @@ void main() {
           },
           'liquidity_event_id': '4'.padLeft(64, '4'),
           'liquidity_event_at_utc': '2026-08-22T10:00:00Z',
-          'latest_closed_micro_bar_at_utc': '2026-08-22T10:05:00Z',
+          'latest_closed_micro_bar_at_utc': '2026-08-22T10:15:00Z',
         },
         'profit_target': <String, dynamic>{
           'kind': 'opposite_external_liquidity',
@@ -257,6 +257,7 @@ void main() {
         {...validZone, 'atr14_5m_decimal': '0'},
         {...validZone, 'parent': null},
         {...validZone, 'anchor_source': 'micro_liquidity_void'},
+        {...validZone, 'anchor_source': '4h_sweep_reclaim_5m'},
         {...validZone, 'low_decimal': '98'},
         {
           ...validZone,
@@ -264,7 +265,10 @@ void main() {
         },
         {
           ...validZone,
-          'parent': {...validParent, 'strategy_version': 'micro-v1'},
+          'parent': {
+            ...validParent,
+            'strategy_version': '4h-sweep-reclaim-5m-v2',
+          },
         },
         {
           ...validZone,

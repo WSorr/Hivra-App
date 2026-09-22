@@ -11,12 +11,14 @@ void main() {
       num low = 101,
       num high = 103,
       bool closed = true,
+      int minutes = 5,
+      String timeframe = '5m',
     }) {
-      final close = event.add(Duration(minutes: index * 5));
+      final close = event.add(Duration(minutes: index * minutes));
       return BingxFuturesCandle(
-        timeframe: '5m',
+        timeframe: timeframe,
         openTimeUtc:
-            close.subtract(const Duration(minutes: 5)).toIso8601String(),
+            close.subtract(Duration(minutes: minutes)).toIso8601String(),
         closeTimeUtc: close.toIso8601String(),
         openDecimal: '102',
         highDecimal: '$high',
@@ -70,33 +72,63 @@ void main() {
           'high_decimal': '104',
           'confirmed_at_utc': event.toIso8601String(),
         };
+        BingxFuturesCandle parentBar(int index, {num low = 101}) =>
+            bar(index, low: low, minutes: 15, timeframe: '15m');
         String verify(
           List<BingxFuturesCandle> bars,
           Map<String, dynamic>? bound,
         ) => service.revalidateAnchor(
           side: 'buy',
-          source: '4h_sweep_reclaim_5m',
+          source: '4h_sweep_reclaim_15m',
           zoneLow: 100,
           zoneHigh: 102,
-          eventAtUtc: event.add(const Duration(minutes: 5)),
-          nowUtc: event.add(const Duration(minutes: 10)),
+          eventAtUtc: event.add(const Duration(minutes: 15)),
+          nowUtc: event.add(const Duration(minutes: 30)),
           candles: bars,
           parentZone: bound,
         );
-        expect(verify([bar(0), bar(1), bar(2)], parent), 'anchor_valid');
         expect(
-          verify([bar(0), bar(1), bar(2, low: 99.5)], parent),
+          verify([parentBar(0), parentBar(1), parentBar(2)], parent),
+          'anchor_valid',
+        );
+        expect(
+          verify([parentBar(0), parentBar(1), parentBar(2, low: 99.5)], parent),
           'anchor_consumed',
         );
         expect(
-          verify([bar(0), bar(1, low: 98), bar(2)], parent),
+          verify([parentBar(0), parentBar(1, low: 98), parentBar(2)], parent),
           'anchor_consumed',
         );
-        expect(verify([bar(1), bar(2)], parent), 'anchor_unavailable');
-        expect(verify([bar(0), bar(1), bar(2)], null), 'anchor_unavailable');
         expect(
-          verify([bar(0), bar(1), bar(2)], {...parent, 'side': 'sell'}),
+          verify([parentBar(1), parentBar(2)], parent),
           'anchor_unavailable',
+        );
+        expect(
+          verify([parentBar(0), parentBar(1), parentBar(2)], null),
+          'anchor_unavailable',
+        );
+        expect(
+          verify(
+            [parentBar(0), parentBar(1), parentBar(2)],
+            {...parent, 'side': 'sell'},
+          ),
+          'anchor_unavailable',
+        );
+        expect(
+          service.revalidateAnchor(
+            side: 'buy',
+            source: '4h_sweep_reclaim_5m',
+            zoneLow: 100,
+            zoneHigh: 102,
+            eventAtUtc: event.add(const Duration(minutes: 5)),
+            nowUtc: event.add(const Duration(minutes: 10)),
+            candles: [bar(0), bar(1), bar(2)],
+            parentZone: {
+              ...parent,
+              'strategy_version': '4h-sweep-reclaim-5m-v2',
+            },
+          ),
+          'anchor_valid',
         );
       },
     );
@@ -824,10 +856,10 @@ void main() {
       );
     });
 
-    test('4h sweep requires a later 5m confirmation inside its bounds', () {
+    test('4h sweep requires a later 15m confirmation inside its bounds', () {
       final result = service.decide(input: _htfReclaimInput(side: 'buy'));
 
-      expect(result.anchorSource, '4h_sweep_reclaim_5m');
+      expect(result.anchorSource, '4h_sweep_reclaim_15m');
       expect(result.anchorExecutable, isTrue);
       expect(result.anchorLifecycle, 'reclaimed');
       expect(result.zoneLow, 88.5);
@@ -934,7 +966,7 @@ void main() {
         input: _htfReclaimInput(side: 'sell', midPrice: 96.4),
       );
 
-      expect(first.anchorSource, '4h_sweep_reclaim_5m');
+      expect(first.anchorSource, '4h_sweep_reclaim_15m');
       expect(second.anchorSource, first.anchorSource);
       expect(first.liquidityEventId, isNotNull);
       expect(second.liquidityEventId, first.liquidityEventId);
@@ -1030,8 +1062,8 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
   );
   final parentIndex = delayedReclaim ? 21 : 20;
   final known = start.add(Duration(hours: 4 * parentIndex));
-  final microStart = known.subtract(const Duration(minutes: 100));
-  final microCount = ((visibleBars - 1 - parentIndex) * 48 + 25).clamp(25, 600);
+  final microStart = known.subtract(const Duration(minutes: 300));
+  final microCount = ((visibleBars - 1 - parentIndex) * 16 + 25).clamp(25, 600);
   final microHighs = List<num>.filled(microCount, buy ? 89.8 : 101.5);
   final microLows = List<num>.filled(microCount, buy ? 88.5 : 100.2);
   final microOpens = List<num>.filled(microCount, buy ? 89 : 101);
@@ -1043,7 +1075,7 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
   if (microOutside) microHighs[confirmation] = buy ? 90.1 : 102.1;
   final microTimes = List.generate(
     microCount,
-    (i) => microStart.add(Duration(minutes: 5 * i)).toIso8601String(),
+    (i) => microStart.add(Duration(minutes: 15 * i)).toIso8601String(),
   );
   if (gapped) microTimes[22] = microTimes[21];
   return BingxFuturesZoneDecisionInput(

@@ -259,7 +259,7 @@ Detect 4h pivot clusters through the canonical detector below:
 Sweep condition:
 
 - a closed-candle wick crosses a previously established swing level;
-- parent reclaim and subsequent 5m confirmation follow the HTF-first contract
+- parent reclaim and subsequent 15m confirmation follow the HTF-first contract
   below, not a fixed percentage offset or an independent micro entry.
 
 ### 5.3.1 Canonical Hivra Pivot-Cluster Contract
@@ -331,16 +331,16 @@ a zone or event.
 This overview is separate from executable readiness. Agreement across these
 timeframes is not a new entry requirement; disagreement cannot independently
 authorize, veto, cancel, or replace an order. It does not change entry bounds,
-targets, sizing, or signed authority. Execution remains `4h -> 5m`.
+targets, sizing, or signed authority. Execution remains `4h -> 15m`.
 Reuse the existing observation path without a separate scheduler, strategy,
-or truth store. This planned overview does not resolve insufficient 5m history
+or truth store. This planned overview does not resolve insufficient 15m history
 for parent confirmation or pending-order revalidation.
 
 #### Parent and entry binding
 
 The existing zone owner must retain the parent bounds, source, confirmation
-time and identity separately from the 5m entry bounds and confirmation.
-The 5m confirmation must occur after the parent is knowable, agree with its
+time and identity separately from the 15m entry bounds and confirmation.
+The 15m confirmation must occur after the parent is knowable, agree with its
 direction, and lie within its bounds. Forming candles cannot establish either
 authority. A new micro event cannot revive an invalidated parent.
 
@@ -351,7 +351,7 @@ existing order. Existing signed sessions retain their original semantics;
 the replacement requires explicit strategy-version binding and fresh session
 authorization, not an in-place reinterpretation of existing evidence.
 
-The sole new-entry strategy is `4h-sweep-reclaim-5m-v2`:
+The sole new-entry strategy is `4h-sweep-reclaim-15m-v3`:
 
 1. A sellside cluster with at least three pivots is swept below its bottom;
    a closed 4h candle above that boundary confirms a long parent. A buyside
@@ -362,8 +362,8 @@ The sole new-entry strategy is `4h-sweep-reclaim-5m-v2`:
 3. Active opposing parents, or equally recent same-side parents, are ambiguous.
    Otherwise select the latest same-side reclaim. Flow and 1h context cannot
    choose another direction or bypass an absent parent.
-4. The first subsequent closed 5m candle entirely inside the parent confirms
-   entry when its directional body is at least `0.5 * ATR14_5m`. Its high/low
+4. The first subsequent closed 15m candle entirely inside the parent confirms
+   entry when its directional body is at least `0.5 * ATR14_15m`. Its high/low
    are the entry bounds. A candle closing at the parent confirmation time is
    not subsequent. Later strict crossing of the entry's outer extreme consumes
    the confirmation; it cannot restart from a later micro candle.
@@ -374,7 +374,7 @@ The sole new-entry strategy is `4h-sweep-reclaim-5m-v2`:
    its confirmation, including 15 bars of ATR warm-up. Original-order
    revalidation uses the same reader with the retained parent timestamp.
    Reads are bounded to 84 days and 26 pages of at most 1000 candles, covering
-   the existing 500-bar 4h window. Every required closed 5m timestamp must be
+   the existing 500-bar 4h window. Every required closed 15m timestamp must be
    present; duplicate, malformed, non-progressing, or failed pages are
    unavailable, never execution or cancellation evidence. No persistent
    candle cache or second zone-selection owner is introduced.
@@ -405,7 +405,7 @@ Prepared entry fields remain separate and empty when preparation is blocked.
 Offline observation requires an explicitly authorized, active Runner session;
 opening the local workspace or displaying a cluster does not activate one.
 
-The prepared execution context records the latest closed 5m bar used for the decision.
+The prepared execution context records the latest closed 15m bar used for the decision.
 Immediately before any exchange effect, the existing execution use case MUST
 recompute the decision and require the same event identity, same latest closed
 bar, exact live-decision hash, side, and zone side. Market movement, a new bar,
@@ -584,11 +584,11 @@ runtime lookback.
 Raw candle highs/lows MUST NOT be treated as executable liquidity levels.
 `sweep_origin`, `post_sweep_reaction`, and `consumed` levels MUST NOT become
 fresh again merely because price moved away from them. A trade that claims
-sweep/reclaim semantics requires the canonical 4h parent and subsequent 5m
+sweep/reclaim semantics requires the canonical 4h parent and subsequent 15m
 confirmation, with a new live decision.
 Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
 `internal_diagnostic`, but MUST NOT authorize a pending order. If no current
-confirmed 4h-parent/5m-entry binding exists, the
+confirmed 4h-parent/15m-entry binding exists, the
 live decision MUST emit `liquidity_anchor_unavailable`.
 
 The Trading UI MUST present executable microstructure bounds as a **pending
@@ -651,7 +651,7 @@ available indicator:
 2. Maintain each pool lifecycle as `fresh`, `sweep_origin`,
    `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
 3. Select the unambiguous 4h sweep/reclaim parent and its direction.
-4. Require subsequent 5m confirmation inside that parent and recent
+4. Require subsequent 15m confirmation inside that parent and recent
    aggressive-volume eligibility for the same side. No void fallback or
    flow-driven reversal of the parent is permitted.
 5. Rank valid structural candidates with liquidation-proxy confluence.
@@ -667,7 +667,7 @@ contract.
 ### 6.1 LONG TVH
 
 1. A confirmed 4h sellside sweep/reclaim selects `buy`.
-2. A subsequent bullish 5m confirmation inside the parent supplies entry
+2. A subsequent bullish 15m confirmation inside the parent supplies entry
    bounds; recent aggressive-volume eligibility must agree with `buy`.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.
@@ -681,7 +681,7 @@ Entry anchor:
 ### 6.2 SHORT TVH
 
 1. A confirmed 4h buyside sweep/reclaim selects `sell`.
-2. A subsequent bearish 5m confirmation inside the parent supplies entry
+2. A subsequent bearish 15m confirmation inside the parent supplies entry
    bounds; recent aggressive-volume eligibility must agree with `sell`.
 3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
    not satisfy the anchor rule.

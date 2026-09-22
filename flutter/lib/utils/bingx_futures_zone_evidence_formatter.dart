@@ -1,14 +1,19 @@
 import '../models/bingx_futures_live_decision_models.dart';
 
 String formatBingxFuturesLiquidityObservation(
-  BingxFuturesLiveDecisionResult? decision,
-) {
+  BingxFuturesLiveDecisionResult? decision, {
+  String? selectedSymbol,
+}) {
+  final symbol = selectedSymbol?.trim().toUpperCase() ?? '';
+  final heading = [
+    'Observed liquidity (4h)',
+    if (symbol.isNotEmpty) symbol,
+  ].join(' · ');
   if (decision == null) {
-    return 'Observed liquidity (4h)\nScan and select a symbol to inspect its clusters.';
+    return '$heading\nNo snapshot loaded for this market. '
+        'Press Inspect current setup to load its clusters.';
   }
-  final lines = <String>[
-    'Observed liquidity (4h) — snapshot, not order prices',
-  ];
+  final lines = <String>['$heading — snapshot, not order prices'];
   final parent = decision.parentZone;
   if (parent != null) {
     lines.add(
@@ -17,7 +22,7 @@ String formatBingxFuturesLiquidityObservation(
       '· confirmed ${parent['confirmed_at_utc']}',
     );
     if (!decision.zoneAnchorExecutable) {
-      lines.add('No valid 5m confirmation inside this parent zone.');
+      lines.add('No valid 15m confirmation inside this parent zone.');
     }
   }
   if (decision.observedLiquidityLevels.isEmpty) {
@@ -70,8 +75,8 @@ String formatBingxFuturesZoneEvidence(BingxFuturesLiveDecisionResult decision) {
 
 String? _formatAnchorSource(String? raw) {
   final source = raw?.trim().toLowerCase() ?? '';
-  if (source == '4h_sweep_reclaim_5m') {
-    return '4h sweep/reclaim, confirmed on 5m';
+  if (source == '4h_sweep_reclaim_15m') {
+    return '4h sweep/reclaim, confirmed on 15m';
   }
   final match = RegExp(r'^(4h|1d|1w)_fresh_(high|low)$').firstMatch(source);
   if (match != null) {

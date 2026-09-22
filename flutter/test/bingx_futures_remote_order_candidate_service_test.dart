@@ -131,8 +131,8 @@ void main() {
             includeOpenOrders: false,
           );
       expect(canonicalPolicy, <String, dynamic>{
-        'strategy_version': '4h-sweep-reclaim-5m-v2',
-        'runner_build_id': 'systemd-public-shadow-v1',
+        'strategy_version': '4h-sweep-reclaim-15m-v3',
+        'runner_build_id': 'systemd-public-shadow-v2',
         'plugin_id': 'hivra.bingx-futures-trading',
         'plugin_version': '0.2.4',
         'package_digest_hex':
@@ -552,12 +552,12 @@ Future<_CandidateFixture> _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': '4h_sweep_reclaim_5m',
+      'anchor_source': '4h_sweep_reclaim_15m',
       'anchor_executable': true,
       'anchor_lifecycle': 'reclaimed',
       'atr14_5m_decimal': '1.25',
       'parent': {
-        'strategy_version': '4h-sweep-reclaim-5m-v2',
+        'strategy_version': '4h-sweep-reclaim-15m-v3',
         'timeframe': '4h',
         'side': 'buy',
         'low_decimal': '99',

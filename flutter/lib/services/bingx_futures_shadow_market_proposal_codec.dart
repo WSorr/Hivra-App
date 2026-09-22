@@ -141,7 +141,7 @@ class BingxFuturesShadowMarketProposalCodec {
         parent['strategy_version'] != bingxLiquidityStrategyVersion ||
         parent['timeframe'] != '4h' ||
         parent['side'] != side ||
-        zone['anchor_source'] != '4h_sweep_reclaim_5m' ||
+        zone['anchor_source'] != '4h_sweep_reclaim_15m' ||
         zone['anchor_lifecycle'] != 'reclaimed' ||
         !_isPositiveDecimal(parent['low_decimal']) ||
         !_isPositiveDecimal(parent['high_decimal']) ||
@@ -157,7 +157,7 @@ class BingxFuturesShadowMarketProposalCodec {
         low < double.parse(parent['low_decimal'] as String) ||
         high > double.parse(parent['high_decimal'] as String) ||
         known.isBefore(DateTime.parse(parent['sweep_at_utc'] as String)) ||
-        confirmed.difference(known) < const Duration(minutes: 5) ||
+        confirmed.difference(known) < const Duration(minutes: 15) ||
         confirmed.isAfter(
           DateTime.parse(zone['latest_closed_micro_bar_at_utc'] as String),
         )) {

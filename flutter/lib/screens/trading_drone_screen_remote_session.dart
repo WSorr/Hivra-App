@@ -1,6 +1,15 @@
 part of 'trading_drone_screen.dart';
 
 @visibleForTesting
+bool tradingRemoteRunnerProfileIsCompatible({
+  required BingxFuturesRemoteRunnerProfile profile,
+  required String accountBindingHashHex,
+}) =>
+    profile.accountBindingHashHex == accountBindingHashHex &&
+    profile.runnerBuildId ==
+        BingxFuturesRemoteMandateAdmission.deterministicRunnerBuildId;
+
+@visibleForTesting
 bool tradingRemoteRunnerMayHoldAuthority({
   required bool configured,
   required String? statusWire,
@@ -794,9 +803,18 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                           const Text('No Remote Runner is configured.')
                         else
                           ...profiles.map((profile) {
-                            final compatible =
+                            final accountCompatible =
                                 profile.accountBindingHashHex ==
                                 accountBindingHashHex;
+                            final runnerCompatible =
+                                profile.runnerBuildId ==
+                                BingxFuturesRemoteMandateAdmission
+                                    .deterministicRunnerBuildId;
+                            final compatible =
+                                tradingRemoteRunnerProfileIsCompatible(
+                                  profile: profile,
+                                  accountBindingHashHex: accountBindingHashHex,
+                                );
                             return ListTile(
                               enabled: compatible,
                               selected:
@@ -809,9 +827,11 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                               ),
                               title: Text('${profile.host}:${profile.port}'),
                               subtitle: Text(
-                                compatible
-                                    ? 'Ready · ${profile.runnerBuildId}'
-                                    : 'Bound to another BingX account',
+                                !accountCompatible
+                                    ? 'Bound to another BingX account'
+                                    : !runnerCompatible
+                                    ? 'Update required · installed ${profile.runnerBuildId}'
+                                    : 'Ready · ${profile.runnerBuildId}',
                               ),
                               onTap:
                                   compatible
