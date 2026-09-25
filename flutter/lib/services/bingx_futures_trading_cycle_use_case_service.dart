@@ -447,7 +447,7 @@ class BingxFuturesTradingCycleUseCaseService {
         code: decision.trendGateCode,
         message: switch (decision.trendGateCode) {
           'liquidity_anchor_unavailable' =>
-            'No fresh liquidity retest is ready now. Try again later or start a 24/7 session.',
+            'No active 4h liquidity zone is ready now. Try again later or start a 24/7 session.',
           'momentum_gate_short_missed_retest' ||
           'momentum_gate_long_missed_retest' =>
             'The market has already moved beyond the bounded retest.',
@@ -471,7 +471,7 @@ class BingxFuturesTradingCycleUseCaseService {
       return (
         code: 'liquidity_anchor_unavailable',
         message:
-            'No fresh liquidity retest is ready now. Try again later or start a 24/7 session.',
+            'No active 4h liquidity zone is ready now. Try again later or start a 24/7 session.',
       );
     }
     return (

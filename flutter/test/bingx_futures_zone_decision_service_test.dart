@@ -65,7 +65,7 @@ void main() {
       'HTF revalidation requires parent binding and continuous parent coverage',
       () {
         final parent = <String, dynamic>{
-          'strategy_version': bingxLiquidityStrategyVersion,
+          'strategy_version': '4h-sweep-reclaim-15m-v3',
           'timeframe': '4h',
           'side': 'buy',
           'low_decimal': '99',
@@ -132,6 +132,51 @@ void main() {
         );
       },
     );
+
+    test('resting 4h zone is retained until a later 15m outer breach', () {
+      final parent = <String, dynamic>{
+        'strategy_version': bingxLiquidityStrategyVersion,
+        'timeframe': '4h',
+        'side': 'buy',
+        'low_decimal': '100',
+        'high_decimal': '102',
+        'anchor_at_utc':
+            event.subtract(const Duration(hours: 4)).toIso8601String(),
+      };
+      String verify(List<BingxFuturesCandle> bars) => service.revalidateAnchor(
+        side: 'buy',
+        source: '4h_active_liquidity_zone',
+        zoneLow: 100,
+        zoneHigh: 102,
+        eventAtUtc: event,
+        nowUtc: event.add(const Duration(minutes: 30)),
+        candles: bars,
+        parentZone: parent,
+      );
+      expect(
+        verify([
+          bar(0, minutes: 15, timeframe: '15m'),
+          bar(1, minutes: 15, timeframe: '15m'),
+          bar(2, minutes: 15, timeframe: '15m'),
+        ]),
+        'anchor_valid',
+      );
+      expect(
+        verify([
+          bar(0, minutes: 15, timeframe: '15m'),
+          bar(1, low: 99, minutes: 15, timeframe: '15m'),
+          bar(2, minutes: 15, timeframe: '15m'),
+        ]),
+        'anchor_consumed',
+      );
+      expect(
+        verify([
+          bar(0, minutes: 15, timeframe: '15m'),
+          bar(2, minutes: 15, timeframe: '15m'),
+        ]),
+        'anchor_unavailable',
+      );
+    });
     test('void consumes on inclusive near-edge touch for either side', () {
       expect(
         check([
@@ -868,6 +913,61 @@ void main() {
       expect(result.parentZone!['high_decimal'], '90.00000000');
     });
 
+    test('active 4h sellside zone can stage a buy before a sweep', () {
+      final input = _htfReclaimInput(
+        side: 'buy',
+        clusters: [_cluster(breached: false)],
+        restingZoneEntry: true,
+      );
+      final first = service.decide(input: input);
+      final again = service.decide(input: input);
+
+      expect(first.anchorSource, '4h_active_liquidity_zone');
+      expect(first.anchorExecutable, isTrue);
+      expect(first.zoneLow, 90);
+      expect(first.zoneHigh, 92);
+      expect(
+        first.parentZone?['strategy_version'],
+        bingxLiquidityStrategyVersion,
+      );
+      expect(first.liquidityEventId, again.liquidityEventId);
+    });
+
+    test('breached cluster cannot stage a new resting order', () {
+      final result = service.decide(
+        input: _htfReclaimInput(
+          side: 'buy',
+          clusters: [_cluster()],
+          restingZoneEntry: true,
+        ),
+      );
+      expect(result.anchorExecutable, isFalse);
+    });
+
+    test('15m crossing after the latest 4h close consumes resting entry', () {
+      final result = service.decide(
+        input: _htfReclaimInput(
+          side: 'buy',
+          clusters: [_cluster(breached: false)],
+          restingZoneEntry: true,
+          crossedAfterParent: true,
+        ),
+      );
+      expect(result.anchorExecutable, isFalse);
+    });
+
+    test('gapped 15m coverage cannot stage a resting order', () {
+      final result = service.decide(
+        input: _htfReclaimInput(
+          side: 'buy',
+          clusters: [_cluster(breached: false)],
+          restingZoneEntry: true,
+          gapped: true,
+        ),
+      );
+      expect(result.anchorExecutable, isFalse);
+    });
+
     test(
       'parent binding rejects missing, conflicting and noncausal evidence',
       () {
@@ -1006,6 +1106,8 @@ void main() {
 
 BingxFuturesZoneDecisionInput _htfReclaimInput({
   required String side,
+  bool restingZoneEntry = false,
+  bool crossedAfterParent = false,
   num midPrice = 96,
   bool weakBody = false,
   bool expired = false,
@@ -1066,6 +1168,12 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
   final microCount = ((visibleBars - 1 - parentIndex) * 16 + 25).clamp(25, 600);
   final microHighs = List<num>.filled(microCount, buy ? 89.8 : 101.5);
   final microLows = List<num>.filled(microCount, buy ? 88.5 : 100.2);
+  if (restingZoneEntry && buy) {
+    microLows[microCount - 1] = crossedAfterParent ? 89 : 93;
+    for (var index = microCount - 5; index < microCount - 1; index++) {
+      microLows[index] = 93;
+    }
+  }
   final microOpens = List<num>.filled(microCount, buy ? 89 : 101);
   final microCloses = List<num>.from(microOpens);
   final confirmation = microBeforeParent ? 19 : 21;
@@ -1083,6 +1191,7 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
     midPrice: midPrice,
     fallbackSide: side,
     requiredSide: side,
+    restingZoneEntry: restingZoneEntry,
     detectedLiquidityLevels:
         clusters ??
         [

@@ -176,6 +176,42 @@ void main() {
       );
     });
 
+    test(
+      'stopped cycle cannot overwrite its status with a late error',
+      () async {
+        final delay = Completer<void>();
+        final secondCycle = Completer<String>();
+        var calls = 0;
+        final service = BingxFuturesModeOrchestratorService(
+          delay: (_) => delay.future,
+        );
+
+        final first = service.startInteractive(
+          capsuleScope: capsuleA,
+          runCycle: () {
+            calls += 1;
+            return calls == 1
+                ? Future<String>.value('blocked:no_signal')
+                : secondCycle.future;
+          },
+        );
+        expect(await first, 'blocked:no_signal');
+        await _drainMicrotasks();
+        delay.complete();
+        await _drainMicrotasks();
+        expect(calls, 2);
+
+        expect(service.stop(capsuleA), isTrue);
+        secondCycle.completeError(StateError('authority changed'));
+        await _drainMicrotasks();
+        expect(
+          service.snapshot(capsuleA)!.phase,
+          BingxFuturesInteractiveRunnerPhase.stopped,
+        );
+        expect(service.isRunning(capsuleA), isFalse);
+      },
+    );
+
     test('rejects ambiguous Capsule scope and cadence', () {
       expect(
         () => BingxFuturesModeOrchestratorService(

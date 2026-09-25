@@ -237,7 +237,7 @@ class BingxFuturesLiveSnapshotBuilderService {
           exchange: exchange,
           symbol: normalizedSymbol,
           fromUtc: DateTime.parse(
-            parent['confirmed_at_utc'] as String,
+            (parent['confirmed_at_utc'] ?? parent['anchor_at_utc']) as String,
           ).subtract(const Duration(minutes: 225)),
           observedAtUtc: observationTime,
           initial: k15m.klines,
@@ -832,8 +832,8 @@ class BingxFuturesLiveSnapshotBuilderService {
         .toList(growable: false);
   }
 
-  static BingxFuturesMarketSnapshotInput buildSweepReclaimReference({
-    required bool confirmed,
+  static BingxFuturesMarketSnapshotInput buildActiveZoneReference({
+    required bool complete,
   }) {
     final start = DateTime.utc(2026, 8, 22, 6, 40);
     BingxFuturesCandle candle(
@@ -857,8 +857,8 @@ class BingxFuturesLiveSnapshotBuilderService {
       volumeQuoteDecimal: '10000',
       isClosed: true,
     );
-    final observedAt = DateTime.utc(2026, 8, 22, 12, confirmed ? 15 : 0);
-    final confirmationBars = confirmed ? 221 : 220;
+    final observedAt = DateTime.utc(2026, 8, 22, 12, complete ? 15 : 0);
+    final confirmationBars = complete ? 221 : 220;
     return BingxFuturesMarketSnapshotInput(
       instrument: const BingxFuturesInstrumentMeta(
         symbol: 'BTC-USDT',
@@ -875,7 +875,7 @@ class BingxFuturesLiveSnapshotBuilderService {
         indexPriceDecimal: '100',
       ),
       candles: [
-        for (var index = 0; index < (confirmed ? 65 : 64); index++)
+        for (var index = 0; index < (complete ? 65 : 64); index++)
           candle(
             '5m',
             start.add(Duration(minutes: (index + 1) * 5)),
@@ -892,10 +892,10 @@ class BingxFuturesLiveSnapshotBuilderService {
               Duration(minutes: (confirmationBars - 1 - index) * 15),
             ),
             15,
-            confirmed && index == confirmationBars - 1 ? 91.5 : 101,
-            confirmed && index == confirmationBars - 1 ? 94 : 102,
-            confirmed && index == confirmationBars - 1 ? 91 : 100,
-            confirmed && index == confirmationBars - 1 ? 93.5 : 101,
+            complete && index == confirmationBars - 1 ? 91.5 : 101,
+            complete && index == confirmationBars - 1 ? 94 : 102,
+            complete && index == confirmationBars - 1 ? 91 : 100,
+            complete && index == confirmationBars - 1 ? 93.5 : 101,
           ),
         for (var index = 0; index < 24; index++)
           candle(
@@ -916,14 +916,14 @@ class BingxFuturesLiveSnapshotBuilderService {
               12,
             ).subtract(Duration(hours: (33 - index) * 4)),
             240,
-            index == 32 ? 94 : 101,
-            <int>{8, 16, 24}.contains(index) ? 108 : 102,
-            index == 32
-                ? 90
-                : <int>{8, 16, 24}.contains(index)
-                ? 98
+            101,
+            <int>{8, 16}.contains(index) || (complete && index == 24)
+                ? 108
+                : 102,
+            <int>{8, 16}.contains(index) || (complete && index == 24)
+                ? 94
                 : 100,
-            index == 32 ? 100 : 101,
+            101,
           ),
         candle('1m', start, 1),
         candle('1d', DateTime.utc(2026, 8, 22), 1440, 100, 112, 98, 100),

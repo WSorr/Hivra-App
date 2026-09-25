@@ -200,4 +200,4 @@ class BingxFuturesMarketSnapshotDigest {
   });
 }
 
-const bingxLiquidityStrategyVersion = '4h-sweep-reclaim-15m-v3';
+const bingxLiquidityStrategyVersion = '4h-active-liquidity-zone-v4';

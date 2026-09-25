@@ -419,8 +419,10 @@ bool tradingLocalRunnerActionEnabled({
 
 @visibleForTesting
 String tradingLocalRunnerStatusLabel(
-  BingxFuturesInteractiveRunnerSnapshot? snapshot,
-) {
+  BingxFuturesInteractiveRunnerSnapshot? snapshot, {
+  bool authorityActive = true,
+  bool limitChanged = false,
+}) {
   if (snapshot == null) {
     return 'Runs every 5 minutes while Hivra and this Trading workspace stay open.';
   }
@@ -434,6 +436,13 @@ String tradingLocalRunnerStatusLabel(
           ? null
           : 'next check ${nextCycleAtUtc.hour.toString().padLeft(2, '0')}:'
               '${nextCycleAtUtc.minute.toString().padLeft(2, '0')} UTC';
+  if (!authorityActive &&
+      (snapshot.phase == BingxFuturesInteractiveRunnerPhase.stopped ||
+          snapshot.phase == BingxFuturesInteractiveRunnerPhase.failed)) {
+    return limitChanged
+        ? 'Stopped: the risk limit changed. Resume to authorize the new limit.'
+        : 'Stopped: trading authority is inactive. Resume before starting again.';
+  }
   return switch (snapshot.phase) {
     BingxFuturesInteractiveRunnerPhase.running =>
       'Checking the market now · $completedAttempts finished',
@@ -812,8 +821,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   );
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _apiSecretController = TextEditingController();
-  final TextEditingController _cancelOrderIdController =
-      TextEditingController();
 
   bool _runningIntent = false;
   String _intentProgressLabel = 'Starting';
@@ -823,7 +830,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _loadingPerpSymbols = false;
   bool _scanningSignals = false;
   bool _signalRankExpanded = true;
-  bool _cancelingOrder = false;
   bool _fittingMaxNotional = false;
   bool _reviewingExposure = false;
   bool _useTestOrderEndpoint = false;
@@ -855,7 +861,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   BingxFuturesOrderExecutionResult? _lastExecution;
   BingxFuturesOpenOrdersResult? _lastOpenOrdersRead;
   BingxFuturesManagedOrderReconciliationResult? _lastReconciliation;
-  BingxFuturesCancelOrderResult? _lastCancelOrder;
   List<BingxFuturesOpenOrder> _openOrders = const <BingxFuturesOpenOrder>[];
   final Set<String> _managedOrderIds = <String>{};
   final Map<String, String> _managedOrderSymbols = <String, String>{};
@@ -912,7 +917,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _strategyTagController.dispose();
     _apiKeyController.dispose();
     _apiSecretController.dispose();
-    _cancelOrderIdController.dispose();
     super.dispose();
   }
 
@@ -1038,7 +1042,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (normalizedOrderId != null && normalizedOrderId.isNotEmpty) {
       _trackedOrderId = normalizedOrderId;
       _registerManagedOrderId(normalizedOrderId, symbol: normalizedSymbol);
-      _cancelOrderIdController.text = normalizedOrderId;
     } else {
       _trackedOrderId = null;
     }
@@ -1133,7 +1136,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
       final previousOrderId = trackedOrderId;
       _trackedOrderId = null;
-      _cancelOrderIdController.clear();
       await _module.uiLog.log(
         'bingx.exchange.tracking.retarget.force',
         'source=$source symbol=$normalizedSymbol previousOrderId=$previousOrderId',
@@ -1920,6 +1922,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           _droneEnabled = false;
           _tradingMandate = mandate.revoke(revokedAt);
         });
+        await _stopLocalRunner(reason: 'risk_autofit_mandate_revoked');
         await _persistOpenOrdersTrackingState(
           source: 'risk_autofit_mandate_revoked',
         );

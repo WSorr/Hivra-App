@@ -123,6 +123,51 @@ class BingxFuturesRemoteOrderCandidateService {
        _sizing = sizing,
        _risk = risk;
 
+  Future<String?> preflightMarketEvidence({
+    required List<int> untrustedMarketEvidenceBytes,
+    required SimplePublicKey trustedRunnerKey,
+    required int lastAcceptedSequence,
+    required String lastAcceptedEvidenceHashHex,
+    required String expectedRunnerBuildId,
+    required String expectedPluginId,
+    required String expectedPluginVersion,
+    required String expectedPackageDigestHex,
+    required String expectedHostAbi,
+    required String expectedSymbol,
+    required DateTime nowUtc,
+  }) async {
+    final continuity = await _shadow.verifyShadowEvidenceContinuity(
+      untrustedWireBytes: untrustedMarketEvidenceBytes,
+      trustedRunnerKey: trustedRunnerKey,
+      lastAcceptedSequence: lastAcceptedSequence,
+      lastAcceptedEvidenceHashHex: lastAcceptedEvidenceHashHex,
+    );
+    if (continuity != BingxFuturesShadowEvidenceVerdict.accepted) {
+      return 'market_evidence_${continuity.name}';
+    }
+    final evidence = _shadow.parseShadowEvidence(untrustedMarketEvidenceBytes);
+    final now = nowUtc.toUtc();
+    if (evidence.contractVersion != 'trading-shadow-evidence-v2' ||
+        evidence.runnerBuildId != expectedRunnerBuildId ||
+        evidence.pluginId != expectedPluginId ||
+        evidence.pluginVersion != expectedPluginVersion ||
+        evidence.packageDigestHex != expectedPackageDigestHex ||
+        evidence.hostAbi != expectedHostAbi) {
+      return 'market_evidence_identity_mismatch';
+    }
+    if (now.millisecondsSinceEpoch < evidence.observedAtEpochMs ||
+        now.millisecondsSinceEpoch > evidence.validUntilEpochMs) {
+      return 'market_evidence_stale';
+    }
+    if (evidence.marketProposalStatus != 'READY') {
+      return 'market_proposal_blocked';
+    }
+    if (evidence.marketSymbol != expectedSymbol) {
+      return 'market_symbol_mismatch';
+    }
+    return null;
+  }
+
   Future<BingxFuturesRemoteOrderCandidateResult> compose({
     required List<int> untrustedMarketEvidenceBytes,
     required SimplePublicKey trustedRunnerKey,
@@ -141,32 +186,22 @@ class BingxFuturesRemoteOrderCandidateService {
     required double stopLossPercent,
     required double minimumRiskReward,
   }) async {
-    final continuity = await _shadow.verifyShadowEvidenceContinuity(
-      untrustedWireBytes: untrustedMarketEvidenceBytes,
+    final marketBlocker = await preflightMarketEvidence(
+      untrustedMarketEvidenceBytes: untrustedMarketEvidenceBytes,
       trustedRunnerKey: trustedRunnerKey,
       lastAcceptedSequence: lastAcceptedSequence,
       lastAcceptedEvidenceHashHex: lastAcceptedEvidenceHashHex,
+      expectedRunnerBuildId: expectedRunnerBuildId,
+      expectedPluginId: expectedPluginId,
+      expectedPluginVersion: expectedPluginVersion,
+      expectedPackageDigestHex: expectedPackageDigestHex,
+      expectedHostAbi: expectedHostAbi,
+      expectedSymbol: mandate.symbol,
+      nowUtc: nowUtc,
     );
-    if (continuity != BingxFuturesShadowEvidenceVerdict.accepted) {
-      return _blocked('market_evidence_${continuity.name}');
-    }
+    if (marketBlocker != null) return _blocked(marketBlocker);
     final evidence = _shadow.parseShadowEvidence(untrustedMarketEvidenceBytes);
     final now = nowUtc.toUtc();
-    if (evidence.contractVersion != 'trading-shadow-evidence-v2' ||
-        evidence.runnerBuildId != expectedRunnerBuildId ||
-        evidence.pluginId != expectedPluginId ||
-        evidence.pluginVersion != expectedPluginVersion ||
-        evidence.packageDigestHex != expectedPackageDigestHex ||
-        evidence.hostAbi != expectedHostAbi) {
-      return _blocked('market_evidence_identity_mismatch');
-    }
-    if (now.millisecondsSinceEpoch < evidence.observedAtEpochMs ||
-        now.millisecondsSinceEpoch > evidence.validUntilEpochMs) {
-      return _blocked('market_evidence_stale');
-    }
-    if (evidence.marketProposalStatus != 'READY') {
-      return _blocked('market_proposal_blocked');
-    }
     if (!mandate.isActiveAt(now)) return _blocked('mandate_inactive');
     if (!accountRisk.isComplete) {
       return _blocked('account_risk_incomplete');
@@ -188,9 +223,6 @@ class BingxFuturesRemoteOrderCandidateService {
       return _blocked('market_proposal_malformed');
     }
     final symbol = mandate.symbol;
-    if (evidence.marketSymbol != symbol) {
-      return _blocked('market_symbol_mismatch');
-    }
     if (contractRules.symbol.trim().toUpperCase() != symbol) {
       return _blocked('contract_rules_symbol_mismatch');
     }

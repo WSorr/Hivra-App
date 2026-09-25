@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
@@ -17,9 +18,27 @@ import '../tool/trading_remote_exact_order.dart'
         exportCompletedDeterministicSessionEffects,
         reconcileAuthorizedExactOrder,
         runAuthorizedManagedOrderCancellation,
-        runAuthorizedExactOrder;
+        runAuthorizedExactOrder,
+        safeRunnerFailureCategory;
 
 void main() {
+  test('runner failure category never includes exception details', () {
+    expect(
+      safeRunnerFailureCategory(StateError('secret exchange response')),
+      'state',
+    );
+    expect(
+      safeRunnerFailureCategory(const FormatException('secret')),
+      'invalid_input',
+    );
+    expect(
+      safeRunnerFailureCategory(const FileSystemException('secret')),
+      'filesystem',
+    );
+    expect(safeRunnerFailureCategory(SocketException('secret')), 'network');
+    expect(safeRunnerFailureCategory(TimeoutException('secret')), 'timeout');
+  });
+
   test(
     'old strategy authorization cannot run new strategy or read exchange',
     () async {
@@ -28,11 +47,13 @@ void main() {
         legacyStrategy: true,
       );
       addTearDown(fixture.dispose);
+      final stages = <String>[];
       final result = jsonDecode(
         await runOneDeterministicOrder(
           options: fixture.options,
           runnerSeedBytes: fixture.runnerSeed,
           executeExactOrder: runAuthorizedExactOrder,
+          reportStage: stages.add,
           nowUtc: () => fixture.now,
           requestSender:
               (_) async => throw StateError('old authority reached exchange'),
@@ -40,6 +61,7 @@ void main() {
       );
       expect(result['reason_code'], 'strategy_authorization_upgrade_required');
       expect(result['effect'], isFalse);
+      expect(stages, ['admission', 'credentials']);
     },
   );
   for (final initialState in ['succeeded', 'unresolved', 'terminal_failure']) {
@@ -208,7 +230,7 @@ void main() {
     'closed-candle reclaim reaches one remote effect and survives recovery',
     () async {
       const strategy = BingxFuturesDeterministicReplayHarnessService();
-      final reference = strategy.runSweepReclaimReferenceScenario();
+      final reference = strategy.runActiveZoneReferenceScenario();
       final before = strategy.replayLiveDecision(
         fixtureId: 'live:BTC-USDT',
         decision: reference.waiting,
@@ -443,6 +465,45 @@ void main() {
     },
   );
 
+  test('blocked market proposal skips private risk reads and order', () async {
+    const harness = BingxFuturesDeterministicReplayHarnessService();
+    final blockedRun = harness.replayLiveDecision(
+      fixtureId: 'live:BTC-USDT',
+      decision: harness.runActiveZoneReferenceScenario().waiting,
+    );
+    expect(blockedRun.marketProposalStatus, 'BLOCKED');
+    final fixture = await _fixture(
+      sessionCycleIndex: 0,
+      testOrder: false,
+      publicRun: blockedRun,
+    );
+    addTearDown(fixture.dispose);
+    final requests = <BingxHttpRequest>[];
+    final stages = <String>[];
+    final result = jsonDecode(
+      await runOneDeterministicOrder(
+        options: fixture.options,
+        runnerSeedBytes: fixture.runnerSeed,
+        executeExactOrder: runAuthorizedExactOrder,
+        reportStage: stages.add,
+        requestSender: (request) async {
+          requests.add(request);
+          if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+            return _providerResponse(request);
+          }
+          throw StateError('blocked market reached private risk or order');
+        },
+        nowUtc: () => fixture.now,
+      ),
+    );
+
+    expect(result['state'], 'blocked');
+    expect(result['reason_code'], 'market_proposal_blocked');
+    expect(result['effect'], isFalse);
+    expect(requests, hasLength(1));
+    expect(stages, ['admission', 'credentials', 'open_orders', 'candidate']);
+  });
+
   for (final blockedProposal in [false, true]) {
     test(
       'active order is retained with blocked proposal=$blockedProposal',
@@ -459,7 +520,7 @@ void main() {
         );
         final blockedRun = harness.replayLiveDecision(
           fixtureId: 'live:BTC-USDT',
-          decision: harness.runSweepReclaimReferenceScenario().waiting,
+          decision: harness.runActiveZoneReferenceScenario().waiting,
         );
         expect(blockedRun.marketProposalStatus, 'BLOCKED');
         final next = await _fixture(
@@ -1421,7 +1482,7 @@ _fixture({
     maxEffects: maxEffects,
   );
   final policy = <String, dynamic>{
-    if (!legacyStrategy) 'strategy_version': '4h-sweep-reclaim-15m-v3',
+    if (!legacyStrategy) 'strategy_version': bingxLiquidityStrategyVersion,
     'runner_build_id': 'runner-build',
     'plugin_id': 'hivra.bingx-futures-trading',
     'plugin_version': '0.2.7-plugins',
@@ -1542,18 +1603,17 @@ _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': '4h_sweep_reclaim_15m',
+      'anchor_source': '4h_active_liquidity_zone',
       'anchor_executable': true,
-      'anchor_lifecycle': 'reclaimed',
+      'anchor_lifecycle': 'active',
       'atr14_5m_decimal': '2.5',
       'parent': {
-        'strategy_version': '4h-sweep-reclaim-15m-v3',
+        'strategy_version': bingxLiquidityStrategyVersion,
         'timeframe': '4h',
         'side': 'buy',
-        'low_decimal': '99',
-        'high_decimal': '102',
-        'sweep_at_utc': '2026-08-22T08:00:00Z',
-        'confirmed_at_utc': '2026-08-22T08:00:00Z',
+        'low_decimal': '100',
+        'high_decimal': '101',
+        'anchor_at_utc': '2026-08-22T08:00:00Z',
       },
       'liquidity_event_id': liquidityEventId ?? '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:45:00Z',

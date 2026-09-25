@@ -1357,6 +1357,22 @@ void main() {
       'waiting for a fresh liquidity zone',
     );
     expect(
+      tradingLocalRunnerStatusLabel(
+        const BingxFuturesInteractiveRunnerSnapshot(
+          capsuleScope:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          phase: BingxFuturesInteractiveRunnerPhase.stopped,
+          completedCycles: 6,
+          lastOutcome: 'blocked:liquidity_anchor_unavailable',
+          nextCycleAtUtc: null,
+          lastError: null,
+        ),
+        authorityActive: false,
+        limitChanged: true,
+      ),
+      'Stopped: the risk limit changed. Resume to authorize the new limit.',
+    );
+    expect(
       tradingLocalRunnerOutcomeLabel(
         'blocked:momentum_gate_short_missed_retest',
       ),

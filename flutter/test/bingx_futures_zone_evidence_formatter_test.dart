@@ -30,7 +30,7 @@ void main() {
       final text = formatBingxFuturesLiquidityObservation(decision);
       expect(text, contains('Buyside 99–101 · 3 pivots · Untouched'));
       expect(text, contains('Sellside 99–101 · 3 pivots · Swept'));
-      expect(text, contains('No confirmed executable setup'));
+      expect(text, contains('No active executable zone'));
       expect(text, contains('snapshot, not order prices'));
       expect(decision.canPrepareIntent, isFalse);
       expect(decision.zoneAnchorExecutable, isFalse);
@@ -54,7 +54,7 @@ void main() {
     expect(text, isNot(contains('Reclaim confirmed')));
   });
 
-  test('confirmed reclaim does not claim authority or a placed order', () {
+  test('active entry does not claim authority or a placed order', () {
     final text = formatBingxFuturesLiquidityObservation(_decision());
     expect(text, contains('still requires risk and mandate checks'));
     final blocked = formatBingxFuturesLiquidityObservation(
@@ -63,7 +63,39 @@ void main() {
     expect(blocked, contains('other entry checks block preparation'));
   });
 
+  test('active 4h parent is displayed without reclaim confirmation', () {
+    final text = formatBingxFuturesLiquidityObservation(
+      _decision(
+        source: '4h_active_liquidity_zone',
+        parentZone: const {
+          'side': 'buy',
+          'low_decimal': '89',
+          'high_decimal': '91',
+          'anchor_at_utc': '2026-09-25T08:00:00Z',
+        },
+      ),
+    );
+    expect(text, contains('Active 4h buy zone: 89–91'));
+    expect(text, isNot(contains('15m confirmation')));
+    expect(text, isNot(contains('sweep/reclaim')));
+  });
+
   group('formatBingxFuturesZoneEvidence', () {
+    test('active 4h zone age uses its anchor, not the latest observation', () {
+      final text = formatBingxFuturesZoneEvidence(
+        _decision(
+          source: '4h_active_liquidity_zone',
+          eventAtUtc: '2026-09-25T08:00:00Z',
+          observedAtUtc: '2026-09-25T10:00:00Z',
+          parentZone: const {'anchor_at_utc': '2026-09-10T16:00:00Z'},
+        ),
+      );
+
+      expect(text, contains('formed 10 Sep 2026 16:00 UTC'));
+      expect(text, contains('age 14d 18h'));
+      expect(text, isNot(contains('formed 25 Sep')));
+    });
+
     test('distinguishes an aged unswept HTF anchor from current price', () {
       final text = formatBingxFuturesZoneEvidence(
         _decision(
@@ -134,6 +166,7 @@ BingxFuturesLiveDecisionResult _decision({
   String? zoneLowDecimal = '89',
   String? zoneHighDecimal = '91',
   String? side = 'sell',
+  Map<String, dynamic>? parentZone,
 }) {
   return BingxFuturesLiveDecisionResult(
     canPrepareIntent: canPrepareIntent,
@@ -161,5 +194,6 @@ BingxFuturesLiveDecisionResult _decision({
     liquidityEventAtUtc: eventAtUtc,
     latestClosedMicroBarAtUtc: observedAtUtc,
     referencePriceDecimal: referencePriceDecimal,
+    parentZone: parentZone,
   );
 }

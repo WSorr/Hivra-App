@@ -72,6 +72,7 @@ class BingxFuturesLiveDecisionService {
         ),
         fallbackSide: requestedZoneSide ?? 'buy',
         requiredSide: requestedZoneSide,
+        restingZoneEntry: true,
         microHighs: _readHighs(input.snapshotInput.candles, '15m'),
         microLows: _readLows(input.snapshotInput.candles, '15m'),
         microOpens: _readOpens(input.snapshotInput.candles, '15m'),

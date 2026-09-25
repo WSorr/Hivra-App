@@ -73,21 +73,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
             style: const TextStyle(color: Color(0xFFC4CCE0)),
           ),
           const SizedBox(height: 2),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'created ${_formatOrderTime(order.createdAtMs)}',
-                  style: const TextStyle(color: Color(0xFF8D97AE)),
-                ),
-              ),
-              TextButton.icon(
-                onPressed:
-                    _cancelingOrder ? null : () => _cancelOrder(order: order),
-                icon: const Icon(Icons.close_rounded, size: 16),
-                label: const Text('Cancel'),
-              ),
-            ],
+          Text(
+            'created ${_formatOrderTime(order.createdAtMs)}',
+            style: const TextStyle(color: Color(0xFF8D97AE)),
           ),
         ],
       ),
@@ -553,7 +541,19 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
               ),
               const SizedBox(height: 8),
               Text(
-                tradingLocalRunnerStatusLabel(localRunnerSnapshot),
+                tradingLocalRunnerStatusLabel(
+                  localRunnerSnapshot,
+                  authorityActive:
+                      _droneEnabled &&
+                      (_tradingMandate?.isActiveAt(DateTime.now().toUtc()) ??
+                          false),
+                  limitChanged:
+                      _tradingMandate != null &&
+                      !tradingMandateMaxNotionalMatches(
+                        mandate: _tradingMandate!,
+                        selectedMaxNotional: _maxNotionalUsdtController.text,
+                      ),
+                ),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 4),
@@ -1105,7 +1105,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           _panel(
             title: 'Order and Activity',
             subtitle:
-                'Read exchange orders without changing them. A filled order may leave an open position; check positions in BingX.',
+                'Read exchange orders without changing them. Review Exchange only orders and positions in BingX; only the authorized Runner may cancel its managed orders.',
             children: [
               Wrap(
                 spacing: 10,
@@ -1168,7 +1168,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 childrenPadding: const EdgeInsets.only(bottom: 8),
                 title: const Text('BingX account and manual controls'),
                 subtitle: const Text(
-                  'Credentials, simulation mode, and order-id cancellation.',
+                  'Credentials and simulation mode.',
                   style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
                 ),
                 children: [
@@ -1228,36 +1228,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                           _savingCredentials ? 'Saving' : 'Save BingX Account',
                         ),
                       ),
-                      SizedBox(
-                        width: 260,
-                        child: TextField(
-                          controller: _cancelOrderIdController,
-                          decoration: InputDecoration(
-                            labelText: 'Order ID to cancel',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: _cancelingOrder ? null : _cancelOrder,
-                        icon:
-                            _cancelingOrder
-                                ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                                : const Icon(Icons.cancel_presentation_rounded),
-                        label: Text(
-                          _cancelingOrder ? 'Canceling' : 'Cancel by ID',
-                        ),
-                      ),
                     ],
                   ),
                 ],
@@ -1300,14 +1270,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       'Tracking ${_trackedOrdersSymbol ?? "-"}'
                       '${_trackedOrderId == null ? '' : ' · id ${_trackedOrderId!}'}',
                       accent: const Color(0xFF8DC2FF),
-                    ),
-                  if (_lastCancelOrder != null)
-                    _statusChip(
-                      'Cancel: ${_lastCancelOrder!.exchangeCode}',
-                      accent:
-                          _lastCancelOrder!.isSuccess
-                              ? const Color(0xFF75D98A)
-                              : const Color(0xFFFF8A7A),
                     ),
                 ],
               ),

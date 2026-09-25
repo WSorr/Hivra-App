@@ -1047,7 +1047,7 @@ runtime_smoke_artifact() {
     die "runtime smoke accepted missing exact-order authority"
   fi
   [ ! -s "$stdout_file" ] &&
-    [ "$(cat "$stderr_file")" = "trading exact order failed" ] || {
+    [ "$(cat "$stderr_file")" = "trading exact order failed stage=input category=invalid_input" ] || {
     rm -rf "$smoke_root"
     die "runtime smoke did not reach the fail-closed effect boundary"
   }
@@ -3390,8 +3390,15 @@ export_completed_session_effects() {
     die "completed effect export refused another session"
   local output
   output="$(
-    read_completed_session_effects "$mandate"
-  )" || die "completed effect export failed"
+    read_completed_session_effects "$mandate" 2>"$work/stderr"
+  )" || {
+    local safe_failure
+    safe_failure="$(grep -E '^trading exact order failed stage=(input|admission|journal|validation) category=(network|filesystem|timeout|invalid_input|state|internal)$' "$work/stderr" | tail -n 1 || true)"
+    if [ -n "$safe_failure" ]; then
+      die "completed effect export failed ${safe_failure#trading exact order failed }"
+    fi
+    die "completed effect export failed"
+  }
   [ "${#output}" -le 65536 ] || die "completed effect export is oversized"
   trap - EXIT INT TERM
   rm -rf "$work"
@@ -4479,6 +4486,11 @@ PY
       --last-accepted-evidence-hash "$last_hash" \
       "${session_cycle_args[@]}" \
       >"$work/stdout" 2>"$work/stderr"; then
+    local safe_failure
+    safe_failure="$(grep -E '^trading exact order failed stage=(input|admission|credentials|open_orders|risk|rules|candidate|managed_order|effect) category=(network|filesystem|timeout|invalid_input|state|internal)$' "$work/stderr" | tail -n 1 || true)"
+    if [ -n "$safe_failure" ]; then
+      die "deterministic order failed ${safe_failure#trading exact order failed }"
+    fi
     die "deterministic order failed without exposing provider output"
   fi
   [ ! -s "$work/stderr" ] ||

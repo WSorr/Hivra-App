@@ -259,7 +259,7 @@ Detect 4h pivot clusters through the canonical detector below:
 Sweep condition:
 
 - a closed-candle wick crosses a previously established swing level;
-- parent reclaim and subsequent 15m confirmation follow the HTF-first contract
+- active 4h cluster selection and 15m invalidation follow the zone contract
   below, not a fixed percentage offset or an independent micro entry.
 
 ### 5.3.1 Canonical Hivra Pivot-Cluster Contract
@@ -298,7 +298,9 @@ Default parameters for v1:
 
 - `liqLen = 7`
 - `liqMar = 10 / 6.9`
-- `maxTrackedLevelsPerSide = visLiq = 3` (configurable)
+- `maxTrackedLevelsPerSide = visLiq = 3` (configurable) for each of active and
+  swept clusters independently; newer swept evidence cannot evict an older
+  untouched zone.
 
 Determinism constraints:
 
@@ -308,13 +310,14 @@ Determinism constraints:
 
 ### 5.3.2 Closed-Candle Sweep/Reclaim Lifecycle
 
-### HTF-first sweep/reclaim (local implementation, not deployed)
+### Active 4h liquidity-zone entry (local implementation, not deployed)
 
-The selected replacement is `4h parent zone -> 5m entry confirmation`.
-The 4h zone determines the scenario and direction; a conflicting 1h zone
-MUST NOT override it. The 1h timeframe may refine compatible context, but a
-missing or ambiguous 4h parent MUST NOT silently fall back to an independent
-1h or 5m entry. A trend label alone is not a parent liquidity zone.
+The entry owner selects the nearest unbreached three-pivot 4h sellside zone
+below price for a buy, or buyside zone above price for a sell. Tied candidates
+are unavailable. Raw extrema, a trend label and quote-shifted fallbacks cannot
+authorize entry. Sweep/reclaim and 15m directional candles remain context,
+not prerequisites. A closed 15m outer-boundary breach since the latest closed
+4h candle invalidates the candidate.
 
 #### Planned higher-timeframe observation
 
@@ -331,62 +334,30 @@ a zone or event.
 This overview is separate from executable readiness. Agreement across these
 timeframes is not a new entry requirement; disagreement cannot independently
 authorize, veto, cancel, or replace an order. It does not change entry bounds,
-targets, sizing, or signed authority. Execution remains `4h -> 15m`.
+targets, sizing, or signed authority. Execution uses the active 4h zone;
+15m checks current-period invalidation.
 Reuse the existing observation path without a separate scheduler, strategy,
 or truth store. This planned overview does not resolve insufficient 15m history
-for parent confirmation or pending-order revalidation.
+for pending-order revalidation.
 
-#### Parent and entry binding
+#### Zone and order binding
 
-The existing zone owner must retain the parent bounds, source, confirmation
-time and identity separately from the 15m entry bounds and confirmation.
-The 15m confirmation must occur after the parent is knowable, agree with its
-direction, and lie within its bounds. Forming candles cannot establish either
-authority. A new micro event cannot revive an invalidated parent.
+The sole new-entry strategy is `4h-active-liquidity-zone-v4`. Its signed
+proposal binds actual cluster bounds, side, 4h anchor time and the latest
+closed 4h observation. Event identity binds symbol, side and anchor time, so
+a later quote or cluster-width update cannot purchase a second effect for the
+same anchored zone. A pending `TRIGGER_LIMIT` waits at the zone boundary with
+its limit price inside the zone. Opposite external liquidity supplies the
+profit target; risk sizing and structural stop remain mandatory.
 
-Before activation, the same parent/confirmation binding must survive the
-existing signed proposal, order identity, restart and pending-order
-revalidation paths. A different parent candidate does not invalidate an
-existing order. Existing signed sessions retain their original semantics;
-the replacement requires explicit strategy-version binding and fresh session
-authorization, not an in-place reinterpretation of existing evidence.
-
-The sole new-entry strategy is `4h-sweep-reclaim-15m-v3`:
-
-1. A sellside cluster with at least three pivots is swept below its bottom;
-   a closed 4h candle above that boundary confirms a long parent. A buyside
-   cluster is symmetric for short. Reclaim may occur on the sweep candle.
-2. The parent spans the cluster boundary to the most extreme sweep wick before
-   confirmation. An unconfirmed sweep expires after eight 4h bars. A later
-   strict breach of the confirmed extreme invalidates that parent permanently.
-3. Active opposing parents, or equally recent same-side parents, are ambiguous.
-   Otherwise select the latest same-side reclaim. Flow and 1h context cannot
-   choose another direction or bypass an absent parent.
-4. The first subsequent closed 15m candle entirely inside the parent confirms
-   entry when its directional body is at least `0.5 * ATR14_15m`. Its high/low
-   are the entry bounds. A candle closing at the parent confirmation time is
-   not subsequent. Later strict crossing of the entry's outer extreme consumes
-   the confirmation; it cannot restart from a later micro candle.
-5. Closed timestamps must be continuous. Missing coverage from the parent
-   confirmation through the current micro snapshot is unavailable, not proof
-   of validity or invalidity. The snapshot builder reuses the canonical decision
-   to select the parent, then extends the initial micro window backward from
-   its confirmation, including 15 bars of ATR warm-up. Original-order
-   revalidation uses the same reader with the retained parent timestamp.
-   Reads are bounded to 84 days and 26 pages of at most 1000 candles, covering
-   the existing 500-bar 4h window. Every required closed 15m timestamp must be
-   present; duplicate, malformed, non-progressing, or failed pages are
-   unavailable, never execution or cancellation evidence. No persistent
-   candle cache or second zone-selection owner is introduced.
-6. The signed proposal includes separate parent bounds, side, sweep time,
-   confirmation time and strategy version. Event identity hashes the normalized
-   symbol and exact parent, so another micro confirmation cannot purchase a
-   second effect for the same parent. Decision hashing also binds entry bounds.
-7. Funding, trade imbalance and trend/momentum context remain signed observation
-   and ranking evidence, but cannot veto a complete structural entry. Missing or
-   conflicting authority, an absent executable anchor, stale evidence, invalid
-   precision, a missing opposite-liquidity target, risk limits and duplicate
-   effect protection remain fail-closed.
+An existing managed order is revalidated against its original signed zone,
+not a newly preferred candidate. Continuous closed 15m coverage from the
+original observation is required; a later strict outer-boundary breach may
+authorize cancellation through the existing effect journal. Missing or gapped
+coverage is unavailable, not cancellation evidence. The bounded history
+reader, one-effect journal and risk limits remain unchanged. Old v3 signed
+sessions are not upgraded to v4 trading authority; a fresh v4 authorization is
+required before an exchange effect.
 
 Void and independent micro-only entry paths are removed. Current replay and
 new authorization include the strategy version; a new runner rejects older
@@ -583,13 +554,12 @@ level cannot appear fresh merely because an older sweep fell outside a short
 runtime lookback.
 Raw candle highs/lows MUST NOT be treated as executable liquidity levels.
 `sweep_origin`, `post_sweep_reaction`, and `consumed` levels MUST NOT become
-fresh again merely because price moved away from them. A trade that claims
-sweep/reclaim semantics requires the canonical 4h parent and subsequent 15m
-confirmation, with a new live decision.
+fresh again merely because price moved away from them. Historical v3
+sweep/reclaim evidence cannot be relabeled as an active-zone v4 entry.
 Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
 `internal_diagnostic`, but MUST NOT authorize a pending order. If no current
-confirmed 4h-parent/15m-entry binding exists, the
-live decision MUST emit `liquidity_anchor_unavailable`.
+unbreached three-pivot 4h cluster exists, the live decision MUST emit
+`liquidity_anchor_unavailable`.
 
 The Trading UI MUST present executable microstructure bounds as a **pending
 liquidity zone**, not as current market price. Its existing live-decision
@@ -648,12 +618,11 @@ available indicator:
 1. Detect bounded fresh liquidity pools from confirmed closed-candle structure;
    while the latest closed micro bar and liquidity-event identity are unchanged,
    the exact zone geometry must not drift with the live quote.
-2. Maintain each pool lifecycle as `fresh`, `sweep_origin`,
-   `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
-3. Select the unambiguous 4h sweep/reclaim parent and its direction.
-4. Require subsequent 15m confirmation inside that parent and recent
-   aggressive-volume eligibility for the same side. No void fallback or
-   flow-driven reversal of the parent is permitted.
+2. Maintain each pool lifecycle as active, breached, or unavailable; historical
+   sweep/reclaim labels are observations only.
+3. Select the nearest unbreached three-pivot 4h pool ahead of the live price.
+4. Reject a current-period 15m outer-boundary breach. No void fallback or
+   flow-driven reversal of the selected pool is permitted.
 5. Rank valid structural candidates with liquidation-proxy confluence.
 6. Apply hard freshness, funding, structural, risk, claim, and effect guards.
 7. Use trend, OI, session, and large-flow evidence as context for explanation
@@ -666,31 +635,29 @@ contract.
 
 ### 6.1 LONG TVH
 
-1. A confirmed 4h sellside sweep/reclaim selects `buy`.
-2. A subsequent bullish 15m confirmation inside the parent supplies entry
-   bounds; recent aggressive-volume eligibility must agree with `buy`.
-3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
-   not satisfy the anchor rule.
+1. An active three-pivot 4h sellside cluster below price selects `buy`.
+2. Its actual bounds supply the pending entry; a later closed 15m outer
+   breach consumes the candidate, not a missing bullish candle.
+3. Breached clusters and synthetic extrema do not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
 5. Funding is not extreme and freshness/risk/effect guards pass.
 
 Entry anchor:
 
-- zone-based pending entry inside reclaim zone, using selected zone price rule (`zone_low` / `zone_mid` / `zone_high` / `manual`).
+- zone-based pending entry at the cluster boundary, with a limit inside it.
 
 ### 6.2 SHORT TVH
 
-1. A confirmed 4h buyside sweep/reclaim selects `sell`.
-2. A subsequent bearish 15m confirmation inside the parent supplies entry
-   bounds; recent aggressive-volume eligibility must agree with `sell`.
-3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
-   not satisfy the anchor rule.
+1. An active three-pivot 4h buyside cluster above price selects `sell`.
+2. Its actual bounds supply the pending entry; a later closed 15m outer
+   breach consumes the candidate, not a missing bearish candle.
+3. Breached clusters and synthetic extrema do not satisfy the anchor rule.
 4. Liquidation proxies may rank the structural candidate but cannot supply it.
 5. Funding is not extreme and freshness/risk/effect guards pass.
 
 Entry anchor:
 
-- zone-based pending entry inside reclaim zone.
+- zone-based pending entry at the cluster boundary, with a limit inside it.
 
 ### 6.2.1 Liquidity Naming Boundary
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +20,74 @@ void main() {
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const accountHash =
       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+  test('bootstrap cleanup selects only stale own regular transfers', () {
+    final now = DateTime.utc(2026, 9, 25, 12);
+    final old =
+        now.subtract(const Duration(days: 2)).millisecondsSinceEpoch ~/ 1000;
+    final recent =
+        now.subtract(const Duration(hours: 1)).millisecondsSinceEpoch ~/ 1000;
+    const transfer = '0123456789abcdef01234567';
+    SftpName entry(
+      String filename, {
+      int userId = 0,
+      required int modifiedAt,
+      bool symlink = false,
+    }) => SftpName(
+      filename: filename,
+      longname: filename,
+      attr: SftpFileAttrs(
+        userID: userId,
+        modifyTime: modifiedAt,
+        mode: SftpFileMode.value(symlink ? 0xa1ff : 0x81a4),
+      ),
+    );
+
+    expect(
+      DartSshBingxFuturesRemoteRunnerHostPort.staleTransferPaths(
+        entries: [
+          entry('hivra-runner-$capsuleHex-$transfer.tar.gz', modifiedAt: old),
+          entry(
+            'hivra-runner-bootstrap-$capsuleHex-$transfer.sh',
+            modifiedAt: old,
+          ),
+          entry(
+            'hivra-runner-$capsuleHex-aaaaaaaaaaaaaaaaaaaaaaaa.tar.gz',
+            modifiedAt: recent,
+          ),
+          entry('hivra-runner-$accountHash-$transfer.tar.gz', modifiedAt: old),
+          entry(
+            'hivra-runner-$capsuleHex-bbbbbbbbbbbbbbbbbbbbbbbb.tar.gz',
+            modifiedAt: old,
+            symlink: true,
+          ),
+          entry(
+            'hivra-runner-$capsuleHex-cccccccccccccccccccccccc.tar.gz',
+            modifiedAt: old,
+            userId: 1000,
+          ),
+          entry(
+            'hivra-runner-$capsuleHex-not-a-transfer.tar.gz',
+            modifiedAt: old,
+          ),
+        ],
+        profileId: capsuleHex,
+        nowUtc: now,
+      ),
+      [
+        '/tmp/hivra-runner-$capsuleHex-$transfer.tar.gz',
+        '/tmp/hivra-runner-bootstrap-$capsuleHex-$transfer.sh',
+      ],
+    );
+    expect(
+      () => DartSshBingxFuturesRemoteRunnerHostPort.staleTransferPaths(
+        entries: const [],
+        profileId: '../other',
+        nowUtc: now,
+      ),
+      throwsFormatException,
+    );
+  });
 
   test('embedded bundle loader authenticates both executable assets', () async {
     final archive = Uint8List.fromList(utf8.encode('runner archive'));

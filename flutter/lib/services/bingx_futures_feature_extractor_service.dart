@@ -302,6 +302,18 @@ class BingxFuturesFeatureExtractorService {
           level.breachedIndex = i;
         }
       }
+      for (final levels in [buyLevels, sellLevels]) {
+        var activeCount = 0;
+        var sweptCount = 0;
+        levels.removeWhere((level) {
+          if (level.breached) {
+            sweptCount++;
+            return sweptCount > maxTrackedLevelsPerSide;
+          }
+          activeCount++;
+          return activeCount > maxTrackedLevelsPerSide;
+        });
+      }
     }
 
     final activeBuyside =
@@ -682,9 +694,6 @@ class BingxFuturesFeatureExtractorService {
         pivotCount: pivotCount,
       ),
     );
-    if (levels.length > maxTrackedLevelsPerSide) {
-      levels.removeRange(maxTrackedLevelsPerSide, levels.length);
-    }
   }
 
   double _parseDecimal(String value) => double.parse(value);

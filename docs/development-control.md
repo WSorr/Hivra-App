@@ -1,13 +1,12 @@
 # Hivra Development Control
 
-Status date: 2026-09-21
+Status date: 2026-09-25
 
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Current source is protected `main`. Prerelease `v1.0.3-test20` points to
-  `7ed28cd`; exact macOS and Android packages built from `d418329` passed
-  digest-bound packaged signoff.
+- Current source is protected `main`. The latest published prerelease is
+  `v1.0.3-test21` at `8e5c136`; the local trading candidate is not released.
 - Core, Ledger, FFI, the WASM host, and one Flutter App Shell remain the runtime.
   Chat, Moltbook, and Trading are installed capabilities, but substantial
   orchestration still lives in Flutter.
@@ -18,16 +17,17 @@ Status date: 2026-09-21
 - Moltbook Assisted publication is release-proven; Bounded autonomous operation
   is not reference-grade.
 - Trading reuses one execution use case, effect journal, order-tracking store,
-  and execution queue. `test20`
-  proves packaged risk rejection and macOS reconciliation without a duplicate
+  and execution queue. `test20` proved packaged risk rejection and macOS
+  reconciliation without a duplicate
   effect. Opening the workspace reconciles the current VPS session state first;
   locally retained signed evidence may enrich only that exact server-reported
   session and cannot define operational authority. Capsule-managed VPS
   onboarding requires no Git or terminal work.
   A conflicting external order now pauses the Runner after one retained check
-  instead of exhausting the signed session. Current source recomputes fresh
-  entry authority from a closed 4h sweep/reclaim with subsequent 15m confirmation;
-  micro-only and void entry are removed locally, not deployed. A stale Runner-managed
+  instead of exhausting the signed session. Current local source prepares
+  pending entry at an active unbreached 4h buyside/sellside cluster without
+  requiring sweep/reclaim or a directional 15m confirmation. It is not deployed;
+  existing VPS sessions retain their prior strategy authority. A stale Runner-managed
   order is canceled through the existing effect journal, and a replacement may
   be placed only by the next cycle. Packaged and live VPS evidence for this
   lifecycle remains incomplete.
@@ -60,10 +60,10 @@ outcome they attest.
 
 ## Active Outcome: Trading 24/7
 
-The approved local strategy replacement is HTF-first: a 4h parent liquidity
-zone has priority over conflicting 1h context; 15m confirms entry inside it.
-Only sweep/reclaim is selected. Implementation binds parent evidence and
-strategy version through the existing decision and authorization paths.
+The current local strategy replacement is active-zone first: the nearest
+unbreached 4h liquidity cluster supplies a pending entry before a sweep;
+15m invalidates a crossed zone but does not confirm entry. The signed v4
+proposal and existing decision/authorization paths bind the cluster identity.
 Candidate `ec9496b` was deployed for an explicitly authorized VPS trial, but
 its first cycle failed while loading retained pre-upgrade market evidence;
 zero cycles and zero effects completed in that new session. Service startup
