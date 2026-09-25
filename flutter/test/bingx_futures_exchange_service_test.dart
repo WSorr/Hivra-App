@@ -249,7 +249,7 @@ void main() {
     });
 
     test(
-      'maps zone_pending limit intent to trigger-limit order payload',
+      'maps zone_pending limit intent to a resting limit payload',
       () async {
         late BingxHttpRequest capturedRequest;
         final service = BingxFuturesExchangeService(
@@ -282,13 +282,15 @@ void main() {
             takeProfitDecimal: '62000',
             intentHashHex: 'def',
           ),
-          testOrder: true,
+          testOrder: false,
         );
 
-        expect(capturedRequest.body, contains('type=TRIGGER_LIMIT'));
-        expect(capturedRequest.body, contains('stopPrice=62950'));
+        expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/order');
+        expect(capturedRequest.body, contains('type=LIMIT'));
+        expect(capturedRequest.body, isNot(contains('stopPrice=62950')));
         expect(capturedRequest.body, contains('price=63000'));
         final params = Uri.splitQueryString(capturedRequest.body);
+        expect(params['timeInForce'], 'PostOnly');
         final stopLossRaw = params['stopLoss'];
         final takeProfitRaw = params['takeProfit'];
         expect(stopLossRaw, isNotNull);

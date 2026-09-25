@@ -150,12 +150,7 @@ class BingxFuturesIntentPayload {
         'test_order': testOrder,
       };
 
-  String get exchangeOrderType {
-    if (entryMode == 'zone_pending' && orderType == 'limit') {
-      return 'TRIGGER_LIMIT';
-    }
-    return orderType == 'limit' ? 'LIMIT' : 'MARKET';
-  }
+  String get exchangeOrderType => orderType == 'limit' ? 'LIMIT' : 'MARKET';
 }
 
 class BingxFuturesOrderExecutionResult {

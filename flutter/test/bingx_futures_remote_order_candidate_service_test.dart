@@ -104,7 +104,7 @@ void main() {
 
         expect(intent, isNotNull);
         expect(intent!.orderType, 'limit');
-        expect(intent.timeInForce, 'GTC');
+        expect(intent.timeInForce, 'PostOnly');
         expect(intent.entryMode, 'zone_pending');
         expect(intent.intentHashHex, result.candidateHashHex);
         final admission = BingxFuturesRemoteMandateAdmission.issueExactOrder(
@@ -119,6 +119,19 @@ void main() {
         expect(
           admission!.exactOrder?['intent_hash_hex'],
           result.candidateHashHex,
+        );
+        expect(admission.exactOrder?['time_in_force'], 'PostOnly');
+        expect(
+          BingxFuturesRemoteMandateAdmission.issueExactOrder(
+            mandate: fixture.mandate,
+            runnerKeyId: '7' * 64,
+            exactOrder: <String, dynamic>{
+              ...intent.toExactOrderJson(testOrder: fixture.mandate.testOrder),
+              'time_in_force': 'IOC',
+            },
+            signCommitment: (_) => '8' * 128,
+          ),
+          isNull,
         );
       },
     );

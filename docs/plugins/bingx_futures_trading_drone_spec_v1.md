@@ -346,8 +346,10 @@ The sole new-entry strategy is `4h-active-liquidity-zone-v4`. Its signed
 proposal binds actual cluster bounds, side, 4h anchor time and the latest
 closed 4h observation. Event identity binds symbol, side and anchor time, so
 a later quote or cluster-width update cannot purchase a second effect for the
-same anchored zone. A pending `TRIGGER_LIMIT` waits at the zone boundary with
-its limit price inside the zone. Opposite external liquidity supplies the
+same anchored zone. A `LIMIT` with `PostOnly` time in force is placed inside
+the zone, without a provider trigger parent or `stopPrice`; the existing zone
+trigger remains local evidence only. The exchange rejects a crossing order
+rather than filling it immediately. Opposite external liquidity supplies the
 profit target; risk sizing and structural stop remain mandatory.
 
 An existing managed order is revalidated against its original signed zone,
@@ -406,9 +408,9 @@ not include credential unlock and does not prove an exchange effect failed.
   `clientOrderId` when provider acceptance preceded local order-id capture;
 - `NEW` and `PARTIALLY_FILLED` remain active; `CANCELED`, `REJECTED`, and
   `EXPIRED` become explicit terminal evidence;
-- `FILLED` is terminal fill evidence for a `TRIGGER_LIMIT` only when the exact
-  provider record reports a positive executed quantity. A triggered parent
-  with zero or absent execution remains `unresolved`: activation can create a
+- `FILLED` is terminal fill evidence only when the exact provider record
+  reports a positive executed quantity. An older triggered parent with zero
+  or absent execution remains `unresolved`: activation may have created a
   separate pending limit order and does not prove a filled position;
 - timeout, malformed evidence, unknown status, provider `not found`, legacy
   records without account binding, and account-binding mismatch remain

@@ -91,7 +91,7 @@ class BingxFuturesRemoteOrderCandidateResult {
         'order_type': 'limit',
         'quantity_decimal': decoded['quantity_decimal'],
         'limit_price_decimal': decoded['limit_price_decimal'],
-        'time_in_force': 'GTC',
+        'time_in_force': 'PostOnly',
         'entry_mode': 'zone_pending',
         'trigger_price_decimal': decoded['trigger_price_decimal'],
         'stop_loss_decimal': decoded['stop_loss_decimal'],

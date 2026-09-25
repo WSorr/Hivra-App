@@ -1374,7 +1374,7 @@ void main() {
               .state!
               .managedOrderProvenance['managed-trigger']!
               .lifecycleDiagnostic,
-          'provider_trigger_activated_without_fill_evidence',
+          'provider_filled_without_execution_evidence',
         );
 
         final restarted = await _reconciliationUseCase(
@@ -1458,7 +1458,7 @@ void main() {
               (_) async => const BingxHttpResponse(
                 statusCode: 200,
                 body:
-                    '{"code":0,"msg":"ok","data":{"orderID":"provider-terminal","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED"}}',
+                    '{"code":0,"msg":"ok","data":{"orderID":"provider-terminal","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED","executedQty":"0.01"}}',
               ),
         );
 
@@ -1558,7 +1558,7 @@ void main() {
               return const BingxHttpResponse(
                 statusCode: 200,
                 body:
-                    '{"code":0,"data":{"orderID":"managed-timeout","symbol":"BTC-USDT","side":"BUY","status":"FILLED"}}',
+                    '{"code":0,"data":{"orderID":"managed-timeout","symbol":"BTC-USDT","side":"BUY","status":"FILLED","executedQty":"0.01"}}',
               );
             }
             throw TimeoutException('provider response deadline exceeded');
@@ -2635,7 +2635,7 @@ void main() {
           return const BingxHttpResponse(
             statusCode: 200,
             body:
-                '{"code":0,"msg":"ok","data":{"orderID":"managed-capsule-a","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED"}}',
+                '{"code":0,"msg":"ok","data":{"orderID":"managed-capsule-a","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED","executedQty":"0.01"}}',
           );
         },
       );

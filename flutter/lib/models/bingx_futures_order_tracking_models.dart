@@ -1052,7 +1052,9 @@ class BingxFuturesRemoteMandateAdmission {
           payload.symbol != mandate.symbol ||
           payload.orderType != 'limit' ||
           payload.entryMode != 'zone_pending' ||
-          (payload.timeInForce ?? '').toUpperCase() != 'GTC' ||
+          !const {'GTC', 'POSTONLY'}.contains(
+            (payload.timeInForce ?? '').toUpperCase(),
+          ) ||
           payload.triggerPriceDecimal == null ||
           !RegExp(r'^[0-9a-f]{64}$').hasMatch(payload.intentHashHex ?? '') ||
           value['test_order'] != mandate.testOrder ||

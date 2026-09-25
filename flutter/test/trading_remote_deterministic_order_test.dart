@@ -368,7 +368,9 @@ void main() {
       final order = acceptedOrder!;
       expect(order['symbol'], 'BTC-USDT');
       expect(order['side'], 'BUY');
-      expect(order['type'], 'TRIGGER_LIMIT');
+      expect(order['type'], 'LIMIT');
+      expect(order['timeInForce'], 'PostOnly');
+      expect(order, isNot(contains('stopPrice')));
       expect(
         num.parse(order['quantity']!) * num.parse(order['price']!),
         lessThanOrEqualTo(10),
@@ -1404,6 +1406,8 @@ BingxHttpResponse _anchorBars({bool consumed = false}) => BingxHttpResponse(
 BingxHttpResponse _providerResponse(BingxHttpRequest request) {
   if (request.uri.path.endsWith('/quote/klines')) return _anchorBars();
   final body = switch (request.uri.path) {
+    '/openApi/swap/v2/quote/depth' =>
+      '{"code":0,"data":{"bids":[["99","1"]],"asks":[["102","1"]]}}',
     '/openApi/swap/v3/user/balance' =>
       '{"code":0,"data":[{"asset":"USDT","equity":"1000","availableMargin":"1000"}]}',
     '/openApi/swap/v2/trade/leverage' =>
