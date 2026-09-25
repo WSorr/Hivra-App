@@ -14,6 +14,44 @@ import 'package:hivra_app/services/bingx_futures_public_market_data_port.dart';
 
 void main() {
   group('BingxFuturesDeterministicReplayHarnessService', () {
+    test('hourly policy cannot sign a four-hour market proposal', () async {
+      const hourly = BingxFuturesDeterministicReplayHarnessService(
+        strategyVersion: bingxHourlyLiquidityStrategyVersion,
+      );
+      expect(
+        hourly.publicStrategyPolicyHashHex(),
+        isNot(
+          const BingxFuturesDeterministicReplayHarnessService()
+              .publicStrategyPolicyHashHex(),
+        ),
+      );
+      final reference =
+          const BingxFuturesDeterministicReplayHarnessService()
+              .runActiveZoneReferenceScenario();
+      final run = hourly.replayLiveDecision(
+        fixtureId: 'live:BTC-USDT',
+        decision: reference.ready,
+      );
+      expect(
+        () => hourly.buildShadowEvidence(
+          publicRun: run,
+          runnerBuildId: 'runner-build',
+          pluginId: 'hivra.bingx-futures-trading',
+          pluginVersion: '0.2.4',
+          packageDigestHex: 'a' * 64,
+          hostAbi: 'dart-headless-v1',
+          observedAtEpochMs:
+              DateTime.utc(2026, 8, 22, 12).millisecondsSinceEpoch,
+          validUntilEpochMs:
+              DateTime.utc(2026, 8, 22, 12, 1).millisecondsSinceEpoch,
+          sequence: 1,
+          previousEvidenceHashHex: '0' * 64,
+          runnerKeyId: 'b' * 64,
+          contractVersion: 'trading-shadow-evidence-v2',
+        ),
+        throwsFormatException,
+      );
+    });
     const service = BingxFuturesDeterministicReplayHarnessService(
       policy: BingxTvhPolicy(
         minAbsTradeImbalanceRatio: 0.5,

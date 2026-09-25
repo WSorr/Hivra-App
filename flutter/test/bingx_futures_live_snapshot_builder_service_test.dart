@@ -219,6 +219,7 @@ void main() {
                 DateTime.fromMillisecondsSinceEpoch(1710000400000, isUtc: true),
       );
       var requestedExtended4hHistory = false;
+      final requestedIntervals = <String>[];
       final exchange = BingxFuturesExchangeService(
         requestSender: (request) async {
           final path = request.uri.path;
@@ -230,6 +231,7 @@ void main() {
             );
           }
           if (path == '/openApi/swap/v3/quote/klines') {
+            requestedIntervals.add(request.uri.queryParameters['interval']!);
             if (request.uri.queryParameters['interval'] == '4h' &&
                 request.uri.queryParameters['limit'] == '500') {
               requestedExtended4hHistory = true;
@@ -313,6 +315,14 @@ void main() {
         isTrue,
       );
       expect(requestedExtended4hHistory, isTrue);
+      requestedIntervals.clear();
+      final hourly = await builder.fetchAndBuild(
+        exchange: exchange,
+        symbol: 'BTC-USDT',
+        strategyVersion: bingxHourlyLiquidityStrategyVersion,
+      );
+      expect(hourly.isSuccess, isTrue);
+      expect(requestedIntervals.toSet(), <String>{'5m', '15m', '1h'});
       final fiveMinuteCandles = snapshot.candles
           .where((item) => item.timeframe == '5m')
           .toList(growable: false);

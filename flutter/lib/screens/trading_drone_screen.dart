@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/bingx_futures_exchange_models.dart';
 import '../models/bingx_futures_exchange_execution_models.dart';
 import '../models/bingx_futures_live_decision_models.dart';
+import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_live_strategy_models.dart';
 import '../models/bingx_futures_order_sizing_models.dart';
 import '../models/bingx_futures_order_tracking_models.dart';

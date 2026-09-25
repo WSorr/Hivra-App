@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 
 import '../models/bingx_futures_exchange_models.dart';
+import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_order_sizing_models.dart';
 import '../models/bingx_futures_order_tracking_models.dart';
 import '../models/bingx_futures_risk_models.dart';
@@ -135,6 +136,7 @@ class BingxFuturesRemoteOrderCandidateService {
     required String expectedHostAbi,
     required String expectedSymbol,
     required DateTime nowUtc,
+    String expectedStrategyVersion = bingxLiquidityStrategyVersion,
   }) async {
     final continuity = await _shadow.verifyShadowEvidenceContinuity(
       untrustedWireBytes: untrustedMarketEvidenceBytes,
@@ -146,6 +148,24 @@ class BingxFuturesRemoteOrderCandidateService {
       return 'market_evidence_${continuity.name}';
     }
     final evidence = _shadow.parseShadowEvidence(untrustedMarketEvidenceBytes);
+    if (evidence.policyHashHex !=
+        BingxFuturesDeterministicReplayHarnessService(
+          strategyVersion: expectedStrategyVersion,
+        ).publicStrategyPolicyHashHex()) {
+      return 'market_strategy_mismatch';
+    }
+    final proposal =
+        evidence.marketProposalJson == null
+            ? null
+            : jsonDecode(evidence.marketProposalJson!);
+    if (proposal is Map<String, dynamic> &&
+        (proposal['zone'] as Map<String, dynamic>?)?['parent']
+            is Map<String, dynamic> &&
+        ((proposal['zone'] as Map<String, dynamic>)['parent']
+                as Map<String, dynamic>)['strategy_version'] !=
+            expectedStrategyVersion) {
+      return 'market_strategy_mismatch';
+    }
     final now = nowUtc.toUtc();
     if (evidence.contractVersion != 'trading-shadow-evidence-v2' ||
         evidence.runnerBuildId != expectedRunnerBuildId ||
@@ -185,6 +205,7 @@ class BingxFuturesRemoteOrderCandidateService {
     required DateTime nowUtc,
     required double stopLossPercent,
     required double minimumRiskReward,
+    String expectedStrategyVersion = bingxLiquidityStrategyVersion,
   }) async {
     final marketBlocker = await preflightMarketEvidence(
       untrustedMarketEvidenceBytes: untrustedMarketEvidenceBytes,
@@ -198,6 +219,7 @@ class BingxFuturesRemoteOrderCandidateService {
       expectedHostAbi: expectedHostAbi,
       expectedSymbol: mandate.symbol,
       nowUtc: nowUtc,
+      expectedStrategyVersion: expectedStrategyVersion,
     );
     if (marketBlocker != null) return _blocked(marketBlocker);
     final evidence = _shadow.parseShadowEvidence(untrustedMarketEvidenceBytes);

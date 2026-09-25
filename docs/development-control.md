@@ -24,9 +24,9 @@ Status date: 2026-09-25
   session and cannot define operational authority. Capsule-managed VPS
   onboarding requires no Git or terminal work.
   A conflicting external order now pauses the Runner after one retained check
-  instead of exhausting the signed session. Current local source prepares
-  pending entry at an active unbreached 4h buyside/sellside cluster without
-  requiring sweep/reclaim or a directional 15m confirmation. It is not deployed;
+  instead of exhausting the signed session. Current local source offers a
+  signed choice between 4h/15m and isolated 1h/5m active-zone entry without
+  requiring sweep/reclaim confirmation. It is not deployed;
   existing VPS sessions retain their prior strategy authority. A stale Runner-managed
   order is canceled through the existing effect journal, and a replacement may
   be placed only by the next cycle. Packaged and live VPS evidence for this
@@ -60,10 +60,10 @@ outcome they attest.
 
 ## Active Outcome: Trading 24/7
 
-The current local strategy replacement is active-zone first: the nearest
-unbreached 4h liquidity cluster supplies a pending entry before a sweep;
-15m invalidates a crossed zone but does not confirm entry. The signed v4
-proposal and existing decision/authorization paths bind the cluster identity.
+The current local strategy is active-zone first. A new signed session selects
+either 4h zones with 15m checks or 1h zones with 5m checks; neither mode
+requires sweep confirmation. The proposal and existing
+decision/authorization paths bind the cluster identity and selected version.
 Candidate `ec9496b` was deployed for an explicitly authorized VPS trial, but
 its first cycle failed while loading retained pre-upgrade market evidence;
 zero cycles and zero effects completed in that new session. Service startup

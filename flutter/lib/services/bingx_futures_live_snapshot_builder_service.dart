@@ -32,7 +32,17 @@ class BingxFuturesLiveSnapshotBuilderService {
     required BingxFuturesPublicMarketDataPort exchange,
     required String symbol,
     List<BingxFuturesSessionVolumePoint>? sessionVolumes,
+    String strategyVersion = bingxLiquidityStrategyVersion,
   }) async {
+    if (strategyVersion != bingxLiquidityStrategyVersion &&
+        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+      return _fail(
+        symbol: symbol,
+        code: 'unsupported_strategy',
+        message: 'Unsupported liquidity strategy',
+      );
+    }
+    final hourly = strategyVersion == bingxHourlyLiquidityStrategyVersion;
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) {
       return const BingxFuturesLiveSnapshotBuildResult(
@@ -68,21 +78,30 @@ class BingxFuturesLiveSnapshotBuilderService {
       interval: '1h',
       limit: 120,
     );
-    final k4hFuture = exchange.getPublicKlines(
-      symbol: normalizedSymbol,
-      interval: '4h',
-      limit: 500,
-    );
-    final k1dFuture = exchange.getPublicKlines(
-      symbol: normalizedSymbol,
-      interval: '1d',
-      limit: 120,
-    );
-    final k1wFuture = exchange.getPublicKlines(
-      symbol: normalizedSymbol,
-      interval: '1w',
-      limit: 60,
-    );
+    final k4hFuture =
+        hourly
+            ? null
+            : exchange.getPublicKlines(
+              symbol: normalizedSymbol,
+              interval: '4h',
+              limit: 500,
+            );
+    final k1dFuture =
+        hourly
+            ? null
+            : exchange.getPublicKlines(
+              symbol: normalizedSymbol,
+              interval: '1d',
+              limit: 120,
+            );
+    final k1wFuture =
+        hourly
+            ? null
+            : exchange.getPublicKlines(
+              symbol: normalizedSymbol,
+              interval: '1w',
+              limit: 60,
+            );
     final k5m = await k5mFuture;
     final k15m = await k15mFuture;
     final k1h = await k1hFuture;
@@ -94,9 +113,9 @@ class BingxFuturesLiveSnapshotBuilderService {
       k5m,
       k15m,
       k1h,
-      k4h,
-      k1d,
-      k1w,
+      if (k4h != null) k4h,
+      if (k1d != null) k1d,
+      if (k1w != null) k1w,
     ];
     for (final result in klineResults) {
       if (!result.isSuccess || result.klines.isEmpty) {
@@ -172,9 +191,12 @@ class BingxFuturesLiveSnapshotBuilderService {
         ...mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
         ...mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
         ...mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
-        ...mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
-        ...mapCandles('1d', k1d.klines, observedAtUtc: observationTime),
-        ...mapCandles('1w', k1w.klines, observedAtUtc: observationTime),
+        if (k4h != null)
+          ...mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
+        if (k1d != null)
+          ...mapCandles('1d', k1d.klines, observedAtUtc: observationTime),
+        if (k1w != null)
+          ...mapCandles('1w', k1w.klines, observedAtUtc: observationTime),
       ];
       final tradeRows = _mapTrades(trades.trades);
       final openInterestRows = _buildOpenInterestRows(
@@ -226,13 +248,16 @@ class BingxFuturesLiveSnapshotBuilderService {
       try {
         parent =
             const BingxFuturesLiveDecisionService()
-                .decidePublicMarket(snapshotInput: snapshotInput)
+                .decidePublicMarket(
+                  snapshotInput: snapshotInput,
+                  strategyVersion: strategyVersion,
+                )
                 .parentZone;
       } on FormatException {
         // Preserve the original snapshot for the decision owner's diagnostics.
         // An invalid snapshot must never gain execution authority by hydration.
       }
-      if (parent != null) {
+      if (parent != null && !hourly) {
         final history = await loadMicroHistory(
           exchange: exchange,
           symbol: normalizedSymbol,
@@ -261,7 +286,7 @@ class BingxFuturesLiveSnapshotBuilderService {
     }
   }
 
-  /// One bounded 15m history reader for entries and original-order revalidation.
+  /// One bounded micro history reader for entries and original-order revalidation.
   /// Coverage failure is not evidence that a zone was consumed.
   Future<List<BingxFuturesCandle>> loadMicroHistory({
     required BingxFuturesPublicMarketDataPort exchange,
@@ -269,8 +294,12 @@ class BingxFuturesLiveSnapshotBuilderService {
     required DateTime fromUtc,
     required DateTime observedAtUtc,
     List<BingxFuturesPublicKline>? initial,
+    String timeframe = '15m',
   }) async {
-    const step = 900000;
+    if (timeframe != '15m' && timeframe != '5m') {
+      throw const FormatException('micro_history_timeframe_unsupported');
+    }
+    final step = timeframe == '5m' ? 300000 : 900000;
     final end = observedAtUtc.toUtc().millisecondsSinceEpoch ~/ step * step;
     final start = fromUtc.toUtc().millisecondsSinceEpoch ~/ step * step - step;
     if (start <= 0 ||
@@ -290,13 +319,13 @@ class BingxFuturesLiveSnapshotBuilderService {
       } else {
         final result = await exchange.getPublicKlines(
           symbol: symbol,
-          interval: '15m',
+          interval: timeframe,
           limit: 1000,
           endTimeMs: cursor,
         );
         if (!result.isSuccess ||
             result.symbol != symbol ||
-            result.interval != '15m' ||
+            result.interval != timeframe ||
             result.klines.length > 1000) {
           throw const FormatException('micro_history_read_unavailable');
         }
@@ -345,7 +374,7 @@ class BingxFuturesLiveSnapshotBuilderService {
           if (bar == null) throw const FormatException('micro_history_gap');
           covered.add(bar);
         }
-        return mapCandles('15m', covered, observedAtUtc: observedAtUtc);
+        return mapCandles(timeframe, covered, observedAtUtc: observedAtUtc);
       }
       cursor = earliest - step;
     }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
 import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_signal_rank_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
@@ -763,10 +764,32 @@ void main() {
 
     final summary = tradingRemoteRunnerSessionDetailsLabel(verifiedSession);
     expect(summary, contains('SOL-USDT · LIVE'));
+    expect(summary, contains('Entry strategy: 4h zones / 15m checks'));
     expect(summary, contains('Limit 17 USDT · Up to 1 exchange request'));
     expect(summary, contains('Loss budget 2% · Minimum R:R 2.5'));
     expect(summary, contains('Checks every 5 min · Up to 24 checks'));
     expect(summary, contains('Capsule aaaaaaaa · Account bbbbbbbb'));
+    final hourlySession =
+        BingxFuturesRemoteMandateAdmission.issueDeterministicSession(
+          mandate: mandate,
+          runnerKeyId: 'c' * 64,
+          strategyPolicy:
+              BingxFuturesRemoteMandateAdmission.deterministicStrategyPolicy(
+                stopLossPercent: 2,
+                minimumRiskReward: 2.5,
+                includeOpenOrders: true,
+                strategyVersion: bingxHourlyLiquidityStrategyVersion,
+              ),
+          startsAtUtc: issuedAt.add(const Duration(minutes: 15)),
+          intervalSeconds: 300,
+          maxCycles: 24,
+          signCommitment: (_) => 'd' * 128,
+        );
+    expect(hourlySession, isNotNull);
+    expect(
+      tradingRemoteRunnerSessionDetailsLabel(hourlySession),
+      contains('Entry strategy: 1h zones / 5m checks'),
+    );
 
     final currentStatus =
         'active=active enabled=linked session_state=active '

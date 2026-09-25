@@ -64,6 +64,29 @@ void main() {
       expect(stages, ['admission', 'credentials']);
     },
   );
+  test(
+    'hourly strategy admission reaches the existing exchange path',
+    () async {
+      final fixture = await _fixture(
+        sessionCycleIndex: 0,
+        strategyVersion: bingxHourlyLiquidityStrategyVersion,
+      );
+      addTearDown(fixture.dispose);
+      final stages = <String>[];
+      await expectLater(
+        runOneDeterministicOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeed,
+          executeExactOrder: runAuthorizedExactOrder,
+          reportStage: stages.add,
+          nowUtc: () => fixture.now,
+          requestSender: (_) async => throw StateError('read boundary reached'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(stages, contains('open_orders'));
+    },
+  );
   for (final initialState in ['succeeded', 'unresolved', 'terminal_failure']) {
     test(
       'spent entry budget after $initialState blocks a fresh event',
@@ -1445,6 +1468,7 @@ _fixture({
   bool includeExposureScope = true,
   bool legacySession = false,
   bool legacyStrategy = false,
+  String strategyVersion = bingxLiquidityStrategyVersion,
   bool maintenance = true,
   int maxEffects = 1,
   BingxFuturesReplayRunResult? publicRun,
@@ -1486,7 +1510,7 @@ _fixture({
     maxEffects: maxEffects,
   );
   final policy = <String, dynamic>{
-    if (!legacyStrategy) 'strategy_version': bingxLiquidityStrategyVersion,
+    if (!legacyStrategy) 'strategy_version': strategyVersion,
     'runner_build_id': 'runner-build',
     'plugin_id': 'hivra.bingx-futures-trading',
     'plugin_version': '0.2.7-plugins',
@@ -1607,13 +1631,19 @@ _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': '4h_active_liquidity_zone',
+      'anchor_source':
+          strategyVersion == bingxHourlyLiquidityStrategyVersion
+              ? '1h_active_liquidity_zone'
+              : '4h_active_liquidity_zone',
       'anchor_executable': true,
       'anchor_lifecycle': 'active',
       'atr14_5m_decimal': '2.5',
       'parent': {
-        'strategy_version': bingxLiquidityStrategyVersion,
-        'timeframe': '4h',
+        'strategy_version': strategyVersion,
+        'timeframe':
+            strategyVersion == bingxHourlyLiquidityStrategyVersion
+                ? '1h'
+                : '4h',
         'side': 'buy',
         'low_decimal': '100',
         'high_decimal': '101',
@@ -1634,7 +1664,9 @@ _fixture({
     ],
   };
   final proposalJson = jsonEncode(proposal);
-  const harness = BingxFuturesDeterministicReplayHarnessService();
+  final harness = BingxFuturesDeterministicReplayHarnessService(
+    strategyVersion: strategyVersion,
+  );
   final unsignedEvidence = harness.buildShadowEvidence(
     publicRun:
         publicRun ??

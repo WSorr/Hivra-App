@@ -27,11 +27,20 @@ class BingxFuturesMarketSnapshotService {
   const BingxFuturesMarketSnapshotService();
 
   BingxFuturesMarketSnapshotDigest build(
-      BingxFuturesMarketSnapshotInput input) {
+      BingxFuturesMarketSnapshotInput input, {
+      String strategyVersion = bingxLiquidityStrategyVersion}) {
+    if (strategyVersion != bingxLiquidityStrategyVersion &&
+        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+      throw const FormatException('unsupported liquidity strategy');
+    }
     final instrument = _normalizeInstrument(input.instrument);
     final prices = _normalizePrices(input.prices);
     final candles = _normalizeCandles(input.candles);
-    _ensureRequiredTimeframesPresent(candles);
+    _ensureRequiredTimeframesPresent(
+        candles,
+        strategyVersion == bingxHourlyLiquidityStrategyVersion
+            ? const <String>['5m', '15m', '1h']
+            : requiredTimeframes);
     final trades = _normalizeTrades(input.trades);
     final openInterest = _normalizeOpenInterest(input.openInterest);
     final funding = _normalizeFunding(input.funding);
@@ -143,10 +152,11 @@ class BingxFuturesMarketSnapshotService {
     return rows;
   }
 
-  void _ensureRequiredTimeframesPresent(List<Map<String, dynamic>> candles) {
+  void _ensureRequiredTimeframesPresent(List<Map<String, dynamic>> candles,
+      List<String> requiredCandleTimeframes) {
     final seen = candles.map((item) => item['timeframe'] as String).toSet();
     final missing =
-        requiredTimeframes.where((tf) => !seen.contains(tf)).toList()..sort();
+        requiredCandleTimeframes.where((tf) => !seen.contains(tf)).toList()..sort();
     if (missing.isNotEmpty) {
       throw FormatException(
         'missing required candle timeframes: ${missing.join(", ")}',

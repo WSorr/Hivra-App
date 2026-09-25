@@ -251,7 +251,8 @@ The runtime decision envelope must emit this bundle for every live decision.
 
 ### 5.3 Liquidity Zone Detection
 
-Detect 4h pivot clusters through the canonical detector below:
+Detect pivot clusters on the signed session's parent timeframe (4h or 1h)
+through the same canonical detector below:
 
 - buyside liquidity: clustered confirmed highs;
 - sellside liquidity: clustered confirmed lows.
@@ -259,13 +260,14 @@ Detect 4h pivot clusters through the canonical detector below:
 Sweep condition:
 
 - a closed-candle wick crosses a previously established swing level;
-- active 4h cluster selection and 15m invalidation follow the zone contract
+- active cluster selection and 15m (4h mode) or 5m (1h mode) invalidation follow the zone contract
   below, not a fixed percentage offset or an independent micro entry.
 
 ### 5.3.1 Canonical Hivra Pivot-Cluster Contract
 
 The liquidity detector is an independently specified deterministic
-pivot-cluster model over closed 4h candles, not a numerical port of LuxAlgo:
+pivot-cluster model over closed candles of the selected parent timeframe,
+not a numerical port of LuxAlgo:
 
 1. Pivot source:
    - `pivot_high = pivothigh(liqLen, 1)`
@@ -334,17 +336,23 @@ a zone or event.
 This overview is separate from executable readiness. Agreement across these
 timeframes is not a new entry requirement; disagreement cannot independently
 authorize, veto, cancel, or replace an order. It does not change entry bounds,
-targets, sizing, or signed authority. Execution uses the active 4h zone;
-15m checks current-period invalidation.
+targets, sizing, or signed authority. Execution uses the signed session's
+active 4h/15m or 1h/5m zone and check timeframe.
 Reuse the existing observation path without a separate scheduler, strategy,
 or truth store. This planned overview does not resolve insufficient 15m history
 for pending-order revalidation.
 
 #### Zone and order binding
 
-The sole new-entry strategy is `4h-active-liquidity-zone-v4`. Its signed
-proposal binds actual cluster bounds, side, 4h anchor time and the latest
-closed 4h observation. Event identity binds symbol, side and anchor time, so
+New sessions select either `4h-active-liquidity-zone-v4` or
+`1h-active-liquidity-zone-5m-v1` at authorization. The choice is immutable
+within a signed session. Both use the same snapshot, proposal, candidate,
+effect journal, and managed-order owner; no second execution path is created.
+The 1h mode uses active unbreached 1h clusters, closed 5m invalidation, and
+opposite 1h liquidity targets without a 1d/1w directional veto. The 4h mode
+retains its existing 15m checks and higher-timeframe context. The signed
+proposal binds actual cluster bounds, side, anchor time and the latest
+closed parent observation. Event identity binds symbol, side and anchor time, so
 a later quote or cluster-width update cannot purchase a second effect for the
 same anchored zone. A `LIMIT` with `PostOnly` time in force is placed inside
 the zone, without a provider trigger parent or `stopPrice`; the existing zone
@@ -353,7 +361,8 @@ rather than filling it immediately. Opposite external liquidity supplies the
 profit target; risk sizing and structural stop remain mandatory.
 
 An existing managed order is revalidated against its original signed zone,
-not a newly preferred candidate. Continuous closed 15m coverage from the
+not a newly preferred candidate. Continuous closed 15m (4h mode) or 5m
+(1h mode) coverage from the
 original observation is required; a later strict outer-boundary breach may
 authorize cancellation through the existing effect journal. Missing or gapped
 coverage is unavailable, not cancellation evidence. The bounded history

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
@@ -54,6 +55,12 @@ Future<void> main(List<String> args) async {
     );
     final marketData = BingxFuturesExchangeService();
     final symbol = _required(options, 'symbol');
+    final strategyVersion =
+        options['strategy-version'] ?? bingxLiquidityStrategyVersion;
+    if (strategyVersion != bingxLiquidityStrategyVersion &&
+        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+      throw const FormatException('unsupported liquidity strategy');
+    }
     final accumulator = BingxFuturesPublicSessionAccumulator(symbol: symbol);
     final socket = await WebSocket.connect(
       bingxPublicSwapWebSocket,
@@ -69,12 +76,14 @@ Future<void> main(List<String> args) async {
           throw StateError('public trade stream disconnected');
         }
         final evidenceOwner = BingxFuturesDeterministicReplayHarnessService(
+          strategyVersion: strategyVersion,
           loadLiveSnapshot:
               ({required exchange, required symbol}) =>
                   const BingxFuturesLiveSnapshotBuilderService().fetchAndBuild(
                     exchange: exchange,
                     symbol: symbol,
                     sessionVolumes: accumulator.snapshot(),
+                    strategyVersion: strategyVersion,
                   ),
         );
         final evidence = await stream.append(
@@ -348,6 +357,7 @@ Map<String, String> _parseArgs(List<String> args) {
   const allowed = <String>{
     'mode',
     'symbol',
+    'strategy-version',
     'runner-build-id',
     'plugin-id',
     'plugin-version',
@@ -392,6 +402,7 @@ String? _requestedMode(List<String> args) {
 void _validateModeOptions(Map<String, String> options, String mode) {
   const publicOnly = <String>{
     'symbol',
+    'strategy-version',
     'runner-build-id',
     'plugin-id',
     'plugin-version',
