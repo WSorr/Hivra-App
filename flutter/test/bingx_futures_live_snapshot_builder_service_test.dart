@@ -10,7 +10,7 @@ import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.d
 void main() {
   group('bounded parent history', () {
     final now = DateTime.utc(2026, 9, 20, 12);
-    const step = 300000;
+    const step = 900000;
     final end = now.millisecondsSinceEpoch;
     List<Object> row(int at) => [at, '100', '102', '99', '101'];
 
@@ -30,7 +30,7 @@ void main() {
             requests++;
             expect(request.method, 'GET');
             expect(request.headers, isEmpty);
-            expect(request.uri.queryParameters['interval'], '5m');
+            expect(request.uri.queryParameters['interval'], '15m');
             final cursor = int.parse(request.uri.queryParameters['endTime']!);
             expect(cursor % step, 0);
             cursors.add(cursor);
@@ -62,8 +62,8 @@ void main() {
             );
         if (fault == 'none') {
           final result = await future;
-          expect(requests, 4);
-          expect(result.length, 12 * 24 * 12 + 1);
+          expect(requests, 2);
+          expect(result.length, 12 * 24 * 4 + 1);
           expect(
             result.first.closeTimeUtc,
             now.subtract(const Duration(days: 12)).toIso8601String(),
@@ -76,7 +76,7 @@ void main() {
         for (var i = 1; i < cursors.length; i++) {
           expect(cursors[i], lessThan(cursors[i - 1]));
         }
-        expect(requests, lessThanOrEqualTo(4));
+        expect(requests, lessThanOrEqualTo(2));
       });
     }
 
@@ -103,7 +103,7 @@ void main() {
                 ),
               ),
             );
-        expect(result, hasLength(3));
+        expect(result, hasLength(2));
       },
     );
 

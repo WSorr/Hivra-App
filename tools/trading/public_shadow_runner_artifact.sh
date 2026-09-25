@@ -1047,7 +1047,7 @@ runtime_smoke_artifact() {
     die "runtime smoke accepted missing exact-order authority"
   fi
   [ ! -s "$stdout_file" ] &&
-    [ "$(cat "$stderr_file")" = "trading exact order failed" ] || {
+    [ "$(cat "$stderr_file")" = "trading exact order failed stage=input category=invalid_input" ] || {
     rm -rf "$smoke_root"
     die "runtime smoke did not reach the fail-closed effect boundary"
   }
@@ -3335,6 +3335,36 @@ read_completed_session_effects() {
       --deterministic-state-home "$(effect_state_home deterministic)"
 }
 
+select_original_session_operation() {
+  local mandate="$1"
+  local session_operation_id="$2"
+  local cycle_index="$3"
+  local effects_output="$4"
+  if [ "$cycle_index" -eq 0 ]; then
+    return 0
+  fi
+  read_completed_session_effects "$mandate" >"$effects_output" || return 1
+  python3 - "$effects_output" "$session_operation_id" "$cycle_index" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+path, session, current = sys.argv[1:]
+source = pathlib.Path(path)
+if source.stat().st_size > 65536:
+    raise SystemExit("completed effects exceed bounded selection")
+operations = json.loads(source.read_text())
+ids = {operation["operation_id"] for operation in operations
+       if operation["effect_kind"] == "place-exact-order" and operation["state"] == "succeeded"}
+for index in range(int(current) - 1, -1, -1):
+    identity = hashlib.sha256(b"hivra:bingx-futures-remote-session-cycle:v1\n" +
+        json.dumps({"session_operation_id": session, "cycle_index": index}, separators=(",", ":")).encode()).hexdigest()
+    if identity in ids:
+        print(identity)
+        break
+PY
+}
+
 export_completed_session_effects() {
   local directory="$1"
   require_expected_runner_key_id
@@ -3360,8 +3390,15 @@ export_completed_session_effects() {
     die "completed effect export refused another session"
   local output
   output="$(
-    read_completed_session_effects "$mandate"
-  )" || die "completed effect export failed"
+    read_completed_session_effects "$mandate" 2>"$work/stderr"
+  )" || {
+    local safe_failure
+    safe_failure="$(grep -E '^trading exact order failed stage=(input|admission|journal|validation) category=(network|filesystem|timeout|invalid_input|state|internal)$' "$work/stderr" | tail -n 1 || true)"
+    if [ -n "$safe_failure" ]; then
+      die "completed effect export failed ${safe_failure#trading exact order failed }"
+    fi
+    die "completed effect export failed"
+  }
   [ "${#output}" -le 65536 ] || die "completed effect export is oversized"
   trap - EXIT INT TERM
   rm -rf "$work"
@@ -4381,29 +4418,11 @@ PY
   local -a original_market_credentials=()
   if [ -n "$cycle_index" ]; then
     session_cycle_args=(--session-cycle-index "$cycle_index")
-    read_completed_session_effects "$mandate" \
-      >"$work/completed-effects.json" || die "original observation selection requires verified effects"
     local original_operation
-    original_operation="$(python3 - "$work/completed-effects.json" "$admission_operation_id" "$cycle_index" <<'PY'
-import hashlib
-import json
-import pathlib
-import sys
-path, session, current = sys.argv[1:]
-source = pathlib.Path(path)
-if source.stat().st_size > 65536:
-    raise SystemExit("completed effects exceed bounded selection")
-operations = json.loads(source.read_text())
-ids = {operation["operation_id"] for operation in operations
-       if operation["effect_kind"] == "place-exact-order" and operation["state"] == "succeeded"}
-for index in range(int(current) - 1, -1, -1):
-    identity = hashlib.sha256(b"hivra:bingx-futures-remote-session-cycle:v1\n" +
-        json.dumps({"session_operation_id": session, "cycle_index": index}, separators=(",", ":")).encode()).hexdigest()
-    if identity in ids:
-        print(identity)
-        break
-PY
-    )" || die "original observation selection failed"
+    original_operation="$(select_original_session_operation \
+      "$mandate" "$admission_operation_id" "$cycle_index" \
+      "$work/completed-effects.json")" ||
+      die "original observation selection requires verified effects"
     if [ -n "$original_operation" ]; then
       local original_evidence="$observation_dir/$original_operation.json"
       [ -f "$original_evidence" ] && [ ! -L "$original_evidence" ] &&
@@ -4467,6 +4486,11 @@ PY
       --last-accepted-evidence-hash "$last_hash" \
       "${session_cycle_args[@]}" \
       >"$work/stdout" 2>"$work/stderr"; then
+    local safe_failure
+    safe_failure="$(grep -E '^trading exact order failed stage=(input|admission|credentials|open_orders|risk|rules|candidate|managed_order|effect) category=(network|filesystem|timeout|invalid_input|state|internal)$' "$work/stderr" | tail -n 1 || true)"
+    if [ -n "$safe_failure" ]; then
+      die "deterministic order failed ${safe_failure#trading exact order failed }"
+    fi
     die "deterministic order failed without exposing provider output"
   fi
   [ ! -s "$work/stderr" ] ||
@@ -5164,6 +5188,11 @@ self_test() {
   if effect_state_directory unknown >/dev/null 2>&1; then
     die "self-test accepted an unknown effect state owner"
   fi
+  [ -z "$(select_original_session_operation \
+    "$root/missing-mandate" "$(printf '0%.0s' {1..64})" 0 \
+    "$root/unexpected-completed-effects.json")" ] &&
+    [ ! -e "$root/unexpected-completed-effects.json" ] ||
+    die "self-test cycle zero required prior effect evidence"
 
   local unit_target="$root/session-unit"
   local unit_link="$root/session-unit-link"
@@ -6163,7 +6192,7 @@ root = pathlib.Path(sys.argv[1])
 metadata = json.loads((root / "metadata.json").read_text())
 starts = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 strategy = {
-    "runner_build_id": "systemd-public-shadow-v1",
+    "runner_build_id": "systemd-public-shadow-v2",
     "plugin_id": "hivra.bingx-futures-trading",
     "plugin_version": "0.2.4",
     "package_digest_hex": "0e1eb93a9f53d3da9b4ec914e9841bc11355d08a59fdf8eb2b67994dd496bfda",

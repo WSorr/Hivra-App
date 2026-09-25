@@ -45,10 +45,10 @@ void main() {
       }
     });
 
-    test('reference scenario keeps zones visible before entry is ready', () {
+    test('active zone reference waits for a complete 4h cluster', () {
       final reference =
           const BingxFuturesDeterministicReplayHarnessService()
-              .runSweepReclaimReferenceScenario();
+              .runActiveZoneReferenceScenario();
 
       expect(reference.waiting.canPrepareIntent, isFalse);
       expect(
@@ -74,13 +74,7 @@ void main() {
             .marketProposalStatus,
         'READY',
       );
-      expect(
-        reference.waiting.observedLiquidityLevels
-            .map((level) => level.side)
-            .toSet(),
-        containsAll(<String>{'buyside', 'sellside'}),
-      );
-      expect(reference.ready.zoneAnchorSource, '4h_sweep_reclaim_5m');
+      expect(reference.ready.zoneAnchorSource, '4h_active_liquidity_zone');
       expect(reference.ready.zoneAnchorExecutable, isTrue);
     });
 
@@ -221,22 +215,21 @@ void main() {
           'conflict': false,
           'target_retest_pct': 0.01,
           'needs_farther_retest': false,
-          'anchor_source': '4h_sweep_reclaim_5m',
+          'anchor_source': '4h_active_liquidity_zone',
           'anchor_executable': true,
-          'anchor_lifecycle': 'reclaimed',
+          'anchor_lifecycle': 'active',
           'atr14_5m_decimal': '1.25',
           'parent': {
-            'strategy_version': '4h-sweep-reclaim-5m-v2',
+            'strategy_version': bingxLiquidityStrategyVersion,
             'timeframe': '4h',
             'side': 'buy',
-            'low_decimal': '99',
-            'high_decimal': '102',
-            'sweep_at_utc': '2026-08-22T08:00:00Z',
-            'confirmed_at_utc': '2026-08-22T08:00:00Z',
+            'low_decimal': '100.25',
+            'high_decimal': '101.50',
+            'anchor_at_utc': '2026-08-22T08:00:00Z',
           },
           'liquidity_event_id': '4'.padLeft(64, '4'),
           'liquidity_event_at_utc': '2026-08-22T10:00:00Z',
-          'latest_closed_micro_bar_at_utc': '2026-08-22T10:05:00Z',
+          'latest_closed_micro_bar_at_utc': '2026-08-22T10:15:00Z',
         },
         'profit_target': <String, dynamic>{
           'kind': 'opposite_external_liquidity',
@@ -257,6 +250,7 @@ void main() {
         {...validZone, 'atr14_5m_decimal': '0'},
         {...validZone, 'parent': null},
         {...validZone, 'anchor_source': 'micro_liquidity_void'},
+        {...validZone, 'anchor_source': '4h_sweep_reclaim_5m'},
         {...validZone, 'low_decimal': '98'},
         {
           ...validZone,
@@ -264,14 +258,14 @@ void main() {
         },
         {
           ...validZone,
-          'parent': {...validParent, 'strategy_version': 'micro-v1'},
+          'parent': {
+            ...validParent,
+            'strategy_version': '4h-sweep-reclaim-5m-v2',
+          },
         },
         {
           ...validZone,
-          'parent': {
-            ...validParent,
-            'confirmed_at_utc': validZone['liquidity_event_at_utc'],
-          },
+          'parent': {...validParent, 'anchor_at_utc': '2026-08-23T08:00:00Z'},
         },
       ]) {
         final invalid = jsonEncode({...proposal, 'zone': mutation});

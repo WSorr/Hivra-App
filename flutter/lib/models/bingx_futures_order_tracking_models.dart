@@ -362,7 +362,7 @@ class BingxFuturesRemoteMandateAdmission {
       'one_deterministic_order';
   static const String deterministicSessionOperationKind =
       'bounded_deterministic_session';
-  static const String deterministicRunnerBuildId = 'systemd-public-shadow-v1';
+  static const String deterministicRunnerBuildId = 'systemd-public-shadow-v2';
   static const String deterministicPluginId = 'hivra.bingx-futures-trading';
   static const String deterministicPluginVersion = '0.2.4';
   static const String deterministicPackageDigestHex =

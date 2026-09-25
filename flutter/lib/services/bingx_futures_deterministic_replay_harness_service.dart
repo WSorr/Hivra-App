@@ -312,12 +312,12 @@ class BingxFuturesDeterministicReplayHarnessService {
     BingxFuturesLiveDecisionResult waiting,
     BingxFuturesLiveDecisionResult ready,
   })
-  runSweepReclaimReferenceScenario() {
-    BingxFuturesLiveDecisionResult decide(bool confirmed) =>
+  runActiveZoneReferenceScenario() {
+    BingxFuturesLiveDecisionResult decide(bool complete) =>
         _liveDecisionService.decidePublicMarket(
           snapshotInput:
-              BingxFuturesLiveSnapshotBuilderService.buildSweepReclaimReference(
-                confirmed: confirmed,
+              BingxFuturesLiveSnapshotBuilderService.buildActiveZoneReference(
+                complete: complete,
               ),
           policy: _policy,
         );

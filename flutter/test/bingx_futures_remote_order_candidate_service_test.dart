@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
@@ -131,8 +132,8 @@ void main() {
             includeOpenOrders: false,
           );
       expect(canonicalPolicy, <String, dynamic>{
-        'strategy_version': '4h-sweep-reclaim-5m-v2',
-        'runner_build_id': 'systemd-public-shadow-v1',
+        'strategy_version': bingxLiquidityStrategyVersion,
+        'runner_build_id': 'systemd-public-shadow-v2',
         'plugin_id': 'hivra.bingx-futures-trading',
         'plugin_version': '0.2.4',
         'package_digest_hex':
@@ -552,18 +553,17 @@ Future<_CandidateFixture> _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': '4h_sweep_reclaim_5m',
+      'anchor_source': '4h_active_liquidity_zone',
       'anchor_executable': true,
-      'anchor_lifecycle': 'reclaimed',
+      'anchor_lifecycle': 'active',
       'atr14_5m_decimal': '1.25',
       'parent': {
-        'strategy_version': '4h-sweep-reclaim-5m-v2',
+        'strategy_version': bingxLiquidityStrategyVersion,
         'timeframe': '4h',
         'side': 'buy',
-        'low_decimal': '99',
-        'high_decimal': '102',
-        'sweep_at_utc': '2026-08-22T08:00:00Z',
-        'confirmed_at_utc': '2026-08-22T08:00:00Z',
+        'low_decimal': '100',
+        'high_decimal': '101',
+        'anchor_at_utc': '2026-08-22T08:00:00Z',
       },
       'liquidity_event_id': '4' * 64,
       'liquidity_event_at_utc': '2026-08-22T11:50:00Z',

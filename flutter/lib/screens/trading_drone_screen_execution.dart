@@ -374,7 +374,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
           _openOrders = visibleOrders;
         }
         if (result.isSuccess && visibleManagedOrders.isNotEmpty) {
-          _cancelOrderIdController.text = visibleManagedOrders.first.orderId;
         }
       });
       final trackedOrderId = _trackedOrderId;
@@ -400,7 +399,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
             if (remainingManagedOrders.isNotEmpty) {
               final nextTrackedOrderId = remainingManagedOrders.first.orderId;
               _trackedOrderId = nextTrackedOrderId;
-              _cancelOrderIdController.text = nextTrackedOrderId;
               await _persistOpenOrdersTrackingState(
                 source: 'tracked_order_closed_rotate',
               );
@@ -468,7 +466,6 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       ..addAll(state.managedOrderProvenance);
     _trackedOrdersSymbol = state.trackedSymbol;
     _trackedOrderId = state.trackedOrderId;
-    _cancelOrderIdController.text = state.trackedOrderId ?? '';
     unawaited(
       _module.uiLog.log(
         'bingx.exchange.tracking.reconcile',
@@ -489,77 +486,4 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     return normalized.length <= 12 ? normalized : normalized.substring(0, 12);
   }
 
-  Future<void> _cancelOrder({BingxFuturesOpenOrder? order}) async {
-    if (_cancelingOrder) return;
-    final credentials = await _ensureCredentialsLoaded();
-    if (credentials == null) {
-      await _showSnack('Save BingX API credentials first');
-      return;
-    }
-    final symbol = order?.symbol.trim() ?? _symbolController.text.trim();
-    if (symbol.isEmpty) {
-      await _showSnack('Symbol is required');
-      return;
-    }
-    final orderId =
-        order?.orderId.trim() ?? _cancelOrderIdController.text.trim();
-    if (orderId.isEmpty) {
-      await _showSnack('Order ID is required');
-      return;
-    }
-
-    _updateState(() {
-      _cancelingOrder = true;
-    });
-    try {
-      final result = await _module.exchangeService.cancelOrder(
-        credentials: credentials,
-        symbol: symbol,
-        orderId: orderId,
-      );
-      final message = result.exchangeMessage
-          .replaceAll('\n', ' ')
-          .replaceAll('\r', ' ');
-      await _module.uiLog.log(
-        'bingx.exchange.cancel_order',
-        'symbol=${result.symbol} requestOrderId=${result.requestedOrderId} '
-            'canceledOrderId=${result.canceledOrderId ?? "-"} '
-            'success=${result.isSuccess} http=${result.httpStatusCode} '
-            'code=${result.exchangeCode} endpoint=${result.endpointPath} msg=$message',
-      );
-      if (!mounted) return;
-      _updateState(() {
-        _lastCancelOrder = result;
-        if (result.isSuccess) {
-          final canceled = result.canceledOrderId ?? result.requestedOrderId;
-          _managedOrderIds.remove(canceled);
-          _managedOrderSymbols.remove(canceled);
-          _managedOrderProvenance.remove(canceled);
-          _openOrders =
-              _openOrders.where((order) => order.orderId != canceled).toList();
-        }
-      });
-      if (result.isSuccess) {
-        await _persistOpenOrdersTrackingState(source: 'cancel_order');
-      }
-      await _showSnack(
-        result.isSuccess
-            ? 'Order canceled: ${result.canceledOrderId ?? result.requestedOrderId}'
-            : 'Cancel failed: ${result.exchangeCode}',
-        seconds: result.isSuccess ? 2 : 4,
-      );
-      if (result.isSuccess) {
-        await _fetchOpenOrders(silent: true);
-      }
-    } catch (error) {
-      await _module.uiLog.log('bingx.exchange.cancel_order.error', '$error');
-      await _showSnack('Cancel order failed: $error', seconds: 3);
-    } finally {
-      if (mounted) {
-        _updateState(() {
-          _cancelingOrder = false;
-        });
-      }
-    }
-  }
 }

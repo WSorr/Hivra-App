@@ -73,21 +73,9 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
             style: const TextStyle(color: Color(0xFFC4CCE0)),
           ),
           const SizedBox(height: 2),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'created ${_formatOrderTime(order.createdAtMs)}',
-                  style: const TextStyle(color: Color(0xFF8D97AE)),
-                ),
-              ),
-              TextButton.icon(
-                onPressed:
-                    _cancelingOrder ? null : () => _cancelOrder(order: order),
-                icon: const Icon(Icons.close_rounded, size: 16),
-                label: const Text('Cancel'),
-              ),
-            ],
+          Text(
+            'created ${_formatOrderTime(order.createdAtMs)}',
+            style: const TextStyle(color: Color(0xFF8D97AE)),
           ),
         ],
       ),
@@ -553,7 +541,19 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
               ),
               const SizedBox(height: 8),
               Text(
-                tradingLocalRunnerStatusLabel(localRunnerSnapshot),
+                tradingLocalRunnerStatusLabel(
+                  localRunnerSnapshot,
+                  authorityActive:
+                      _droneEnabled &&
+                      (_tradingMandate?.isActiveAt(DateTime.now().toUtc()) ??
+                          false),
+                  limitChanged:
+                      _tradingMandate != null &&
+                      !tradingMandateMaxNotionalMatches(
+                        mandate: _tradingMandate!,
+                        selectedMaxNotional: _maxNotionalUsdtController.text,
+                      ),
+                ),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 4),
@@ -947,7 +947,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       controller: _zoneLowController,
                       readOnly: true,
                       decoration: InputDecoration(
-                        labelText: 'Pending Zone Low',
+                        labelText: 'Executable Zone Low',
                         filled: true,
                         fillColor: const Color(0xFF0F141C),
                         border: OutlineInputBorder(
@@ -962,7 +962,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       controller: _zoneHighController,
                       readOnly: true,
                       decoration: InputDecoration(
-                        labelText: 'Pending Zone High',
+                        labelText: 'Executable Zone High',
                         filled: true,
                         fillColor: const Color(0xFF0F141C),
                         border: OutlineInputBorder(
@@ -978,98 +978,17 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 _zoneLowController.text.isEmpty ||
                         _zoneHighController.text.isEmpty ||
                         _displayedZoneDecision == null
-                    ? 'No prepared entry zone. Observed clusters are shown below.'
+                    ? 'No executable entry zone. Observed 4h liquidity is shown below.'
                     : formatBingxFuturesZoneEvidence(_displayedZoneDecision!),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 10),
               Text(
-                formatBingxFuturesLiquidityObservation(_displayedZoneDecision),
+                formatBingxFuturesLiquidityObservation(
+                  _displayedZoneDecision,
+                  selectedSymbol: _symbolController.text,
+                ),
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
-              ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10251F),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF2A766B)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'REFERENCE · ZONES ARE NOT ENTRIES · READ ONLY',
-                      style: TextStyle(
-                        color: Color(0xFF6FE3C1),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Buyside and sellside liquidity remain visible as market '
-                      'observations. They become an entry only after a closed '
-                      '4h sweep/reclaim and a subsequent closed 5m confirmation.',
-                      style: TextStyle(color: Color(0xFFC1D8D5), fontSize: 12),
-                    ),
-                    const Divider(color: Color(0xFF2A766B), height: 20),
-                    Text(
-                      _TradingDroneScreenState
-                              ._sweepReclaimReference
-                              .waiting
-                              .canPrepareIntent
-                          ? 'UNEXPECTED READY · reference drift'
-                          : 'OBSERVE · no 5m confirmation',
-                      style: const TextStyle(
-                        color: Color(0xFFF2C96D),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      formatBingxFuturesLiquidityObservation(
-                        _TradingDroneScreenState._sweepReclaimReference.waiting,
-                      ),
-                      style: const TextStyle(
-                        color: Color(0xFFC1CAD8),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const Divider(color: Color(0xFF2A766B), height: 20),
-                    Text(
-                      _TradingDroneScreenState
-                              ._sweepReclaimReference
-                              .ready
-                              .canPrepareIntent
-                          ? 'READY · closed 5m reclaim confirmed'
-                          : 'BLOCKED · reference drift',
-                      style: const TextStyle(
-                        color: Color(0xFF6FE3C1),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      formatBingxFuturesZoneEvidence(
-                        _TradingDroneScreenState._sweepReclaimReference.ready,
-                      ),
-                      style: const TextStyle(
-                        color: Color(0xFFDCEBE7),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Synthetic proof only. No exchange, mandate, journal, '
-                      'or VPS effect is created.',
-                      style: TextStyle(color: Color(0xFF97A3B5), fontSize: 11),
-                    ),
-                  ],
-                ),
               ),
               const SizedBox(height: 10),
               const Text(
@@ -1186,7 +1105,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
           _panel(
             title: 'Order and Activity',
             subtitle:
-                'Read exchange orders without changing them. A filled order may leave an open position; check positions in BingX.',
+                'Read exchange orders without changing them. Review Exchange only orders and positions in BingX; only the authorized Runner may cancel its managed orders.',
             children: [
               Wrap(
                 spacing: 10,
@@ -1249,7 +1168,7 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                 childrenPadding: const EdgeInsets.only(bottom: 8),
                 title: const Text('BingX account and manual controls'),
                 subtitle: const Text(
-                  'Credentials, simulation mode, and order-id cancellation.',
+                  'Credentials and simulation mode.',
                   style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
                 ),
                 children: [
@@ -1309,36 +1228,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                           _savingCredentials ? 'Saving' : 'Save BingX Account',
                         ),
                       ),
-                      SizedBox(
-                        width: 260,
-                        child: TextField(
-                          controller: _cancelOrderIdController,
-                          decoration: InputDecoration(
-                            labelText: 'Order ID to cancel',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: _cancelingOrder ? null : _cancelOrder,
-                        icon:
-                            _cancelingOrder
-                                ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                                : const Icon(Icons.cancel_presentation_rounded),
-                        label: Text(
-                          _cancelingOrder ? 'Canceling' : 'Cancel by ID',
-                        ),
-                      ),
                     ],
                   ),
                 ],
@@ -1381,14 +1270,6 @@ extension _TradingDronePresentation on _TradingDroneScreenState {
                       'Tracking ${_trackedOrdersSymbol ?? "-"}'
                       '${_trackedOrderId == null ? '' : ' · id ${_trackedOrderId!}'}',
                       accent: const Color(0xFF8DC2FF),
-                    ),
-                  if (_lastCancelOrder != null)
-                    _statusChip(
-                      'Cancel: ${_lastCancelOrder!.exchangeCode}',
-                      accent:
-                          _lastCancelOrder!.isSuccess
-                              ? const Color(0xFF75D98A)
-                              : const Color(0xFFFF8A7A),
                     ),
                 ],
               ),

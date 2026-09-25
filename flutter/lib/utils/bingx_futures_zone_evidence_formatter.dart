@@ -1,23 +1,36 @@
 import '../models/bingx_futures_live_decision_models.dart';
 
 String formatBingxFuturesLiquidityObservation(
-  BingxFuturesLiveDecisionResult? decision,
-) {
+  BingxFuturesLiveDecisionResult? decision, {
+  String? selectedSymbol,
+}) {
+  final symbol = selectedSymbol?.trim().toUpperCase() ?? '';
+  final heading = [
+    'Observed liquidity (4h)',
+    if (symbol.isNotEmpty) symbol,
+  ].join(' · ');
   if (decision == null) {
-    return 'Observed liquidity (4h)\nScan and select a symbol to inspect its clusters.';
+    return '$heading\nNo snapshot loaded for this market. '
+        'Press Inspect current setup to load its clusters.';
   }
-  final lines = <String>[
-    'Observed liquidity (4h) — snapshot, not order prices',
-  ];
+  final lines = <String>['$heading — snapshot, not order prices'];
   final parent = decision.parentZone;
   if (parent != null) {
-    lines.add(
-      '4h ${parent['side']} sweep/reclaim: '
-      '${parent['low_decimal']}–${parent['high_decimal']} '
-      '· confirmed ${parent['confirmed_at_utc']}',
-    );
-    if (!decision.zoneAnchorExecutable) {
-      lines.add('No valid 5m confirmation inside this parent zone.');
+    if (decision.zoneAnchorSource == '4h_active_liquidity_zone') {
+      lines.add(
+        'Active 4h ${parent['side']} zone: '
+        '${parent['low_decimal']}–${parent['high_decimal']} '
+        '· anchored ${parent['anchor_at_utc']}',
+      );
+    } else {
+      lines.add(
+        '4h ${parent['side']} sweep/reclaim: '
+        '${parent['low_decimal']}–${parent['high_decimal']} '
+        '· confirmed ${parent['confirmed_at_utc']}',
+      );
+      if (!decision.zoneAnchorExecutable) {
+        lines.add('No valid 15m confirmation inside this parent zone.');
+      }
     }
   }
   if (decision.observedLiquidityLevels.isEmpty) {
@@ -34,9 +47,9 @@ String formatBingxFuturesLiquidityObservation(
   lines.add(
     decision.zoneAnchorExecutable
         ? (decision.canPrepareIntent
-            ? 'Liquidity entry confirmed. Order preparation still requires risk and mandate checks.'
-            : 'Liquidity entry confirmed; other entry checks block preparation.')
-        : 'No confirmed executable setup. A swept cluster alone does not authorize entry.',
+            ? 'Active liquidity entry is ready. Order preparation still requires risk and mandate checks.'
+            : 'Active liquidity entry is ready; other entry checks block preparation.')
+        : 'No active executable zone. Swept clusters cannot stage a new entry.',
   );
   lines.add('Offline monitoring requires an active authorized Runner session.');
   return lines.join('\n');
@@ -49,8 +62,17 @@ String formatBingxFuturesZoneEvidence(BingxFuturesLiveDecisionResult decision) {
     parts.add(source);
   }
 
+  final parent = decision.parentZone;
+  final parentAnchorAt =
+      decision.zoneAnchorSource == '4h_active_liquidity_zone' && parent != null
+          ? parent['anchor_at_utc']
+          : null;
   final eventAt =
-      DateTime.tryParse(decision.liquidityEventAtUtc ?? '')?.toUtc();
+      DateTime.tryParse(
+        parentAnchorAt is String
+            ? parentAnchorAt
+            : decision.liquidityEventAtUtc ?? '',
+      )?.toUtc();
   final observedAt =
       DateTime.tryParse(decision.latestClosedMicroBarAtUtc ?? '')?.toUtc();
   if (eventAt != null) {
@@ -70,8 +92,11 @@ String formatBingxFuturesZoneEvidence(BingxFuturesLiveDecisionResult decision) {
 
 String? _formatAnchorSource(String? raw) {
   final source = raw?.trim().toLowerCase() ?? '';
-  if (source == '4h_sweep_reclaim_5m') {
-    return '4h sweep/reclaim, confirmed on 5m';
+  if (source == '4h_active_liquidity_zone') {
+    return 'active 4h liquidity zone';
+  }
+  if (source == '4h_sweep_reclaim_15m') {
+    return '4h sweep/reclaim, confirmed on 15m';
   }
   final match = RegExp(r'^(4h|1d|1w)_fresh_(high|low)$').firstMatch(source);
   if (match != null) {

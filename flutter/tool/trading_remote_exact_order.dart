@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -23,12 +24,14 @@ const String exactOrderMode = 'exact-order';
 const String completedSessionEffectsMode = 'completed-session-effects';
 
 Future<void> main(List<String> args) async {
+  var stage = 'input';
   try {
     final requestedMode = _requestedMode(args);
     if (requestedMode == completedSessionEffectsMode) {
       stdout.writeln(
         await exportCompletedDeterministicSessionEffects(
           options: _parseCompletedSessionEffectsArgs(args),
+          reportStage: (value) => stage = value,
         ),
       );
       return;
@@ -54,6 +57,7 @@ Future<void> main(List<String> args) async {
           runnerSeedBytes: seedBytes,
           executeExactOrder: runAuthorizedExactOrder,
           cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+          reportStage: (value) => stage = value,
         ),
       );
       return;
@@ -66,15 +70,28 @@ Future<void> main(List<String> args) async {
         runnerSeedBytes: seedBytes,
       ),
     );
-  } on Object {
-    stderr.writeln('trading exact order failed');
+  } on Object catch (error) {
+    stderr.writeln(
+      'trading exact order failed stage=$stage category=${safeRunnerFailureCategory(error)}',
+    );
     exitCode = 1;
   }
 }
 
+String safeRunnerFailureCategory(Object error) => switch (error) {
+  SocketException() => 'network',
+  FileSystemException() => 'filesystem',
+  TimeoutException() => 'timeout',
+  FormatException() || ArgumentError() => 'invalid_input',
+  StateError() => 'state',
+  _ => 'internal',
+};
+
 Future<String> exportCompletedDeterministicSessionEffects({
   required Map<String, String> options,
+  void Function(String)? reportStage,
 }) async {
+  reportStage?.call('admission');
   final expectedRunnerKeyId = _requiredHex64(options, 'expected-runner-key-id');
   final admissionFile = File(
     _required(options, 'deterministic-admission-file'),
@@ -129,6 +146,7 @@ Future<String> exportCompletedDeterministicSessionEffects({
       admission.deterministicCycleOperationId(index)!,
   };
   final completed = <ExternalEffectOperation>[];
+  reportStage?.call('journal');
   for (final operation in await effects.list(
     pluginId: bingxFuturesTradingPluginId,
   )) {
@@ -136,6 +154,7 @@ Future<String> exportCompletedDeterministicSessionEffects({
         cycleOperationIds.contains(operation.operationId) ||
         operation.approvalEvidenceHashHex == admission.operationId;
     if (!related) continue;
+    reportStage?.call('validation');
     _validateCompletedSessionOperation(
       operation: operation,
       admission: admission,

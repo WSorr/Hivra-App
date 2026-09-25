@@ -8,6 +8,8 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
+import '../models/bingx_futures_market_snapshot_models.dart';
+import '../models/bingx_futures_order_tracking_models.dart';
 import '../models/external_effect_models.dart';
 import '../models/plugin_contract_ids.dart';
 import 'bingx_futures_remote_runner_identity_service.dart';
@@ -454,6 +456,39 @@ class DartSshBingxFuturesRemoteRunnerHostPort
   const DartSshBingxFuturesRemoteRunnerHostPort();
 
   @visibleForTesting
+  static List<String> staleTransferPaths({
+    required Iterable<SftpName> entries,
+    required String profileId,
+    required DateTime nowUtc,
+  }) {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(profileId)) {
+      throw const FormatException('Remote Runner profile ID is invalid.');
+    }
+    final archive = RegExp(
+      '^hivra-runner-$profileId-[0-9a-f]{24}\\.tar\\.gz\$',
+    );
+    final bootstrap = RegExp(
+      '^hivra-runner-bootstrap-$profileId-[0-9a-f]{24}\\.sh\$',
+    );
+    final cutoff =
+        nowUtc
+            .toUtc()
+            .subtract(const Duration(days: 1))
+            .millisecondsSinceEpoch ~/
+        1000;
+    return [
+      for (final entry in entries)
+        if ((archive.hasMatch(entry.filename) ||
+                bootstrap.hasMatch(entry.filename)) &&
+            entry.attr.isFile &&
+            entry.attr.userID == 0 &&
+            entry.attr.modifyTime != null &&
+            entry.attr.modifyTime! < cutoff)
+          '/tmp/${entry.filename}',
+    ];
+  }
+
+  @visibleForTesting
   String buildBootstrapScriptForTesting({
     required String profileId,
     required String sshPublicKeyLine,
@@ -570,40 +605,59 @@ class DartSshBingxFuturesRemoteRunnerHostPort
       final bootstrapPath =
           '/tmp/hivra-runner-bootstrap-$profileId-$transferId.sh';
       final sftp = await authenticatedClient.sftp();
-      final remote = await sftp.open(
-        archivePath,
-        mode:
-            SftpFileOpenMode.create |
-            SftpFileOpenMode.truncate |
-            SftpFileOpenMode.write,
-      );
       try {
-        await remote.write(Stream<Uint8List>.value(bundle.archiveBytes)).done;
-      } finally {
-        await remote.close();
-      }
-      final bootstrapBytes = utf8.encode(
-        _bootstrapScript(
+        for (final path in staleTransferPaths(
+          entries: await sftp.listdir('/tmp'),
           profileId: profileId,
-          sshPublicKeyLine: sshPublicKeyLine,
-          controlBytes: bundle.controlBytes,
-        ),
-      );
-      final remoteBootstrap = await sftp.open(
-        bootstrapPath,
-        mode:
-            SftpFileOpenMode.create |
-            SftpFileOpenMode.truncate |
-            SftpFileOpenMode.write,
-      );
-      try {
-        await remoteBootstrap
-            .write(Stream<Uint8List>.value(Uint8List.fromList(bootstrapBytes)))
-            .done;
+          nowUtc: DateTime.now().toUtc(),
+        )) {
+          await sftp.remove(path);
+        }
+        final remote = await sftp.open(
+          archivePath,
+          mode:
+              SftpFileOpenMode.create |
+              SftpFileOpenMode.truncate |
+              SftpFileOpenMode.write,
+        );
+        try {
+          await remote.write(Stream<Uint8List>.value(bundle.archiveBytes)).done;
+        } finally {
+          await remote.close();
+        }
+        final bootstrapBytes = utf8.encode(
+          _bootstrapScript(
+            profileId: profileId,
+            sshPublicKeyLine: sshPublicKeyLine,
+            controlBytes: bundle.controlBytes,
+          ),
+        );
+        final remoteBootstrap = await sftp.open(
+          bootstrapPath,
+          mode:
+              SftpFileOpenMode.create |
+              SftpFileOpenMode.truncate |
+              SftpFileOpenMode.write,
+        );
+        try {
+          await remoteBootstrap
+              .write(
+                Stream<Uint8List>.value(Uint8List.fromList(bootstrapBytes)),
+              )
+              .done;
+        } finally {
+          await remoteBootstrap.close();
+        }
+      } catch (_) {
+        for (final path in [archivePath, bootstrapPath]) {
+          try {
+            await sftp.remove(path);
+          } catch (_) {}
+        }
+        rethrow;
       } finally {
-        await remoteBootstrap.close();
+        await sftp.close();
       }
-      await sftp.close();
       authenticatedClient.close();
       await authenticatedClient.done.catchError((_) {});
       client = null;
@@ -1163,6 +1217,18 @@ class BingxFuturesRemoteRunnerProvisioningService {
     if (profile.capsuleHex != capsuleHex ||
         profile.accountBindingHashHex != accountHash) {
       throw StateError('Remote Runner profile belongs to another authority.');
+    }
+    final decoded = jsonDecode(canonicalSessionJson);
+    final strategyPolicy =
+        decoded is Map<String, dynamic> ? decoded['strategy_policy'] : null;
+    if (profile.runnerBuildId !=
+            BingxFuturesRemoteMandateAdmission.deterministicRunnerBuildId ||
+        strategyPolicy is! Map<String, dynamic> ||
+        strategyPolicy['runner_build_id'] != profile.runnerBuildId ||
+        strategyPolicy['strategy_version'] != bingxLiquidityStrategyVersion) {
+      throw StateError(
+        'Remote Runner update required before authorizing this strategy.',
+      );
     }
     await _host.deploySession(
       profile: profile,

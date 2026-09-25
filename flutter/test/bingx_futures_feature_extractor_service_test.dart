@@ -115,6 +115,55 @@ void main() {
       expect(after.pivotCount, before.pivotCount);
     });
 
+    test('recent swept clusters cannot evict an untouched older zone', () {
+      final candles = List<BingxFuturesCandle>.generate(90, (index) {
+        final start = DateTime.utc(
+          2026,
+          4,
+          25,
+          6,
+        ).add(Duration(minutes: index * 5));
+        final later = index >= 56;
+        final low =
+            <int>{10, 18, 26}.contains(index)
+                ? 50.0
+                : <int>{34, 42, 50}.contains(index)
+                ? 80.0
+                : index == 55
+                ? 70.0
+                : <int>{64, 72, 80}.contains(index)
+                ? 110.0
+                : later
+                ? 120.0
+                : 95.0;
+        return _singleCandle(
+          '5m',
+          start.toIso8601String(),
+          start.add(const Duration(minutes: 5)).toIso8601String(),
+          later ? 125 : 100,
+          later ? 130 : 105,
+          low,
+          later ? 125 : 100,
+        );
+      });
+      final features = const BingxFuturesFeatureExtractorService(
+        maxTrackedLevelsPerSide: 2,
+      ).extract(
+        snapshotService.build(
+          _buildInput(permuted: false, microCandles: candles),
+        ),
+      );
+      final sellside =
+          features.liquidityLevels
+              .where((level) => level.side == 'sellside')
+              .toList();
+      expect(
+        sellside.any((level) => level.anchorIndex == 10 && !level.breached),
+        isTrue,
+      );
+      expect(sellside.any((level) => level.breached), isTrue);
+    });
+
     test('uses notional imbalance independent of base-asset units', () {
       final btcLike = featureService.extract(
         snapshotService.build(_buildInput(permuted: false)),

@@ -736,7 +736,7 @@ runner_deterministic_order_is_bounded_session() {
     rg -q "deterministicSessionOperationKind =" "$3" &&
     rg -q "deterministicOrderOperationKind =" "$3" &&
     rg -q "deterministicRunnerBuildId =" "$3" &&
-    rg -q "'systemd-public-shadow-v1'" "$3" &&
+    rg -q "'systemd-public-shadow-v2'" "$3" &&
     rg -q "deterministicPluginVersion = '0.2.4'" "$3" &&
     rg -q "deterministicHostAbi = 'wasm32-wasi-preview1'" "$3" &&
     rg -q 'one signed deterministic cycle composes and executes once' "$4" &&
@@ -747,7 +747,7 @@ runner_deterministic_order_is_bounded_session() {
     rg -q 'BingxFuturesRemoteSessionRevocation.issue' "$5" &&
     rg -q 'Future<String> revokeSession' "$7" &&
     rg -q "operation: 'revoke:" "$7" &&
-    rg -q -- '--runner-build-id systemd-public-shadow-v1' "$6" &&
+    rg -q -- '--runner-build-id systemd-public-shadow-v2' "$6" &&
     rg -q -- '--plugin-version 0.2.4' "$6" &&
     rg -q -- '--package-digest-hex 0e1eb93a9f53d3da9b4ec914e9841bc11355d08a59fdf8eb2b67994dd496bfda' "$6" &&
     rg -q -- '--host-abi wasm32-wasi-preview1' "$6"
@@ -982,7 +982,7 @@ expected = [
     expected_binary,
     "--runner-seed-file", "%d/runner-seed",
     "--symbol", "BTC-USDT",
-    "--runner-build-id", "systemd-public-shadow-v1",
+    "--runner-build-id", "systemd-public-shadow-v2",
     "--plugin-id", "hivra.bingx-futures-trading",
     "--plugin-version", "0.2.4",
     "--package-digest-hex", "0e1eb93a9f53d3da9b4ec914e9841bc11355d08a59fdf8eb2b67994dd496bfda",
@@ -1455,7 +1455,7 @@ sed 's/publicSessionStream\.snapshotFor(symbol)/null/' \
   "$TRADING_MODULE" > "$LOCAL_SESSION_WIRING_MUTATION"
 sed "s/final longReady = longTradeOk && normalizedRequiredSide != 'sell';/final longReady = longTradeOk \&\& longSessionAligned \&\& normalizedRequiredSide != 'sell';/" \
   "$TVH_RULE_ENGINE" > "$LIQUIDITY_AUTHORITY_MUTATION"
-sed "s/anchorSource = '4h_sweep_reclaim_5m';/anchorSource = 'liquidation_proxy';/" \
+sed "s/anchorSource = '4h_sweep_reclaim_15m';/anchorSource = 'liquidation_proxy';/" \
   "$ZONE_DECISION" > "$LIQUIDATION_ANCHOR_MUTATION"
 sed 's/oppositeLiquidityTargetDecimal: decision\.oppositeLiquidityTargetDecimal/oppositeLiquidityTargetDecimal: null/' \
   "$TRADING_CYCLE" > "$LIQUIDITY_TARGET_MUTATION"

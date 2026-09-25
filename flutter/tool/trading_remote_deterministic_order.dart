@@ -130,10 +130,12 @@ Future<String> runOneDeterministicOrder({
   required List<int> runnerSeedBytes,
   required AuthorizedExactOrderExecutor executeExactOrder,
   AuthorizedManagedOrderCanceler? cancelManagedOrder,
+  void Function(String)? reportStage,
   BingxHttpRequestSender? requestSender,
   DateTime Function()? nowUtc,
   int Function()? clockMs,
 }) async {
+  reportStage?.call('admission');
   final admissionBytes = await _readBoundedFile(
     _required(options, 'deterministic-admission-file'),
     BingxFuturesRemoteMandateAdmission.maxWireBytes,
@@ -177,6 +179,7 @@ Future<String> runOneDeterministicOrder({
       admission.runnerKeyId) {
     throw const FormatException('runner identity mismatch');
   }
+  reportStage?.call('credentials');
   final credentials = await readExchangeCredentialFile(
     _required(options, 'deterministic-credential-file'),
   );
@@ -226,6 +229,7 @@ Future<String> runOneDeterministicOrder({
   }
   var activeOrders = const <BingxFuturesOpenOrder>[];
   if (admission.isDeterministicSession) {
+    reportStage?.call('open_orders');
     final openOrders = await exchange.getOpenOrders(
       credentials: credentials,
       symbol: admission.mandate.symbol,
@@ -239,6 +243,37 @@ Future<String> runOneDeterministicOrder({
         )
         .toList(growable: false);
   }
+  final policy = admission.strategyPolicy!;
+  final evidenceBytes = await _readBoundedFile(
+    _required(options, 'market-evidence-file'),
+    _maxEvidenceBytes,
+  );
+  final candidateService = BingxFuturesRemoteOrderCandidateService(
+    sizing: BingxFuturesOrderSizingService(exchange: exchange),
+  );
+  if (activeOrders.isEmpty) {
+    reportStage?.call('candidate');
+    final marketBlocker = await candidateService.preflightMarketEvidence(
+      untrustedMarketEvidenceBytes: evidenceBytes,
+      trustedRunnerKey: runnerPublicKey,
+      lastAcceptedSequence: _requiredInt(options, 'last-accepted-sequence'),
+      lastAcceptedEvidenceHashHex: _requiredHex64(
+        options,
+        'last-accepted-evidence-hash',
+      ),
+      expectedRunnerBuildId: policy['runner_build_id'] as String,
+      expectedPluginId: policy['plugin_id'] as String,
+      expectedPluginVersion: policy['plugin_version'] as String,
+      expectedPackageDigestHex: policy['package_digest_hex'] as String,
+      expectedHostAbi: policy['host_abi'] as String,
+      expectedSymbol: admission.mandate.symbol,
+      nowUtc: now,
+    );
+    if (marketBlocker != null) {
+      return _blocked(cycleOperationId, marketBlocker);
+    }
+  }
+  reportStage?.call('risk');
   final risk = await const BingxFuturesExchangeRiskInputService().read(
     exposureSymbol: admission.mandate.symbol,
     exchangeService: exchange,
@@ -246,20 +281,15 @@ Future<String> runOneDeterministicOrder({
     credentials: credentials,
     nowUtc: riskObservedAt,
   );
+  reportStage?.call('rules');
   final rulesResult = await exchange.getPerpetualContractRules(
     symbol: admission.mandate.symbol,
   );
   if (!rulesResult.isSuccess || rulesResult.rules == null) {
     return _blocked(cycleOperationId, 'contract_rules_unavailable');
   }
-  final policy = admission.strategyPolicy!;
-  final evidenceBytes = await _readBoundedFile(
-    _required(options, 'market-evidence-file'),
-    _maxEvidenceBytes,
-  );
-  final candidate = await BingxFuturesRemoteOrderCandidateService(
-    sizing: BingxFuturesOrderSizingService(exchange: exchange),
-  ).compose(
+  reportStage?.call('candidate');
+  final candidate = await candidateService.compose(
     untrustedMarketEvidenceBytes: evidenceBytes,
     trustedRunnerKey: runnerPublicKey,
     lastAcceptedSequence: _requiredInt(options, 'last-accepted-sequence'),
@@ -281,6 +311,7 @@ Future<String> runOneDeterministicOrder({
     minimumRiskReward: policy['minimum_risk_reward'] as double,
   );
   if (activeOrders.isNotEmpty) {
+    reportStage?.call('managed_order');
     final ownership = await _managedActiveOrder(
       admission: admission,
       activeOrders: activeOrders,
@@ -336,6 +367,7 @@ Future<String> runOneDeterministicOrder({
   if (intent == null) {
     return _blocked(cycleOperationId, 'order_candidate_invalid');
   }
+  reportStage?.call('effect');
   return executeExactOrder(
     admission: admission,
     exactOrder: intent.toExactOrderJson(testOrder: admission.mandate.testOrder),
@@ -409,7 +441,9 @@ Future<String> _revalidateManagedAnchor({
           exchange: exchange,
           symbol: admission.mandate.symbol,
           fromUtc: DateTime.parse(
-            (zone['parent'] as Map<String, dynamic>?)?['confirmed_at_utc']
+            ((zone['parent'] as Map<String, dynamic>?)?['confirmed_at_utc'] ??
+                        (zone['parent']
+                            as Map<String, dynamic>?)?['anchor_at_utc'])
                     as String? ??
                 zone['liquidity_event_at_utc'] as String,
           ),

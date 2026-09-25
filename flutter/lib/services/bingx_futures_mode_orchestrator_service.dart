@@ -144,6 +144,7 @@ class BingxFuturesModeOrchestratorService {
           run.firstCycle.complete(lastOutcome);
         }
       } catch (error, stackTrace) {
+        if (!run.active || !identical(_runs[capsuleScope], run)) return;
         run.active = false;
         if (identical(_runs[capsuleScope], run)) {
           _runs.remove(capsuleScope);
