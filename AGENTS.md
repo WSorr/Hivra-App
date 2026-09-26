@@ -7,6 +7,7 @@ Git state and `docs/development-control.md` before selecting work.
 
 Hivra optimizes for product capability per unit of structural complexity.
 Green tests do not justify architectural growth.
+An implemented component is not a completed product journey.
 
 1. **One effect, one use case, one owner.** Different inputs that produce the
    same state change or external effect must converge before execution.
@@ -41,6 +42,14 @@ proposed change adds more owners or execution paths than it removes, redesign
 it before editing unless the user-visible capability cannot reuse an existing
 owner.
 
+For product work, state the user journey, its observable end result, and the
+evidence that would prove it works on the supported runtime. Implement and
+verify that journey end to end, including restart and failure recovery where
+relevant. A green CI run, fixture, provider acceptance receipt, or running
+service alone is not product acceptance. Do not split one journey into a chain
+of status-only passes or release candidates; fix findings within the same
+bounded outcome before selecting another.
+
 Keep each implementation bounded to one product outcome. Do not perform
 unrelated cleanup, invent speculative extension points, or create a new process
 document for routine work.
@@ -55,4 +64,3 @@ After implementation, report only:
 
 Do not commit, push, tag, release, mutate VPS state, or begin another pass
 without explicit approval. Before manual smoke, ask exactly: `Hands or automatic?`
-
