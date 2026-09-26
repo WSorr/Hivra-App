@@ -3114,6 +3114,16 @@ run_prepared_session_scheduler() {
         skipped_from="${skipped_from%%:*}"
         [ "$skipped_to" -le "$session_max_cycles" ] ||
           skipped_to="$session_max_cycles"
+        recover_deterministic_session_once "$directory"
+        local recovered_status
+        recovered_status="$(inspect_deterministic_session_cycle \
+          "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
+          "$session_max_cycles" "$mandate_max_effects")" ||
+          die "prepared session scheduler could not inspect recovered state"
+        if [ "$recovered_status" != "$session_status" ]; then
+          echo "PASS trading-runner-artifact: prepared session scheduler recovered current cycle before settling missed slots session_operation_id=$session_id"
+          continue
+        fi
         settled_status="$(settle_missed_deterministic_session_cycles \
           "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
           "$skipped_from" "$skipped_to" "$session_max_cycles" \

@@ -1398,6 +1398,57 @@ void main() {
       },
     );
 
+    test('exact PENDING order in open orders remains managed', () async {
+      final store = _trackingStore(tempHome);
+      final binding =
+          BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+            _credentials,
+          );
+      await store.save(
+        _trackingState(
+          orderId: 'managed-pending',
+          accountBindingHashHex: binding,
+        ),
+      );
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (_) async => throw StateError('unexpected exact query'),
+      );
+      final result = await _reconciliationUseCase(
+        exchange: exchange,
+        store: store,
+        riskHistory: riskHistory,
+      ).reconcileManagedOrders(
+        credentials: _credentials,
+        openOrders: _openOrders(const <BingxFuturesOpenOrder>[
+          BingxFuturesOpenOrder(
+            orderId: 'managed-pending',
+            clientOrderId: 'managed-client',
+            symbol: 'BTC-USDT',
+            side: 'BUY',
+            positionSide: 'LONG',
+            orderType: 'LIMIT',
+            status: 'PENDING',
+            priceDecimal: '100',
+            triggerPriceDecimal: null,
+            quantityDecimal: '0.01',
+            executedQuantityDecimal: '0',
+            createdAtMs: 2,
+          ),
+        ]),
+      );
+
+      expect(result.activeCount, 1);
+      expect(result.state!.trackedOrderId, 'managed-pending');
+      expect(result.state!.managedOrderIds, ['managed-pending']);
+      expect(
+        result
+            .state!
+            .managedOrderProvenance['managed-pending']!
+            .lifecycleStatus,
+        BingxManagedOrderLifecycleStatus.active,
+      );
+    });
+
     test('filled trigger with executed quantity remains filled', () async {
       final store = _trackingStore(tempHome);
       final binding =
@@ -1886,7 +1937,7 @@ void main() {
       },
     );
 
-    for (final providerStatus in <String>['PENDING_REVIEW', 'FAILED']) {
+    for (final providerStatus in <String>['PENDING', 'PENDING_REVIEW', 'FAILED']) {
       test('$providerStatus remains unresolved across restart', () async {
         final store = _trackingStore(tempHome);
         final binding =

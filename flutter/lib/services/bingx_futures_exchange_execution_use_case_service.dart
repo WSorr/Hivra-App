@@ -762,6 +762,8 @@ class BingxFuturesExchangeExecutionUseCaseService {
       }
       final lifecycle = switch (providerStatus) {
         'NEW' || 'PARTIALLY_FILLED' => BingxManagedOrderLifecycleStatus.active,
+        'PENDING' when openById.containsKey(order.orderId) =>
+          BingxManagedOrderLifecycleStatus.active,
         'FILLED' => BingxManagedOrderLifecycleStatus.filled,
         'CANCELED' || 'CANCELLED' => BingxManagedOrderLifecycleStatus.cancelled,
         'REJECTED' => BingxManagedOrderLifecycleStatus.rejected,
