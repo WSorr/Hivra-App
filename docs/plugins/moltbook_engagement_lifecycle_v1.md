@@ -118,20 +118,25 @@ bounded to 100 items. A reviewed build-time manifest is an ordered snapshot
 lineage: only its newest allowed snapshot may remain pending, while older
 undrafted entries from that same manifest are sealed instead of replayed as
 current news on a new Capsule. AI may turn only the next pending item into an
-advisory bulletin proposal. Every confirmed fact must remain verbatim in both
-the proposal body and its ordered supporting facts. If AI omits or paraphrases
-any fact, the existing proposal owner replaces the drifting prose with one
-non-repeating exact facts block before WASM. A foreground cycle may prepare
-that local draft only when no remote target claimed the cycle's proposal slot
-and no local draft or non-terminal publication already awaits review. The item
-becomes drafted only after the existing ambassador WASM preserves the exact
-title/body and the existing draft store durably records the canonical draft
-hash.
+advisory bulletin proposal. Every source line must remain verbatim in the
+ordered supporting facts, but the public body is original, source-grounded
+prose. If AI changes the grounding or cannot produce a substantive body, the
+draft is rejected; there is no mechanical facts-block fallback. A foreground cycle may prepare
+that local draft when no remote target claimed the cycle's proposal slot. A
+draft for the same source is never generated twice; another local draft or
+unresolved effect does not starve a distinct confirmed change. The item becomes
+drafted only after the existing ambassador WASM preserves the exact title/body
+and the existing draft store durably records the canonical draft hash.
 
 `Assisted` mode stops at the local draft. Existing `Bounded` mode may advance
 one exact public-change draft through the existing post effect to the active
 Capsule's configured primary community. The destination is fixed by local
 policy before draft and effect preparation; AI cannot choose or change it.
+An earlier uncertain effect never resubmits its source-bound draft. It does
+not indefinitely block a distinct confirmed change after the bounded write
+interval and daily budget permit another attempt. Queued and delivering
+effects still block new publication; prepared operations do not. Automatic
+rechecks of unresolved effects are reconciliation-only.
 Publishing to an existing community does not require ownership evidence.
 Provider permissions and community rules still fail closed at delivery. The
 same operation id, exact destination binding, receipt, unresolved state, and
@@ -144,13 +149,16 @@ Moltbook workspace opens. The manifest parser is strict and atomic, validates
 the complete lineage, and exposes only the newest entry matching the Capsule's
 existing allowed-topic policy. A configured exact public GitHub repository URL
 is also observed without credentials when a foreground cycle starts. Only the
-latest immutable commit identity, timestamp, subject, bounded changed-file
-summary, and public addition/deletion counts enter the same feed. Raw patches,
+latest immutable commit identity, timestamp, subject, one bounded descriptive
+message line, and changed areas enter the same feed as evidence, not mandatory
+public wording. Legacy repository fact-dump drafts cannot auto-publish. Raw patches,
 repository contents, issues, secrets, private Capsule state, and GitHub write
 authority remain unavailable. Exact commit replay is idempotent; source or
 response mutation fails closed before Gemini or WASM. Both producers use the
 same ingestion contract and gain no draft, approval, effect, or publication
 authority.
+The same commit SHA observed under the earlier repository evidence format is
+not queued again under the current format.
 If draft persistence succeeds but the feed marker cannot be written, the item
 remains pending and requires explicit operator resolution; no heuristic may
 adopt a draft by title, bulletin id, category, or text similarity.
@@ -281,13 +289,18 @@ One cycle executes in this order:
    closes only that candidate for the current cycle; it cannot starve later
    candidates. At most one actionable target may advance per cycle.
 9. Claim at most one new proposal path: the selected remote target, or, when no
-   remote target claimed it, the oldest pending Capsule public change if no
-   local draft or non-terminal publication already awaits review.
+   remote target claimed it, the oldest pending Capsule public change. An older
+   local draft does not starve a distinct confirmed change. If provider
+   observation fails, only a local public-change draft may be prepared.
+   A newer observed public-repository commit supersedes only older undrafted
+   repository observations; prepared drafts and other sources remain intact.
 10. Request an AI proposal if configured, retain confirmed public-change facts
     unchanged, and validate the exact advisory prose through WASM.
 11. Under Assisted policy, prepare one immutable local effect and stop for exact
     human review. Under explicitly enabled Bounded policy, apply the current
     WASM authorization and host-owned durable budget to that same effect path.
+    A non-terminal publication blocks any new external post effect, not local
+    drafting of a different confirmed change.
 12. Process authorized effects through the common adapter and record receipts.
 13. Commit the checkpoint only through the newest safely observed boundary.
 14. Publish a local cycle summary and stop.

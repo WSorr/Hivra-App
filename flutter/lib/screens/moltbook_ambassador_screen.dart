@@ -718,6 +718,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           policy: MoltbookEngagementWritePolicy.assisted,
           exactApproval: true,
         );
+        setState(() => _replyDraftPreview = null);
         _showNotice('Reply approved and queued locally');
       } else if (decision == 1) {
         await widget.module.cancelMoltbookPublication(operation.operationId);
@@ -1356,26 +1357,40 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   }
 
   Future<void> _reconcilePublication(ExternalEffectOperation operation) async {
-    var providerReferenceId = operation.providerReferenceId;
+    final providerReferenceId = operation.providerReferenceId;
     final payload = MoltbookPublicationService.decodePayload(operation);
     final isPost = !payload.containsKey('post_id');
-    if (providerReferenceId == null && isPost) {
-      providerReferenceId = await _requestPublishedPostReference();
-      if (providerReferenceId == null) return;
-    }
     setState(() => _publicationBusy = true);
     try {
-      final result = await widget.module.reconcileMoltbookPublication(
+      var result = await widget.module.reconcileMoltbookPublication(
         operation.operationId,
         providerReferenceId: providerReferenceId,
       );
+      if (mounted &&
+          isPost &&
+          providerReferenceId == null &&
+          result.state == ExternalEffectState.unresolved &&
+          const <String>{
+            'receipt_not_observed',
+            'reconciliation_window_unavailable',
+          }.contains(result.lastErrorCode)) {
+        final exactPostId = await _requestPublishedPostReference();
+        if (exactPostId != null) {
+          result = await widget.module.reconcileMoltbookPublication(
+            operation.operationId,
+            providerReferenceId: exactPostId,
+          );
+        }
+      }
       final publications = await widget.module.loadMoltbookPublications();
       if (!mounted) return;
       setState(() => _publications = publications);
       _showNotice(
         result.state == ExternalEffectState.succeeded
             ? 'Published post found and receipt restored'
-            : 'The exact public post is not visible yet',
+            : result.lastErrorCode == 'receipt_not_observed'
+            ? 'No exact public post found; nothing was published again'
+            : 'Publication recheck incomplete: ${result.lastErrorCode ?? result.state.wireName}',
         isError: result.state != ExternalEffectState.succeeded,
       );
     } catch (error) {
@@ -1399,7 +1414,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Paste the Moltbook post link. Hivra will only verify the exact approved title and text; it will not publish again.',
+                  'No exact post was found in the recent profile. If you have its Moltbook link, paste it for a direct check. Hivra will not publish again.',
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -1582,6 +1597,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                 MoltbookPublicationService.isPostPublication(queuedOperation)
             ? queuedOperation
             : null;
+    final queuedReplyOperation = _latestOperationWhere((operation) {
+      if (operation.state != ExternalEffectState.queued) return false;
+      try {
+        return MoltbookPublicationService.decodePayload(
+          operation,
+        ).containsKey('post_id');
+      } catch (_) {
+        return false;
+      }
+    });
     final preparedReplyOperation = _latestOperationWhere((operation) {
       if (operation.state != ExternalEffectState.prepared) return false;
       try {
@@ -1662,6 +1687,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       MoltbookWorkspaceNextAction.runCycle => _planHeartbeat,
       MoltbookWorkspaceNextAction.none => _resumeCycles,
     };
+    final workspaceBusy =
+        _connectionBusy ||
+        _replyBusy ||
+        _draftBusy ||
+        _publicFactsBusy ||
+        _publicationBusy ||
+        _saving;
     return Scaffold(
       appBar: AppBar(title: const Text('Moltbook Ambassador')),
       body:
@@ -1695,14 +1727,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                         projection: projection,
                         writePolicy: _approvalMode,
                         triggerPolicy: _triggerPolicy,
-                        busy:
-                            _connectionBusy ||
-                            _replyBusy ||
-                            _draftBusy ||
-                            _publicFactsBusy ||
-                            _publicationBusy ||
-                            _saving,
+                        busy: workspaceBusy,
                         onNextAction: nextAction,
+                        onRunCycle: _enabled ? _planHeartbeat : null,
                         onCancelQueuedEffect:
                             projection.canCancelQueuedEffect &&
                                     queuedPostOperation != null
@@ -1712,6 +1739,57 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                 : null,
                         onStop: _saving ? null : _stopCycles,
                       ),
+                      if (queuedReplyOperation != null &&
+                          projection.nextAction !=
+                              MoltbookWorkspaceNextAction.publish) ...[
+                        const SizedBox(height: 12),
+                        Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.send_outlined),
+                            title: const Text(
+                              'Approved reply waiting to publish',
+                            ),
+                            subtitle: const Text(
+                              'The exact reply was approved locally and has not been sent to Moltbook.',
+                            ),
+                            trailing: FilledButton(
+                              onPressed:
+                                  workspaceBusy
+                                      ? null
+                                      : () => _processPublication(
+                                        queuedReplyOperation,
+                                      ),
+                              child: const Text('Publish reply'),
+                            ),
+                          ),
+                        ),
+                      ],
+                      if ((preparedReplyOperation != null ||
+                              _replyDraftPreview != null) &&
+                          projection.nextAction !=
+                              MoltbookWorkspaceNextAction.reviewReply) ...[
+                        const SizedBox(height: 12),
+                        Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.reply_outlined),
+                            title: const Text('Reply waiting for review'),
+                            subtitle: const Text(
+                              'The reply is local and unpublished. Review its exact text or discard it.',
+                            ),
+                            trailing: OutlinedButton(
+                              onPressed:
+                                  workspaceBusy
+                                      ? null
+                                      : preparedReplyOperation == null
+                                      ? _reviewReplyPublication
+                                      : () => _reviewPreparedReplyOperation(
+                                        preparedReplyOperation,
+                                      ),
+                              child: const Text('Review reply'),
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       _MoltbookAiSessionCard(
                         unlocked: _aiSessionUnlocked,
@@ -2144,6 +2222,7 @@ class MoltbookWorkflowCard extends StatelessWidget {
   final String triggerPolicy;
   final bool busy;
   final VoidCallback? onNextAction;
+  final VoidCallback? onRunCycle;
   final VoidCallback? onCancelQueuedEffect;
   final VoidCallback? onStop;
 
@@ -2154,6 +2233,7 @@ class MoltbookWorkflowCard extends StatelessWidget {
     required this.triggerPolicy,
     required this.busy,
     required this.onNextAction,
+    this.onRunCycle,
     required this.onCancelQueuedEffect,
     required this.onStop,
   });
@@ -2178,8 +2258,8 @@ class MoltbookWorkflowCard extends StatelessWidget {
         Icons.verified_user_outlined,
       ),
       MoltbookWorkspaceNextAction.reconcile => (
-        'Next: recheck the publication',
-        'Verify the exact post on Moltbook without publishing it again.',
+        'Earlier publication: delivery unconfirmed',
+        'Recheck without resending it. New confirmed changes can continue within the write limits.',
         'Recheck publication',
         Icons.sync_problem_outlined,
       ),
@@ -2373,6 +2453,16 @@ class MoltbookWorkflowCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ],
+            if (projection.nextAction ==
+                    MoltbookWorkspaceNextAction.reconcile &&
+                onRunCycle != null) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: busy ? null : onRunCycle,
+                icon: const Icon(Icons.play_circle_outline_rounded),
+                label: const Text('Run one cycle'),
+              ),
             ],
           ],
         ),

@@ -864,10 +864,8 @@ Risk-history boundary:
   history blocks live execution; test-order paths may expose fallback behavior
   only for explicit diagnostics.
 
-Broadcast behavior:
-
-- signal envelope may be shared with consensus peers as plugin-domain message,
-- peer broadcast is informational and does not bypass local execution gate.
+Trading is Capsule-local. A signal has no peer-selected or Chat delivery path
+and cannot acquire execution authority from another Capsule.
 
 ---
 
@@ -876,8 +874,8 @@ Broadcast behavior:
 1. Determinism:
    - repeated evaluation on identical snapshot produces identical `intent_hash`.
 2. Safety:
-   - missing closed-bar structure or directional volume activation ->
-     `NO_SIGNAL`, never a partial trade intent,
+   - missing closed-bar structure -> a blocked decision, never a partial trade
+     intent; active-zone entry does not require directional volume confirmation,
    - unavailable session or large-flow context remains visible but does not
      impersonate entry authority,
    - failed risk gate -> deterministic `blocked` decision code.
@@ -931,10 +929,15 @@ Broadcast behavior:
 
 ### 11.4 Manual Smoke (release gate)
 
-1. Run futures intent from plugin screen.
-2. Verify snackbar/result hash stable for same fixture inputs.
-3. Verify signal appears in peer inbox and can be repeated as draft.
-4. Verify no ledger mutation side effects beyond existing transport envelope behavior.
+1. Configure and authorize one bounded VPS session from the installed plugin
+   without Git or terminal work.
+2. With the application closed, observe a real Runner cycle and distinguish a
+   blocked decision, accepted pending order, fill, and terminal outcome using
+   exact journal and provider evidence.
+3. Reconnect and verify the same signed session and managed order are shown
+   without a second provider effect; exercise pause/resume and invalidation.
+4. Verify any filled position has exact protection and terminal-result
+   reconciliation before claiming the order-to-position journey complete.
 
 ---
 
@@ -1109,7 +1112,8 @@ A blocked or different ready entry proposal is not structural invalidation of a
 pending order. Revalidation authenticates the retained signed placement
 observation and binds its operation, event, side, symbol and policy to the
 exact journal-owned order. The existing zone owner checks continuous closed
-5m bars from the original parent through the current observation. A strict
+bars on the signed check timeframe (15m for 4h mode, 5m for 1h mode) from the
+original parent through the current observation. A strict
 crossing of the original parent or confirmed entry extreme invalidates it.
 Legacy micro/void revalidation helpers remain read-only compatibility logic;
 they do not grant current-strategy admission or enable a new void entry.
