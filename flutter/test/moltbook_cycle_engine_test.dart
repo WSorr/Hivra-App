@@ -266,13 +266,20 @@ void main() {
       );
       final restarted = buildModule(MoltbookCycleTriggerService());
       final second = await restarted.runMoltbookCycle();
+      await restarted.runMoltbookCycle();
 
       expect(first.blockedCount, 0);
       expect(second.blockedCount, 0);
-      expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, hasLength(1));
-      expect(drafts.stored.single.preview.bulletinId, change.sourceId);
-      expect(heartbeatHost.preparedBulletinFacts, <List<String>>[change.facts]);
+      expect(ai.bulletinProposalCount, 2);
+      expect(drafts.stored, hasLength(2));
+      expect(
+        drafts.stored.map((draft) => draft.preview.bulletinId).toSet(),
+        <String>{change.sourceId, waiting.sourceId},
+      );
+      expect(heartbeatHost.preparedBulletinFacts, <List<String>>[
+        change.facts,
+        waiting.facts,
+      ]);
       final persistedChanges = await publicChanges.load();
       final persistedChange = persistedChanges.firstWhere(
         (candidate) => candidate.sourceId == change.sourceId,
@@ -281,11 +288,8 @@ void main() {
         (candidate) => candidate.sourceId == waiting.sourceId,
       );
       expect(persistedChange.isPending, isFalse);
-      expect(
-        persistedChange.draftHashHex,
-        drafts.stored.single.preview.draftHashHex,
-      );
-      expect(waitingChange.isPending, isTrue);
+      expect(persistedChange.draftHashHex, isNotNull);
+      expect(waitingChange.isPending, isFalse);
       expect(publications.processedIds, isEmpty);
     },
   );
@@ -413,7 +417,7 @@ void main() {
     () async {
       ai.unlocked = true;
       publicRepositorySource.observation = (
-        sourceId: 'github-${'a' * 40}',
+        sourceId: 'github-news-v2-${'a' * 40}',
         facts: const <String>[
           'Public repository WSorr/Hivra-App recorded a bounded commit.',
         ],
@@ -433,6 +437,178 @@ void main() {
   );
 
   test(
+    'cycle drafts the latest repository commit instead of stale pending news',
+    () async {
+      ai.unlocked = true;
+      await publicChanges.record(
+        sourceId: 'github-news-v2-${'a' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['An older repository change.'],
+      );
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'b' * 40}',
+        facts: const <String>['The latest repository change.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(drafts.stored, hasLength(1));
+      expect(
+        drafts.stored.single.preview.bulletinId,
+        'github-news-v2-${'b' * 40}',
+      );
+      expect(
+        (await publicChanges.load()).map((change) => change.sourceId),
+        <String>['github-news-v2-${'b' * 40}'],
+      );
+    },
+  );
+
+  test(
+    'stale unresolved post does not block a distinct confirmed change',
+    () async {
+      ai.unlocked = true;
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      publications.leavePostUnresolved = true;
+      await publicChanges.record(
+        sourceId: 'capsule-change-first',
+        category: 'hivra',
+        facts: const <String>['The first confirmed change.'],
+      );
+      await module.runMoltbookCycle();
+      await publicChanges.record(
+        sourceId: 'capsule-change-second',
+        category: 'hivra',
+        facts: const <String>['The second confirmed change.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(ai.bulletinProposalCount, 2);
+      expect(publications.postApprovalCount, 2);
+      expect(publications.processedPostIds, hasLength(2));
+      expect(publications.operations, hasLength(2));
+    },
+  );
+
+  test('recheck of an unresolved post never resubmits it', () async {
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    publications.leavePostUnresolved = true;
+    await publicChanges.record(
+      sourceId: 'capsule-change-recheck-only',
+      category: 'hivra',
+      facts: const <String>['An exact publication needs reconciliation.'],
+    );
+
+    await module.runMoltbookCycle();
+    final operationId = publications.processedPostIds.single;
+    await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+
+    expect(publications.reconciledIds, <String>[operationId]);
+    expect(publications.processedPostIds, <String>[operationId]);
+    expect(publications.postApprovalCount, 1);
+  });
+
+  test(
+    'distinct news effect proceeds without resubmitting an older post',
+    () async {
+      ai.unlocked = true;
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      publications.leavePostUnresolved = true;
+      await publicChanges.record(
+        sourceId: 'capsule-change-before-receipt',
+        category: 'hivra',
+        facts: const <String>['An earlier change reached the provider.'],
+      );
+      await module.runMoltbookCycle();
+      await publicChanges.record(
+        sourceId: 'capsule-change-after-receipt',
+        category: 'hivra',
+        facts: const <String>['The latest confirmed change is retained.'],
+      );
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(
+        drafts.stored.map((draft) => draft.preview.bulletinId),
+        contains('capsule-change-after-receipt'),
+      );
+      expect(publications.processedPostIds, hasLength(2));
+
+      publications.resolvePostOnRecheck = true;
+      publications.leavePostUnresolved = false;
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+
+      expect(ai.bulletinProposalCount, 2);
+      expect(publications.postApprovalCount, 2);
+      expect(publications.processedPostIds, hasLength(2));
+      expect(publications.operations, hasLength(2));
+      expect(drafts.stored, isEmpty);
+    },
+  );
+
+  test(
+    'unapproved unrelated preparation does not block bounded news',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      publications.operations = <ExternalEffectOperation>[
+        _operationWithState(_operation(), ExternalEffectState.prepared),
+      ];
+      await publicChanges.record(
+        sourceId: 'capsule-change-after-preparation',
+        category: 'hivra',
+        facts: const <String>['A confirmed change is ready for publication.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(publications.postApprovalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(publications.operations, hasLength(2));
+    },
+  );
+
+  test('provider read failure still prepares a local news draft', () async {
+    ai.unlocked = true;
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    connection.observationError = StateError('provider offline');
+    await publicChanges.record(
+      sourceId: 'capsule-change-offline',
+      category: 'hivra',
+      facts: const <String>['A confirmed public change remains available.'],
+    );
+
+    await expectLater(module.runMoltbookCycle(), throwsStateError);
+
+    expect(ai.bulletinProposalCount, 1);
+    expect(drafts.stored, hasLength(1));
+    expect(publications.postApprovalCount, 0);
+    expect(publications.preparedPostDestinations, isEmpty);
+    expect(checkpoint.commitCount, 0);
+  });
+
+  test('provider fallback rejects a Capsule switch during AI', () async {
+    ai.unlocked = true;
+    connection.observationError = StateError('provider offline');
+    ai.afterProposal = () => activeRoot = _rootB;
+    await publicChanges.record(
+      sourceId: 'capsule-change-provider-switch',
+      category: 'hivra',
+      facts: const <String>['A confirmed change belongs to one Capsule.'],
+    );
+
+    await expectLater(module.runMoltbookCycle(), throwsStateError);
+
+    expect(drafts.stored, isEmpty);
+    expect(publications.preparedPostDestinations, isEmpty);
+    expect(checkpoint.commitCount, 0);
+  });
+
+  test(
     'unrelated local draft does not block a bounded repository publication',
     () async {
       ai.unlocked = true;
@@ -441,7 +617,7 @@ void main() {
       final unrelatedDraft = _draftPreview('9' * 64);
       await drafts.save(unrelatedDraft);
       publicRepositorySource.observation = (
-        sourceId: 'github-${'c' * 40}',
+        sourceId: 'github-news-v2-${'c' * 40}',
         facts: const <String>[
           'Public repository WSorr/Hivra-App recorded a newer commit.',
         ],
@@ -483,7 +659,7 @@ void main() {
     'Capsule switch after public repository read aborts the cycle',
     () async {
       publicRepositorySource.observation = (
-        sourceId: 'github-${'b' * 40}',
+        sourceId: 'github-news-v2-${'b' * 40}',
         facts: const <String>['A public commit was observed.'],
       );
       publicRepositorySource.afterObservation = () => activeRoot = _rootB;
@@ -525,6 +701,86 @@ void main() {
       final persisted = (await publicChanges.load()).single;
       expect(persisted.sourceId, change.sourceId);
       expect(persisted.isPending, isFalse);
+    },
+  );
+
+  test('bounded cycle never publishes a legacy repository fact dump', () async {
+    ai.unlocked = true;
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    await publicChanges.record(
+      sourceId: 'github-${'d' * 40}',
+      category: 'hivra-development',
+      facts: const <String>[
+        'The public commit lists changed files and line counts.',
+      ],
+    );
+
+    await module.runMoltbookCycle();
+
+    expect(drafts.stored, isEmpty);
+    expect(publications.postApprovalCount, 0);
+    expect(publications.processedPostIds, isEmpty);
+  });
+
+  test(
+    'legacy repository entry cannot starve a newer confirmed change',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      await publicChanges.record(
+        sourceId: 'github-${'d' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['Legacy file-list evidence.'],
+      );
+      final current = await publicChanges.record(
+        sourceId: 'capsule-change-after-legacy',
+        category: 'hivra',
+        facts: const <String>['A confirmed product change is available.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(publications.postApprovalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      final changes = await publicChanges.load();
+      expect(changes.first.isPending, isTrue);
+      expect(
+        changes
+            .singleWhere((change) => change.sourceId == current.sourceId)
+            .isPending,
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'bounded cycle publishes grounded prose without copying source lines',
+    () async {
+      ai.unlocked = true;
+      ai.paraphraseBulletin = true;
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      await publicChanges.record(
+        sourceId: 'github-news-v2-${'e' * 40}',
+        category: 'hivra',
+        facts: const <String>[
+          'Commit summary: Prevent a duplicate draft after restart',
+          'Changed areas: flutter/lib/services/moltbook_runtime_module.dart.',
+        ],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(
+        publications.postApprovalCount,
+        1,
+        reason: log.entries
+            .map((entry) => '${entry.source}: ${entry.message}')
+            .join('\n'),
+      );
+      expect(publications.processedPostIds, hasLength(1));
+      expect(ai.bulletinProposalCount, 1);
     },
   );
 
@@ -808,7 +1064,8 @@ void main() {
 
     final summary = await module.runMoltbookCycle();
 
-    expect(publications.processedIds, <String>['effect-1']);
+    expect(publications.reconciledIds, <String>['effect-1']);
+    expect(publications.processedIds, isEmpty);
     expect(summary.reconciledCount, 1);
     expect(summary.challengedCount, 1);
     expect(summary.blockedCount, 0);
@@ -829,6 +1086,7 @@ void main() {
 
       expect(ai.verificationSolutionCount, 1);
       expect(publications.verificationResolveCount, 1);
+      expect(publications.reconciledIds, isEmpty);
       expect(publications.verificationAnswers, <String>['4']);
       expect(summary.challengedCount, 0);
     },
@@ -1669,9 +1927,11 @@ class _CyclePublications implements MoltbookPublicationService {
   final List<String> unavailableChecks = <String>[];
   final List<String> preparedPostDestinations = <String>[];
   final List<String> processedPostIds = <String>[];
+  final List<String> reconciledIds = <String>[];
   final List<String> cancelledIds = <String>[];
   int postApprovalCount = 0;
   bool leavePostUnresolved = false;
+  bool resolvePostOnRecheck = false;
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
@@ -1721,6 +1981,31 @@ class _CyclePublications implements MoltbookPublicationService {
       );
       operations[postIndex] = succeeded;
       return succeeded;
+    }
+    return _operation(challenged: true);
+  }
+
+  @override
+  Future<ExternalEffectOperation> reconcileOnly(
+    String operationId, {
+    String? providerReferenceId,
+  }) async {
+    reconciledIds.add(operationId);
+    final index = operations.indexWhere(
+      (operation) => operation.operationId == operationId,
+    );
+    final operation = operations[index];
+    if (operation.requiredAction != null) {
+      throw StateError('Required provider action must be completed first');
+    }
+    if (operation.effectKind == MoltbookExternalEffectAdapter.postEffectKind) {
+      if (!resolvePostOnRecheck) return operation;
+      final resolved = _operationWithState(
+        operation,
+        ExternalEffectState.succeeded,
+      );
+      operations[index] = resolved;
+      return resolved;
     }
     return _operation(challenged: true);
   }
@@ -2146,6 +2431,7 @@ class _CycleAi implements MoltbookPublicBulletinAiService {
   void Function()? afterProposal;
   void Function()? afterVerificationSolution;
   bool driftBulletinFacts = false;
+  bool paraphraseBulletin = false;
   bool unlocked = false;
   String verificationAnswer = '4';
 
@@ -2186,7 +2472,10 @@ class _CycleAi implements MoltbookPublicBulletinAiService {
         .toList(growable: false);
     return MoltbookPublicBulletinProposal(
       title: 'A confirmed Capsule change',
-      body: facts.join(' '),
+      body:
+          paraphraseBulletin
+              ? 'After a restart, Moltbook now reuses its saved draft instead of creating another copy.'
+              : facts.join(' '),
       facts:
           driftBulletinFacts
               ? const <String>['AI paraphrase is not authoritative.']

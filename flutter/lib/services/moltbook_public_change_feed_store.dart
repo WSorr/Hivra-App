@@ -106,40 +106,76 @@ class MoltbookPublicChangeFeedStore {
     required String sourceId,
     required String category,
     required List<String> facts,
+    bool latestRepositoryCommit = false,
   }) {
     return _serialized(() async {
       final ownerHex = _requireOwnerHex();
       final normalizedSourceId = sourceId.trim();
       final normalizedCategory = category.trim();
       final normalizedFacts = facts.map((fact) => fact.trim()).toList();
+      if (latestRepositoryCommit &&
+          !RegExp(
+            r'^github-(?:news-v2-)?[0-9a-f]{40}$',
+          ).hasMatch(normalizedSourceId)) {
+        throw const FormatException('Invalid public repository commit source');
+      }
       final commitment = commitmentFor(
         sourceId: normalizedSourceId,
         category: normalizedCategory,
         facts: normalizedFacts,
       );
       final changes = await _loadForOwner(ownerHex);
+      if (latestRepositoryCommit &&
+          normalizedSourceId.startsWith('github-news-v2-')) {
+        final legacySourceId =
+            'github-${normalizedSourceId.substring('github-news-v2-'.length)}';
+        final legacy =
+            changes
+                .where((change) => change.sourceId == legacySourceId)
+                .singleOrNull;
+        if (legacy != null) return legacy;
+      }
       final sameSource = changes.where(
         (change) => change.sourceId == normalizedSourceId,
       );
       for (final existing in sameSource) {
-        if (existing.commitmentHashHex == commitment) return existing;
-        throw StateError(
-          'Public change source id is already bound to different facts',
-        );
+        if (existing.commitmentHashHex != commitment) {
+          throw StateError(
+            'Public change source id is already bound to different facts',
+          );
+        }
       }
-      final change = MoltbookPublicChange(
-        sourceId: normalizedSourceId,
-        category: normalizedCategory,
-        facts: List<String>.unmodifiable(normalizedFacts),
-        commitmentHashHex: commitment,
-        recordedAtUtc: DateTime.now().toUtc(),
-      );
-      validate(change);
-      final updated = <MoltbookPublicChange>[...changes, change];
+      final existing = sameSource.singleOrNull;
+      final updated =
+          latestRepositoryCommit
+              ? changes
+                  .where(
+                    (change) =>
+                        !change.isPending ||
+                        !change.sourceId.startsWith('github-') ||
+                        change.sourceId == normalizedSourceId,
+                  )
+                  .toList()
+              : <MoltbookPublicChange>[...changes];
+      final change =
+          existing ??
+          MoltbookPublicChange(
+            sourceId: normalizedSourceId,
+            category: normalizedCategory,
+            facts: List<String>.unmodifiable(normalizedFacts),
+            commitmentHashHex: commitment,
+            recordedAtUtc: DateTime.now().toUtc(),
+          );
+      if (existing == null) {
+        validate(change);
+        updated.add(change);
+      }
       if (updated.length > maxChanges) {
         updated.removeRange(0, updated.length - maxChanges);
       }
-      await _writeForOwner(ownerHex, updated);
+      if (existing == null || updated.length != changes.length) {
+        await _writeForOwner(ownerHex, updated);
+      }
       return change;
     });
   }

@@ -57,13 +57,13 @@ void main() {
     expect(runtime.operations, <String>['infer']);
   });
 
-  test('replaces drifting AI prose with exact confirmed facts', () async {
+  test('accepts grounded news without copying the source notes', () async {
     final service = MoltbookPublicBulletinAiService(
       runtime: _RecordingRuntime(
         responseText:
-            '{"title":"Generic Hivra overview",'
-            '"body":"Hivra is a local-first runtime for Capsules.",'
-            '"supporting_facts":["A generic runtime summary."]}',
+            '{"title":"Chat survives an app restart",'
+            '"body":"The latest Chat change keeps conversations available after the app restarts, so a session can continue instead of beginning again.",'
+            '"supporting_facts":["Capsule Chat now resumes after restart."]}',
       ),
     );
 
@@ -72,47 +72,30 @@ void main() {
       category: 'hivra-development',
       personaSummary: 'Explain facts.',
     );
-
+    expect(proposal.body, isNot(contains('Capsule Chat now resumes')));
     expect(proposal.facts, <String>['Capsule Chat now resumes after restart.']);
-    expect(
-      proposal.body,
-      'Confirmed facts:\nCapsule Chat now resumes after restart.',
-    );
-    expect(proposal.body, isNot(contains('local-first runtime')));
   });
 
-  test('fact fallback never duplicates partially copied AI prose', () async {
+  test('rejects changed grounding instead of replacing AI prose', () async {
     final service = MoltbookPublicBulletinAiService(
       runtime: _RecordingRuntime(
         responseText:
             '{"title":"Capsule runtime update",'
             '"body":"Capsule owns the runtime. A paraphrased plugin note.",'
             '"supporting_facts":["Capsule owns the runtime.",'
-            '"Plugins are replaceable tools."]}',
+            '"A fabricated plugin change."]}',
       ),
     );
 
-    final proposal = await service.propose(
-      sourceNotes:
-          'Capsule owns the runtime.\n'
-          'Plugins are replaceable tools.',
-      category: 'hivra-development',
-      personaSummary: 'Explain facts.',
-    );
-
-    expect(proposal.facts, <String>[
-      'Capsule owns the runtime.',
-      'Plugins are replaceable tools.',
-    ]);
-    expect(
-      proposal.body,
-      'Confirmed facts:\n'
-      'Capsule owns the runtime.\n'
-      'Plugins are replaceable tools.',
-    );
-    expect(
-      RegExp('Capsule owns the runtime\\.').allMatches(proposal.body),
-      hasLength(1),
+    await expectLater(
+      service.propose(
+        sourceNotes:
+            'Capsule owns the runtime.\n'
+            'Plugins are replaceable tools.',
+        category: 'hivra-development',
+        personaSummary: 'Explain facts.',
+      ),
+      throwsA(isA<FormatException>()),
     );
   });
 

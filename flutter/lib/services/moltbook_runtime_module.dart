@@ -178,63 +178,130 @@ class MoltbookRuntimeModule {
     required String ownerHex,
     required String accountBindingId,
     required int cycleEpoch,
+    bool allowPublication = true,
   }) async {
+    final changes = await moltbookPublicChanges.load();
+    final eligibleChanges = changes.where(
+      (change) =>
+          !change.sourceId.startsWith('github-') ||
+          change.sourceId.startsWith('github-news-v2-'),
+    );
+    final pending =
+        eligibleChanges.where((change) => change.isPending).firstOrNull;
+    final change = pending ?? eligibleChanges.lastOrNull;
+    if (change == null) return null;
     final drafts = await moltbookDrafts.load();
-    if (drafts.isNotEmpty) {
-      final draftedSourceIds =
-          drafts.map((draft) => draft.preview.bulletinId).toSet();
-      final publicChanges = await moltbookPublicChanges.load();
-      if (publicChanges.any(
-        (change) => draftedSourceIds.contains(change.sourceId),
-      )) {
-        return null;
-      }
-    }
     final publications = await moltbookPublications.list();
-    if (publications.any((operation) => !operation.state.isTerminal)) {
+    final publicationAvailable =
+        allowPublication &&
+        publications.every(
+          (operation) =>
+              operation.state.isTerminal ||
+              operation.state == ExternalEffectState.prepared ||
+              operation.state == ExternalEffectState.unresolved,
+        );
+    final configuration = await _ambassadorConfiguration.load();
+    if (pending == null &&
+        (configuration.approvalMode !=
+                MoltbookAmbassadorConfiguration.approvalBounded ||
+            !publicationAvailable)) {
       return null;
     }
-    final change = await moltbookPublicChanges.nextPending();
-    if (change == null) return null;
-    final configuration = await _ambassadorConfiguration.load();
-    if (configuration.approvalMode ==
-        MoltbookAmbassadorConfiguration.approvalBounded) {
-      await _requireBoundedMoltbookWriteAvailable(DateTime.now().toUtc());
-    }
-    final proposal = await proposeMoltbookPublicBulletin(
-      change.sourceNotes,
-      category: change.category,
-    );
-    if (!_sameOrderedStrings(proposal.facts, change.facts) ||
-        change.facts.any((fact) => !proposal.body.contains(fact))) {
-      throw StateError(
-        'AI bulletin does not preserve the exact confirmed public change',
+    MoltbookDraftPreview preview;
+    if (change.draftHashHex != null) {
+      final stored = drafts
+          .where(
+            (draft) =>
+                draft.preview.draftHashHex == change.draftHashHex &&
+                draft.preview.bulletinId == change.sourceId,
+          )
+          .toList(growable: false);
+      if (stored.isEmpty) return null;
+      if (stored.length != 1 ||
+          stored.single.preview.category != change.category ||
+          stored.single.preview.releaseTag != _automaticMoltbookReleaseTag ||
+          stored.single.preview.audience != configuration.primaryCommunity ||
+          stored.single.preview.body.isEmpty) {
+        throw StateError(
+          'Retained public-change draft binding is inconsistent',
+        );
+      }
+      preview = stored.single.preview;
+      await uiLog.log(
+        'moltbook.cycle.public_change',
+        'resuming source=${_safeLogValue(change.sourceId)} '
+            'draft=${preview.draftHashHex.substring(0, 12)}..',
+      );
+    } else {
+      if (drafts.any((draft) => draft.preview.bulletinId == change.sourceId)) {
+        return null;
+      }
+      if (configuration.approvalMode ==
+              MoltbookAmbassadorConfiguration.approvalBounded &&
+          publicationAvailable) {
+        await _requireBoundedMoltbookWriteAvailable(DateTime.now().toUtc());
+      }
+      final proposal = await proposeMoltbookPublicBulletin(
+        change.sourceNotes,
+        category: change.category,
+      );
+      if (!_sameOrderedStrings(proposal.facts, change.facts)) {
+        throw StateError(
+          'AI bulletin does not preserve the exact confirmed public change',
+        );
+      }
+      await _ensureMoltbookCycleScope(
+        ownerHex,
+        accountBindingId,
+        cycleEpoch: cycleEpoch,
+      );
+      preview = await prepareMoltbookDraft(
+        bulletinId: change.sourceId,
+        releaseTag: _automaticMoltbookReleaseTag,
+        category: change.category,
+        facts: change.facts,
+        titleHint: proposal.title,
+        reviewedBody: proposal.body,
+        audience: configuration.primaryCommunity,
+        publicChangeCommitmentHashHex: change.commitmentHashHex,
+      );
+      await uiLog.log(
+        'moltbook.cycle.public_change',
+        'prepared source=${_safeLogValue(change.sourceId)} '
+            'draft=${preview.draftHashHex.substring(0, 12)}..',
       );
     }
-    await _ensureMoltbookCycleScope(
-      ownerHex,
-      accountBindingId,
-      cycleEpoch: cycleEpoch,
-    );
-    final preview = await prepareMoltbookDraft(
-      bulletinId: change.sourceId,
-      releaseTag: _automaticMoltbookReleaseTag,
-      category: change.category,
-      facts: change.facts,
-      titleHint: proposal.title,
-      reviewedBody: proposal.body,
-      audience: configuration.primaryCommunity,
-      publicChangeCommitmentHashHex: change.commitmentHashHex,
-    );
-    await uiLog.log(
-      'moltbook.cycle.public_change',
-      'prepared source=${_safeLogValue(change.sourceId)} '
-          'draft=${preview.draftHashHex.substring(0, 12)}..',
-    );
     if (configuration.approvalMode !=
-        MoltbookAmbassadorConfiguration.approvalBounded) {
+            MoltbookAmbassadorConfiguration.approvalBounded ||
+        !publicationAvailable) {
+      if (!publicationAvailable) {
+        await uiLog.log(
+          'moltbook.cycle.public_change',
+          'draft retained; publication waits for prior effect or provider',
+        );
+      }
       return preview;
     }
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null || binding.accountId != accountBindingId) {
+      throw StateError('Moltbook account changed before publication');
+    }
+    final retained = MoltbookPublicationService.retainedPostOperationForDraft(
+      operations: publications,
+      accountBindingId: binding.accountId,
+      accountName: binding.accountName,
+      submoltName: configuration.primaryCommunity,
+      draft: preview,
+    );
+    if (retained != null && retained.state != ExternalEffectState.prepared) {
+      await uiLog.log(
+        'moltbook.cycle.public_change',
+        'existing effect retained source=${_safeLogValue(change.sourceId)} '
+            'state=${retained.state.wireName}',
+      );
+      return preview;
+    }
+    await _requireBoundedMoltbookWriteAvailable(DateTime.now().toUtc());
     await _ensureMoltbookCycleScope(
       ownerHex,
       accountBindingId,
@@ -971,9 +1038,10 @@ class MoltbookRuntimeModule {
         cycleEpoch: cycleEpoch,
       );
       try {
-        var resolved = await moltbookPublications.process(
-          operation.operationId,
-        );
+        var resolved =
+            operation.requiredAction == null
+                ? await reconcileMoltbookPublication(operation.operationId)
+                : operation;
         resolved = await _resolveMoltbookVerificationWithAiIfEligible(
           resolved,
           cycleOwnerHex: ownerHex,
@@ -1002,9 +1070,39 @@ class MoltbookRuntimeModule {
       accountBindingId,
       cycleEpoch: cycleEpoch,
     );
-    final heartbeat = await _observeAndPlanMoltbookHeartbeat(
-      cycleEpoch: cycleEpoch,
-    );
+    late final ({
+      String ownerHex,
+      String accountBindingId,
+      MoltbookHeartbeatObservation observation,
+      MoltbookHeartbeatPlan plan,
+      DateTime observedAt,
+    })
+    heartbeat;
+    try {
+      heartbeat = await _observeAndPlanMoltbookHeartbeat(
+        cycleEpoch: cycleEpoch,
+      );
+    } catch (_) {
+      await _ensureMoltbookCycleScope(
+        ownerHex,
+        accountBindingId,
+        cycleEpoch: cycleEpoch,
+      );
+      try {
+        await _advanceNextMoltbookPublicChange(
+          ownerHex: ownerHex,
+          accountBindingId: accountBindingId,
+          cycleEpoch: cycleEpoch,
+          allowPublication: false,
+        );
+      } catch (error) {
+        await uiLog.log(
+          'moltbook.cycle.public_change',
+          'deferred ${_safeError(error)}',
+        );
+      }
+      rethrow;
+    }
     final heartbeatPlan = heartbeat.plan;
     String? deferredFeedPostId;
     var proposalPathClaimed = false;
@@ -1288,6 +1386,7 @@ class MoltbookRuntimeModule {
         sourceId: observation.sourceId,
         category: configuration.allowedTopics.first,
         facts: observation.facts,
+        latestRepositoryCommit: true,
       );
       await uiLog.log(
         'moltbook.public_repository.observe',
