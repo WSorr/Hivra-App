@@ -49,7 +49,8 @@ void main() {
         return <String, Object?>{
           'sha': 'a' * 40,
           'commit': <String, Object?>{
-            'message': 'Seal duplicate Moltbook drafts\n\nDetails.',
+            'message':
+                'Seal duplicate Moltbook drafts\n\nA retained draft is reused after restart rather than prepared twice.',
             'author': <String, Object?>{'date': '2026-09-13T12:00:00Z'},
           },
           'stats': <String, Object?>{'additions': 24, 'deletions': 12},
@@ -64,9 +65,12 @@ void main() {
     final observation = await source.observeLatestCommit(
       'https://github.com/WSorr/Hivra-App',
     );
-    expect(observation?.sourceId, 'github-${'a' * 40}');
-    expect(observation?.facts, hasLength(3));
-    expect(observation?.facts.join('\n'), contains('Seal duplicate'));
+    expect(observation?.sourceId, 'github-news-v2-${'a' * 40}');
+    expect(observation?.facts, <String>[
+      'Commit summary: Seal duplicate Moltbook drafts',
+      'Commit detail: A retained draft is reused after restart rather than prepared twice.',
+      'Changed areas: flutter/lib/example.dart, flutter/test/example_test.dart.',
+    ]);
     expect(requested.map((uri) => uri.toString()), <String>[
       'https://api.github.com/repos/WSorr/Hivra-App/commits?per_page=1',
       'https://api.github.com/repos/WSorr/Hivra-App/commits/${'a' * 40}',
@@ -85,6 +89,84 @@ void main() {
     expect(replay.commitmentHashHex, retained.commitmentHashHex);
     expect(await store.load(), hasLength(1));
   });
+
+  test(
+    'latest repository observation supersedes only undrafted commits',
+    () async {
+      final drafted = await store.record(
+        sourceId: 'github-${'a' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['An older published change.'],
+        latestRepositoryCommit: true,
+      );
+      await store.markDrafted(drafted.commitmentHashHex, 'd' * 64);
+      await store.record(
+        sourceId: 'capsule-local-change',
+        category: 'hivra-development',
+        facts: const <String>['A distinct Capsule change.'],
+      );
+      await store.record(
+        sourceId: 'github-${'b' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['A pending repository change.'],
+        latestRepositoryCommit: true,
+      );
+
+      final latest = await store.record(
+        sourceId: 'github-${'c' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['The latest repository change.'],
+        latestRepositoryCommit: true,
+      );
+      await store.record(
+        sourceId: latest.sourceId,
+        category: latest.category,
+        facts: latest.facts,
+        latestRepositoryCommit: true,
+      );
+
+      final retained = await store.load();
+      expect(retained.map((change) => change.sourceId), <String>[
+        drafted.sourceId,
+        'capsule-local-change',
+        latest.sourceId,
+      ]);
+      expect(retained.first.draftHashHex, 'd' * 64);
+      expect((await store.nextPending())?.sourceId, 'capsule-local-change');
+      await expectLater(
+        store.record(
+          sourceId: 'capsule-not-a-commit',
+          category: 'hivra-development',
+          facts: const <String>['Not a repository source.'],
+          latestRepositoryCommit: true,
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test(
+    'new evidence format never requeues an already observed commit',
+    () async {
+      final legacy = await store.record(
+        sourceId: 'github-${'f' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['Old technical evidence.'],
+        latestRepositoryCommit: true,
+      );
+      await store.markDrafted(legacy.commitmentHashHex, 'a' * 64);
+
+      final observed = await store.record(
+        sourceId: 'github-news-v2-${'f' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['A meaningful public change.'],
+        latestRepositoryCommit: true,
+      );
+
+      expect(observed.sourceId, legacy.sourceId);
+      expect(await store.load(), hasLength(1));
+    },
+  );
 
   test(
     'public repository source rejects redirects and identity mutation',

@@ -55,30 +55,20 @@ class MoltbookPublicRepositorySourceAdapter {
     if (author is! Map) {
       throw const FormatException('GitHub commit author is invalid');
     }
-    final recordedAt =
-        DateTime.tryParse(
+    if (DateTime.tryParse(
           Map<String, dynamic>.from(author)['date']?.toString() ?? '',
-        )?.toUtc();
-    if (recordedAt == null) {
+        ) ==
+        null) {
       throw const FormatException('GitHub commit date is invalid');
     }
     final files = _changedFiles(commit['files']);
-    final stats = commit['stats'];
-    if (stats is! Map) {
-      throw const FormatException('GitHub commit stats are invalid');
-    }
-    final statsJson = Map<String, dynamic>.from(stats);
-    final additions = _boundedCount(statsJson['additions'], 'additions');
-    final deletions = _boundedCount(statsJson['deletions'], 'deletions');
-    final repositoryLabel = '$owner/$name';
-    return (
-      sourceId: 'github-$sha',
-      facts: <String>[
-        'Public repository $repositoryLabel recorded commit ${sha.substring(0, 12)} on ${recordedAt.toIso8601String()} with subject: $subject',
-        'The public commit response lists ${files.length} changed file${files.length == 1 ? '' : 's'}: ${files.take(3).map((file) => _abbreviate(file, 60)).join(', ')}${files.length > 3 ? ', and ${files.length - 3} more' : ''}.',
-        'The public commit reports $additions additions and $deletions deletions.',
-      ],
-    );
+    final detailsText = _commitDetails(metadataJson['message']);
+    final facts = <String>[
+      'Commit summary: $subject',
+      if (detailsText != null) 'Commit detail: $detailsText',
+      'Changed areas: ${files.take(3).map((file) => _abbreviate(file, 60)).join(', ')}${files.length > 3 ? ', and ${files.length - 3} other files' : ''}.',
+    ];
+    return (sourceId: 'github-news-v2-$sha', facts: facts);
   }
 
   static String _commitSha(Object? value) {
@@ -102,6 +92,20 @@ class MoltbookPublicRepositorySourceAdapter {
     return subject;
   }
 
+  static String? _commitDetails(Object? value) {
+    if (value is! String) return null;
+    final lines = value.split(RegExp(r'[\r\n]+')).skip(1);
+    for (final raw in lines) {
+      final line = raw.trim();
+      if (line.length >= 16 &&
+          line.length <= 220 &&
+          !_unsafeText.hasMatch(line)) {
+        return line;
+      }
+    }
+    return null;
+  }
+
   static List<String> _changedFiles(Object? value) {
     if (value is! List || value.isEmpty || value.length > 300) {
       throw const FormatException('GitHub changed files are invalid');
@@ -121,13 +125,6 @@ class MoltbookPublicRepositorySourceAdapter {
       files.add(filename);
     }
     return List<String>.unmodifiable(files);
-  }
-
-  static int _boundedCount(Object? value, String field) {
-    if (value is! int || value < 0 || value > 10000000) {
-      throw FormatException('GitHub commit $field is invalid');
-    }
-    return value;
   }
 
   static String _abbreviate(String value, int maxCharacters) =>

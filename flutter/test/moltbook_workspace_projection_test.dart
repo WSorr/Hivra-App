@@ -34,6 +34,55 @@ void main() {
   });
 
   group('MoltbookWorkspaceProjection', () {
+    testWidgets('uncertain older publication does not hide a new cycle', (
+      tester,
+    ) async {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.idle,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: true,
+        hasQueuedEffect: false,
+        hasReplyDraft: false,
+        hasLocalDraft: false,
+        proposedCount: 0,
+        publishedCount: 0,
+        challengedCount: 0,
+        blockedCount: 0,
+      );
+      var rechecks = 0;
+      var cycles = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MoltbookWorkflowCard(
+              projection: projection,
+              writePolicy: MoltbookAmbassadorConfiguration.approvalBounded,
+              triggerPolicy: MoltbookAmbassadorConfiguration.triggerOnDemand,
+              busy: false,
+              onNextAction: () => rechecks += 1,
+              onRunCycle: () => cycles += 1,
+              onCancelQueuedEffect: null,
+              onStop: null,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Recheck publication'), findsOneWidget);
+      expect(find.text('Run one cycle'), findsOneWidget);
+      await tester.tap(find.text('Run one cycle'));
+      await tester.pump();
+      expect(cycles, 1);
+      expect(rechecks, 0);
+    });
+
     test('gives an active effect priority over every new proposal path', () {
       final projection = MoltbookWorkspaceProjection.resolve(
         connected: true,
