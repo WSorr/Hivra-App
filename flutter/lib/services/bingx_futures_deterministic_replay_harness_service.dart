@@ -228,6 +228,7 @@ class BingxFuturesDeterministicReplayHarnessService {
   final BingxFuturesLiveDecisionService _liveDecisionService;
   final BingxTvhPolicy _policy;
   final BingxFuturesLiveShadowSnapshotLoader _loadLiveSnapshot;
+  final String strategyVersion;
 
   const BingxFuturesDeterministicReplayHarnessService({
     BingxFuturesMarketSnapshotService snapshotService =
@@ -240,6 +241,7 @@ class BingxFuturesDeterministicReplayHarnessService {
         const BingxFuturesLiveDecisionService(),
     BingxTvhPolicy policy = const BingxTvhPolicy(),
     BingxFuturesLiveShadowSnapshotLoader? loadLiveSnapshot,
+    this.strategyVersion = bingxLiquidityStrategyVersion,
   }) : _snapshotService = snapshotService,
        _featureExtractor = featureExtractor,
        _ruleEngine = ruleEngine,
@@ -304,6 +306,7 @@ class BingxFuturesDeterministicReplayHarnessService {
     final decision = _liveDecisionService.decidePublicMarket(
       snapshotInput: snapshotInput,
       policy: _policy,
+      strategyVersion: strategyVersion,
     );
     return replayLiveDecision(fixtureId: fixtureId, decision: decision);
   }
@@ -361,7 +364,7 @@ class BingxFuturesDeterministicReplayHarnessService {
 
   String publicStrategyPolicyHashHex() {
     final canonical = jsonEncode(<String, dynamic>{
-      'strategy_version': bingxLiquidityStrategyVersion,
+      'strategy_version': strategyVersion,
       'min_abs_trade_imbalance_ratio': _policy.minAbsTradeImbalanceRatio,
       'max_abs_funding_rate': _policy.maxAbsFundingRate,
     });
@@ -479,7 +482,8 @@ class BingxFuturesDeterministicReplayHarnessService {
                   decision: publicRun.decision.name,
                   marketSnapshotHashHex: publicRun.marketSnapshotHashHex,
                   featureHashHex: publicRun.featureHashHex,
-                )))) {
+                ) ||
+                !_proposalMatchesStrategy(publicRun.marketProposalJson)))) {
       throw const FormatException('invalid shadow evidence contract payload');
     }
     return BingxFuturesShadowEvidence(
@@ -503,6 +507,16 @@ class BingxFuturesDeterministicReplayHarnessService {
       previousEvidenceHashHex: previousEvidenceHashHex,
       runnerKeyId: runnerKeyId,
     );
+  }
+
+  bool _proposalMatchesStrategy(String? proposalJson) {
+    if (proposalJson == null) return false;
+    final proposal = jsonDecode(proposalJson) as Map<String, dynamic>;
+    final zone = proposal['zone'];
+    if (zone is! Map<String, dynamic>) return true;
+    final parent = zone['parent'];
+    return parent is! Map<String, dynamic> ||
+        parent['strategy_version'] == strategyVersion;
   }
 
   Future<BingxFuturesShadowEvidence> runLivePublicShadow({

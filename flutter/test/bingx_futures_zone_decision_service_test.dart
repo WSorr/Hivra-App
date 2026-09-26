@@ -177,6 +177,46 @@ void main() {
         'anchor_unavailable',
       );
     });
+    test('resting 1h zone uses 5m coverage and rejects an outer breach', () {
+      final parent = <String, dynamic>{
+        'strategy_version': bingxHourlyLiquidityStrategyVersion,
+        'timeframe': '1h',
+        'side': 'buy',
+        'low_decimal': '100',
+        'high_decimal': '102',
+        'anchor_at_utc':
+            event.subtract(const Duration(hours: 1)).toIso8601String(),
+      };
+      String verify(List<BingxFuturesCandle> bars) => service.revalidateAnchor(
+        side: 'buy',
+        source: '1h_active_liquidity_zone',
+        zoneLow: 100,
+        zoneHigh: 102,
+        eventAtUtc: event,
+        nowUtc: event.add(const Duration(minutes: 10)),
+        candles: bars,
+        parentZone: parent,
+      );
+      expect(verify([bar(0), bar(1), bar(2)]), 'anchor_valid');
+      expect(verify([bar(0), bar(1, low: 99), bar(2)]), 'anchor_consumed');
+      expect(verify([bar(0), bar(2)]), 'anchor_unavailable');
+      expect(
+        service.revalidateAnchor(
+          side: 'buy',
+          source: '1h_active_liquidity_zone',
+          zoneLow: 100,
+          zoneHigh: 102,
+          eventAtUtc: event,
+          nowUtc: event.add(const Duration(minutes: 10)),
+          candles: [bar(0), bar(1), bar(2)],
+          parentZone: {
+            ...parent,
+            'strategy_version': bingxLiquidityStrategyVersion,
+          },
+        ),
+        'anchor_unavailable',
+      );
+    });
     test('void consumes on inclusive near-edge touch for either side', () {
       expect(
         check([
@@ -932,6 +972,34 @@ void main() {
       );
       expect(first.liquidityEventId, again.liquidityEventId);
     });
+    test(
+      'hourly zone uses one owner without daily or weekly target levels',
+      () {
+        final input = _htfReclaimInput(
+          side: 'buy',
+          clusters: [
+            _cluster(breached: false),
+            _cluster(
+              side: 'buyside',
+              breached: false,
+              bottom: '98',
+              top: '100',
+            ),
+          ],
+          restingZoneEntry: true,
+          strategyVersion: bingxHourlyLiquidityStrategyVersion,
+        );
+        final result = service.decide(input: input);
+        expect(result.anchorExecutable, isTrue);
+        expect(result.anchorSource, '1h_active_liquidity_zone');
+        expect(result.parentZone?['timeframe'], '1h');
+        expect(
+          result.parentZone?['strategy_version'],
+          bingxHourlyLiquidityStrategyVersion,
+        );
+        expect(result.externalSellRetestSource, '1h_active_opposite_liquidity');
+      },
+    );
 
     test('breached cluster cannot stage a new resting order', () {
       final result = service.decide(
@@ -1106,6 +1174,7 @@ void main() {
 
 BingxFuturesZoneDecisionInput _htfReclaimInput({
   required String side,
+  String strategyVersion = bingxLiquidityStrategyVersion,
   bool restingZoneEntry = false,
   bool crossedAfterParent = false,
   num midPrice = 96,
@@ -1121,6 +1190,7 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
   bool gapped = false,
   bool conflictingParent = false,
 }) {
+  final hourly = strategyVersion == bingxHourlyLiquidityStrategyVersion;
   final buy = side == 'buy';
   final highs = List<num>.filled(visibleBars, 99);
   final lows = List<num>.filled(visibleBars, 91);
@@ -1160,15 +1230,26 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
   final start = DateTime.utc(2026, 9, 1);
   final times = List.generate(
     visibleBars,
-    (i) => start.add(Duration(hours: 4 * i)).toIso8601String(),
+    (i) => start.add(Duration(hours: (hourly ? 1 : 4) * i)).toIso8601String(),
   );
   final parentIndex = delayedReclaim ? 21 : 20;
-  final known = start.add(Duration(hours: 4 * parentIndex));
-  final microStart = known.subtract(const Duration(minutes: 300));
-  final microCount = ((visibleBars - 1 - parentIndex) * 16 + 25).clamp(25, 600);
+  final known = start.add(Duration(hours: (hourly ? 1 : 4) * parentIndex));
+  final microStart = known.subtract(Duration(minutes: hourly ? 60 : 300));
+  final microCount = ((visibleBars - 1 - parentIndex) * (hourly ? 12 : 16) + 25)
+      .clamp(25, 600);
   final microHighs = List<num>.filled(microCount, buy ? 89.8 : 101.5);
   final microLows = List<num>.filled(microCount, buy ? 88.5 : 100.2);
   if (restingZoneEntry && buy) {
+    if (hourly) {
+      final lastParentClose = DateTime.parse(times.last);
+      for (var index = 0; index < microCount; index++) {
+        if (microStart
+            .add(Duration(minutes: 5 * index))
+            .isAfter(lastParentClose)) {
+          microLows[index] = 93;
+        }
+      }
+    }
     microLows[microCount - 1] = crossedAfterParent ? 89 : 93;
     for (var index = microCount - 5; index < microCount - 1; index++) {
       microLows[index] = 93;
@@ -1183,7 +1264,10 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
   if (microOutside) microHighs[confirmation] = buy ? 90.1 : 102.1;
   final microTimes = List.generate(
     microCount,
-    (i) => microStart.add(Duration(minutes: 15 * i)).toIso8601String(),
+    (i) =>
+        microStart
+            .add(Duration(minutes: (hourly ? 5 : 15) * i))
+            .toIso8601String(),
   );
   if (gapped) microTimes[22] = microTimes[21];
   return BingxFuturesZoneDecisionInput(
@@ -1192,6 +1276,7 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
     fallbackSide: side,
     requiredSide: side,
     restingZoneEntry: restingZoneEntry,
+    strategyVersion: strategyVersion,
     detectedLiquidityLevels:
         clusters ??
         [

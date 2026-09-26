@@ -1,16 +1,113 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
 import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_feature_extractor_service.dart';
 import 'package:hivra_app/services/bingx_futures_live_decision_service.dart';
+import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
 import 'package:hivra_app/services/bingx_futures_market_snapshot_service.dart';
+import 'package:hivra_app/services/bingx_futures_shadow_market_proposal_codec.dart';
 import 'package:hivra_app/services/bingx_futures_tvh_rule_engine_service.dart';
 import 'package:hivra_app/services/bingx_futures_zone_decision_service.dart';
 
 void main() {
   group('BingxFuturesLiveDecisionService', () {
     const service = BingxFuturesLiveDecisionService();
+
+    test('hourly mode signs a 1h zone with a 5m observation and 1h target', () {
+      final base =
+          BingxFuturesLiveSnapshotBuilderService.buildActiveZoneReference(
+            complete: true,
+          );
+      final hourlyStart = DateTime.utc(2026, 8, 21, 2);
+      final candles = <BingxFuturesCandle>[
+        ...base.candles.where((c) => c.timeframe == '15m'),
+        for (var index = 0; index < 34; index++)
+          BingxFuturesCandle(
+            timeframe: '1h',
+            openTimeUtc:
+                hourlyStart.add(Duration(hours: index)).toIso8601String(),
+            closeTimeUtc:
+                hourlyStart.add(Duration(hours: index + 1)).toIso8601String(),
+            openDecimal: '100',
+            highDecimal: {8, 16, 24}.contains(index) ? '104' : '102',
+            lowDecimal: {8, 16, 24}.contains(index) ? '96' : '98',
+            closeDecimal: '100',
+            volumeBaseDecimal: '100',
+            volumeQuoteDecimal: '10000',
+            isClosed: true,
+          ),
+        for (var index = 0; index < 65; index++)
+          BingxFuturesCandle(
+            timeframe: '5m',
+            openTimeUtc:
+                DateTime.utc(
+                  2026,
+                  8,
+                  22,
+                  6,
+                  40,
+                ).add(Duration(minutes: index * 5)).toIso8601String(),
+            closeTimeUtc:
+                DateTime.utc(
+                  2026,
+                  8,
+                  22,
+                  6,
+                  45,
+                ).add(Duration(minutes: index * 5)).toIso8601String(),
+            openDecimal: '100',
+            highDecimal: '102',
+            lowDecimal: '98',
+            closeDecimal: '100',
+            volumeBaseDecimal: '100',
+            volumeQuoteDecimal: '10000',
+            isClosed: true,
+          ),
+      ];
+      final input = BingxFuturesMarketSnapshotInput(
+        instrument: base.instrument,
+        prices: base.prices,
+        candles: candles,
+        trades: base.trades,
+        openInterest: base.openInterest,
+        funding: base.funding,
+        liquidityLevels: base.liquidityLevels,
+        sessionVolumes: base.sessionVolumes,
+        orderBookTopLevels: base.orderBookTopLevels,
+      );
+      final decision = service.decidePublicMarket(
+        snapshotInput: input,
+        strategyVersion: bingxHourlyLiquidityStrategyVersion,
+        zoneEvaluationSide: 'buy',
+      );
+      expect(decision.canPrepareIntent, isTrue, reason: decision.canonicalJson);
+      expect(decision.zoneAnchorSource, '1h_active_liquidity_zone');
+      expect(
+        decision.parentZone?['strategy_version'],
+        bingxHourlyLiquidityStrategyVersion,
+      );
+      final proposal =
+          jsonDecode(decision.canonicalJson) as Map<String, dynamic>;
+      expect(
+        (proposal['profit_target'] as Map<String, dynamic>)['source'],
+        '1h_active_opposite_liquidity',
+      );
+      expect(
+        const BingxFuturesShadowMarketProposalCodec().validate(
+          status: 'READY',
+          proposalJson: decision.canonicalJson,
+          decisionHashHex: decision.liveDecisionHashHex,
+          decision: decision.decision.name,
+          marketSnapshotHashHex: decision.marketSnapshotHashHex,
+          featureHashHex: decision.featureHashHex,
+        ),
+        isTrue,
+        reason: decision.canonicalJson,
+      );
+    });
 
     test('passes canonical detected clusters directly to the zone owner', () {
       final base = _buildInput(permuted: false);
@@ -1199,8 +1296,9 @@ BingxFuturesCandle _singleCandle(
 class _StubSnapshotService extends BingxFuturesMarketSnapshotService {
   @override
   BingxFuturesMarketSnapshotDigest build(
-    BingxFuturesMarketSnapshotInput input,
-  ) {
+    BingxFuturesMarketSnapshotInput input, {
+    String strategyVersion = bingxLiquidityStrategyVersion,
+  }) {
     return const BingxFuturesMarketSnapshotDigest(
       normalizedSnapshot: <String, dynamic>{'schema_version': 1},
       canonicalJson: '{"schema_version":1}',
@@ -1218,8 +1316,9 @@ class _StubFeatureExtractor extends BingxFuturesFeatureExtractorService {
 
   @override
   BingxFuturesFeatureExtractionResult extract(
-    BingxFuturesMarketSnapshotDigest snapshot,
-  ) {
+    BingxFuturesMarketSnapshotDigest snapshot, {
+    String strategyVersion = bingxLiquidityStrategyVersion,
+  }) {
     return BingxFuturesFeatureExtractionResult(
       ruleSet: 'tvh_v1',
       marketSnapshotHashHex: snapshot.marketSnapshotHashHex,

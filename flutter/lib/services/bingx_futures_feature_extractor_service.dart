@@ -84,8 +84,13 @@ class BingxFuturesFeatureExtractorService {
   });
 
   BingxFuturesFeatureExtractionResult extract(
-    BingxFuturesMarketSnapshotDigest snapshot,
-  ) {
+    BingxFuturesMarketSnapshotDigest snapshot, {
+    String strategyVersion = bingxLiquidityStrategyVersion,
+  }) {
+    if (strategyVersion != bingxLiquidityStrategyVersion &&
+        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+      throw const FormatException('unsupported liquidity strategy');
+    }
     final candles = _readCandles(snapshot.normalizedSnapshot);
     final candles15m =
         candles.where((c) => c.timeframe == '15m').toList()
@@ -95,6 +100,9 @@ class BingxFuturesFeatureExtractorService {
           ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
     final candles4h =
         candles.where((c) => c.timeframe == '4h').toList()
+          ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
+    final candles1h =
+        candles.where((c) => c.timeframe == '1h').toList()
           ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
     if (candles15m.length < 200) {
       throw const FormatException('need at least 200 closed candles on 15m');
@@ -112,7 +120,11 @@ class BingxFuturesFeatureExtractorService {
             ? BingxTrendDirection.bearish
             : BingxTrendDirection.neutral;
     final atr14 = _atr(candles5m, period: 14);
-    final detectedLevels = _detectPivotClusterLevels(candles4h);
+    final detectedLevels = _detectPivotClusterLevels(
+      strategyVersion == bingxHourlyLiquidityStrategyVersion
+          ? candles1h
+          : candles4h,
+    );
     final tradeDelta = _tradeDelta(snapshot.normalizedSnapshot);
     final tradeImbalanceRatio = _tradeImbalanceRatio(
       snapshot.normalizedSnapshot,

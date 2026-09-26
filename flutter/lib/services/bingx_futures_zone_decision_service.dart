@@ -10,6 +10,7 @@ class BingxFuturesZoneDecisionInput {
   final String fallbackSide;
   final String? requiredSide;
   final bool restingZoneEntry;
+  final String strategyVersion;
   final List<num> microHighs;
   final List<num> microLows;
   final List<num> microOpens;
@@ -45,6 +46,7 @@ class BingxFuturesZoneDecisionInput {
     required this.fallbackSide,
     this.requiredSide,
     this.restingZoneEntry = false,
+    this.strategyVersion = bingxLiquidityStrategyVersion,
     required this.microHighs,
     required this.microLows,
     this.microOpens = const <num>[],
@@ -233,14 +235,28 @@ class BingxFuturesZoneDecisionService {
     required List<BingxFuturesCandle> candles,
     Map<String, dynamic>? parentZone,
   }) {
-    final isRestingStrategy = source == '4h_active_liquidity_zone';
+    final isHourlyStrategy = source == '1h_active_liquidity_zone';
+    final isRestingStrategy =
+        source == '4h_active_liquidity_zone' || isHourlyStrategy;
     final isCurrentStrategy = source == '4h_sweep_reclaim_15m';
     final isLegacyParentStrategy = source == '4h_sweep_reclaim_5m';
     final isParentStrategy =
         isRestingStrategy || isCurrentStrategy || isLegacyParentStrategy;
     final uses15m = isRestingStrategy || isCurrentStrategy;
-    final interval = Duration(minutes: uses15m ? 15 : 5);
-    final timeframe = uses15m ? '15m' : '5m';
+    final interval = Duration(
+      minutes:
+          isHourlyStrategy
+              ? 5
+              : uses15m
+              ? 15
+              : 5,
+    );
+    final timeframe =
+        isHourlyStrategy
+            ? '5m'
+            : uses15m
+            ? '15m'
+            : '5m';
     final now = nowUtc.toUtc();
     final event = eventAtUtc.toUtc();
     if (!const {'buy', 'sell'}.contains(side) ||
@@ -250,6 +266,7 @@ class BingxFuturesZoneDecisionService {
           '4h_sweep_reclaim_5m',
           '4h_sweep_reclaim_15m',
           '4h_active_liquidity_zone',
+          '1h_active_liquidity_zone',
         }.contains(source) ||
         !zoneLow.isFinite ||
         !zoneHigh.isFinite ||
@@ -273,13 +290,15 @@ class BingxFuturesZoneDecisionService {
       parentLow = num.tryParse(parentZone?['low_decimal']?.toString() ?? '');
       parentHigh = num.tryParse(parentZone?['high_decimal']?.toString() ?? '');
       final expectedStrategyVersion =
-          isRestingStrategy
+          isHourlyStrategy
+              ? bingxHourlyLiquidityStrategyVersion
+              : isRestingStrategy
               ? strategyVersion
               : isCurrentStrategy
               ? '4h-sweep-reclaim-15m-v3'
               : '4h-sweep-reclaim-5m-v2';
       if (parentZone?['strategy_version'] != expectedStrategyVersion ||
-          parentZone?['timeframe'] != '4h' ||
+          parentZone?['timeframe'] != (isHourlyStrategy ? '1h' : '4h') ||
           parentZone?['side'] != side ||
           parentAt == null ||
           parentLow == null ||
@@ -369,17 +388,21 @@ class BingxFuturesZoneDecisionService {
 
   const BingxFuturesZoneDecisionService();
 
+  bool _hourly(BingxFuturesZoneDecisionInput input) =>
+      input.strategyVersion == bingxHourlyLiquidityStrategyVersion;
+
   ({String side, num low, num high, String anchorAtUtc})? _selectRestingCluster(
     BingxFuturesZoneDecisionInput input,
   ) {
+    final hourly = _hourly(input);
     if (!_continuousTimes(
           input.higherCloseTimesUtc,
-          const Duration(hours: 4),
+          Duration(hours: hourly ? 1 : 4),
           input.higherHighs.length,
         ) ||
         !_continuousTimes(
           input.microCloseTimesUtc,
-          const Duration(minutes: 15),
+          Duration(minutes: hourly ? 5 : 15),
           input.microHighs.length,
         ) ||
         input.microLows.length != input.microHighs.length) {
@@ -414,6 +437,12 @@ class BingxFuturesZoneDecisionService {
       }
       final lastParentClose =
           DateTime.parse(input.higherCloseTimesUtc.last).toUtc();
+      if (hourly &&
+          !input.microCloseTimesUtc.contains(
+            lastParentClose.toIso8601String(),
+          )) {
+        continue;
+      }
       var crossedSinceParentClose = false;
       for (var index = 0; index < input.microCloseTimesUtc.length; index++) {
         final at = DateTime.tryParse(input.microCloseTimesUtc[index])?.toUtc();
@@ -472,7 +501,10 @@ class BingxFuturesZoneDecisionService {
       yield _ExternalLevelPoint(
         price: (low + high) / 2,
         weight: 1.25,
-        source: '4h_active_opposite_liquidity',
+        source:
+            _hourly(input)
+                ? '1h_active_opposite_liquidity'
+                : '4h_active_opposite_liquidity',
         eventAtUtc: input.higherCloseTimesUtc[level.anchorIndex],
       );
     }
@@ -481,6 +513,11 @@ class BingxFuturesZoneDecisionService {
   BingxFuturesZoneDecisionResult decide({
     required BingxFuturesZoneDecisionInput input,
   }) {
+    if (input.strategyVersion != bingxLiquidityStrategyVersion &&
+        input.strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+      throw const FormatException('unsupported liquidity strategy');
+    }
+    final hourly = _hourly(input);
     final mid = input.midPrice;
     if (mid <= 0) {
       throw const FormatException('midPrice must be greater than zero');
@@ -568,15 +605,16 @@ class BingxFuturesZoneDecisionService {
     final sweepUp = recentHigh > olderHigh;
     final sweepDown = recentLow < olderLow;
     final higherBias = _trendBiasFromCloses(input.higherCloses, window: 12);
-    final dailyBias = _trendBiasFromCloses(input.dailyCloses, window: 10);
+    final dailyBias =
+        hourly ? 0 : _trendBiasFromCloses(input.dailyCloses, window: 10);
     final contextBias = higherBias + dailyBias;
     final parents = <({String side, _MicroReclaimEvent event})>[];
     if (!input.restingZoneEntry &&
         _continuousTimes(
-      input.higherCloseTimesUtc,
-      const Duration(hours: 4),
-      input.higherHighs.length,
-    )) {
+          input.higherCloseTimesUtc,
+          const Duration(hours: 4),
+          input.higherHighs.length,
+        )) {
       for (final side in const ['buy', 'sell']) {
         for (final cluster in input.detectedLiquidityLevels) {
           final event = _reclaimFromCluster(
@@ -606,7 +644,13 @@ class BingxFuturesZoneDecisionService {
         input.restingZoneEntry ? _selectRestingCluster(input) : null;
     final sideDecision =
         resting != null
-            ? (side: resting.side, reason: '4h_active_liquidity_zone')
+            ? (
+              side: resting.side,
+              reason:
+                  hourly
+                      ? '1h_active_liquidity_zone'
+                      : '4h_active_liquidity_zone',
+            )
             : parent != null
             ? (side: parent.side, reason: '4h_sweep_reclaim')
             : input.requiredSide == null
@@ -636,8 +680,8 @@ class BingxFuturesZoneDecisionService {
     final parentZone =
         resting != null
             ? <String, dynamic>{
-              'strategy_version': strategyVersion,
-              'timeframe': '4h',
+              'strategy_version': input.strategyVersion,
+              'timeframe': hourly ? '1h' : '4h',
               'side': resting.side,
               'low_decimal': resting.low.toStringAsFixed(8),
               'high_decimal': resting.high.toStringAsFixed(8),
@@ -683,30 +727,34 @@ class BingxFuturesZoneDecisionService {
       weeklyRangePct = (weekHigh - weekLow) / mid;
     }
 
-    var targetRetestDistancePct = _clamp(
-      [
-        macroVolPct * 1.9,
-        higherRangePct * 0.42,
-        dailyRangePct * 0.26,
-        weeklyRangePct * 0.14,
-      ].reduce((a, b) => a > b ? a : b),
-      0.02,
-      0.11,
-    );
-    if (input.oiDeltaPct.abs() >= 0.015) {
+    var targetRetestDistancePct =
+        hourly
+            ? _clamp(macroVolPct * 0.42, 0.002, 0.05)
+            : _clamp(
+              [
+                macroVolPct * 1.9,
+                higherRangePct * 0.42,
+                dailyRangePct * 0.26,
+                weeklyRangePct * 0.14,
+              ].reduce((a, b) => a > b ? a : b),
+              0.02,
+              0.11,
+            );
+    if (!hourly && input.oiDeltaPct.abs() >= 0.015) {
       targetRetestDistancePct = _clamp(
         targetRetestDistancePct + 0.006,
         0.02,
         0.11,
       );
     }
-    if (input.sessionDominancePct >= 0.55) {
+    if (!hourly && input.sessionDominancePct >= 0.55) {
       targetRetestDistancePct = _clamp(
         targetRetestDistancePct + 0.004,
         0.02,
         0.11,
       );
-    } else if (input.sessionDominancePct > 0 &&
+    } else if (!hourly &&
+        input.sessionDominancePct > 0 &&
         input.sessionDominancePct <= 0.38) {
       targetRetestDistancePct = _clamp(
         targetRetestDistancePct - 0.003,
@@ -715,9 +763,10 @@ class BingxFuturesZoneDecisionService {
       );
     }
     final needsFartherRetest =
-        (!reversalSignal && !aligned) ||
-        (selectedSide == 'sell' && dailyBias > 0) ||
-        (selectedSide == 'buy' && dailyBias < 0);
+        !hourly &&
+        ((!reversalSignal && !aligned) ||
+            (selectedSide == 'sell' && dailyBias > 0) ||
+            (selectedSide == 'buy' && dailyBias < 0));
     if (needsFartherRetest) {
       targetRetestDistancePct = _clamp(
         targetRetestDistancePct + 0.012,
@@ -734,28 +783,30 @@ class BingxFuturesZoneDecisionService {
         lows: input.higherLows,
         closes: input.higherCloses,
         side: 'high',
-        source: '4h_fresh_high',
+        source: hourly ? '1h_fresh_high' : '4h_fresh_high',
         weight: 1.00,
         closeTimesUtc: input.higherCloseTimesUtc,
       ),
-      ..._freshSwingLevels(
-        highs: input.dailyHighs,
-        lows: input.dailyLows,
-        closes: input.dailyCloses,
-        side: 'high',
-        source: '1d_fresh_high',
-        weight: 1.25,
-        closeTimesUtc: input.dailyCloseTimesUtc,
-      ),
-      ..._freshSwingLevels(
-        highs: input.weeklyHighs,
-        lows: input.weeklyLows,
-        closes: input.weeklyCloses,
-        side: 'high',
-        source: '1w_fresh_high',
-        weight: 1.55,
-        closeTimesUtc: input.weeklyCloseTimesUtc,
-      ),
+      if (!hourly)
+        ..._freshSwingLevels(
+          highs: input.dailyHighs,
+          lows: input.dailyLows,
+          closes: input.dailyCloses,
+          side: 'high',
+          source: '1d_fresh_high',
+          weight: 1.25,
+          closeTimesUtc: input.dailyCloseTimesUtc,
+        ),
+      if (!hourly)
+        ..._freshSwingLevels(
+          highs: input.weeklyHighs,
+          lows: input.weeklyLows,
+          closes: input.weeklyCloses,
+          side: 'high',
+          source: '1w_fresh_high',
+          weight: 1.55,
+          closeTimesUtc: input.weeklyCloseTimesUtc,
+        ),
     ];
     final externalLowCandidates = <_ExternalLevelPoint>[
       if (input.restingZoneEntry)
@@ -765,28 +816,30 @@ class BingxFuturesZoneDecisionService {
         lows: input.higherLows,
         closes: input.higherCloses,
         side: 'low',
-        source: '4h_fresh_low',
+        source: hourly ? '1h_fresh_low' : '4h_fresh_low',
         weight: 1.00,
         closeTimesUtc: input.higherCloseTimesUtc,
       ),
-      ..._freshSwingLevels(
-        highs: input.dailyHighs,
-        lows: input.dailyLows,
-        closes: input.dailyCloses,
-        side: 'low',
-        source: '1d_fresh_low',
-        weight: 1.25,
-        closeTimesUtc: input.dailyCloseTimesUtc,
-      ),
-      ..._freshSwingLevels(
-        highs: input.weeklyHighs,
-        lows: input.weeklyLows,
-        closes: input.weeklyCloses,
-        side: 'low',
-        source: '1w_fresh_low',
-        weight: 1.55,
-        closeTimesUtc: input.weeklyCloseTimesUtc,
-      ),
+      if (!hourly)
+        ..._freshSwingLevels(
+          highs: input.dailyHighs,
+          lows: input.dailyLows,
+          closes: input.dailyCloses,
+          side: 'low',
+          source: '1d_fresh_low',
+          weight: 1.25,
+          closeTimesUtc: input.dailyCloseTimesUtc,
+        ),
+      if (!hourly)
+        ..._freshSwingLevels(
+          highs: input.weeklyHighs,
+          lows: input.weeklyLows,
+          closes: input.weeklyCloses,
+          side: 'low',
+          source: '1w_fresh_low',
+          weight: 1.55,
+          closeTimesUtc: input.weeklyCloseTimesUtc,
+        ),
     ];
     final externalSellRetest = _selectRetestLevelAbove(
       _applyLiquidationConfluence(
@@ -794,10 +847,10 @@ class BingxFuturesZoneDecisionService {
         input.liquidationSellLevels,
       ),
       mid,
-      minDistancePct: 0.008,
+      minDistancePct: hourly ? 0.002 : 0.008,
       targetDistancePct: targetRetestDistancePct,
-      maxDistancePct: 0.14,
-      preferFarther: needsFartherRetest,
+      maxDistancePct: hourly ? 0.05 : 0.14,
+      preferFarther: !hourly && needsFartherRetest,
     );
     final externalBuyRetest = _selectRetestLevelBelow(
       _applyLiquidationConfluence(
@@ -805,10 +858,10 @@ class BingxFuturesZoneDecisionService {
         input.liquidationBuyLevels,
       ),
       mid,
-      minDistancePct: 0.008,
+      minDistancePct: hourly ? 0.002 : 0.008,
       targetDistancePct: targetRetestDistancePct,
-      maxDistancePct: 0.14,
-      preferFarther: needsFartherRetest,
+      maxDistancePct: hourly ? 0.05 : 0.14,
+      preferFarther: !hourly && needsFartherRetest,
     );
 
     var anchorSource = 'internal_diagnostic';
@@ -822,7 +875,8 @@ class BingxFuturesZoneDecisionService {
       var anchorHigh = olderHigh;
       if (resting != null) {
         anchorHigh = resting.high;
-        anchorSource = '4h_active_liquidity_zone';
+        anchorSource =
+            hourly ? '1h_active_liquidity_zone' : '4h_active_liquidity_zone';
         anchorExecutable = true;
         anchorLifecycle = 'active';
         liquidityEventAtUtc = input.higherCloseTimesUtc.last;
@@ -847,7 +901,8 @@ class BingxFuturesZoneDecisionService {
       var anchorLow = olderLow;
       if (resting != null) {
         anchorLow = resting.low;
-        anchorSource = '4h_active_liquidity_zone';
+        anchorSource =
+            hourly ? '1h_active_liquidity_zone' : '4h_active_liquidity_zone';
         anchorExecutable = true;
         anchorLifecycle = 'active';
         liquidityEventAtUtc = input.higherCloseTimesUtc.last;
@@ -919,7 +974,7 @@ class BingxFuturesZoneDecisionService {
                           resting == null
                               ? parentZone
                               : <String, dynamic>{
-                                'strategy_version': strategyVersion,
+                                'strategy_version': input.strategyVersion,
                                 'side': resting.side,
                                 'anchor_at_utc': resting.anchorAtUtc,
                               },

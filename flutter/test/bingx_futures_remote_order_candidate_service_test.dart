@@ -15,6 +15,26 @@ import 'package:hivra_app/services/bingx_futures_remote_order_candidate_service.
 
 void main() {
   group('BingxFuturesRemoteOrderCandidateService', () {
+    test('a signed 4h observation cannot serve a 1h session', () async {
+      final fixture = await _fixture();
+      final result = await _compose(
+        fixture,
+        expectedStrategyVersion: bingxHourlyLiquidityStrategyVersion,
+      );
+      expect(result.reasonCode, 'market_strategy_mismatch');
+      expect(result.canonicalJson, isNull);
+    });
+    test('signed 1h observation uses the same order candidate owner', () async {
+      final fixture = await _fixture(
+        strategyVersion: bingxHourlyLiquidityStrategyVersion,
+      );
+      final result = await _compose(
+        fixture,
+        expectedStrategyVersion: bingxHourlyLiquidityStrategyVersion,
+      );
+      expect(result.status, BingxFuturesRemoteOrderCandidateStatus.ready);
+      expect(result.canonicalJson, isNotNull);
+    });
     test(
       'coarse price grid cannot move entry onto the zone boundary',
       () async {
@@ -104,7 +124,7 @@ void main() {
 
         expect(intent, isNotNull);
         expect(intent!.orderType, 'limit');
-        expect(intent.timeInForce, 'GTC');
+        expect(intent.timeInForce, 'PostOnly');
         expect(intent.entryMode, 'zone_pending');
         expect(intent.intentHashHex, result.candidateHashHex);
         final admission = BingxFuturesRemoteMandateAdmission.issueExactOrder(
@@ -119,6 +139,19 @@ void main() {
         expect(
           admission!.exactOrder?['intent_hash_hex'],
           result.candidateHashHex,
+        );
+        expect(admission.exactOrder?['time_in_force'], 'PostOnly');
+        expect(
+          BingxFuturesRemoteMandateAdmission.issueExactOrder(
+            mandate: fixture.mandate,
+            runnerKeyId: '7' * 64,
+            exactOrder: <String, dynamic>{
+              ...intent.toExactOrderJson(testOrder: fixture.mandate.testOrder),
+              'time_in_force': 'IOC',
+            },
+            signCommitment: (_) => '8' * 128,
+          ),
+          isNull,
         );
       },
     );
@@ -500,6 +533,7 @@ Future<BingxFuturesRemoteOrderCandidateResult> _compose(
   DateTime? now,
   double stopLossPercent = 5,
   BingxFuturesContractRules rules = _rules,
+  String expectedStrategyVersion = bingxLiquidityStrategyVersion,
 }) => fixture.service.compose(
   untrustedMarketEvidenceBytes: fixture.evidence.wireBytes,
   trustedRunnerKey: fixture.publicKey,
@@ -517,11 +551,13 @@ Future<BingxFuturesRemoteOrderCandidateResult> _compose(
   nowUtc: now ?? fixture.now,
   stopLossPercent: stopLossPercent,
   minimumRiskReward: 2,
+  expectedStrategyVersion: expectedStrategyVersion,
 );
 
 Future<_CandidateFixture> _fixture({
   String mandateSymbol = 'BTC-USDT',
   double maxRiskPerTradePercent = 2,
+  String strategyVersion = bingxLiquidityStrategyVersion,
 }) async {
   final now = DateTime.utc(2026, 8, 22, 12);
   final signingKey = await Ed25519().newKeyPairFromSeed(
@@ -553,13 +589,19 @@ Future<_CandidateFixture> _fixture({
       'conflict': false,
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
-      'anchor_source': '4h_active_liquidity_zone',
+      'anchor_source':
+          strategyVersion == bingxHourlyLiquidityStrategyVersion
+              ? '1h_active_liquidity_zone'
+              : '4h_active_liquidity_zone',
       'anchor_executable': true,
       'anchor_lifecycle': 'active',
       'atr14_5m_decimal': '1.25',
       'parent': {
-        'strategy_version': bingxLiquidityStrategyVersion,
-        'timeframe': '4h',
+        'strategy_version': strategyVersion,
+        'timeframe':
+            strategyVersion == bingxHourlyLiquidityStrategyVersion
+                ? '1h'
+                : '4h',
         'side': 'buy',
         'low_decimal': '100',
         'high_decimal': '101',
@@ -572,7 +614,10 @@ Future<_CandidateFixture> _fixture({
     'profit_target': <String, dynamic>{
       'kind': 'opposite_external_liquidity',
       'price_decimal': '111',
-      'source': '1d_fresh_high',
+      'source':
+          strategyVersion == bingxHourlyLiquidityStrategyVersion
+              ? '1h_fresh_high'
+              : '1d_fresh_high',
       'event_at_utc': '2026-08-21T00:00:00Z',
     },
     'reason_codes': <Map<String, dynamic>>[
@@ -580,7 +625,9 @@ Future<_CandidateFixture> _fixture({
     ],
   };
   final proposalJson = jsonEncode(proposal);
-  const harness = BingxFuturesDeterministicReplayHarnessService();
+  final harness = BingxFuturesDeterministicReplayHarnessService(
+    strategyVersion: strategyVersion,
+  );
   final unsigned = harness.buildShadowEvidence(
     publicRun: BingxFuturesReplayRunResult(
       fixtureId: 'live:BTC-USDT',

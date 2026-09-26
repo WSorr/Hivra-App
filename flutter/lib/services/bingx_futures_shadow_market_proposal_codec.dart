@@ -128,11 +128,20 @@ class BingxFuturesShadowMarketProposalCodec {
       return false;
     }
     final parent = zone['parent'];
+    final hourly =
+        parent is Map<String, dynamic> &&
+        parent['strategy_version'] == bingxHourlyLiquidityStrategyVersion;
     if (parent is! Map<String, dynamic> ||
-        parent['strategy_version'] != bingxLiquidityStrategyVersion ||
-        parent['timeframe'] != '4h' ||
+        parent['strategy_version'] !=
+            (hourly
+                ? bingxHourlyLiquidityStrategyVersion
+                : bingxLiquidityStrategyVersion) ||
+        parent['timeframe'] != (hourly ? '1h' : '4h') ||
         parent['side'] != side ||
-        zone['anchor_source'] != '4h_active_liquidity_zone' ||
+        zone['anchor_source'] !=
+            (hourly
+                ? '1h_active_liquidity_zone'
+                : '4h_active_liquidity_zone') ||
         zone['anchor_lifecycle'] != 'active' ||
         !_hasExactKeys(parent, const {
           'strategy_version',

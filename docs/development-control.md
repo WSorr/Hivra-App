@@ -7,7 +7,7 @@ Status date: 2026-09-26
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
 - Current source is protected `main`. The latest published prerelease is
   `v1.0.3-test21` at `8e5c136`. The trading candidate in PR `#328` is not
-  merged or released.
+  released.
 - Core, Ledger, FFI, the WASM host, and one Flutter App Shell remain the runtime.
   Chat, Moltbook, and Trading are installed capabilities, but substantial
   orchestration still lives in Flutter.

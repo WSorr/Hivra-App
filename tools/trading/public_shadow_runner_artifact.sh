@@ -2164,6 +2164,10 @@ else:
     ]
     if "account_read_scope" in policy and policy["account_read_scope"] != expected_exposure_scope:
         raise SystemExit("deterministic account-read scope mismatch")
+    if "strategy_version" in policy and policy["strategy_version"] not in (
+        "4h-active-liquidity-zone-v4", "1h-active-liquidity-zone-5m-v1"
+    ):
+        raise SystemExit("unsupported deterministic strategy version")
     policy_text = re.compile(r"[A-Za-z0-9._:-]{1,128}")
     for key in ("runner_build_id", "plugin_id", "plugin_version", "host_abi"):
         if not isinstance(policy[key], str) or policy_text.fullmatch(policy[key]) is None:
@@ -2327,6 +2331,10 @@ else:
         pathlib.Path(work, f"policy-{key.replace('_', '-')}").write_text(
             str(value["strategy_policy"][key]), encoding="ascii"
         )
+    pathlib.Path(work, "policy-strategy-version").write_text(
+        value["strategy_policy"].get("strategy_version", "4h-active-liquidity-zone-v4"),
+        encoding="ascii",
+    )
     if is_deterministic_session:
         pathlib.Path(work, "session-starts-at").write_text(
             value["session_policy"]["starts_at_utc"], encoding="ascii"
@@ -3106,6 +3114,16 @@ run_prepared_session_scheduler() {
         skipped_from="${skipped_from%%:*}"
         [ "$skipped_to" -le "$session_max_cycles" ] ||
           skipped_to="$session_max_cycles"
+        recover_deterministic_session_once "$directory"
+        local recovered_status
+        recovered_status="$(inspect_deterministic_session_cycle \
+          "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
+          "$session_max_cycles" "$mandate_max_effects")" ||
+          die "prepared session scheduler could not inspect recovered state"
+        if [ "$recovered_status" != "$session_status" ]; then
+          echo "PASS trading-runner-artifact: prepared session scheduler recovered current cycle before settling missed slots session_operation_id=$session_id"
+          continue
+        fi
         settled_status="$(settle_missed_deterministic_session_cycles \
           "$STATE_DIRECTORY/deterministic-session.v1.json" "$session_id" \
           "$skipped_from" "$skipped_to" "$session_max_cycles" \
@@ -4128,13 +4146,14 @@ PY
 )" || die "deterministic observation found invalid stream continuity"
   fi
 
-  local symbol runner_build_id plugin_id plugin_version package_digest host_abi
+  local symbol runner_build_id plugin_id plugin_version package_digest host_abi strategy_version
   symbol="$(cat "$verified_work/mandate-symbol")"
   runner_build_id="$(cat "$verified_work/policy-runner-build-id")"
   plugin_id="$(cat "$verified_work/policy-plugin-id")"
   plugin_version="$(cat "$verified_work/policy-plugin-version")"
   package_digest="$(cat "$verified_work/policy-package-digest-hex")"
   host_abi="$(cat "$verified_work/policy-host-abi")"
+  strategy_version="$(cat "$verified_work/policy-strategy-version")"
   local transient_name="hivra-trading-market-${operation_id:0:12}-$$"
   local credential_dir="/run/credentials/$transient_name.service"
   if ! systemd-run \
@@ -4185,6 +4204,7 @@ PY
     "$BINARY_INSTALL_PATH" \
       --runner-seed-file "$credential_dir/runner-seed" \
       --symbol "$symbol" \
+      --strategy-version "$strategy_version" \
       --runner-build-id "$runner_build_id" \
       --plugin-id "$plugin_id" \
       --plugin-version "$plugin_version" \

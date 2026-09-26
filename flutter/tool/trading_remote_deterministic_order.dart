@@ -213,7 +213,9 @@ Future<String> runOneDeterministicOrder({
     return _blocked(cycleOperationId, 'session_contract_upgrade_required');
   }
   if (admission.strategyPolicy?['strategy_version'] !=
-      bingxLiquidityStrategyVersion) {
+          bingxLiquidityStrategyVersion &&
+      admission.strategyPolicy?['strategy_version'] !=
+          bingxHourlyLiquidityStrategyVersion) {
     return _blocked(
       cycleOperationId,
       'strategy_authorization_upgrade_required',
@@ -244,6 +246,8 @@ Future<String> runOneDeterministicOrder({
         .toList(growable: false);
   }
   final policy = admission.strategyPolicy!;
+  final strategyVersion =
+      policy['strategy_version'] as String? ?? bingxLiquidityStrategyVersion;
   final evidenceBytes = await _readBoundedFile(
     _required(options, 'market-evidence-file'),
     _maxEvidenceBytes,
@@ -268,6 +272,7 @@ Future<String> runOneDeterministicOrder({
       expectedHostAbi: policy['host_abi'] as String,
       expectedSymbol: admission.mandate.symbol,
       nowUtc: now,
+      expectedStrategyVersion: strategyVersion,
     );
     if (marketBlocker != null) {
       return _blocked(cycleOperationId, marketBlocker);
@@ -309,6 +314,7 @@ Future<String> runOneDeterministicOrder({
     nowUtc: now,
     stopLossPercent: policy['stop_loss_percent'] as double,
     minimumRiskReward: policy['minimum_risk_reward'] as double,
+    expectedStrategyVersion: strategyVersion,
   );
   if (activeOrders.isNotEmpty) {
     reportStage?.call('managed_order');
@@ -403,7 +409,11 @@ Future<String> _revalidateManagedAnchor({
         num.tryParse(order.executedQuantityDecimal ?? '') != 0) {
       return 'anchor_unavailable';
     }
-    const harness = BingxFuturesDeterministicReplayHarnessService();
+    final harness = BingxFuturesDeterministicReplayHarnessService(
+      strategyVersion:
+          admission.strategyPolicy?['strategy_version'] as String? ??
+          bingxLiquidityStrategyVersion,
+    );
     final original = harness.parseShadowEvidence(
       await _readBoundedFile(
         _required(options, 'original-market-evidence-file'),
@@ -440,6 +450,10 @@ Future<String> _revalidateManagedAnchor({
         .loadMicroHistory(
           exchange: exchange,
           symbol: admission.mandate.symbol,
+          timeframe:
+              zone['anchor_source'] == '1h_active_liquidity_zone'
+                  ? '5m'
+                  : '15m',
           fromUtc: DateTime.parse(
             ((zone['parent'] as Map<String, dynamic>?)?['confirmed_at_utc'] ??
                         (zone['parent']

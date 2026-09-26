@@ -146,21 +146,12 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       'timestamp': timestampMs.toString(),
       'type': intent.exchangeOrderType,
     };
-    if (intent.exchangeOrderType == 'LIMIT' ||
-        intent.exchangeOrderType == 'TRIGGER_LIMIT') {
+    if (intent.exchangeOrderType == 'LIMIT') {
       params['price'] = intent.limitPriceDecimal!;
-      params['timeInForce'] = (intent.timeInForce ?? 'GTC').toUpperCase();
-    }
-    if (intent.exchangeOrderType.startsWith('TRIGGER') &&
-        (intent.triggerPriceDecimal == null ||
-            intent.triggerPriceDecimal!.isEmpty)) {
-      throw const FormatException(
-        'Trigger order requires trigger_price_decimal',
-      );
-    }
-    if (intent.triggerPriceDecimal != null &&
-        intent.triggerPriceDecimal!.isNotEmpty) {
-      params['stopPrice'] = intent.triggerPriceDecimal!;
+      params['timeInForce'] =
+          intent.entryMode == 'zone_pending'
+              ? 'PostOnly'
+              : (intent.timeInForce ?? 'GTC').toUpperCase();
     }
     String encodeProtectionParam({
       required String type,

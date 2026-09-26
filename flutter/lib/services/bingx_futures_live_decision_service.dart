@@ -33,8 +33,10 @@ class BingxFuturesLiveDecisionService {
        _ruleEngine = ruleEngine,
        _zoneDecision = zoneDecision;
 
-  BingxFuturesLiveDecisionResult decide(BingxFuturesLiveDecisionInput input) =>
-      _decide(input, marketOnly: false);
+  BingxFuturesLiveDecisionResult decide(
+    BingxFuturesLiveDecisionInput input, {
+    String strategyVersion = bingxLiquidityStrategyVersion,
+  }) => _decide(input, marketOnly: false, strategyVersion: strategyVersion);
 
   BingxFuturesLiveDecisionResult decidePublicMarket({
     required BingxFuturesMarketSnapshotInput snapshotInput,
@@ -43,6 +45,7 @@ class BingxFuturesLiveDecisionService {
     double zoneFarBps = 35.0,
     BingxTvhPolicy policy = const BingxTvhPolicy(),
     String? zoneEvaluationSide,
+    String strategyVersion = bingxLiquidityStrategyVersion,
   }) => _decide(
     BingxFuturesLiveDecisionInput(
       snapshotInput: snapshotInput,
@@ -54,14 +57,26 @@ class BingxFuturesLiveDecisionService {
       zoneEvaluationSide: zoneEvaluationSide,
     ),
     marketOnly: true,
+    strategyVersion: strategyVersion,
   );
 
   BingxFuturesLiveDecisionResult _decide(
     BingxFuturesLiveDecisionInput input, {
     required bool marketOnly,
+    required String strategyVersion,
   }) {
-    final snapshot = _snapshotService.build(input.snapshotInput);
-    final features = _featureExtractor.extract(snapshot);
+    final hourly = strategyVersion == bingxHourlyLiquidityStrategyVersion;
+    if (!hourly && strategyVersion != bingxLiquidityStrategyVersion) {
+      throw const FormatException('unsupported liquidity strategy');
+    }
+    final snapshot = _snapshotService.build(
+      input.snapshotInput,
+      strategyVersion: strategyVersion,
+    );
+    final features = _featureExtractor.extract(
+      snapshot,
+      strategyVersion: strategyVersion,
+    );
     final requestedZoneSide = _normalizeSide(input.zoneEvaluationSide);
     final zone = _zoneDecision.decide(
       input: BingxFuturesZoneDecisionInput(
@@ -73,27 +88,70 @@ class BingxFuturesLiveDecisionService {
         fallbackSide: requestedZoneSide ?? 'buy',
         requiredSide: requestedZoneSide,
         restingZoneEntry: true,
-        microHighs: _readHighs(input.snapshotInput.candles, '15m'),
-        microLows: _readLows(input.snapshotInput.candles, '15m'),
-        microOpens: _readOpens(input.snapshotInput.candles, '15m'),
-        microCloses: _readCloses(input.snapshotInput.candles, '15m'),
+        strategyVersion: strategyVersion,
+        microHighs: _readHighs(
+          input.snapshotInput.candles,
+          hourly ? '5m' : '15m',
+        ),
+        microLows: _readLows(
+          input.snapshotInput.candles,
+          hourly ? '5m' : '15m',
+        ),
+        microOpens: _readOpens(
+          input.snapshotInput.candles,
+          hourly ? '5m' : '15m',
+        ),
+        microCloses: _readCloses(
+          input.snapshotInput.candles,
+          hourly ? '5m' : '15m',
+        ),
         detectedLiquidityLevels: features.liquidityLevels,
-        microCloseTimesUtc: _readCloseTimes(input.snapshotInput.candles, '15m'),
+        microCloseTimesUtc: _readCloseTimes(
+          input.snapshotInput.candles,
+          hourly ? '5m' : '15m',
+        ),
         macroHighs: _readHighs(input.snapshotInput.candles, '1h'),
         macroLows: _readLows(input.snapshotInput.candles, '1h'),
-        higherHighs: _readHighs(input.snapshotInput.candles, '4h'),
-        higherLows: _readLows(input.snapshotInput.candles, '4h'),
-        higherOpens: _readOpens(input.snapshotInput.candles, '4h'),
-        higherCloses: _readCloses(input.snapshotInput.candles, '4h'),
-        higherCloseTimesUtc: _readCloseTimes(input.snapshotInput.candles, '4h'),
-        dailyHighs: _readHighs(input.snapshotInput.candles, '1d'),
-        dailyLows: _readLows(input.snapshotInput.candles, '1d'),
-        dailyCloses: _readCloses(input.snapshotInput.candles, '1d'),
-        dailyCloseTimesUtc: _readCloseTimes(input.snapshotInput.candles, '1d'),
-        weeklyHighs: _readHighs(input.snapshotInput.candles, '1w'),
-        weeklyLows: _readLows(input.snapshotInput.candles, '1w'),
-        weeklyCloses: _readCloses(input.snapshotInput.candles, '1w'),
-        weeklyCloseTimesUtc: _readCloseTimes(input.snapshotInput.candles, '1w'),
+        higherHighs: _readHighs(
+          input.snapshotInput.candles,
+          hourly ? '1h' : '4h',
+        ),
+        higherLows: _readLows(
+          input.snapshotInput.candles,
+          hourly ? '1h' : '4h',
+        ),
+        higherOpens: _readOpens(
+          input.snapshotInput.candles,
+          hourly ? '1h' : '4h',
+        ),
+        higherCloses: _readCloses(
+          input.snapshotInput.candles,
+          hourly ? '1h' : '4h',
+        ),
+        higherCloseTimesUtc: _readCloseTimes(
+          input.snapshotInput.candles,
+          hourly ? '1h' : '4h',
+        ),
+        dailyHighs:
+            hourly ? const [] : _readHighs(input.snapshotInput.candles, '1d'),
+        dailyLows:
+            hourly ? const [] : _readLows(input.snapshotInput.candles, '1d'),
+        dailyCloses:
+            hourly ? const [] : _readCloses(input.snapshotInput.candles, '1d'),
+        dailyCloseTimesUtc:
+            hourly
+                ? const []
+                : _readCloseTimes(input.snapshotInput.candles, '1d'),
+        weeklyHighs:
+            hourly ? const [] : _readHighs(input.snapshotInput.candles, '1w'),
+        weeklyLows:
+            hourly ? const [] : _readLows(input.snapshotInput.candles, '1w'),
+        weeklyCloses:
+            hourly ? const [] : _readCloses(input.snapshotInput.candles, '1w'),
+        weeklyCloseTimesUtc:
+            hourly
+                ? const []
+                : _readCloseTimes(input.snapshotInput.candles, '1w'),
         liquidationSellLevels: _readLiquidationLevels(
           input.snapshotInput.liquidityLevels,
           side: 'sellside',
@@ -145,11 +203,14 @@ class BingxFuturesLiveDecisionService {
             (requestedZoneSide != null &&
                 decisionSide != null &&
                 decisionSide != requestedZoneSide));
-    final trendGateCode = _evaluateTrendGate(
-      side: zoneEvaluationSide,
-      features: features,
-      zone: zone,
-    );
+    final trendGateCode =
+        hourly
+            ? (zone.anchorExecutable ? 'ok' : 'liquidity_anchor_unavailable')
+            : _evaluateTrendGate(
+              side: zoneEvaluationSide,
+              features: features,
+              zone: zone,
+            );
     final trendGateBlocked = trendGateCode == 'liquidity_anchor_unavailable';
     final liquidationConfluence = _hasLiquidationConfluence(
       side: zoneEvaluationSide,

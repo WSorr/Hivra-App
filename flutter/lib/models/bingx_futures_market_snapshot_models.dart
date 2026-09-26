@@ -201,3 +201,4 @@ class BingxFuturesMarketSnapshotDigest {
 }
 
 const bingxLiquidityStrategyVersion = '4h-active-liquidity-zone-v4';
+const bingxHourlyLiquidityStrategyVersion = '1h-active-liquidity-zone-5m-v1';

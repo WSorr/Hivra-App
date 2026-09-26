@@ -529,41 +529,77 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       1,
       BingxFuturesRemoteMandateAdmission.maxSessionCycles,
     );
+    var selectedStrategyVersion = bingxLiquidityStrategyVersion;
     final approved = await showDialog<bool>(
       context: context,
       builder:
-          (context) => AlertDialog(
-            title: const Text('Authorize VPS trading session?'),
-            content: Text(
-              'Symbol: ${activeMandate.symbol}\n'
-              'Mode: ${activeMandate.testOrder ? "test" : "live"}\n'
-              'Check interval: 5 minutes\n'
-              'First check: ${startsAtUtc.toIso8601String()}\n'
-              'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
-              'Maximum checks: $maxCycles\n'
-              'Maximum entry attempts: ${activeMandate.maxEffects}\n'
-              'After that limit: continue checks and permitted cancellation '
-              'of this session\'s pending orders, without new entries.\n'
-              'Exchange leverage: long ${leverage.longLeverage}x, '
-              'short ${leverage.shortLeverage}x\n'
-              'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional\n'
-              'Stop: entry structure / ATR; wider stops reduce order size.\n'
-              'Authorized reads: balance, positions, realized PnL, and '
-              '${activeMandate.symbol} leverage and margin mode.\n'
-              'Expires: ${activeMandate.expiresAtUtc}\n\n'
-              'The VPS may evaluate only this signed strategy and mandate. '
-              'Every exchange attempt remains bounded by the existing effect journal.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Authorize session'),
-              ),
-            ],
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Authorize VPS trading session?'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        DropdownButtonFormField<String>(
+                          initialValue: selectedStrategyVersion,
+                          decoration: const InputDecoration(
+                            labelText: 'Entry strategy',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: bingxLiquidityStrategyVersion,
+                              child: Text('4h zones / 15m checks'),
+                            ),
+                            DropdownMenuItem(
+                              value: bingxHourlyLiquidityStrategyVersion,
+                              child: Text('1h zones / 5m checks'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setDialogState(
+                                () => selectedStrategyVersion = value,
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Symbol: ${activeMandate.symbol}\n'
+                          'Mode: ${activeMandate.testOrder ? "test" : "live"}\n'
+                          'Check interval: 5 minutes\n'
+                          'First check: ${startsAtUtc.toIso8601String()}\n'
+                          'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
+                          'Maximum checks: $maxCycles\n'
+                          'Maximum entry attempts: ${activeMandate.maxEffects}\n'
+                          'After that limit: continue checks and permitted cancellation '
+                          'of this session\'s pending orders, without new entries.\n'
+                          'Exchange leverage: long ${leverage.longLeverage}x, '
+                          'short ${leverage.shortLeverage}x\n'
+                          'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional\n'
+                          'Stop: entry structure / ATR; wider stops reduce order size.\n'
+                          'Authorized reads: balance, positions, realized PnL, and '
+                          '${activeMandate.symbol} leverage and margin mode.\n'
+                          'Expires: ${activeMandate.expiresAtUtc}\n\n'
+                          'The VPS may evaluate only this signed strategy and mandate. '
+                          'Every exchange attempt remains bounded by the existing effect journal.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Authorize session'),
+                    ),
+                  ],
+                ),
           ),
     );
     if (approved != true) return;
@@ -583,6 +619,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
                 stopLossPercent: _stopLossPercent,
                 minimumRiskReward: _takeProfitRiskReward,
                 includeOpenOrders: true,
+                strategyVersion: selectedStrategyVersion,
               ),
           startsAtUtc: startsAtUtc,
           intervalSeconds: intervalSeconds,
@@ -1328,8 +1365,13 @@ String tradingRemoteRunnerSessionDetailsLabel(
   final strategy = session.strategyPolicy!;
   final policy = session.sessionPolicy!;
   final intervalSeconds = policy['interval_seconds'] as int;
+  final entryStrategy =
+      strategy['strategy_version'] == bingxHourlyLiquidityStrategyVersion
+          ? '1h zones / 5m checks'
+          : '4h zones / 15m checks';
   return <String>[
     '${session.mandate.symbol} · ${session.mandate.testOrder ? "TEST" : "LIVE"}',
+    'Entry strategy: $entryStrategy',
     'Limit ${session.mandate.maxOrderNotionalQuoteDecimal} USDT · '
         'Up to ${session.mandate.maxEffects} exchange request${session.mandate.maxEffects == 1 ? "" : "s"}',
     '${strategy['strategy_version'] == null ? 'SL' : 'Loss budget'} ${number(strategy['stop_loss_percent'])}% · '

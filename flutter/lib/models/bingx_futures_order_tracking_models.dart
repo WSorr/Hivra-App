@@ -546,6 +546,7 @@ class BingxFuturesRemoteMandateAdmission {
     required double stopLossPercent,
     required double minimumRiskReward,
     required bool includeOpenOrders,
+    String strategyVersion = bingxLiquidityStrategyVersion,
   }) => <String, dynamic>{
     'runner_build_id': deterministicRunnerBuildId,
     'plugin_id': deterministicPluginId,
@@ -556,7 +557,7 @@ class BingxFuturesRemoteMandateAdmission {
     'minimum_risk_reward': minimumRiskReward,
     'account_read_scope':
         includeOpenOrders ? exposureReadScope : legacyExposureReadScope,
-    'strategy_version': bingxLiquidityStrategyVersion,
+    'strategy_version': strategyVersion,
   };
 
   static BingxFuturesRemoteMandateAdmission? parseAndVerify({
@@ -975,7 +976,8 @@ class BingxFuturesRemoteMandateAdmission {
       return null;
     }
     if (value.containsKey('strategy_version') &&
-        value['strategy_version'] != bingxLiquidityStrategyVersion) {
+        value['strategy_version'] != bingxLiquidityStrategyVersion &&
+        value['strategy_version'] != bingxHourlyLiquidityStrategyVersion) {
       return null;
     }
     final buildId = value['runner_build_id']?.toString().trim() ?? '';
@@ -1015,7 +1017,7 @@ class BingxFuturesRemoteMandateAdmission {
       if (value.containsKey('account_read_scope'))
         'account_read_scope': expectedExposureReadScope,
       if (value.containsKey('strategy_version'))
-        'strategy_version': bingxLiquidityStrategyVersion,
+        'strategy_version': value['strategy_version'],
     };
   }
 
@@ -1052,7 +1054,10 @@ class BingxFuturesRemoteMandateAdmission {
           payload.symbol != mandate.symbol ||
           payload.orderType != 'limit' ||
           payload.entryMode != 'zone_pending' ||
-          (payload.timeInForce ?? '').toUpperCase() != 'GTC' ||
+          !const {
+            'GTC',
+            'POSTONLY',
+          }.contains((payload.timeInForce ?? '').toUpperCase()) ||
           payload.triggerPriceDecimal == null ||
           !RegExp(r'^[0-9a-f]{64}$').hasMatch(payload.intentHashHex ?? '') ||
           value['test_order'] != mandate.testOrder ||
