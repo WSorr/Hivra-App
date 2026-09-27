@@ -257,7 +257,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             profile: profile,
             sessionOperationId: session.operationId,
           );
-      if (operations.isEmpty) return false;
+      if (operations.isEmpty) return true;
       final retained = await _module.executionUseCase
           .retainRemoteCompletedEffects(
             session: session,

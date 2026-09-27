@@ -1539,6 +1539,64 @@ void main() {
       },
     );
 
+    test(
+      'a filled claimed order retains provenance for position follow-up',
+      () async {
+        final store = _trackingStore(tempHome);
+        final binding =
+            BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+              _credentials,
+            );
+        final claimed = _trackingState(
+          orderId: 'claim-filled',
+          accountBindingHashHex: binding,
+          includeEffectClaim: true,
+        );
+        await store.saveReconciledForCapsule(
+          store.activeCapsuleRootHex!,
+          BingxFuturesOrderTrackingState(
+            trackedSymbol: null,
+            trackedOrderId: null,
+            managedOrderIds: const <String>[],
+            managedOrderSymbols: const <String, String>{},
+            liquidityEventEffectClaims: claimed.liquidityEventEffectClaims,
+            stopLossPercent: null,
+            takeProfitRiskReward: null,
+          ),
+        );
+        final exchange = BingxFuturesExchangeService(
+          requestSender: (request) async {
+            expect(request.uri.path, '/openApi/swap/v2/trade/order');
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"orderID":"claim-filled","clientOrderId":"managed-client","symbol":"BTC-USDT","side":"BUY","status":"FILLED","executedQty":"0.01"}}',
+            );
+          },
+        );
+
+        final result = await _reconciliationUseCase(
+          exchange: exchange,
+          store: store,
+          riskHistory: riskHistory,
+        ).reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
+
+        expect(result.state!.managedOrderProvenance, contains('claim-filled'));
+        expect(result.activeCount, 0);
+        expect(result.state!.managedOrderIds, isEmpty);
+        final record = result.state!.managedOrderProvenance['claim-filled']!;
+        expect(record.lifecycleStatus, BingxManagedOrderLifecycleStatus.filled);
+        expect(
+          record.positionLifecycleStatus,
+          BingxManagedPositionLifecycleStatus.unresolved,
+        );
+        expect(record.netPnlQuoteDecimal, isNull);
+      },
+    );
+
     for (final mismatch
         in <String, String>{
           'order_id':
@@ -2438,7 +2496,28 @@ void main() {
         final store = _trackingStore(tempHome);
         final fixture = _remoteCompletedEffectFixture();
         final exchange = BingxFuturesExchangeService(
-          requestSender: (_) async => throw StateError('unexpected query'),
+          requestSender: (request) async {
+            if (request.uri.path == '/openApi/swap/v2/trade/order') {
+              return BingxHttpResponse(
+                statusCode: 200,
+                body: jsonEncode(<String, dynamic>{
+                  'code': 0,
+                  'msg': 'ok',
+                  'data': <String, dynamic>{
+                    'orderID': fixture.orderId,
+                    'clientOrderId': fixture.clientOrderId,
+                    'symbol': 'BTC-USDT',
+                    'side': 'BUY',
+                    'positionSide': 'LONG',
+                    'type': 'TRIGGER_LIMIT',
+                    'status': 'FILLED',
+                    'executedQty': '0.01',
+                  },
+                }),
+              );
+            }
+            throw StateError('unexpected query');
+          },
         );
         final firstUseCase = _reconciliationUseCase(
           exchange: exchange,
@@ -2508,6 +2587,18 @@ void main() {
           reconciled.state!.managedOrderProvenance,
           isNot(contains('manual-order')),
         );
+        final afterFill = await restartedUseCase.reconcileManagedOrders(
+          credentials: _credentials,
+          openOrders: _openOrders(const <BingxFuturesOpenOrder>[]),
+        );
+        final filled =
+            afterFill.state!.managedOrderProvenance[fixture.orderId]!;
+        expect(filled.lifecycleStatus, BingxManagedOrderLifecycleStatus.filled);
+        expect(
+          filled.positionLifecycleStatus,
+          BingxManagedPositionLifecycleStatus.unresolved,
+        );
+        expect(filled.netPnlQuoteDecimal, isNull);
       },
     );
 

@@ -1114,28 +1114,32 @@ class BingxFuturesExchangeExecutionUseCaseService {
           recoveredOrderId.isNotEmpty) {
         activeIds.add(recoveredOrderId);
         activeSymbols[recoveredOrderId] = claim.symbol;
-        if (!provenance.containsKey(recoveredOrderId) &&
-            claim.intentHashHex != null &&
-            claim.canonicalIntentJson != null) {
-          provenance[recoveredOrderId] = BingxManagedOrderProvenance(
-            orderId: recoveredOrderId,
-            symbol: claim.symbol,
-            side: claim.side,
-            testOrder: claim.testOrder,
-            intentHashHex: claim.intentHashHex!,
-            canonicalIntentJson: claim.canonicalIntentJson!,
-            clientOrderId: claim.clientOrderId,
-            accountBindingHashHex: claim.accountBindingHashHex,
-            lifecycleStatus: evidence.status,
-            lifecycleEvidenceAtUtc: evidenceAtUtc,
-            lifecycleDiagnostic: evidence.diagnostic,
-            marketSnapshotHashHex: null,
-            featureHashHex: null,
-            tvhDecisionHashHex: null,
-            liveDecisionHashHex: null,
-            recordedAtUtc: claim.recordedAtUtc,
-          );
-        }
+      }
+      if ((evidence.status == BingxManagedOrderLifecycleStatus.active ||
+              evidence.status == BingxManagedOrderLifecycleStatus.filled) &&
+          recoveredOrderId != null &&
+          recoveredOrderId.isNotEmpty &&
+          !provenance.containsKey(recoveredOrderId) &&
+          claim.intentHashHex != null &&
+          claim.canonicalIntentJson != null) {
+        provenance[recoveredOrderId] = BingxManagedOrderProvenance(
+          orderId: recoveredOrderId,
+          symbol: claim.symbol,
+          side: claim.side,
+          testOrder: claim.testOrder,
+          intentHashHex: claim.intentHashHex!,
+          canonicalIntentJson: claim.canonicalIntentJson!,
+          clientOrderId: claim.clientOrderId,
+          accountBindingHashHex: claim.accountBindingHashHex,
+          lifecycleStatus: evidence.status,
+          lifecycleEvidenceAtUtc: evidenceAtUtc,
+          lifecycleDiagnostic: evidence.diagnostic,
+          marketSnapshotHashHex: null,
+          featureHashHex: null,
+          tvhDecisionHashHex: null,
+          liveDecisionHashHex: null,
+          recordedAtUtc: claim.recordedAtUtc,
+        );
       }
     }
 
