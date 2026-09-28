@@ -1,4 +1,5 @@
 import '../models/bingx_futures_exchange_models.dart';
+import '../models/bingx_futures_market_snapshot_models.dart';
 import 'app_runtime_service.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_execution_use_case_service.dart';
@@ -127,12 +128,14 @@ class TradingDroneModuleService {
     final snapshotBuilder = const BingxFuturesLiveSnapshotBuilderService();
     final liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
       exchange: exchangeService,
+      strategyVersion: bingxPrebreachLineStrategyVersion,
       loadSnapshot:
           ({required exchange, required symbol}) =>
               snapshotBuilder.fetchAndBuild(
                 exchange: exchange,
                 symbol: symbol,
                 sessionVolumes: publicSessionStream.snapshotFor(symbol),
+                strategyVersion: bingxPrebreachLineStrategyVersion,
               ),
     );
     return TradingDroneModule(

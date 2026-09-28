@@ -65,7 +65,9 @@ class BingxFuturesLiveDecisionService {
     required bool marketOnly,
     required String strategyVersion,
   }) {
-    final hourly = strategyVersion == bingxHourlyLiquidityStrategyVersion;
+    final hourly =
+        strategyVersion == bingxHourlyLiquidityStrategyVersion ||
+        strategyVersion == bingxPrebreachLineStrategyVersion;
     if (!hourly && strategyVersion != bingxLiquidityStrategyVersion) {
       throw const FormatException('unsupported liquidity strategy');
     }
@@ -77,6 +79,18 @@ class BingxFuturesLiveDecisionService {
       snapshot,
       strategyVersion: strategyVersion,
     );
+    final microCloseTimes = _readCloseTimes(
+      input.snapshotInput.candles,
+      hourly ? '5m' : '15m',
+    );
+    final formingMicro =
+        strategyVersion == bingxPrebreachLineStrategyVersion &&
+                microCloseTimes.isNotEmpty
+            ? _currentForming5m(
+              input.snapshotInput.candles,
+              microCloseTimes.last,
+            )
+            : null;
     final requestedZoneSide = _normalizeSide(input.zoneEvaluationSide);
     final zone = _zoneDecision.decide(
       input: BingxFuturesZoneDecisionInput(
@@ -106,10 +120,9 @@ class BingxFuturesLiveDecisionService {
           hourly ? '5m' : '15m',
         ),
         detectedLiquidityLevels: features.liquidityLevels,
-        microCloseTimesUtc: _readCloseTimes(
-          input.snapshotInput.candles,
-          hourly ? '5m' : '15m',
-        ),
+        microCloseTimesUtc: microCloseTimes,
+        formingMicroHigh: formingMicro?.high,
+        formingMicroLow: formingMicro?.low,
         macroHighs: _readHighs(input.snapshotInput.candles, '1h'),
         macroLows: _readLows(input.snapshotInput.candles, '1h'),
         higherHighs: _readHighs(
@@ -532,6 +545,42 @@ class BingxFuturesLiveDecisionService {
             .toList()
           ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
     return rows.map((candle) => candle.closeTimeUtc).toList(growable: false);
+  }
+
+  ({num high, num low})? _currentForming5m(
+    List<BingxFuturesCandle> candles,
+    String latestClosedAtUtc,
+  ) {
+    final latest = DateTime.tryParse(latestClosedAtUtc)?.toUtc();
+    if (latest == null) return null;
+    final current = candles.where(
+      (candle) =>
+          candle.timeframe == '5m' &&
+          !candle.isClosed &&
+          DateTime.tryParse(candle.openTimeUtc)?.toUtc() == latest &&
+          DateTime.tryParse(candle.closeTimeUtc)?.toUtc() ==
+              latest.add(const Duration(minutes: 5)),
+    );
+    if (current.length != 1) return null;
+    final high = num.tryParse(current.single.highDecimal);
+    final low = num.tryParse(current.single.lowDecimal);
+    final open = num.tryParse(current.single.openDecimal);
+    final close = num.tryParse(current.single.closeDecimal);
+    if (high == null ||
+        low == null ||
+        open == null ||
+        close == null ||
+        !high.isFinite ||
+        !low.isFinite ||
+        low <= 0 ||
+        low > high ||
+        open < low ||
+        open > high ||
+        close < low ||
+        close > high) {
+      return null;
+    }
+    return (high: high, low: low);
   }
 
   List<num> _readSeries(

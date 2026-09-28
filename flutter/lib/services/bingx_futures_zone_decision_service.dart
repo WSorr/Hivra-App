@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../models/bingx_futures_market_snapshot_models.dart';
+import 'bingx_futures_market_snapshot_service.dart';
 
 class BingxFuturesZoneDecisionInput {
   final String symbol;
@@ -16,6 +17,8 @@ class BingxFuturesZoneDecisionInput {
   final List<num> microOpens;
   final List<num> microCloses;
   final List<String> microCloseTimesUtc;
+  final num? formingMicroHigh;
+  final num? formingMicroLow;
   final List<BingxDetectedLiquidityLevel> detectedLiquidityLevels;
   final List<num> macroHighs;
   final List<num> macroLows;
@@ -52,6 +55,8 @@ class BingxFuturesZoneDecisionInput {
     this.microOpens = const <num>[],
     this.microCloses = const <num>[],
     this.microCloseTimesUtc = const <String>[],
+    this.formingMicroHigh,
+    this.formingMicroLow,
     this.detectedLiquidityLevels = const <BingxDetectedLiquidityLevel>[],
     required this.macroHighs,
     required this.macroLows,
@@ -236,23 +241,28 @@ class BingxFuturesZoneDecisionService {
     Map<String, dynamic>? parentZone,
   }) {
     final isHourlyStrategy = source == '1h_active_liquidity_zone';
+    final isPrebreachLine = source == 'mtf_active_liquidity_line';
     final isRestingStrategy =
-        source == '4h_active_liquidity_zone' || isHourlyStrategy;
+        source == '4h_active_liquidity_zone' ||
+        isHourlyStrategy ||
+        isPrebreachLine;
     final isCurrentStrategy = source == '4h_sweep_reclaim_15m';
     final isLegacyParentStrategy = source == '4h_sweep_reclaim_5m';
     final isParentStrategy =
         isRestingStrategy || isCurrentStrategy || isLegacyParentStrategy;
-    final uses15m = isRestingStrategy || isCurrentStrategy;
+    final uses15m =
+        (isRestingStrategy && !isHourlyStrategy && !isPrebreachLine) ||
+        isCurrentStrategy;
     final interval = Duration(
       minutes:
-          isHourlyStrategy
+          isHourlyStrategy || isPrebreachLine
               ? 5
               : uses15m
               ? 15
               : 5,
     );
     final timeframe =
-        isHourlyStrategy
+        isHourlyStrategy || isPrebreachLine
             ? '5m'
             : uses15m
             ? '15m'
@@ -267,6 +277,7 @@ class BingxFuturesZoneDecisionService {
           '4h_sweep_reclaim_15m',
           '4h_active_liquidity_zone',
           '1h_active_liquidity_zone',
+          'mtf_active_liquidity_line',
         }.contains(source) ||
         !zoneLow.isFinite ||
         !zoneHigh.isFinite ||
@@ -290,7 +301,9 @@ class BingxFuturesZoneDecisionService {
       parentLow = num.tryParse(parentZone?['low_decimal']?.toString() ?? '');
       parentHigh = num.tryParse(parentZone?['high_decimal']?.toString() ?? '');
       final expectedStrategyVersion =
-          isHourlyStrategy
+          isPrebreachLine
+              ? bingxPrebreachLineStrategyVersion
+              : isHourlyStrategy
               ? bingxHourlyLiquidityStrategyVersion
               : isRestingStrategy
               ? strategyVersion
@@ -298,7 +311,10 @@ class BingxFuturesZoneDecisionService {
               ? '4h-sweep-reclaim-15m-v3'
               : '4h-sweep-reclaim-5m-v2';
       if (parentZone?['strategy_version'] != expectedStrategyVersion ||
-          parentZone?['timeframe'] != (isHourlyStrategy ? '1h' : '4h') ||
+          (isPrebreachLine
+              ? !BingxFuturesMarketSnapshotService.prebreachLineTimeframes
+                  .contains(parentZone?['timeframe'])
+              : parentZone?['timeframe'] != (isHourlyStrategy ? '1h' : '4h')) ||
           parentZone?['side'] != side ||
           parentAt == null ||
           parentLow == null ||
@@ -349,14 +365,18 @@ class BingxFuturesZoneDecisionService {
               parentAt != null &&
               (side == 'buy' ? low < parentLow! : high > parentHigh!)) ||
           (at.isAfter(event) &&
-              _anchorConsumed(
-                side: side,
-                source: source,
-                low: low,
-                high: high,
-                zoneLow: zoneLow,
-                zoneHigh: zoneHigh,
-              ));
+              (isPrebreachLine
+                  ? (side == 'buy'
+                      ? low <= (zoneLow + zoneHigh) / 2
+                      : high >= (zoneLow + zoneHigh) / 2)
+                  : _anchorConsumed(
+                    side: side,
+                    source: source,
+                    low: low,
+                    high: high,
+                    zoneLow: zoneLow,
+                    zoneHigh: zoneHigh,
+                  )));
     }
     if (!covered || now.difference(previous) >= interval) {
       return 'anchor_unavailable';
@@ -389,12 +409,61 @@ class BingxFuturesZoneDecisionService {
   const BingxFuturesZoneDecisionService();
 
   bool _hourly(BingxFuturesZoneDecisionInput input) =>
-      input.strategyVersion == bingxHourlyLiquidityStrategyVersion;
+      input.strategyVersion == bingxHourlyLiquidityStrategyVersion ||
+      input.strategyVersion == bingxPrebreachLineStrategyVersion;
 
-  ({String side, num low, num high, String anchorAtUtc})? _selectRestingCluster(
+  bool _lineUntouchedSinceParent(
     BingxFuturesZoneDecisionInput input,
+    BingxDetectedLiquidityLevel level,
+    num line,
   ) {
+    final confirmed = DateTime.tryParse(level.confirmedAtUtc)?.toUtc();
+    final observed = DateTime.tryParse(level.observedThroughUtc)?.toUtc();
+    if (!BingxFuturesMarketSnapshotService.prebreachLineTimeframes.contains(
+          level.timeframe,
+        ) ||
+        confirmed == null ||
+        observed == null ||
+        confirmed.isAfter(observed) ||
+        input.formingMicroHigh == null ||
+        input.formingMicroLow == null ||
+        !input.formingMicroHigh!.isFinite ||
+        !input.formingMicroLow!.isFinite ||
+        input.formingMicroLow! <= 0 ||
+        input.formingMicroHigh! < input.formingMicroLow! ||
+        (level.side == 'sellside'
+            ? input.formingMicroLow! <= line
+            : input.formingMicroHigh! >= line)) {
+      return false;
+    }
+    final start = input.microCloseTimesUtc.indexOf(observed.toIso8601String());
+    if (start < 0) return false;
+    for (
+      var index = start + 1;
+      index < input.microCloseTimesUtc.length;
+      index++
+    ) {
+      if (level.side == 'sellside'
+          ? input.microLows[index] <= line
+          : input.microHighs[index] >= line) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  ({
+    String side,
+    num low,
+    num high,
+    num line,
+    String anchorAtUtc,
+    String timeframe,
+  })?
+  _selectRestingCluster(BingxFuturesZoneDecisionInput input) {
     final hourly = _hourly(input);
+    final prebreach =
+        input.strategyVersion == bingxPrebreachLineStrategyVersion;
     if (!_continuousTimes(
           input.higherCloseTimesUtc,
           Duration(hours: hourly ? 1 : 4),
@@ -410,7 +479,15 @@ class BingxFuturesZoneDecisionService {
     }
     final candidates =
         <
-          ({String side, num low, num high, String anchorAtUtc, num distance})
+          ({
+            String side,
+            num low,
+            num high,
+            num line,
+            String anchorAtUtc,
+            String timeframe,
+            num distance,
+          })
         >[];
     for (final level in input.detectedLiquidityLevels) {
       final side = switch (level.side) {
@@ -420,19 +497,47 @@ class BingxFuturesZoneDecisionService {
       };
       final low = num.tryParse(level.zoneBottomDecimal);
       final high = num.tryParse(level.zoneTopDecimal);
+      final line = num.tryParse(level.centerPriceDecimal);
+      final anchorAtUtc =
+          prebreach
+              ? level.anchorAtUtc
+              : level.anchorIndex >= 0 &&
+                  level.anchorIndex < input.higherCloseTimesUtc.length
+              ? input.higherCloseTimesUtc[level.anchorIndex]
+              : '';
       if (side == null ||
           (input.requiredSide != null && input.requiredSide != side) ||
           level.breached ||
           level.pivotCount < 3 ||
-          level.anchorIndex < 0 ||
-          level.anchorIndex >= input.higherCloseTimesUtc.length ||
+          anchorAtUtc.isEmpty ||
           low == null ||
           high == null ||
+          line == null ||
+          !line.isFinite ||
           !low.isFinite ||
           !high.isFinite ||
           low <= 0 ||
           high <= low ||
-          (side == 'buy' ? input.midPrice <= high : input.midPrice >= low)) {
+          (prebreach && !_lineUntouchedSinceParent(input, level, line)) ||
+          (prebreach
+              ? (side == 'buy'
+                  ? input.midPrice <= line
+                  : input.midPrice >= line)
+              : (side == 'buy'
+                  ? input.midPrice <= high
+                  : input.midPrice >= low))) {
+        continue;
+      }
+      if (prebreach) {
+        candidates.add((
+          side: side,
+          low: low,
+          high: high,
+          line: line,
+          anchorAtUtc: anchorAtUtc,
+          timeframe: level.timeframe,
+          distance: (input.midPrice - line).abs(),
+        ));
         continue;
       }
       final lastParentClose =
@@ -459,13 +564,36 @@ class BingxFuturesZoneDecisionService {
         side: side,
         low: low,
         high: high,
-        anchorAtUtc: input.higherCloseTimesUtc[level.anchorIndex],
+        line: line,
+        anchorAtUtc: anchorAtUtc,
+        timeframe: hourly ? '1h' : '4h',
         distance: side == 'buy' ? input.midPrice - high : low - input.midPrice,
       ));
     }
-    candidates.sort((a, b) => a.distance.compareTo(b.distance));
+    candidates.sort((a, b) {
+      final byDistance = a.distance.compareTo(b.distance);
+      if (byDistance != 0) return byDistance;
+      if (prebreach) {
+        final rankA = BingxFuturesMarketSnapshotService.prebreachLineTimeframes
+            .indexOf(a.timeframe);
+        final rankB = BingxFuturesMarketSnapshotService.prebreachLineTimeframes
+            .indexOf(b.timeframe);
+        if (rankA != rankB) return rankB.compareTo(rankA);
+      }
+      return a.anchorAtUtc.compareTo(b.anchorAtUtc);
+    });
     if (candidates.isEmpty ||
-        (candidates.length > 1 &&
+        (prebreach &&
+            input.requiredSide == null &&
+            candidates
+                .skip(1)
+                .any(
+                  (candidate) =>
+                      candidate.distance == candidates.first.distance &&
+                      candidate.side != candidates.first.side,
+                )) ||
+        (!prebreach &&
+            candidates.length > 1 &&
             candidates[0].distance == candidates[1].distance)) {
       return null;
     }
@@ -474,7 +602,9 @@ class BingxFuturesZoneDecisionService {
       side: selected.side,
       low: selected.low,
       high: selected.high,
+      line: selected.line,
       anchorAtUtc: selected.anchorAtUtc,
+      timeframe: selected.timeframe,
     );
   }
 
@@ -494,30 +624,68 @@ class BingxFuturesZoneDecisionService {
           !high.isFinite ||
           low <= 0 ||
           high <= low ||
-          level.anchorIndex < 0 ||
-          level.anchorIndex >= input.higherCloseTimesUtc.length) {
+          (input.strategyVersion == bingxPrebreachLineStrategyVersion
+              ? level.anchorAtUtc.isEmpty
+              : level.anchorIndex < 0 ||
+                  level.anchorIndex >= input.higherCloseTimesUtc.length) ||
+          (input.strategyVersion == bingxPrebreachLineStrategyVersion &&
+              !_lineUntouchedSinceParent(input, level, (low + high) / 2))) {
         continue;
       }
       yield _ExternalLevelPoint(
         price: (low + high) / 2,
         weight: 1.25,
         source:
-            _hourly(input)
+            input.strategyVersion == bingxPrebreachLineStrategyVersion
+                ? '${level.timeframe}_active_opposite_liquidity'
+                : _hourly(input)
                 ? '1h_active_opposite_liquidity'
                 : '4h_active_opposite_liquidity',
-        eventAtUtc: input.higherCloseTimesUtc[level.anchorIndex],
+        eventAtUtc:
+            input.strategyVersion == bingxPrebreachLineStrategyVersion
+                ? level.anchorAtUtc
+                : input.higherCloseTimesUtc[level.anchorIndex],
       );
     }
+  }
+
+  _ExternalRetestLevel? _nearestOppositeLine(
+    BingxFuturesZoneDecisionInput input, {
+    required String side,
+    required num entry,
+  }) {
+    final candidates =
+        _activeOppositeLevels(input, side: side)
+            .where(
+              (level) =>
+                  side == 'buyside' ? level.price > entry : level.price < entry,
+            )
+            .toList()
+          ..sort(
+            (a, b) =>
+                (a.price - entry).abs().compareTo((b.price - entry).abs()),
+          );
+    if (candidates.isEmpty) return null;
+    final selected = candidates.first;
+    return _ExternalRetestLevel(
+      price: selected.price,
+      source: selected.source,
+      distancePct: (selected.price - entry).abs() / entry,
+      eventAtUtc: selected.eventAtUtc,
+    );
   }
 
   BingxFuturesZoneDecisionResult decide({
     required BingxFuturesZoneDecisionInput input,
   }) {
     if (input.strategyVersion != bingxLiquidityStrategyVersion &&
-        input.strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+        input.strategyVersion != bingxHourlyLiquidityStrategyVersion &&
+        input.strategyVersion != bingxPrebreachLineStrategyVersion) {
       throw const FormatException('unsupported liquidity strategy');
     }
     final hourly = _hourly(input);
+    final prebreach =
+        input.strategyVersion == bingxPrebreachLineStrategyVersion;
     final mid = input.midPrice;
     if (mid <= 0) {
       throw const FormatException('midPrice must be greater than zero');
@@ -647,7 +815,9 @@ class BingxFuturesZoneDecisionService {
             ? (
               side: resting.side,
               reason:
-                  hourly
+                  prebreach
+                      ? 'mtf_active_liquidity_line'
+                      : hourly
                       ? '1h_active_liquidity_zone'
                       : '4h_active_liquidity_zone',
             )
@@ -681,7 +851,7 @@ class BingxFuturesZoneDecisionService {
         resting != null
             ? <String, dynamic>{
               'strategy_version': input.strategyVersion,
-              'timeframe': hourly ? '1h' : '4h',
+              'timeframe': resting.timeframe,
               'side': resting.side,
               'low_decimal': resting.low.toStringAsFixed(8),
               'high_decimal': resting.high.toStringAsFixed(8),
@@ -841,28 +1011,34 @@ class BingxFuturesZoneDecisionService {
           closeTimesUtc: input.weeklyCloseTimesUtc,
         ),
     ];
-    final externalSellRetest = _selectRetestLevelAbove(
-      _applyLiquidationConfluence(
-        externalHighCandidates,
-        input.liquidationSellLevels,
-      ),
-      mid,
-      minDistancePct: hourly ? 0.002 : 0.008,
-      targetDistancePct: targetRetestDistancePct,
-      maxDistancePct: hourly ? 0.05 : 0.14,
-      preferFarther: !hourly && needsFartherRetest,
-    );
-    final externalBuyRetest = _selectRetestLevelBelow(
-      _applyLiquidationConfluence(
-        externalLowCandidates,
-        input.liquidationBuyLevels,
-      ),
-      mid,
-      minDistancePct: hourly ? 0.002 : 0.008,
-      targetDistancePct: targetRetestDistancePct,
-      maxDistancePct: hourly ? 0.05 : 0.14,
-      preferFarther: !hourly && needsFartherRetest,
-    );
+    final externalSellRetest =
+        prebreach && resting != null
+            ? _nearestOppositeLine(input, side: 'buyside', entry: resting.line)
+            : _selectRetestLevelAbove(
+              _applyLiquidationConfluence(
+                externalHighCandidates,
+                input.liquidationSellLevels,
+              ),
+              mid,
+              minDistancePct: hourly ? 0.002 : 0.008,
+              targetDistancePct: targetRetestDistancePct,
+              maxDistancePct: hourly ? 0.05 : 0.14,
+              preferFarther: !hourly && needsFartherRetest,
+            );
+    final externalBuyRetest =
+        prebreach && resting != null
+            ? _nearestOppositeLine(input, side: 'sellside', entry: resting.line)
+            : _selectRetestLevelBelow(
+              _applyLiquidationConfluence(
+                externalLowCandidates,
+                input.liquidationBuyLevels,
+              ),
+              mid,
+              minDistancePct: hourly ? 0.002 : 0.008,
+              targetDistancePct: targetRetestDistancePct,
+              maxDistancePct: hourly ? 0.05 : 0.14,
+              preferFarther: !hourly && needsFartherRetest,
+            );
 
     var anchorSource = 'internal_diagnostic';
     var anchorExecutable = false;
@@ -876,10 +1052,17 @@ class BingxFuturesZoneDecisionService {
       if (resting != null) {
         anchorHigh = resting.high;
         anchorSource =
-            hourly ? '1h_active_liquidity_zone' : '4h_active_liquidity_zone';
+            prebreach
+                ? 'mtf_active_liquidity_line'
+                : hourly
+                ? '1h_active_liquidity_zone'
+                : '4h_active_liquidity_zone';
         anchorExecutable = true;
         anchorLifecycle = 'active';
-        liquidityEventAtUtc = input.higherCloseTimesUtc.last;
+        liquidityEventAtUtc =
+            prebreach
+                ? input.microCloseTimesUtc.last
+                : input.higherCloseTimesUtc.last;
         zoneLow = resting.low;
         zoneHigh = resting.high;
       } else if (microReclaim != null) {
@@ -902,10 +1085,17 @@ class BingxFuturesZoneDecisionService {
       if (resting != null) {
         anchorLow = resting.low;
         anchorSource =
-            hourly ? '1h_active_liquidity_zone' : '4h_active_liquidity_zone';
+            prebreach
+                ? 'mtf_active_liquidity_line'
+                : hourly
+                ? '1h_active_liquidity_zone'
+                : '4h_active_liquidity_zone';
         anchorExecutable = true;
         anchorLifecycle = 'active';
-        liquidityEventAtUtc = input.higherCloseTimesUtc.last;
+        liquidityEventAtUtc =
+            prebreach
+                ? input.microCloseTimesUtc.last
+                : input.higherCloseTimesUtc.last;
         zoneLow = resting.low;
         zoneHigh = resting.high;
       } else if (microReclaim != null) {
@@ -971,7 +1161,13 @@ class BingxFuturesZoneDecisionService {
                     jsonEncode(<String, dynamic>{
                       'symbol': input.symbol.trim().toUpperCase(),
                       'parent':
-                          resting == null
+                          prebreach
+                              ? <String, dynamic>{
+                                'strategy_version': input.strategyVersion,
+                                'side': resting!.side,
+                                'line_decimal': resting.line.toStringAsFixed(8),
+                              }
+                              : resting == null
                               ? parentZone
                               : <String, dynamic>{
                                 'strategy_version': input.strategyVersion,
@@ -988,7 +1184,7 @@ class BingxFuturesZoneDecisionService {
       zoneSide: selectedSide == 'buy' ? 'buyside' : 'sellside',
       zoneLow: zoneLow,
       zoneHigh: zoneHigh,
-      source: 'mtf_sweep_retest',
+      source: prebreach ? 'prebreach_liquidity_line' : 'mtf_sweep_retest',
       sideReason: sideDecision.reason,
       olderHigh: olderHigh,
       olderLow: olderLow,

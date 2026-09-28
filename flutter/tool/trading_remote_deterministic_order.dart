@@ -207,7 +207,9 @@ Future<String> runOneDeterministicOrder({
   if (admission.strategyPolicy?['strategy_version'] !=
           bingxLiquidityStrategyVersion &&
       admission.strategyPolicy?['strategy_version'] !=
-          bingxHourlyLiquidityStrategyVersion) {
+          bingxHourlyLiquidityStrategyVersion &&
+      admission.strategyPolicy?['strategy_version'] !=
+          bingxPrebreachLineStrategyVersion) {
     return _blocked(
       cycleOperationId,
       'strategy_authorization_upgrade_required',
@@ -447,13 +449,20 @@ Future<String> _revalidateManagedAnchor({
           exchange: exchange,
           symbol: admission.mandate.symbol,
           timeframe:
-              zone['anchor_source'] == '1h_active_liquidity_zone'
+              zone['anchor_source'] == '1h_active_liquidity_zone' ||
+                      zone['anchor_source'] == 'mtf_active_liquidity_line'
                   ? '5m'
                   : '15m',
           fromUtc: DateTime.parse(
-            ((zone['parent'] as Map<String, dynamic>?)?['confirmed_at_utc'] ??
-                        (zone['parent']
-                            as Map<String, dynamic>?)?['anchor_at_utc'])
+            (zone['anchor_source'] == 'mtf_active_liquidity_line'
+                        ? zone['liquidity_event_at_utc']
+                        : (zone['parent']
+                                as Map<
+                                  String,
+                                  dynamic
+                                >?)?['confirmed_at_utc'] ??
+                            (zone['parent']
+                                as Map<String, dynamic>?)?['anchor_at_utc'])
                     as String? ??
                 zone['liquidity_event_at_utc'] as String,
           ),

@@ -1227,7 +1227,9 @@ class BingxFuturesRemoteRunnerProvisioningService {
         strategyPolicy['runner_build_id'] != profile.runnerBuildId ||
         strategyPolicy['strategy_version'] != bingxLiquidityStrategyVersion &&
             strategyPolicy['strategy_version'] !=
-                bingxHourlyLiquidityStrategyVersion) {
+                bingxHourlyLiquidityStrategyVersion &&
+            strategyPolicy['strategy_version'] !=
+                bingxPrebreachLineStrategyVersion) {
       throw StateError(
         'Remote Runner update required before authorizing this strategy.',
       );

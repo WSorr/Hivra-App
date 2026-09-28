@@ -1,5 +1,6 @@
 import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_live_strategy_models.dart';
+import '../models/bingx_futures_market_snapshot_models.dart';
 import 'bingx_futures_live_decision_service.dart';
 import 'bingx_futures_live_snapshot_builder_service.dart';
 import 'bingx_futures_public_market_data_port.dart';
@@ -26,10 +27,18 @@ class BingxFuturesLiveStrategyUseCaseService {
         const BingxFuturesLiveSnapshotBuilderService(),
     BingxFuturesLiveDecisionService decisionService =
         const BingxFuturesLiveDecisionService(),
+    String strategyVersion = bingxLiquidityStrategyVersion,
     BingxLiveSnapshotLoader? loadSnapshot,
     BingxLiveDecisionEvaluator? evaluateDecision,
   }) : _exchange = exchange,
-       _loadSnapshot = loadSnapshot ?? snapshotBuilder.fetchAndBuild,
+       _loadSnapshot =
+           loadSnapshot ??
+           (({required exchange, required symbol}) =>
+               snapshotBuilder.fetchAndBuild(
+                 exchange: exchange,
+                 symbol: symbol,
+                 strategyVersion: strategyVersion,
+               )),
        _evaluateDecision =
            evaluateDecision ??
            ((input) => decisionService.decidePublicMarket(
@@ -39,6 +48,7 @@ class BingxFuturesLiveStrategyUseCaseService {
              zoneFarBps: input.zoneFarBps,
              policy: input.policy,
              zoneEvaluationSide: input.zoneEvaluationSide,
+             strategyVersion: strategyVersion,
            ));
 
   Future<BingxFuturesLiveStrategyResult> execute(

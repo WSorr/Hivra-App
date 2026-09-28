@@ -321,41 +321,67 @@ authorize entry. Sweep/reclaim and 15m directional candles remain context,
 not prerequisites. A closed 15m outer-boundary breach since the latest closed
 4h candle invalidates the candidate.
 
+#### Pre-breach liquidity-line entry (source candidate, not deployed)
+
+The `mtf-prebreach-liquidity-line-v1` source candidate scans confirmed,
+still-unbreached liquidity lines
+on `1D`, `4H`, `1H`, `30M`, `15M`, and `5M`. A line becomes eligible only after
+its defining candles close; a forming or retrospectively detected line cannot
+authorize an order. Buyside liquidity above price selects a short, and
+sellside liquidity below price selects a long. Place a resting limit at the
+selected line price, rounded to a valid exchange tick, before the first touch;
+do not wait for a sweep, reclaim, directional candle, or post-breach zone.
+There is no universal one-percent displacement from the line. A line already
+crossed before order placement is not a new entry opportunity. The current
+forming `5M` candle can invalidate a confirmed line but cannot confirm a new
+one; missing forming-candle coverage blocks new entry. The same side
+and line price observed on multiple timeframes has one event ID, not multiple
+effects. Equidistant opposite-side lines without an explicit side are ambiguous
+and cannot authorize entry.
+Existing mandate, risk, order-management, and provider-reconciliation
+boundaries still apply. The code offers this version only to newly signed
+sessions; existing signatures retain their original semantics. The installed
+VPS runner and packaged product have not yet passed end-to-end acceptance for
+this candidate, so source tests do not establish live readiness.
+
 #### Planned higher-timeframe observation
 
 The market overview shall include `1D`, `1W`, and `1M` (calendar month,
-not minute) as observation-only context through the existing market-data,
-feature-extraction, and presentation owners. Weekly and monthly observations
-show broader ranges and external liquidity clusters; daily observations show
-price location and nearby liquidity above and below it. Each observation must
+not minute) through the existing market-data, feature-extraction, and
+presentation owners. `1W` and `1M` remain observation-only; `1D` also supplies
+executable lines only to the new signed pre-breach strategy. Each observation must
 identify its timeframe, bounds, candle close time, freshness, and zone state.
 Missing or insufficient history is unavailable, not an empty or valid zone.
 Forming candles, if displayed, must be marked provisional and cannot confirm
 a zone or event.
 
-This overview is separate from executable readiness. Agreement across these
-timeframes is not a new entry requirement; disagreement cannot independently
+The weekly/monthly overview is separate from executable readiness. Agreement
+across these timeframes is not a new entry requirement; disagreement cannot independently
 authorize, veto, cancel, or replace an order. It does not change entry bounds,
-targets, sizing, or signed authority. Execution uses the signed session's
-active 4h/15m or 1h/5m zone and check timeframe.
+targets, sizing, or signed authority. Existing signed zone sessions use their
+4h/15m or 1h/5m contract; the new pre-breach strategy can select an executable
+line on any of its six scanned timeframes. `1W` and `1M` remain observation-only.
 Reuse the existing observation path without a separate scheduler, strategy,
 or truth store. This planned overview does not resolve insufficient 15m history
 for pending-order revalidation.
 
 #### Zone and order binding
 
-New sessions select either `4h-active-liquidity-zone-v4` or
-`1h-active-liquidity-zone-5m-v1` at authorization. The choice is immutable
-within a signed session. Both use the same snapshot, proposal, candidate,
+Previously signed sessions retain either `4h-active-liquidity-zone-v4` or
+`1h-active-liquidity-zone-5m-v1`. New source sessions select
+`mtf-prebreach-liquidity-line-v1`; the version is immutable within a signed
+session. All three use the same snapshot, proposal, candidate,
 effect journal, and managed-order owner; no second execution path is created.
 The 1h mode uses active unbreached 1h clusters, closed 5m invalidation, and
 opposite 1h liquidity targets without a 1d/1w directional veto. The 4h mode
 retains its existing 15m checks and higher-timeframe context. The signed
 proposal binds actual cluster bounds, side, anchor time and the latest
-closed parent observation. Event identity binds symbol, side and anchor time, so
-a later quote or cluster-width update cannot purchase a second effect for the
-same anchored zone. A `LIMIT` with `PostOnly` time in force is placed inside
-the zone, without a provider trigger parent or `stopPrice`; the existing zone
+closed parent observation. Older zone event identity binds symbol, side and
+anchor time; the pre-breach version binds symbol, side and line price so one
+level shared across timeframes cannot purchase a second effect. A `LIMIT` with
+`PostOnly` time in force is placed at the line for the pre-breach version, or
+inside the zone for older versions, without a provider trigger parent or
+`stopPrice`; the existing zone
 trigger remains local evidence only. The exchange rejects a crossing order
 rather than filling it immediately. Opposite external liquidity supplies the
 profit target; risk sizing and structural stop remain mandatory.

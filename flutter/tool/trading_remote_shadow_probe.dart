@@ -58,7 +58,8 @@ Future<void> main(List<String> args) async {
     final strategyVersion =
         options['strategy-version'] ?? bingxLiquidityStrategyVersion;
     if (strategyVersion != bingxLiquidityStrategyVersion &&
-        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+        strategyVersion != bingxHourlyLiquidityStrategyVersion &&
+        strategyVersion != bingxPrebreachLineStrategyVersion) {
       throw const FormatException('unsupported liquidity strategy');
     }
     final accumulator = BingxFuturesPublicSessionAccumulator(symbol: symbol);
