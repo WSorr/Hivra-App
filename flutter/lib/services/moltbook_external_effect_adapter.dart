@@ -403,11 +403,13 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     String postId,
   ) async {
     final post = await _provider.observePost(apiKey, postId: postId);
-    final matches =
-        post.authorName == payload.accountName &&
-        post.submoltName == payload.submoltName &&
-        post.title == payload.title &&
-        post.content == payload.content;
+    final matches = post.matchesExactPublication(
+      postId: postId,
+      authorName: payload.accountName,
+      submoltName: payload.submoltName,
+      title: payload.title,
+      content: payload.content,
+    );
     if (!matches) {
       return _receiptNotObserved();
     }
@@ -702,7 +704,7 @@ class _MoltbookPostPayload implements _MoltbookPayload {
       );
     }
     final schemaVersion = json['schema_version'];
-    if (schemaVersion != 1 && schemaVersion != 2) {
+    if (schemaVersion != 1 && schemaVersion != 2 && schemaVersion != 3) {
       throw const FormatException('Unsupported Moltbook post payload schema');
     }
     final payload = _MoltbookPostPayload(
@@ -725,9 +727,14 @@ class _MoltbookPostPayload implements _MoltbookPayload {
             )
             : payload.operationMarker == expectedMarker &&
                 !payload.content.contains(payload.operationMarker) &&
-                payload.content.endsWith(
-                  MoltbookPublicationContract.attribution(),
-                );
+                (payload.schemaVersion == 2
+                    ? payload.content.endsWith(
+                      MoltbookPublicationContract.attribution(),
+                    )
+                    : payload.content ==
+                        MoltbookPublicationContract.publicationContent(
+                          payload.content,
+                        ));
     if (!markerMatches) {
       throw const FormatException('Moltbook operation marker mismatch');
     }

@@ -66,6 +66,47 @@ void main() {
     expect(requests.last.uri.path, '/api/v1/posts/post-123');
   });
 
+  test('publishes a v3 post without the automatic repository link', () async {
+    final requests = <MoltbookHttpRequest>[];
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send: (request) async {
+          requests.add(request);
+          if (request.method == 'POST') {
+            return _jsonResponse(<String, dynamic>{
+              'success': true,
+              'post': <String, dynamic>{'id': 'post-123'},
+            });
+          }
+          return _postResponse('post-123', content: 'Public fact');
+        },
+      ),
+    );
+    final legacy = _request();
+    final payload =
+        jsonDecode(legacy.canonicalPayloadJson) as Map<String, dynamic>;
+    payload['schema_version'] = 3;
+    payload['content'] = 'Public fact';
+    final request = ExternalEffectAdapterRequest(
+      ownerCapsuleHex: legacy.ownerCapsuleHex,
+      operationId: legacy.operationId,
+      pluginId: legacy.pluginId,
+      providerId: legacy.providerId,
+      accountBindingId: legacy.accountBindingId,
+      effectKind: legacy.effectKind,
+      canonicalPayloadJson: jsonEncode(payload),
+      payloadHashHex: legacy.payloadHashHex,
+    );
+
+    final result = await adapter.deliver(request);
+
+    expect(result.status, ExternalEffectAdapterStatus.succeeded);
+    final body = jsonDecode(utf8.decode(requests.first.bodyBytes!));
+    expect(body['content'], 'Public fact');
+    expect(requests.map((request) => request.method), <String>['POST', 'GET']);
+  });
+
   test(
     'keeps a mismatched immediate post response unresolved without reposting',
     () async {

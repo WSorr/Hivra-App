@@ -1,10 +1,104 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/moltbook_ambassador_models.dart';
 import 'package:hivra_app/models/moltbook_provider_models.dart';
+import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
+import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
 
 void main() {
+  group('Moltbook current post status', () {
+    final operation = _publishedPostOperation();
+
+    testWidgets('history separates receipt from current spam moderation', (
+      tester,
+    ) async {
+      var statusChecks = 0;
+      Future<void> pumpHistory(
+        Map<
+          String,
+          ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})
+        >
+        statuses,
+      ) => tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MoltbookPublicationCard(
+                operations: <ExternalEffectOperation>[operation],
+                busy: false,
+                observedPostStatuses: statuses,
+                onOpenPost: (_) async {},
+                onRecheck: (_) async {},
+                onCheckCurrentPost: (_) async => statusChecks += 1,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await pumpHistory({});
+      expect(
+        find.textContaining('current moderation not checked'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Post m/person-first-runtime'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Check current Moltbook status'));
+      await tester.pump();
+      expect(statusChecks, 1);
+
+      await pumpHistory({
+        operation.operationId: (
+          status: MoltbookObservedPostStatus.spam,
+          checkedAtUtc: DateTime.utc(2026, 9, 27),
+        ),
+      });
+      expect(find.textContaining('marked this post as spam'), findsOneWidget);
+    });
+
+    test('verified post later marked spam is not treated as visible', () {
+      final post = _observedPost(isSpam: true);
+      expect(post.isVerified, isTrue);
+      expect(
+        moltbookObservedPostStatus(operation, post),
+        MoltbookObservedPostStatus.spam,
+      );
+    });
+
+    test('exact visible post is distinguished from unverified post', () {
+      expect(
+        moltbookObservedPostStatus(operation, _observedPost()),
+        MoltbookObservedPostStatus.visible,
+      );
+      expect(
+        moltbookObservedPostStatus(operation, _observedPost(isVerified: false)),
+        MoltbookObservedPostStatus.unverified,
+      );
+    });
+
+    test('another post or changed text cannot inherit the receipt', () {
+      expect(
+        moltbookObservedPostStatus(
+          operation,
+          _observedPost(postId: '1fc5bedf-1efe-4624-9d8b-b7f01872836d'),
+        ),
+        MoltbookObservedPostStatus.mismatch,
+      );
+      expect(
+        moltbookObservedPostStatus(
+          operation,
+          _observedPost(content: 'Different body'),
+        ),
+        MoltbookObservedPostStatus.mismatch,
+      );
+    });
+  });
+
   group('Moltbook AI session status', () {
     test('busy unlock keeps a visible waiting state', () {
       expect(
@@ -360,3 +454,62 @@ void main() {
     );
   });
 }
+
+const _postId = '20e1d392-5f55-4cae-b48a-af3192dc477b';
+
+ExternalEffectOperation _publishedPostOperation() {
+  final payload = jsonEncode(<String, dynamic>{
+    'schema_version': 3,
+    'account_name': 'hivra_ambassador',
+    'submolt_name': 'person-first-runtime',
+    'title': 'Exact title',
+    'content': 'Exact body',
+  });
+  return ExternalEffectOperation(
+    ownerCapsuleHex: List<String>.filled(64, 'a').join(),
+    operationId: 'moltbook-post-test',
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'account-test',
+    effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+    canonicalPayloadJson: payload,
+    payloadHashHex: sha256.convert(utf8.encode(payload)).toString(),
+    state: ExternalEffectState.succeeded,
+    approvalEvidenceHashHex: List<String>.filled(64, 'b').join(),
+    attemptCount: 1,
+    revision: 1,
+    createdAtUtc: '2026-09-26T18:00:00.000Z',
+    updatedAtUtc: '2026-09-26T18:00:01.000Z',
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    requiredAction: null,
+    receipt: ExternalEffectReceipt(
+      operationId: 'moltbook-post-test',
+      providerId: 'moltbook',
+      providerReceiptId: _postId,
+      evidenceHashHex: List<String>.filled(64, 'c').join(),
+      receivedAtUtc: '2026-09-26T18:00:01.000Z',
+    ),
+  );
+}
+
+MoltbookPostObservation _observedPost({
+  String postId = _postId,
+  String content = 'Exact body',
+  bool isVerified = true,
+  bool isSpam = false,
+}) => MoltbookPostObservation(
+  postId: postId,
+  title: 'Exact title',
+  content: content,
+  authorId: 'account-test',
+  authorName: 'hivra_ambassador',
+  submoltName: 'person-first-runtime',
+  score: 0,
+  commentCount: 0,
+  isVerified: isVerified,
+  isSpam: isSpam,
+  isLocked: false,
+  createdAtUtc: '2026-09-26T18:00:00.000Z',
+  updatedAtUtc: '2026-09-26T18:00:01.000Z',
+);

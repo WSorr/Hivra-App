@@ -63,7 +63,7 @@ class MoltbookPublicationService {
             .toString();
     final operationId = 'moltbook-post-$semanticId';
     final marker = MoltbookPublicationContract.operationMarker(operationId);
-    final content = MoltbookPublicationContract.attributedContent(draft.body);
+    final content = MoltbookPublicationContract.publicationContent(draft.body);
     final ownerHex = _effects.activeOwnerCapsuleHex;
     final publicEffectKey = _postEffectKey(
       accountBindingId: binding.accountId,
@@ -73,7 +73,7 @@ class MoltbookPublicationService {
       content: content,
     );
     final canonicalPayload = jsonEncode(<String, dynamic>{
-      'schema_version': 2,
+      'schema_version': 3,
       'account_name': binding.accountName,
       'submolt_name': submolt,
       'title': draft.title,
@@ -586,7 +586,7 @@ class MoltbookPublicationService {
       accountName: accountName,
       submoltName: submoltName.trim(),
       title: draft.title,
-      content: MoltbookPublicationContract.attributedContent(draft.body),
+      content: MoltbookPublicationContract.publicationContent(draft.body),
     );
     final activePosts = operations
         .where(

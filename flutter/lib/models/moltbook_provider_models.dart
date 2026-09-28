@@ -204,6 +204,19 @@ class MoltbookPostObservation {
     required this.updatedAtUtc,
   });
 
+  bool matchesExactPublication({
+    required String postId,
+    required String authorName,
+    required String submoltName,
+    required String title,
+    required String content,
+  }) =>
+      this.postId == postId &&
+      this.authorName == authorName &&
+      this.submoltName == submoltName &&
+      this.title == title &&
+      this.content == content;
+
   void validate() {
     _bounded('conversation.post_id', postId, 1, 256);
     _bounded('conversation.title', title, 1, 300);
