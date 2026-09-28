@@ -337,19 +337,27 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       );
       if (!mounted) return;
       final allOrders = result.orders;
+      var remoteEffectsUnavailable = false;
       if (result.isSuccess &&
-          tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
-            remoteRunnerConfigured: _remoteRunnerConfigured,
-            hasVerifiedRemoteSession: _remoteRunnerSession != null,
-            providerSnapshot: allOrders,
-            managedOrderProvenance: _managedOrderProvenance,
-          )) {
-        final profiles = await _module.remoteRunnerProvisioning.loadProfiles();
-        final session = _remoteRunnerSession;
-        if (profiles.length == 1 && session != null) {
-          await _restoreRemoteCompletedEffects(
-            profile: profiles.single,
-            session: session,
+          _remoteRunnerConfigured &&
+          _remoteRunnerSession != null) {
+        try {
+          final profiles =
+              await _module.remoteRunnerProvisioning.loadProfiles();
+          if (profiles.length == 1) {
+            remoteEffectsUnavailable =
+                !await _restoreRemoteCompletedEffects(
+                  profile: profiles.single,
+                  session: _remoteRunnerSession!,
+                );
+          } else {
+            remoteEffectsUnavailable = true;
+          }
+        } catch (error) {
+          remoteEffectsUnavailable = true;
+          await _module.uiLog.log(
+            'bingx.remote_session.effects_restore.error',
+            'error=$error effect=false',
           );
         }
         if (!mounted) return;
@@ -357,6 +365,7 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
       final reconciliation = await _module.executionUseCase
           .reconcileManagedOrders(credentials: credentials, openOrders: result);
       if (!mounted) return;
+      final previouslyTrackedOrderId = _trackedOrderId;
       _applyManagedOrderReconciliation(reconciliation);
       for (final order in allOrders) {
         if (_managedOrderIds.contains(order.orderId)) {
@@ -373,59 +382,28 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
         if (result.isSuccess) {
           _openOrders = visibleOrders;
         }
-        if (result.isSuccess && visibleManagedOrders.isNotEmpty) {
-        }
       });
-      final trackedOrderId = _trackedOrderId;
-      if (trackedOrderId != null && trackedOrderId.isNotEmpty) {
-        if (result.isSuccess) {
-          final trackedStillOpen = visibleOrders.any(
-            (order) => order.orderId == trackedOrderId,
-          );
-          await _module.uiLog.log(
-            'bingx.exchange.tracking.check',
-            'symbol=${result.symbol} orderId=$trackedOrderId '
-                'open=${trackedStillOpen ? "yes" : "no"} '
-                'managedCount=${visibleManagedOrders.length} '
-                'totalCount=${visibleOrders.length}',
-          );
-          if (!trackedStillOpen) {
-            _managedOrderIds.remove(trackedOrderId);
-            _managedOrderSymbols.remove(trackedOrderId);
-            _managedOrderProvenance.remove(trackedOrderId);
-            final remainingManagedOrders = visibleOrders
-                .where((order) => _managedOrderIds.contains(order.orderId))
-                .toList(growable: false);
-            if (remainingManagedOrders.isNotEmpty) {
-              final nextTrackedOrderId = remainingManagedOrders.first.orderId;
-              _trackedOrderId = nextTrackedOrderId;
-              await _persistOpenOrdersTrackingState(
-                source: 'tracked_order_closed_rotate',
-              );
-              await _module.uiLog.log(
-                'bingx.exchange.tracking.rotate',
-                'symbol=${result.symbol} previous=$trackedOrderId next=$nextTrackedOrderId '
-                    'managedCount=${remainingManagedOrders.length}',
-              );
-            } else {
-              _stopOpenOrdersAutoTracking(reason: 'order_closed');
-              if (!silent) {
-                await _showSnack('Tracked order is no longer open');
-              }
-            }
-          }
+      final reconciledState = reconciliation.state;
+      if (_isTrackingOpenOrders && reconciledState != null) {
+        final resumeSymbol = tradingReconciliationResumeSymbol(reconciledState);
+        if (resumeSymbol == null) {
+          _stopOpenOrdersAutoTracking(reason: 'reconciled_terminal');
         } else {
-          await _module.uiLog.log(
-            'bingx.exchange.tracking.skip',
-            'symbol=${result.symbol} orderId=$trackedOrderId '
-                'reason=open_orders_failed code=${result.exchangeCode} '
-                'http=${result.httpStatusCode}',
-          );
+          _trackedOrdersSymbol = resumeSymbol;
+          if (previouslyTrackedOrderId != _trackedOrderId) {
+            await _module.uiLog.log(
+              'bingx.exchange.tracking.rotate',
+              'symbol=$resumeSymbol previous=${previouslyTrackedOrderId ?? "-"} '
+                  'next=${_trackedOrderId ?? "-"} source=reconciled',
+            );
+          }
         }
       }
       if (!silent) {
         await _showSnack(
-          result.isSuccess
+          remoteEffectsUnavailable
+              ? 'VPS results could not be verified. Retry the order check.'
+              : result.isSuccess
               ? 'Open orders: ${visibleOrders.length} · '
                   'drone: ${visibleManagedOrders.length}'
               : 'Open orders failed: ${result.exchangeCode}',
@@ -485,5 +463,4 @@ extension _TradingDroneExecution on _TradingDroneScreenState {
     if (normalized.isEmpty) return '-';
     return normalized.length <= 12 ? normalized : normalized.substring(0, 12);
   }
-
 }

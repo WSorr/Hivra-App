@@ -483,6 +483,7 @@ Exact line counts are evaluated live by the ownership gate and are not persisted
 - `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart`
 - `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart`
 - `flutter/lib/services/bingx_futures_exchange_service.dart`
+- `flutter/lib/services/bingx_futures_feature_extractor_service.dart`
 - `flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart`
 - `flutter/lib/services/bingx_futures_remote_runner_provisioning_service.dart`
 - `flutter/lib/services/bingx_futures_zone_decision_service.dart`

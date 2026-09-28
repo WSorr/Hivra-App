@@ -257,7 +257,7 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
             profile: profile,
             sessionOperationId: session.operationId,
           );
-      if (operations.isEmpty) return false;
+      if (operations.isEmpty) return true;
       final retained = await _module.executionUseCase
           .retainRemoteCompletedEffects(
             session: session,
@@ -529,77 +529,56 @@ extension _TradingDroneRemoteSession on _TradingDroneScreenState {
       1,
       BingxFuturesRemoteMandateAdmission.maxSessionCycles,
     );
-    var selectedStrategyVersion = bingxLiquidityStrategyVersion;
+    const selectedStrategyVersion = bingxPrebreachLineStrategyVersion;
     final approved = await showDialog<bool>(
       context: context,
       builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Authorize VPS trading session?'),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        DropdownButtonFormField<String>(
-                          initialValue: selectedStrategyVersion,
-                          decoration: const InputDecoration(
-                            labelText: 'Entry strategy',
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: bingxLiquidityStrategyVersion,
-                              child: Text('4h zones / 15m checks'),
-                            ),
-                            DropdownMenuItem(
-                              value: bingxHourlyLiquidityStrategyVersion,
-                              child: Text('1h zones / 5m checks'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setDialogState(
-                                () => selectedStrategyVersion = value,
-                              );
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Symbol: ${activeMandate.symbol}\n'
-                          'Mode: ${activeMandate.testOrder ? "test" : "live"}\n'
-                          'Check interval: 5 minutes\n'
-                          'First check: ${startsAtUtc.toIso8601String()}\n'
-                          'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
-                          'Maximum checks: $maxCycles\n'
-                          'Maximum entry attempts: ${activeMandate.maxEffects}\n'
-                          'After that limit: continue checks and permitted cancellation '
-                          'of this session\'s pending orders, without new entries.\n'
-                          'Exchange leverage: long ${leverage.longLeverage}x, '
-                          'short ${leverage.shortLeverage}x\n'
-                          'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional\n'
-                          'Stop: entry structure / ATR; wider stops reduce order size.\n'
-                          'Authorized reads: balance, positions, realized PnL, and '
-                          '${activeMandate.symbol} leverage and margin mode.\n'
-                          'Expires: ${activeMandate.expiresAtUtc}\n\n'
-                          'The VPS may evaluate only this signed strategy and mandate. '
-                          'Every exchange attempt remains bounded by the existing effect journal.',
-                        ),
-                      ],
-                    ),
+          (context) => AlertDialog(
+            title: const Text('Authorize VPS trading session?'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Entry: pre-breach liquidity lines on 1D, 4H, 1H, '
+                    '30M, 15M, and 5M. Resting limit at the line; '
+                    'buyside short, sellside long.',
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Authorize session'),
-                    ),
-                  ],
-                ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Symbol: ${activeMandate.symbol}\n'
+                    'Mode: ${activeMandate.testOrder ? "test" : "live"}\n'
+                    'Check interval: 5 minutes\n'
+                    'First check: ${startsAtUtc.toIso8601String()}\n'
+                    'Activate before: ${firstCycleDeadlineUtc.toIso8601String()}\n'
+                    'Maximum checks: $maxCycles\n'
+                    'Maximum entry attempts: ${activeMandate.maxEffects}\n'
+                    'After that limit: continue checks and permitted cancellation '
+                    'of this session\'s pending orders, without new entries.\n'
+                    'Exchange leverage: long ${leverage.longLeverage}x, '
+                    'short ${leverage.shortLeverage}x\n'
+                    'Loss budget: ${_stopLossPercent.toStringAsFixed(1)}% of maximum notional\n'
+                    'Stop: entry structure / ATR; wider stops reduce order size.\n'
+                    'Authorized reads: balance, positions, realized PnL, and '
+                    '${activeMandate.symbol} leverage and margin mode.\n'
+                    'Expires: ${activeMandate.expiresAtUtc}\n\n'
+                    'The VPS may evaluate only this signed strategy and mandate. '
+                    'Every exchange attempt remains bounded by the existing effect journal.',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Authorize session'),
+              ),
+            ],
           ),
     );
     if (approved != true) return;
@@ -1366,7 +1345,9 @@ String tradingRemoteRunnerSessionDetailsLabel(
   final policy = session.sessionPolicy!;
   final intervalSeconds = policy['interval_seconds'] as int;
   final entryStrategy =
-      strategy['strategy_version'] == bingxHourlyLiquidityStrategyVersion
+      strategy['strategy_version'] == bingxPrebreachLineStrategyVersion
+          ? '1D/4H/1H/30M/15M/5M pre-breach lines'
+          : strategy['strategy_version'] == bingxHourlyLiquidityStrategyVersion
           ? '1h zones / 5m checks'
           : '4h zones / 15m checks';
   return <String>[

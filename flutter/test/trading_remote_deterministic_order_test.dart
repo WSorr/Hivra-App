@@ -531,7 +531,7 @@ void main() {
 
   for (final blockedProposal in [false, true]) {
     test(
-      'active order is retained with blocked proposal=$blockedProposal',
+      'active order ignores new-entry reads with blocked proposal=$blockedProposal',
       () async {
         final fixture = await _fixture(
           sessionCycleIndex: 0,
@@ -562,9 +562,18 @@ void main() {
         var deletes = 0;
         var orderIsActive = false;
         var executedQuantity = '0';
+        var rejectNewEntryReads = false;
         String? activeClientOrderId;
         Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
           if (request.method == 'DELETE') deletes++;
+          if (rejectNewEntryReads &&
+              const {
+                '/openApi/swap/v3/user/balance',
+                '/openApi/swap/v2/quote/contracts',
+                '/openApi/swap/v2/user/income',
+              }.contains(request.uri.path)) {
+            throw StateError('managed order reached new-entry reads');
+          }
           if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
             return BingxHttpResponse(
               statusCode: 200,
@@ -613,6 +622,8 @@ void main() {
             nowUtc: () => fixture.now,
           ),
         );
+        rejectNewEntryReads = true;
+        final managedStages = <String>[];
         final second = jsonDecode(
           await runOneDeterministicOrder(
             options: <String, String>{
@@ -625,6 +636,7 @@ void main() {
             runnerSeedBytes: fixture.runnerSeed,
             executeExactOrder: runAuthorizedExactOrder,
             cancelManagedOrder: runAuthorizedManagedOrderCancellation,
+            reportStage: managedStages.add,
             requestSender: sender,
             nowUtc: () => fixture.now,
           ),
@@ -633,6 +645,12 @@ void main() {
         expect(first['state'], 'succeeded');
         expect(second['state'], 'blocked');
         expect(second['reason_code'], 'managed_order_active');
+        expect(managedStages, [
+          'admission',
+          'credentials',
+          'open_orders',
+          'managed_order',
+        ]);
         expect(posts, 1);
         expect(deletes, 0);
         expect(orderIsActive, isTrue);

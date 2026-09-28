@@ -36,6 +36,26 @@ void main() {
       expect(result.canonicalJson, isNotNull);
     });
     test(
+      'signed pre-breach line uses the existing exact-order owner',
+      () async {
+        final fixture = await _fixture(
+          strategyVersion: bingxPrebreachLineStrategyVersion,
+        );
+        final result = await _compose(
+          fixture,
+          expectedStrategyVersion: bingxPrebreachLineStrategyVersion,
+        );
+        expect(result.status, BingxFuturesRemoteOrderCandidateStatus.ready);
+        final candidate =
+            jsonDecode(result.canonicalJson!) as Map<String, dynamic>;
+        expect(candidate['limit_price_decimal'], '100.5');
+        expect(
+          result.toExactOrderIntent(nowUtc: fixture.now)?.timeInForce,
+          'PostOnly',
+        );
+      },
+    );
+    test(
       'coarse price grid cannot move entry onto the zone boundary',
       () async {
         final fixture = await _fixture();
@@ -590,7 +610,9 @@ Future<_CandidateFixture> _fixture({
       'target_retest_pct': 0.01,
       'needs_farther_retest': false,
       'anchor_source':
-          strategyVersion == bingxHourlyLiquidityStrategyVersion
+          strategyVersion == bingxPrebreachLineStrategyVersion
+              ? 'mtf_active_liquidity_line'
+              : strategyVersion == bingxHourlyLiquidityStrategyVersion
               ? '1h_active_liquidity_zone'
               : '4h_active_liquidity_zone',
       'anchor_executable': true,
@@ -599,7 +621,9 @@ Future<_CandidateFixture> _fixture({
       'parent': {
         'strategy_version': strategyVersion,
         'timeframe':
-            strategyVersion == bingxHourlyLiquidityStrategyVersion
+            strategyVersion == bingxPrebreachLineStrategyVersion
+                ? '15m'
+                : strategyVersion == bingxHourlyLiquidityStrategyVersion
                 ? '1h'
                 : '4h',
         'side': 'buy',

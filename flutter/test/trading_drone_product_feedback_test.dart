@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
-import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
 import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
 import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
@@ -116,81 +115,6 @@ void main() {
     expect(
       nextPersisted.managedOrderProvenance['ach-order']!.lifecycleDiagnostic,
       'remote_effect_receipt_imported',
-    );
-  });
-
-  test('unknown Runner order restores receipt before reconciliation', () {
-    const remoteOrder = BingxFuturesOpenOrder(
-      orderId: 'remote-order',
-      clientOrderId: 'hivra-liquidity-event',
-      symbol: 'DOGE-USDT',
-      side: 'SELL',
-      positionSide: 'SHORT',
-      orderType: 'TRIGGER_LIMIT',
-      status: 'NEW',
-      priceDecimal: '0.09159',
-      triggerPriceDecimal: '0.09151',
-      quantityDecimal: '946',
-      executedQuantityDecimal: '0',
-      createdAtMs: 1,
-    );
-
-    expect(
-      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
-        remoteRunnerConfigured: true,
-        hasVerifiedRemoteSession: true,
-        providerSnapshot: const <BingxFuturesOpenOrder>[remoteOrder],
-        managedOrderProvenance: const <String, BingxManagedOrderProvenance>{},
-      ),
-      isTrue,
-    );
-    expect(
-      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
-        remoteRunnerConfigured: true,
-        hasVerifiedRemoteSession: true,
-        providerSnapshot: const <BingxFuturesOpenOrder>[remoteOrder],
-        managedOrderProvenance: <String, BingxManagedOrderProvenance>{
-          'remote-order': _managedOrderProvenance(
-            orderId: 'remote-order',
-            symbol: 'DOGE-USDT',
-            diagnostic: 'remote_effect_receipt_imported',
-          ),
-        },
-      ),
-      isFalse,
-    );
-    expect(
-      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
-        remoteRunnerConfigured: true,
-        hasVerifiedRemoteSession: true,
-        providerSnapshot: const <BingxFuturesOpenOrder>[
-          BingxFuturesOpenOrder(
-            orderId: 'manual-order',
-            clientOrderId: 'manual-order',
-            symbol: 'DOGE-USDT',
-            side: 'SELL',
-            positionSide: 'SHORT',
-            orderType: 'LIMIT',
-            status: 'NEW',
-            priceDecimal: '0.09159',
-            triggerPriceDecimal: null,
-            quantityDecimal: '946',
-            executedQuantityDecimal: '0',
-            createdAtMs: 2,
-          ),
-        ],
-        managedOrderProvenance: const <String, BingxManagedOrderProvenance>{},
-      ),
-      isFalse,
-    );
-    expect(
-      tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation(
-        remoteRunnerConfigured: false,
-        hasVerifiedRemoteSession: true,
-        providerSnapshot: const <BingxFuturesOpenOrder>[remoteOrder],
-        managedOrderProvenance: const <String, BingxManagedOrderProvenance>{},
-      ),
-      isFalse,
     );
   });
 
@@ -1834,6 +1758,39 @@ void main() {
     );
 
     expect(tradingReconciliationResumeSymbol(state), isNull);
+  });
+
+  test('filled order keeps polling until its position result is proven', () {
+    final filled = _managedOrderProvenance(
+      orderId: 'filled-order',
+      symbol: 'MINA-USDT',
+    ).withLifecycle(
+      status: BingxManagedOrderLifecycleStatus.filled,
+      evidenceAtUtc: '2026-09-26T12:00:00.000Z',
+    );
+    BingxFuturesOrderTrackingState stateFor(
+      BingxManagedOrderProvenance record,
+    ) => BingxFuturesOrderTrackingState(
+      trackedSymbol: null,
+      trackedOrderId: null,
+      managedOrderIds: const <String>[],
+      managedOrderSymbols: const <String, String>{},
+      managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+        record.orderId: record,
+      },
+      stopLossPercent: null,
+      takeProfitRiskReward: null,
+    );
+
+    expect(tradingReconciliationResumeSymbol(stateFor(filled)), 'MINA-USDT');
+    final closed = filled.withPositionLifecycle(
+      status: BingxManagedPositionLifecycleStatus.closed,
+      evidenceAtUtc: '2026-09-26T13:00:00.000Z',
+      diagnostic: null,
+      netPnlQuoteDecimal: '-0.06',
+      closedAtUtc: '2026-09-26T13:00:00.000Z',
+    );
+    expect(tradingReconciliationResumeSymbol(stateFor(closed)), isNull);
   });
 }
 

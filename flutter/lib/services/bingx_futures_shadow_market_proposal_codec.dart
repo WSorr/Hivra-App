@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import '../models/bingx_futures_market_snapshot_models.dart';
+import 'bingx_futures_market_snapshot_service.dart';
 
 class BingxFuturesShadowMarketProposalCodec {
   const BingxFuturesShadowMarketProposalCodec();
@@ -131,15 +132,25 @@ class BingxFuturesShadowMarketProposalCodec {
     final hourly =
         parent is Map<String, dynamic> &&
         parent['strategy_version'] == bingxHourlyLiquidityStrategyVersion;
+    final prebreach =
+        parent is Map<String, dynamic> &&
+        parent['strategy_version'] == bingxPrebreachLineStrategyVersion;
     if (parent is! Map<String, dynamic> ||
         parent['strategy_version'] !=
-            (hourly
+            (prebreach
+                ? bingxPrebreachLineStrategyVersion
+                : hourly
                 ? bingxHourlyLiquidityStrategyVersion
                 : bingxLiquidityStrategyVersion) ||
-        parent['timeframe'] != (hourly ? '1h' : '4h') ||
+        (prebreach
+            ? !BingxFuturesMarketSnapshotService.prebreachLineTimeframes
+                .contains(parent['timeframe'])
+            : parent['timeframe'] != (hourly ? '1h' : '4h')) ||
         parent['side'] != side ||
         zone['anchor_source'] !=
-            (hourly
+            (prebreach
+                ? 'mtf_active_liquidity_line'
+                : hourly
                 ? '1h_active_liquidity_zone'
                 : '4h_active_liquidity_zone') ||
         zone['anchor_lifecycle'] != 'active' ||

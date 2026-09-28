@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-09-26
+Status date: 2026-09-28
 
 ## Current State
 
@@ -55,9 +55,10 @@ outcome they attest.
 
 Deliver one complete no-terminal journey: configure a VPS, authorize one
 bounded strategy, run it with the application closed, and inspect the actual
-result after reconnect. The current candidate signs a choice between 4h/15m
-and 1h/5m active liquidity zones. Use one fixed mode for product acceptance;
-do not add filters or tune both modes while the order lifecycle is incomplete.
+result after reconnect. The current source candidate signs one six-timeframe
+pre-breach liquidity-line mode; previously signed 4h/15m and 1h/5m zone
+sessions retain their original semantics. Prove this fixed mode end to end
+before further strategy tuning.
 The strategy contract lives in the Trading specification, not this status file.
 
 ```text

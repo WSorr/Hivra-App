@@ -2165,7 +2165,8 @@ else:
     if "account_read_scope" in policy and policy["account_read_scope"] != expected_exposure_scope:
         raise SystemExit("deterministic account-read scope mismatch")
     if "strategy_version" in policy and policy["strategy_version"] not in (
-        "4h-active-liquidity-zone-v4", "1h-active-liquidity-zone-5m-v1"
+        "4h-active-liquidity-zone-v4", "1h-active-liquidity-zone-5m-v1",
+        "mtf-prebreach-liquidity-line-v1"
     ):
         raise SystemExit("unsupported deterministic strategy version")
     policy_text = re.compile(r"[A-Za-z0-9._:-]{1,128}")

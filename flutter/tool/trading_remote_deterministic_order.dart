@@ -201,21 +201,15 @@ Future<String> runOneDeterministicOrder({
     requestSender: requestSender,
     clockMs: clockMs,
   );
-  final fileStore = CapsuleFileStore(
-    dirs: UserVisibleDataDirectoryService(homeOverride: stateHome),
-  );
-  final riskHistory = BingxFuturesRiskHistoryService(
-    readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
-    fileStore: fileStore,
-  );
-  final riskObservedAt = now;
   if (admission.isLegacyDeterministicSession) {
     return _blocked(cycleOperationId, 'session_contract_upgrade_required');
   }
   if (admission.strategyPolicy?['strategy_version'] !=
           bingxLiquidityStrategyVersion &&
       admission.strategyPolicy?['strategy_version'] !=
-          bingxHourlyLiquidityStrategyVersion) {
+          bingxHourlyLiquidityStrategyVersion &&
+      admission.strategyPolicy?['strategy_version'] !=
+          bingxPrebreachLineStrategyVersion) {
     return _blocked(
       cycleOperationId,
       'strategy_authorization_upgrade_required',
@@ -245,77 +239,6 @@ Future<String> runOneDeterministicOrder({
         )
         .toList(growable: false);
   }
-  final policy = admission.strategyPolicy!;
-  final strategyVersion =
-      policy['strategy_version'] as String? ?? bingxLiquidityStrategyVersion;
-  final evidenceBytes = await _readBoundedFile(
-    _required(options, 'market-evidence-file'),
-    _maxEvidenceBytes,
-  );
-  final candidateService = BingxFuturesRemoteOrderCandidateService(
-    sizing: BingxFuturesOrderSizingService(exchange: exchange),
-  );
-  if (activeOrders.isEmpty) {
-    reportStage?.call('candidate');
-    final marketBlocker = await candidateService.preflightMarketEvidence(
-      untrustedMarketEvidenceBytes: evidenceBytes,
-      trustedRunnerKey: runnerPublicKey,
-      lastAcceptedSequence: _requiredInt(options, 'last-accepted-sequence'),
-      lastAcceptedEvidenceHashHex: _requiredHex64(
-        options,
-        'last-accepted-evidence-hash',
-      ),
-      expectedRunnerBuildId: policy['runner_build_id'] as String,
-      expectedPluginId: policy['plugin_id'] as String,
-      expectedPluginVersion: policy['plugin_version'] as String,
-      expectedPackageDigestHex: policy['package_digest_hex'] as String,
-      expectedHostAbi: policy['host_abi'] as String,
-      expectedSymbol: admission.mandate.symbol,
-      nowUtc: now,
-      expectedStrategyVersion: strategyVersion,
-    );
-    if (marketBlocker != null) {
-      return _blocked(cycleOperationId, marketBlocker);
-    }
-  }
-  reportStage?.call('risk');
-  final risk = await const BingxFuturesExchangeRiskInputService().read(
-    exposureSymbol: admission.mandate.symbol,
-    exchangeService: exchange,
-    riskHistoryService: riskHistory,
-    credentials: credentials,
-    nowUtc: riskObservedAt,
-  );
-  reportStage?.call('rules');
-  final rulesResult = await exchange.getPerpetualContractRules(
-    symbol: admission.mandate.symbol,
-  );
-  if (!rulesResult.isSuccess || rulesResult.rules == null) {
-    return _blocked(cycleOperationId, 'contract_rules_unavailable');
-  }
-  reportStage?.call('candidate');
-  final candidate = await candidateService.compose(
-    untrustedMarketEvidenceBytes: evidenceBytes,
-    trustedRunnerKey: runnerPublicKey,
-    lastAcceptedSequence: _requiredInt(options, 'last-accepted-sequence'),
-    lastAcceptedEvidenceHashHex: _requiredHex64(
-      options,
-      'last-accepted-evidence-hash',
-    ),
-    expectedRunnerBuildId: policy['runner_build_id'] as String,
-    expectedPluginId: policy['plugin_id'] as String,
-    expectedPluginVersion: policy['plugin_version'] as String,
-    expectedPackageDigestHex: policy['package_digest_hex'] as String,
-    expectedHostAbi: policy['host_abi'] as String,
-    mandate: admission.mandate,
-    accountRisk: risk,
-    accountRiskObservedAtUtc: riskObservedAt,
-    contractRules: rulesResult.rules!,
-    nowUtc: now,
-    stopLossPercent: policy['stop_loss_percent'] as double,
-    minimumRiskReward: policy['minimum_risk_reward'] as double,
-    expectedStrategyVersion: strategyVersion,
-  );
   if (activeOrders.isNotEmpty) {
     reportStage?.call('managed_order');
     final ownership = await _managedActiveOrder(
@@ -366,6 +289,81 @@ Future<String> runOneDeterministicOrder({
       clockMs: clockMs,
     );
   }
+  final policy = admission.strategyPolicy!;
+  final strategyVersion =
+      policy['strategy_version'] as String? ?? bingxLiquidityStrategyVersion;
+  final evidenceBytes = await _readBoundedFile(
+    _required(options, 'market-evidence-file'),
+    _maxEvidenceBytes,
+  );
+  final candidateService = BingxFuturesRemoteOrderCandidateService(
+    sizing: BingxFuturesOrderSizingService(exchange: exchange),
+  );
+  reportStage?.call('candidate');
+  final marketBlocker = await candidateService.preflightMarketEvidence(
+    untrustedMarketEvidenceBytes: evidenceBytes,
+    trustedRunnerKey: runnerPublicKey,
+    lastAcceptedSequence: _requiredInt(options, 'last-accepted-sequence'),
+    lastAcceptedEvidenceHashHex: _requiredHex64(
+      options,
+      'last-accepted-evidence-hash',
+    ),
+    expectedRunnerBuildId: policy['runner_build_id'] as String,
+    expectedPluginId: policy['plugin_id'] as String,
+    expectedPluginVersion: policy['plugin_version'] as String,
+    expectedPackageDigestHex: policy['package_digest_hex'] as String,
+    expectedHostAbi: policy['host_abi'] as String,
+    expectedSymbol: admission.mandate.symbol,
+    nowUtc: now,
+    expectedStrategyVersion: strategyVersion,
+  );
+  if (marketBlocker != null) {
+    return _blocked(cycleOperationId, marketBlocker);
+  }
+  final riskHistory = BingxFuturesRiskHistoryService(
+    readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
+    fileStore: CapsuleFileStore(
+      dirs: UserVisibleDataDirectoryService(homeOverride: stateHome),
+    ),
+  );
+  reportStage?.call('risk');
+  final risk = await const BingxFuturesExchangeRiskInputService().read(
+    exposureSymbol: admission.mandate.symbol,
+    exchangeService: exchange,
+    riskHistoryService: riskHistory,
+    credentials: credentials,
+    nowUtc: now,
+  );
+  reportStage?.call('rules');
+  final rulesResult = await exchange.getPerpetualContractRules(
+    symbol: admission.mandate.symbol,
+  );
+  if (!rulesResult.isSuccess || rulesResult.rules == null) {
+    return _blocked(cycleOperationId, 'contract_rules_unavailable');
+  }
+  reportStage?.call('candidate');
+  final candidate = await candidateService.compose(
+    untrustedMarketEvidenceBytes: evidenceBytes,
+    trustedRunnerKey: runnerPublicKey,
+    lastAcceptedSequence: _requiredInt(options, 'last-accepted-sequence'),
+    lastAcceptedEvidenceHashHex: _requiredHex64(
+      options,
+      'last-accepted-evidence-hash',
+    ),
+    expectedRunnerBuildId: policy['runner_build_id'] as String,
+    expectedPluginId: policy['plugin_id'] as String,
+    expectedPluginVersion: policy['plugin_version'] as String,
+    expectedPackageDigestHex: policy['package_digest_hex'] as String,
+    expectedHostAbi: policy['host_abi'] as String,
+    mandate: admission.mandate,
+    accountRisk: risk,
+    accountRiskObservedAtUtc: now,
+    contractRules: rulesResult.rules!,
+    nowUtc: now,
+    stopLossPercent: policy['stop_loss_percent'] as double,
+    minimumRiskReward: policy['minimum_risk_reward'] as double,
+    expectedStrategyVersion: strategyVersion,
+  );
   if (candidate.status != BingxFuturesRemoteOrderCandidateStatus.ready) {
     return _blocked(cycleOperationId, candidate.reasonCode);
   }
@@ -451,13 +449,20 @@ Future<String> _revalidateManagedAnchor({
           exchange: exchange,
           symbol: admission.mandate.symbol,
           timeframe:
-              zone['anchor_source'] == '1h_active_liquidity_zone'
+              zone['anchor_source'] == '1h_active_liquidity_zone' ||
+                      zone['anchor_source'] == 'mtf_active_liquidity_line'
                   ? '5m'
                   : '15m',
           fromUtc: DateTime.parse(
-            ((zone['parent'] as Map<String, dynamic>?)?['confirmed_at_utc'] ??
-                        (zone['parent']
-                            as Map<String, dynamic>?)?['anchor_at_utc'])
+            (zone['anchor_source'] == 'mtf_active_liquidity_line'
+                        ? zone['liquidity_event_at_utc']
+                        : (zone['parent']
+                                as Map<
+                                  String,
+                                  dynamic
+                                >?)?['confirmed_at_utc'] ??
+                            (zone['parent']
+                                as Map<String, dynamic>?)?['anchor_at_utc'])
                     as String? ??
                 zone['liquidity_event_at_utc'] as String,
           ),

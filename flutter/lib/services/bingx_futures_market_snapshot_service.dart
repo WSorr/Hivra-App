@@ -9,6 +9,7 @@ class BingxFuturesMarketSnapshotService {
     '1m',
     '5m',
     '15m',
+    '30m',
     '1h',
     '4h',
     '1d',
@@ -24,23 +25,37 @@ class BingxFuturesMarketSnapshotService {
     '1w',
   ];
 
+  static const List<String> prebreachLineTimeframes = <String>[
+    '5m',
+    '15m',
+    '30m',
+    '1h',
+    '4h',
+    '1d',
+  ];
+
   const BingxFuturesMarketSnapshotService();
 
   BingxFuturesMarketSnapshotDigest build(
-      BingxFuturesMarketSnapshotInput input, {
-      String strategyVersion = bingxLiquidityStrategyVersion}) {
+    BingxFuturesMarketSnapshotInput input, {
+    String strategyVersion = bingxLiquidityStrategyVersion,
+  }) {
     if (strategyVersion != bingxLiquidityStrategyVersion &&
-        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+        strategyVersion != bingxHourlyLiquidityStrategyVersion &&
+        strategyVersion != bingxPrebreachLineStrategyVersion) {
       throw const FormatException('unsupported liquidity strategy');
     }
     final instrument = _normalizeInstrument(input.instrument);
     final prices = _normalizePrices(input.prices);
     final candles = _normalizeCandles(input.candles);
     _ensureRequiredTimeframesPresent(
-        candles,
-        strategyVersion == bingxHourlyLiquidityStrategyVersion
-            ? const <String>['5m', '15m', '1h']
-            : requiredTimeframes);
+      candles,
+      strategyVersion == bingxHourlyLiquidityStrategyVersion
+          ? const <String>['5m', '15m', '1h']
+          : strategyVersion == bingxPrebreachLineStrategyVersion
+          ? prebreachLineTimeframes
+          : requiredTimeframes,
+    );
     final trades = _normalizeTrades(input.trades);
     final openInterest = _normalizeOpenInterest(input.openInterest);
     final funding = _normalizeFunding(input.funding);
@@ -55,10 +70,12 @@ class BingxFuturesMarketSnapshotService {
         'liquidity_levels must include external and internal entries',
       );
     }
-    final liquidationFeedAvailable =
-        liquidity.any((item) => item['kind'] == 'liquidation');
-    final sessionEvidenceComplete =
-        sessions.every((item) => item['coverage_complete'] == true);
+    final liquidationFeedAvailable = liquidity.any(
+      (item) => item['kind'] == 'liquidation',
+    );
+    final sessionEvidenceComplete = sessions.every(
+      (item) => item['coverage_complete'] == true,
+    );
 
     final snapshot = <String, dynamic>{
       'schema_version': 1,
@@ -110,18 +127,24 @@ class BingxFuturesMarketSnapshotService {
       'tick_size_decimal': _normalizeDecimal(value.tickSizeDecimal, scale: 8),
       'qty_step_decimal': _normalizeDecimal(value.qtyStepDecimal, scale: 8),
       'min_qty_decimal': _normalizeDecimal(value.minQtyDecimal, scale: 8),
-      'max_leverage_decimal':
-          _normalizeDecimal(value.maxLeverageDecimal, scale: 8),
+      'max_leverage_decimal': _normalizeDecimal(
+        value.maxLeverageDecimal,
+        scale: 8,
+      ),
     };
   }
 
   Map<String, dynamic> _normalizePrices(BingxFuturesPriceSnapshot value) {
     return <String, dynamic>{
-      'last_trade_price_decimal':
-          _normalizeDecimal(value.lastTradePriceDecimal, scale: 8),
+      'last_trade_price_decimal': _normalizeDecimal(
+        value.lastTradePriceDecimal,
+        scale: 8,
+      ),
       'mark_price_decimal': _normalizeDecimal(value.markPriceDecimal, scale: 8),
-      'index_price_decimal':
-          _normalizeDecimal(value.indexPriceDecimal, scale: 8),
+      'index_price_decimal': _normalizeDecimal(
+        value.indexPriceDecimal,
+        scale: 8,
+      ),
     };
   }
 
@@ -130,33 +153,41 @@ class BingxFuturesMarketSnapshotService {
     if (closedCandles.isEmpty) {
       throw const FormatException('candles must contain closed entries');
     }
-    final rows = closedCandles.map((item) {
-      final timeframe = _normalizeTimeframe(item.timeframe);
-      final openTimeUtc = _normalizeUtcInstant(item.openTimeUtc);
-      final closeTimeUtc = _normalizeUtcInstant(item.closeTimeUtc);
-      return <String, dynamic>{
-        'timeframe': timeframe,
-        'open_time_utc': openTimeUtc,
-        'close_time_utc': closeTimeUtc,
-        'open_decimal': _normalizeDecimal(item.openDecimal, scale: 8),
-        'high_decimal': _normalizeDecimal(item.highDecimal, scale: 8),
-        'low_decimal': _normalizeDecimal(item.lowDecimal, scale: 8),
-        'close_decimal': _normalizeDecimal(item.closeDecimal, scale: 8),
-        'volume_base_decimal':
-            _normalizeDecimal(item.volumeBaseDecimal, scale: 8),
-        'volume_quote_decimal':
-            _normalizeDecimal(item.volumeQuoteDecimal, scale: 8),
-      };
-    }).toList();
+    final rows =
+        closedCandles.map((item) {
+          final timeframe = _normalizeTimeframe(item.timeframe);
+          final openTimeUtc = _normalizeUtcInstant(item.openTimeUtc);
+          final closeTimeUtc = _normalizeUtcInstant(item.closeTimeUtc);
+          return <String, dynamic>{
+            'timeframe': timeframe,
+            'open_time_utc': openTimeUtc,
+            'close_time_utc': closeTimeUtc,
+            'open_decimal': _normalizeDecimal(item.openDecimal, scale: 8),
+            'high_decimal': _normalizeDecimal(item.highDecimal, scale: 8),
+            'low_decimal': _normalizeDecimal(item.lowDecimal, scale: 8),
+            'close_decimal': _normalizeDecimal(item.closeDecimal, scale: 8),
+            'volume_base_decimal': _normalizeDecimal(
+              item.volumeBaseDecimal,
+              scale: 8,
+            ),
+            'volume_quote_decimal': _normalizeDecimal(
+              item.volumeQuoteDecimal,
+              scale: 8,
+            ),
+          };
+        }).toList();
     rows.sort(_compareCandles);
     return rows;
   }
 
-  void _ensureRequiredTimeframesPresent(List<Map<String, dynamic>> candles,
-      List<String> requiredCandleTimeframes) {
+  void _ensureRequiredTimeframesPresent(
+    List<Map<String, dynamic>> candles,
+    List<String> requiredCandleTimeframes,
+  ) {
     final seen = candles.map((item) => item['timeframe'] as String).toSet();
     final missing =
-        requiredCandleTimeframes.where((tf) => !seen.contains(tf)).toList()..sort();
+        requiredCandleTimeframes.where((tf) => !seen.contains(tf)).toList()
+          ..sort();
     if (missing.isNotEmpty) {
       throw FormatException(
         'missing required candle timeframes: ${missing.join(", ")}',
@@ -168,16 +199,20 @@ class BingxFuturesMarketSnapshotService {
     if (value.isEmpty) {
       throw const FormatException('trades are required');
     }
-    final rows = value.map((item) {
-      final side = _normalizeTradeSide(item.side);
-      return <String, dynamic>{
-        'trade_id': item.tradeId.trim().isEmpty ? '-' : item.tradeId.trim(),
-        'timestamp_utc': _normalizeUtcInstant(item.timestampUtc),
-        'side': side,
-        'price_decimal': _normalizeDecimal(item.priceDecimal, scale: 8),
-        'quantity_decimal': _normalizeDecimal(item.quantityDecimal, scale: 8),
-      };
-    }).toList();
+    final rows =
+        value.map((item) {
+          final side = _normalizeTradeSide(item.side);
+          return <String, dynamic>{
+            'trade_id': item.tradeId.trim().isEmpty ? '-' : item.tradeId.trim(),
+            'timestamp_utc': _normalizeUtcInstant(item.timestampUtc),
+            'side': side,
+            'price_decimal': _normalizeDecimal(item.priceDecimal, scale: 8),
+            'quantity_decimal': _normalizeDecimal(
+              item.quantityDecimal,
+              scale: 8,
+            ),
+          };
+        }).toList();
     rows.sort(_compareTrades);
     return rows;
   }
@@ -188,27 +223,35 @@ class BingxFuturesMarketSnapshotService {
     if (value.isEmpty) {
       throw const FormatException('open_interest is required');
     }
-    final rows = value
-        .map(
-          (item) => <String, dynamic>{
-            'timestamp_utc': _normalizeUtcInstant(item.timestampUtc),
-            'open_interest_decimal':
-                _normalizeDecimal(item.openInterestDecimal, scale: 8),
-          },
-        )
-        .toList();
-    rows.sort((a, b) => _compareString(
-          a['timestamp_utc'] as String,
-          b['timestamp_utc'] as String,
-        ));
+    final rows =
+        value
+            .map(
+              (item) => <String, dynamic>{
+                'timestamp_utc': _normalizeUtcInstant(item.timestampUtc),
+                'open_interest_decimal': _normalizeDecimal(
+                  item.openInterestDecimal,
+                  scale: 8,
+                ),
+              },
+            )
+            .toList();
+    rows.sort(
+      (a, b) => _compareString(
+        a['timestamp_utc'] as String,
+        b['timestamp_utc'] as String,
+      ),
+    );
     return rows;
   }
 
   Map<String, dynamic> _normalizeFunding(BingxFuturesFundingSnapshot value) {
     return <String, dynamic>{
       'timestamp_utc': _normalizeUtcInstant(value.timestampUtc),
-      'funding_rate_decimal': _normalizeDecimal(value.fundingRateDecimal,
-          scale: 10, allowNegative: true),
+      'funding_rate_decimal': _normalizeDecimal(
+        value.fundingRateDecimal,
+        scale: 10,
+        allowNegative: true,
+      ),
       'next_funding_at_utc': _normalizeUtcInstant(value.nextFundingAtUtc),
     };
   }
@@ -219,23 +262,26 @@ class BingxFuturesMarketSnapshotService {
     if (value.isEmpty) {
       throw const FormatException('liquidity_levels are required');
     }
-    final rows = value.map((item) {
-      final kind = _normalizeLiquidityKind(item.kind);
-      final side = _normalizeLiquiditySide(item.side);
-      return <String, dynamic>{
-        'kind': kind,
-        'side': side,
-        'timeframe': _normalizeTimeframe(item.timeframe),
-        'price_decimal': _normalizeDecimal(item.priceDecimal, scale: 8),
-      };
-    }).toList();
+    final rows =
+        value.map((item) {
+          final kind = _normalizeLiquidityKind(item.kind);
+          final side = _normalizeLiquiditySide(item.side);
+          return <String, dynamic>{
+            'kind': kind,
+            'side': side,
+            'timeframe': _normalizeTimeframe(item.timeframe),
+            'price_decimal': _normalizeDecimal(item.priceDecimal, scale: 8),
+          };
+        }).toList();
     rows.sort((a, b) {
       final byKind = _compareString(a['kind'] as String, b['kind'] as String);
       if (byKind != 0) return byKind;
       final bySide = _compareString(a['side'] as String, b['side'] as String);
       if (bySide != 0) return bySide;
-      final byTimeframe =
-          _compareTimeframe(a['timeframe'] as String, b['timeframe'] as String);
+      final byTimeframe = _compareTimeframe(
+        a['timeframe'] as String,
+        b['timeframe'] as String,
+      );
       if (byTimeframe != 0) return byTimeframe;
       return _compareString(
         a['price_decimal'] as String,
@@ -251,24 +297,28 @@ class BingxFuturesMarketSnapshotService {
     if (value.isEmpty) {
       throw const FormatException('session_volumes are required');
     }
-    final rows = value.map((item) {
-      return <String, dynamic>{
-        'session': _normalizeSession(item.session),
-        'bucket_start_utc': _normalizeUtcInstant(item.bucketStartUtc),
-        'volume_decimal': _normalizeDecimal(item.volumeDecimal, scale: 8),
-        'delta_decimal': _normalizeDecimal(
-          item.deltaDecimal,
-          scale: 8,
-          allowNegative: true,
-        ),
-        'evidence_source':
-            _normalizeSessionEvidenceSource(item.evidenceSource),
-        'coverage_complete': item.coverageComplete,
-      };
-    }).toList();
+    final rows =
+        value.map((item) {
+          return <String, dynamic>{
+            'session': _normalizeSession(item.session),
+            'bucket_start_utc': _normalizeUtcInstant(item.bucketStartUtc),
+            'volume_decimal': _normalizeDecimal(item.volumeDecimal, scale: 8),
+            'delta_decimal': _normalizeDecimal(
+              item.deltaDecimal,
+              scale: 8,
+              allowNegative: true,
+            ),
+            'evidence_source': _normalizeSessionEvidenceSource(
+              item.evidenceSource,
+            ),
+            'coverage_complete': item.coverageComplete,
+          };
+        }).toList();
     rows.sort((a, b) {
-      final bySession =
-          _compareString(a['session'] as String, b['session'] as String);
+      final bySession = _compareString(
+        a['session'] as String,
+        b['session'] as String,
+      );
       if (bySession != 0) return bySession;
       return _compareString(
         a['bucket_start_utc'] as String,
@@ -277,12 +327,10 @@ class BingxFuturesMarketSnapshotService {
     });
     final sessions = rows.map((item) => item['session'] as String).toSet();
     const required = <String>{'asia', 'london', 'newyork'};
-    final missing = required.where((item) => !sessions.contains(item)).toList()
-      ..sort();
+    final missing =
+        required.where((item) => !sessions.contains(item)).toList()..sort();
     if (missing.isNotEmpty) {
-      throw FormatException(
-        'missing required sessions: ${missing.join(", ")}',
-      );
+      throw FormatException('missing required sessions: ${missing.join(", ")}');
     }
     return rows;
   }
@@ -300,21 +348,26 @@ class BingxFuturesMarketSnapshotService {
   List<Map<String, dynamic>> _normalizeOrderBook(
     List<BingxFuturesOrderBookLevel> value,
   ) {
-    final rows = value
-        .map(
-          (item) => <String, dynamic>{
-            'side': _normalizeOrderBookSide(item.side),
-            'price_decimal': _normalizeDecimal(item.priceDecimal, scale: 8),
-            'quantity_decimal':
-                _normalizeDecimal(item.quantityDecimal, scale: 8),
-          },
-        )
-        .toList();
+    final rows =
+        value
+            .map(
+              (item) => <String, dynamic>{
+                'side': _normalizeOrderBookSide(item.side),
+                'price_decimal': _normalizeDecimal(item.priceDecimal, scale: 8),
+                'quantity_decimal': _normalizeDecimal(
+                  item.quantityDecimal,
+                  scale: 8,
+                ),
+              },
+            )
+            .toList();
     rows.sort((a, b) {
       final bySide = _compareString(a['side'] as String, b['side'] as String);
       if (bySide != 0) return bySide;
       final byPrice = _compareString(
-          a['price_decimal'] as String, b['price_decimal'] as String);
+        a['price_decimal'] as String,
+        b['price_decimal'] as String,
+      );
       if (byPrice != 0) return byPrice;
       return _compareString(
         a['quantity_decimal'] as String,
@@ -343,6 +396,7 @@ class BingxFuturesMarketSnapshotService {
       '1m': '1m',
       '5m': '5m',
       '15m': '15m',
+      '30m': '30m',
       '1h': '1h',
       '4h': '4h',
       '1d': '1d',
@@ -350,6 +404,7 @@ class BingxFuturesMarketSnapshotService {
       '1min': '1m',
       '5min': '5m',
       '15min': '15m',
+      '30min': '30m',
       '60m': '1h',
       '240m': '4h',
       '1day': '1d',
@@ -363,8 +418,10 @@ class BingxFuturesMarketSnapshotService {
   }
 
   int _compareCandles(Map<String, dynamic> a, Map<String, dynamic> b) {
-    final byTimeframe =
-        _compareTimeframe(a['timeframe'] as String, b['timeframe'] as String);
+    final byTimeframe = _compareTimeframe(
+      a['timeframe'] as String,
+      b['timeframe'] as String,
+    );
     if (byTimeframe != 0) return byTimeframe;
     final byClose = _compareString(
       a['close_time_utc'] as String,
@@ -395,7 +452,9 @@ class BingxFuturesMarketSnapshotService {
     final bySide = _compareString(a['side'] as String, b['side'] as String);
     if (bySide != 0) return bySide;
     final byPrice = _compareString(
-        a['price_decimal'] as String, b['price_decimal'] as String);
+      a['price_decimal'] as String,
+      b['price_decimal'] as String,
+    );
     if (byPrice != 0) return byPrice;
     return _compareString(
       a['quantity_decimal'] as String,

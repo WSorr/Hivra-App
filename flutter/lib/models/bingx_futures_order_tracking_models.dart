@@ -977,7 +977,8 @@ class BingxFuturesRemoteMandateAdmission {
     }
     if (value.containsKey('strategy_version') &&
         value['strategy_version'] != bingxLiquidityStrategyVersion &&
-        value['strategy_version'] != bingxHourlyLiquidityStrategyVersion) {
+        value['strategy_version'] != bingxHourlyLiquidityStrategyVersion &&
+        value['strategy_version'] != bingxPrebreachLineStrategyVersion) {
       return null;
     }
     final buildId = value['runner_build_id']?.toString().trim() ?? '';

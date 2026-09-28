@@ -35,7 +35,8 @@ class BingxFuturesLiveSnapshotBuilderService {
     String strategyVersion = bingxLiquidityStrategyVersion,
   }) async {
     if (strategyVersion != bingxLiquidityStrategyVersion &&
-        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+        strategyVersion != bingxHourlyLiquidityStrategyVersion &&
+        strategyVersion != bingxPrebreachLineStrategyVersion) {
       return _fail(
         symbol: symbol,
         code: 'unsupported_strategy',
@@ -43,6 +44,7 @@ class BingxFuturesLiveSnapshotBuilderService {
       );
     }
     final hourly = strategyVersion == bingxHourlyLiquidityStrategyVersion;
+    final prebreach = strategyVersion == bingxPrebreachLineStrategyVersion;
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) {
       return const BingxFuturesLiveSnapshotBuildResult(
@@ -66,13 +68,21 @@ class BingxFuturesLiveSnapshotBuilderService {
     final k5mFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '5m',
-      limit: 120,
+      limit: prebreach ? 400 : 120,
     );
     final k15mFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '15m',
       limit: 220,
     );
+    final k30mFuture =
+        prebreach
+            ? exchange.getPublicKlines(
+              symbol: normalizedSymbol,
+              interval: '30m',
+              limit: 220,
+            )
+            : null;
     final k1hFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '1h',
@@ -95,7 +105,7 @@ class BingxFuturesLiveSnapshotBuilderService {
               limit: 120,
             );
     final k1wFuture =
-        hourly
+        hourly || prebreach
             ? null
             : exchange.getPublicKlines(
               symbol: normalizedSymbol,
@@ -104,6 +114,7 @@ class BingxFuturesLiveSnapshotBuilderService {
             );
     final k5m = await k5mFuture;
     final k15m = await k15mFuture;
+    final k30m = await k30mFuture;
     final k1h = await k1hFuture;
     final k4h = await k4hFuture;
     final k1d = await k1dFuture;
@@ -112,6 +123,7 @@ class BingxFuturesLiveSnapshotBuilderService {
     final klineResults = <BingxFuturesPublicKlinesResult>[
       k5m,
       k15m,
+      if (k30m != null) k30m,
       k1h,
       if (k4h != null) k4h,
       if (k1d != null) k1d,
@@ -190,6 +202,8 @@ class BingxFuturesLiveSnapshotBuilderService {
       final allCandles = <BingxFuturesCandle>[
         ...mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
         ...mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
+        if (k30m != null)
+          ...mapCandles('30m', k30m.klines, observedAtUtc: observationTime),
         ...mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
         if (k4h != null)
           ...mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
@@ -257,7 +271,7 @@ class BingxFuturesLiveSnapshotBuilderService {
         // Preserve the original snapshot for the decision owner's diagnostics.
         // An invalid snapshot must never gain execution authority by hydration.
       }
-      if (parent != null && !hourly) {
+      if (parent != null && !hourly && !prebreach) {
         final history = await loadMicroHistory(
           exchange: exchange,
           symbol: normalizedSymbol,
@@ -446,6 +460,7 @@ class BingxFuturesLiveSnapshotBuilderService {
       '1m' => 1,
       '5m' => 5,
       '15m' => 15,
+      '30m' => 30,
       '1h' => 60,
       '4h' => 240,
       '1d' => 1440,

@@ -1,4 +1,8 @@
 class BingxDetectedLiquidityLevel {
+  final String timeframe;
+  final String anchorAtUtc;
+  final String confirmedAtUtc;
+  final String observedThroughUtc;
   final String side;
   final String levelClass;
   final String centerPriceDecimal;
@@ -10,6 +14,10 @@ class BingxDetectedLiquidityLevel {
   final int? breachedIndex;
 
   const BingxDetectedLiquidityLevel({
+    this.timeframe = '',
+    this.anchorAtUtc = '',
+    this.confirmedAtUtc = '',
+    this.observedThroughUtc = '',
     required this.side,
     required this.levelClass,
     required this.centerPriceDecimal,
@@ -202,3 +210,4 @@ class BingxFuturesMarketSnapshotDigest {
 
 const bingxLiquidityStrategyVersion = '4h-active-liquidity-zone-v4';
 const bingxHourlyLiquidityStrategyVersion = '1h-active-liquidity-zone-5m-v1';
+const bingxPrebreachLineStrategyVersion = 'mtf-prebreach-liquidity-line-v1';

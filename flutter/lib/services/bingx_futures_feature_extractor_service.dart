@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../models/bingx_futures_market_snapshot_models.dart';
+import 'bingx_futures_market_snapshot_service.dart';
 
 enum BingxTrendDirection { bullish, bearish, neutral }
 
@@ -88,7 +89,8 @@ class BingxFuturesFeatureExtractorService {
     String strategyVersion = bingxLiquidityStrategyVersion,
   }) {
     if (strategyVersion != bingxLiquidityStrategyVersion &&
-        strategyVersion != bingxHourlyLiquidityStrategyVersion) {
+        strategyVersion != bingxHourlyLiquidityStrategyVersion &&
+        strategyVersion != bingxPrebreachLineStrategyVersion) {
       throw const FormatException('unsupported liquidity strategy');
     }
     final candles = _readCandles(snapshot.normalizedSnapshot);
@@ -120,11 +122,32 @@ class BingxFuturesFeatureExtractorService {
             ? BingxTrendDirection.bearish
             : BingxTrendDirection.neutral;
     final atr14 = _atr(candles5m, period: 14);
-    final detectedLevels = _detectPivotClusterLevels(
-      strategyVersion == bingxHourlyLiquidityStrategyVersion
-          ? candles1h
-          : candles4h,
-    );
+    final prebreach = strategyVersion == bingxPrebreachLineStrategyVersion;
+    final detectedLevels =
+        prebreach
+            ? <BingxDetectedLiquidityLevel>[
+              for (final timeframe
+                  in BingxFuturesMarketSnapshotService.prebreachLineTimeframes)
+                ..._detectPivotClusterLevels(
+                  candles.where((c) => c.timeframe == timeframe).toList(),
+                  timeframe: timeframe,
+                  lineBreach: true,
+                ),
+            ]
+            : _detectPivotClusterLevels(
+              strategyVersion == bingxHourlyLiquidityStrategyVersion
+                  ? candles1h
+                  : candles4h,
+            );
+    if (prebreach) {
+      detectedLevels.sort((a, b) {
+        final byTimeframe = a.timeframe.compareTo(b.timeframe);
+        if (byTimeframe != 0) return byTimeframe;
+        final bySide = a.side.compareTo(b.side);
+        if (bySide != 0) return bySide;
+        return a.anchorAtUtc.compareTo(b.anchorAtUtc);
+      });
+    }
     final tradeDelta = _tradeDelta(snapshot.normalizedSnapshot);
     final tradeImbalanceRatio = _tradeImbalanceRatio(
       snapshot.normalizedSnapshot,
@@ -171,6 +194,11 @@ class BingxFuturesFeatureExtractorService {
                   'breached': item.breached,
                   'anchor_index': item.anchorIndex,
                   'breached_index': item.breachedIndex,
+                  if (prebreach) 'timeframe': item.timeframe,
+                  if (prebreach) 'anchor_at_utc': item.anchorAtUtc,
+                  if (prebreach) 'confirmed_at_utc': item.confirmedAtUtc,
+                  if (prebreach)
+                    'observed_through_utc': item.observedThroughUtc,
                 },
               )
               .toList(),
@@ -220,8 +248,13 @@ class BingxFuturesFeatureExtractorService {
   }
 
   List<BingxDetectedLiquidityLevel> _detectPivotClusterLevels(
-    List<_CandleRow> candles,
-  ) {
+    List<_CandleRow> candles, {
+    String timeframe = '',
+    bool lineBreach = false,
+  }) {
+    if (lineBreach && !_continuousClosedCandles(candles, timeframe)) {
+      throw FormatException('incomplete closed candles on $timeframe');
+    }
     final highPivots = <_Pivot>[];
     final lowPivots = <_Pivot>[];
     final buyLevels = <_MutableLevel>[];
@@ -263,6 +296,8 @@ class BingxFuturesFeatureExtractorService {
             top: center + band,
             bottom: center - band,
             pivotCount: cluster.length,
+            freezeOnFormation: lineBreach,
+            confirmedAtUtc: candles[i].closeTimeUtc,
           );
         }
       }
@@ -298,18 +333,26 @@ class BingxFuturesFeatureExtractorService {
             top: center + band,
             bottom: center - band,
             pivotCount: cluster.length,
+            freezeOnFormation: lineBreach,
+            confirmedAtUtc: candles[i].closeTimeUtc,
           );
         }
       }
 
       for (final level in buyLevels) {
-        if (!level.breached && candles[i].high > level.top) {
+        if (!level.breached &&
+            (lineBreach
+                ? candles[i].high >= level.center
+                : candles[i].high > level.top)) {
           level.breached = true;
           level.breachedIndex = i;
         }
       }
       for (final level in sellLevels) {
-        if (!level.breached && candles[i].low < level.bottom) {
+        if (!level.breached &&
+            (lineBreach
+                ? candles[i].low <= level.center
+                : candles[i].low < level.bottom)) {
           level.breached = true;
           level.breachedIndex = i;
         }
@@ -352,6 +395,12 @@ class BingxFuturesFeatureExtractorService {
     final combined = <BingxDetectedLiquidityLevel>[
       ...buyLevels.map(
         (item) => BingxDetectedLiquidityLevel(
+          timeframe: timeframe,
+          anchorAtUtc:
+              timeframe.isEmpty ? '' : candles[item.anchorIndex].closeTimeUtc,
+          confirmedAtUtc: item.confirmedAtUtc,
+          observedThroughUtc:
+              timeframe.isEmpty ? '' : candles.last.closeTimeUtc,
           side: item.side,
           levelClass: classForBuy(item),
           centerPriceDecimal: _fmtDecimal(item.center, 8),
@@ -365,6 +414,12 @@ class BingxFuturesFeatureExtractorService {
       ),
       ...sellLevels.map(
         (item) => BingxDetectedLiquidityLevel(
+          timeframe: timeframe,
+          anchorAtUtc:
+              timeframe.isEmpty ? '' : candles[item.anchorIndex].closeTimeUtc,
+          confirmedAtUtc: item.confirmedAtUtc,
+          observedThroughUtc:
+              timeframe.isEmpty ? '' : candles.last.closeTimeUtc,
           side: item.side,
           levelClass: classForSell(item),
           centerPriceDecimal: _fmtDecimal(item.center, 8),
@@ -387,6 +442,30 @@ class BingxFuturesFeatureExtractorService {
       return a.anchorIndex.compareTo(b.anchorIndex);
     });
     return combined;
+  }
+
+  bool _continuousClosedCandles(List<_CandleRow> candles, String timeframe) {
+    final interval = switch (timeframe) {
+      '5m' => const Duration(minutes: 5),
+      '15m' => const Duration(minutes: 15),
+      '30m' => const Duration(minutes: 30),
+      '1h' => const Duration(hours: 1),
+      '4h' => const Duration(hours: 4),
+      '1d' => const Duration(days: 1),
+      _ => null,
+    };
+    if (interval == null || candles.length < liqLen * 3) return false;
+    DateTime? previous;
+    for (final candle in candles) {
+      final close = DateTime.tryParse(candle.closeTimeUtc)?.toUtc();
+      if (close == null ||
+          !candle.closeTimeUtc.endsWith('Z') ||
+          (previous != null && close.difference(previous) != interval)) {
+        return false;
+      }
+      previous = close;
+    }
+    return true;
   }
 
   List<BingxWhaleActivationEvent> _detectWhaleActivations({
@@ -683,12 +762,15 @@ class BingxFuturesFeatureExtractorService {
     required double top,
     required double bottom,
     required int pivotCount,
+    bool freezeOnFormation = false,
+    String confirmedAtUtc = '',
   }) {
     final existing =
         levels.where((item) => item.anchorIndex == anchor).toList();
     if (existing.isNotEmpty) {
       final level = existing.first;
       if (level.breached) return;
+      if (freezeOnFormation) return;
       level.center = center;
       level.top = top;
       level.bottom = bottom;
@@ -704,6 +786,7 @@ class BingxFuturesFeatureExtractorService {
         top: top,
         bottom: bottom,
         pivotCount: pivotCount,
+        confirmedAtUtc: confirmedAtUtc,
       ),
     );
   }
@@ -752,6 +835,7 @@ class _MutableLevel {
   int pivotCount;
   bool breached;
   int? breachedIndex;
+  final String confirmedAtUtc;
 
   _MutableLevel({
     required this.side,
@@ -760,6 +844,7 @@ class _MutableLevel {
     required this.top,
     required this.bottom,
     required this.pivotCount,
+    required this.confirmedAtUtc,
   }) : breached = false,
        breachedIndex = null;
 }

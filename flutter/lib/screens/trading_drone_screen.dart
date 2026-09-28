@@ -84,23 +84,6 @@ void tradingSynchronizeManagedOrderState({
 }
 
 @visibleForTesting
-bool tradingShouldRestoreRemoteEffectsBeforeOrderReconciliation({
-  required bool remoteRunnerConfigured,
-  required bool hasVerifiedRemoteSession,
-  required List<BingxFuturesOpenOrder> providerSnapshot,
-  required Map<String, BingxManagedOrderProvenance> managedOrderProvenance,
-}) {
-  if (!remoteRunnerConfigured || !hasVerifiedRemoteSession) {
-    return false;
-  }
-  return providerSnapshot.any((order) {
-    final clientOrderId = order.clientOrderId?.trim().toLowerCase() ?? '';
-    return clientOrderId.startsWith('hivra-') &&
-        !managedOrderProvenance.containsKey(order.orderId);
-  });
-}
-
-@visibleForTesting
 String? tradingReconciliationNotice(
   BingxFuturesManagedOrderReconciliationResult? result,
   String? activeCapsuleRootHex,
@@ -591,7 +574,6 @@ String? tradingReconciliationResumeSymbol(
   }
 
   bool isTerminal(BingxManagedOrderLifecycleStatus status) =>
-      status == BingxManagedOrderLifecycleStatus.filled ||
       status == BingxManagedOrderLifecycleStatus.cancelled ||
       status == BingxManagedOrderLifecycleStatus.rejected ||
       status == BingxManagedOrderLifecycleStatus.expired;
@@ -610,6 +592,11 @@ String? tradingReconciliationResumeSymbol(
         ..sort((a, b) => a.orderId.compareTo(b.orderId));
   for (final record in provenance) {
     if (record.testOrder || isTerminal(record.lifecycleStatus)) continue;
+    if (record.lifecycleStatus == BingxManagedOrderLifecycleStatus.filled &&
+        record.positionLifecycleStatus ==
+            BingxManagedPositionLifecycleStatus.closed) {
+      continue;
+    }
     final symbol = normalize(record.symbol);
     if (symbol != null) return symbol;
   }
@@ -620,6 +607,11 @@ String? tradingReconciliationResumeSymbol(
   for (final entry in claims) {
     final claim = entry.value;
     if (claim.testOrder || isTerminal(claim.lifecycleStatus)) continue;
+    if (claim.lifecycleStatus == BingxManagedOrderLifecycleStatus.filled &&
+        state.managedOrderProvenance[claim.orderId]?.positionLifecycleStatus ==
+            BingxManagedPositionLifecycleStatus.closed) {
+      continue;
+    }
     final symbol = normalize(claim.symbol);
     if (symbol != null) return symbol;
   }

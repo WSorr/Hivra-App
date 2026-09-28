@@ -109,6 +109,98 @@ void main() {
       );
     });
 
+    test('six-timeframe line proposal signs one resting short at the line', () {
+      final base = _buildInput(permuted: false);
+      List<BingxFuturesCandle> series(
+        String timeframe,
+        Duration step,
+        int count,
+      ) {
+        final start = DateTime.utc(2026, 4, 25, 10).subtract(step * count);
+        return List.generate(count, (index) {
+          final from = start.add(step * index);
+          final pivot = const {8, 16, 24}.contains(index);
+          return _singleCandle(
+            timeframe,
+            from.toIso8601String(),
+            from.add(step).toIso8601String(),
+            100,
+            pivot ? 104 : 102,
+            pivot ? 96 : 98,
+            100,
+          );
+        });
+      }
+
+      BingxFuturesCandle forming(double high) => BingxFuturesCandle(
+        timeframe: '5m',
+        openTimeUtc: '2026-04-25T10:00:00Z',
+        closeTimeUtc: '2026-04-25T10:05:00Z',
+        openDecimal: '100',
+        highDecimal: '$high',
+        lowDecimal: '98',
+        closeDecimal: '100',
+        volumeBaseDecimal: '1',
+        volumeQuoteDecimal: '100',
+        isClosed: false,
+      );
+
+      final snapshot = _withCandles(base, [
+        ...series('5m', const Duration(minutes: 5), 80),
+        ...series('15m', const Duration(minutes: 15), 220),
+        ...series('30m', const Duration(minutes: 30), 80),
+        ...series('1h', const Duration(hours: 1), 80),
+        ...series('4h', const Duration(hours: 4), 80),
+        ...series('1d', const Duration(days: 1), 80),
+        forming(102),
+      ]);
+      final decision = service.decidePublicMarket(
+        snapshotInput: snapshot,
+        strategyVersion: bingxPrebreachLineStrategyVersion,
+        zoneEvaluationSide: 'sell',
+      );
+      expect(decision.canPrepareIntent, isTrue, reason: decision.canonicalJson);
+      expect(decision.zoneAnchorSource, 'mtf_active_liquidity_line');
+      expect(decision.parentZone?['timeframe'], '1d');
+      expect(
+        (num.parse(decision.zoneLowDecimal!) +
+                num.parse(decision.zoneHighDecimal!)) /
+            2,
+        104,
+      );
+      expect(decision.oppositeLiquidityTargetDecimal, '96');
+      final touched = service.decidePublicMarket(
+        snapshotInput: _withCandles(base, [
+          ...snapshot.candles.where((candle) => candle.isClosed),
+          forming(104),
+        ]),
+        strategyVersion: bingxPrebreachLineStrategyVersion,
+        zoneEvaluationSide: 'sell',
+      );
+      expect(touched.canPrepareIntent, isFalse);
+      final missingCurrentBar = service.decidePublicMarket(
+        snapshotInput: _withCandles(
+          base,
+          snapshot.candles.where((candle) => candle.isClosed).toList(),
+        ),
+        strategyVersion: bingxPrebreachLineStrategyVersion,
+        zoneEvaluationSide: 'sell',
+      );
+      expect(missingCurrentBar.canPrepareIntent, isFalse);
+      expect(
+        const BingxFuturesShadowMarketProposalCodec().validate(
+          status: 'READY',
+          proposalJson: decision.canonicalJson,
+          decisionHashHex: decision.liveDecisionHashHex,
+          decision: decision.decision.name,
+          marketSnapshotHashHex: decision.marketSnapshotHashHex,
+          featureHashHex: decision.featureHashHex,
+        ),
+        isTrue,
+        reason: decision.canonicalJson,
+      );
+    });
+
     test('passes canonical detected clusters directly to the zone owner', () {
       final base = _buildInput(permuted: false);
       final snapshot = _withCandles(base, [

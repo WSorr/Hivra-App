@@ -217,6 +217,36 @@ void main() {
         'anchor_unavailable',
       );
     });
+    test('pre-breach line is consumed at its price, not the outer band', () {
+      final parent = <String, dynamic>{
+        'strategy_version': bingxPrebreachLineStrategyVersion,
+        'timeframe': '15m',
+        'side': 'buy',
+        'low_decimal': '100',
+        'high_decimal': '102',
+        'anchor_at_utc':
+            event.subtract(const Duration(hours: 1)).toIso8601String(),
+      };
+      String verify(List<BingxFuturesCandle> bars) => service.revalidateAnchor(
+        side: 'buy',
+        source: 'mtf_active_liquidity_line',
+        zoneLow: 100,
+        zoneHigh: 102,
+        eventAtUtc: event,
+        nowUtc: event.add(const Duration(minutes: 10)),
+        candles: bars,
+        parentZone: parent,
+      );
+      expect(
+        verify([bar(0), bar(1, low: 101.1), bar(2, low: 101.1)]),
+        'anchor_valid',
+      );
+      expect(
+        verify([bar(0), bar(1, low: 101), bar(2, low: 101.1)]),
+        'anchor_consumed',
+      );
+      expect(verify([bar(0), bar(2)]), 'anchor_unavailable');
+    });
     test('void consumes on inclusive near-edge touch for either side', () {
       expect(
         check([
@@ -973,6 +1003,87 @@ void main() {
       expect(first.liquidityEventId, again.liquidityEventId);
     });
     test(
+      'nearest confirmed line across timeframes stages one opposite order',
+      () {
+        final input = _htfReclaimInput(
+          side: 'buy',
+          strategyVersion: bingxPrebreachLineStrategyVersion,
+          restingZoneEntry: true,
+          clusters: [
+            _line(timeframe: '4h', side: 'sellside', center: 90),
+            _line(timeframe: '15m', side: 'sellside', center: 91),
+            _line(timeframe: '30m', side: 'buyside', center: 99),
+          ],
+        );
+        final result = service.decide(input: input);
+        expect(result.anchorExecutable, isTrue);
+        expect(result.side, 'buy');
+        expect(result.anchorSource, 'mtf_active_liquidity_line');
+        expect(result.source, 'prebreach_liquidity_line');
+        expect(result.parentZone?['timeframe'], '15m');
+        expect((result.zoneLow + result.zoneHigh) / 2, 91);
+        expect(result.externalSellRetest, 99);
+        expect(
+          result.externalSellRetestSource,
+          '30m_active_opposite_liquidity',
+        );
+        input.microLows[input.microLows.length - 1] = 91;
+        expect(service.decide(input: input).parentZone?['timeframe'], '4h');
+        input.microLows[input.microLows.length - 1] = 90;
+        expect(service.decide(input: input).anchorExecutable, isFalse);
+        expect(
+          service
+              .decide(
+                input: _htfReclaimInput(
+                  side: 'buy',
+                  strategyVersion: bingxPrebreachLineStrategyVersion,
+                  restingZoneEntry: true,
+                  clusters: [
+                    _line(
+                      timeframe: '15m',
+                      side: 'sellside',
+                      center: 91,
+                      breached: true,
+                    ),
+                  ],
+                ),
+              )
+              .anchorExecutable,
+          isFalse,
+        );
+      },
+    );
+    test('same price on another timeframe keeps one market event', () {
+      BingxFuturesZoneDecisionResult decide(String timeframe) => service.decide(
+        input: _htfReclaimInput(
+          side: 'buy',
+          strategyVersion: bingxPrebreachLineStrategyVersion,
+          restingZoneEntry: true,
+          clusters: [_line(timeframe: timeframe, side: 'sellside', center: 91)],
+        ),
+      );
+      final first = decide('15m');
+      final second = decide('30m');
+      expect(first.anchorExecutable, isTrue);
+      expect(second.anchorExecutable, isTrue);
+      expect(first.liquidityEventId, second.liquidityEventId);
+    });
+    test('equidistant opposite lines need an explicit side', () {
+      final result = service.decide(
+        input: _htfReclaimInput(
+          side: 'buy',
+          sideLocked: false,
+          strategyVersion: bingxPrebreachLineStrategyVersion,
+          restingZoneEntry: true,
+          clusters: [
+            _line(timeframe: '15m', side: 'sellside', center: 91),
+            _line(timeframe: '30m', side: 'buyside', center: 101),
+          ],
+        ),
+      );
+      expect(result.anchorExecutable, isFalse);
+    });
+    test(
       'hourly zone uses one owner without daily or weekly target levels',
       () {
         final input = _htfReclaimInput(
@@ -1174,6 +1285,7 @@ void main() {
 
 BingxFuturesZoneDecisionInput _htfReclaimInput({
   required String side,
+  bool sideLocked = true,
   String strategyVersion = bingxLiquidityStrategyVersion,
   bool restingZoneEntry = false,
   bool crossedAfterParent = false,
@@ -1190,7 +1302,9 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
   bool gapped = false,
   bool conflictingParent = false,
 }) {
-  final hourly = strategyVersion == bingxHourlyLiquidityStrategyVersion;
+  final hourly =
+      strategyVersion == bingxHourlyLiquidityStrategyVersion ||
+      strategyVersion == bingxPrebreachLineStrategyVersion;
   final buy = side == 'buy';
   final highs = List<num>.filled(visibleBars, 99);
   final lows = List<num>.filled(visibleBars, 91);
@@ -1274,7 +1388,7 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
     symbol: 'DOGE-USDT',
     midPrice: midPrice,
     fallbackSide: side,
-    requiredSide: side,
+    requiredSide: sideLocked ? side : null,
     restingZoneEntry: restingZoneEntry,
     strategyVersion: strategyVersion,
     detectedLiquidityLevels:
@@ -1293,6 +1407,8 @@ BingxFuturesZoneDecisionInput _htfReclaimInput({
     microOpens: microOpens,
     microCloses: microCloses,
     microCloseTimesUtc: microTimes,
+    formingMicroHigh: 97,
+    formingMicroLow: 93,
     macroHighs: List<num>.filled(40, 105),
     macroLows: List<num>.filled(40, 85),
     higherHighs: highs,
@@ -1328,6 +1444,27 @@ BingxDetectedLiquidityLevel _cluster({
   breached: breached,
   anchorIndex: 7,
   breachedIndex: breach,
+);
+
+BingxDetectedLiquidityLevel _line({
+  required String timeframe,
+  required String side,
+  required num center,
+  bool breached = false,
+}) => BingxDetectedLiquidityLevel(
+  timeframe: timeframe,
+  anchorAtUtc: DateTime.utc(2026, 9, 1, 7).toIso8601String(),
+  confirmedAtUtc: DateTime.utc(2026, 9, 1, 8).toIso8601String(),
+  observedThroughUtc: DateTime.utc(2026, 9, 2, 5).toIso8601String(),
+  side: side,
+  levelClass: 'internal',
+  centerPriceDecimal: '$center',
+  zoneBottomDecimal: '${center - 1}',
+  zoneTopDecimal: '${center + 1}',
+  pivotCount: 3,
+  breached: breached,
+  anchorIndex: 7,
+  breachedIndex: breached ? 20 : null,
 );
 
 BingxFuturesZoneDecisionInput _microReclaimInput({

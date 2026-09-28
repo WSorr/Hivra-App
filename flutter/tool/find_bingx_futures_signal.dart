@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:hivra_app/models/bingx_futures_live_strategy_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_live_strategy_use_case_service.dart';
@@ -14,7 +15,7 @@ Future<void> main(List<String> args) async {
   final options = _parseArgs(args);
   final limit = int.parse(options['limit'] ?? '0');
   final top = int.parse(options['top'] ?? '20');
-  final concurrency = int.parse(options['concurrency'] ?? '4');
+  final concurrency = int.parse(options['concurrency'] ?? '1');
   final contains = options['contains']?.trim().toUpperCase();
   final symbolsArg = options['symbols']?.trim();
   final includeNoSignal = options['include-no-signal'] == 'true';
@@ -25,7 +26,10 @@ Future<void> main(List<String> args) async {
   }
 
   final exchange = BingxFuturesExchangeService();
-  final strategy = BingxFuturesLiveStrategyUseCaseService(exchange: exchange);
+  final strategy = BingxFuturesLiveStrategyUseCaseService(
+    exchange: exchange,
+    strategyVersion: bingxPrebreachLineStrategyVersion,
+  );
 
   final symbols =
       symbolsArg == null || symbolsArg.isEmpty
