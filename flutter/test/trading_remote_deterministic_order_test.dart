@@ -710,6 +710,128 @@ void main() {
     );
   }
 
+  for (final (exactPosition, foreignProtective) in [
+    (true, false),
+    (false, false),
+    (true, true),
+  ]) {
+    test(
+      'filled entry ownership exactPosition=$exactPosition foreignProtective=$foreignProtective',
+      () async {
+        final fixture = await _fixture(sessionCycleIndex: 0, testOrder: false);
+        addTearDown(fixture.dispose);
+        String? clientOrderId;
+        var posts = 0;
+        var entryPlaced = false;
+        Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+          if (request.method == 'POST') {
+            posts += 1;
+            clientOrderId = Uri.splitQueryString(request.body)['clientOrderId'];
+            entryPlaced = true;
+          }
+          if (request.uri.path == '/openApi/swap/v2/trade/openOrders') {
+            return BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  entryPlaced
+                      ? jsonEncode({
+                        'code': 0,
+                        'data': {
+                          'orders': [
+                            for (final (id, type) in [
+                              ('protective-tp', 'TAKE_PROFIT_MARKET'),
+                              ('protective-sl', 'STOP_MARKET'),
+                            ])
+                              {
+                                'orderId': id,
+                                'symbol': 'BTC-USDT',
+                                'side': 'SELL',
+                                'positionSide': 'LONG',
+                                'type': type,
+                                'status': 'NEW',
+                                'origQty': '0.01',
+                                'executedQty': '0',
+                                'positionID':
+                                    foreignProtective && id == 'protective-sl'
+                                        ? 'foreign-position'
+                                        : 'position-1',
+                              },
+                          ],
+                        },
+                      })
+                      : '{"code":0,"data":{"orders":[]}}',
+            );
+          }
+          if (request.method == 'GET' &&
+              request.uri.path == '/openApi/swap/v2/trade/order') {
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'code': 0,
+                'data': {
+                  'order': {
+                    'orderId': exactPosition ? 'live-order-1' : 'foreign-order',
+                    'clientOrderId': clientOrderId,
+                    'symbol': 'BTC-USDT',
+                    'side': 'BUY',
+                    'positionSide': 'LONG',
+                    'type': 'LIMIT',
+                    'status': 'FILLED',
+                    'origQty': '0.01',
+                    'executedQty': '0.01',
+                    'positionID': 'position-1',
+                    'time': fixture.now.millisecondsSinceEpoch - 60000,
+                  },
+                },
+              }),
+            );
+          }
+          if (request.uri.path == '/openApi/swap/v2/user/positions') {
+            return BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  entryPlaced
+                      ? '{"code":0,"data":[{"positionId":"position-1","symbol":"BTC-USDT","positionSide":"LONG","positionAmt":"0.01"}]}'
+                      : '{"code":0,"data":[]}',
+            );
+          }
+          return _providerResponse(request);
+        }
+
+        final first = jsonDecode(
+          await runOneDeterministicOrder(
+            options: fixture.options,
+            runnerSeedBytes: fixture.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            requestSender: sender,
+            nowUtc: () => fixture.now,
+          ),
+        );
+        final second = jsonDecode(
+          await runOneDeterministicOrder(
+            options: {...fixture.options, 'session-cycle-index': '1'},
+            runnerSeedBytes: fixture.runnerSeed,
+            executeExactOrder: runAuthorizedExactOrder,
+            requestSender: sender,
+            nowUtc: () => fixture.now,
+          ),
+        );
+
+        expect(first['state'], 'succeeded', reason: first.toString());
+        expect(second['state'], 'blocked');
+        expect(
+          second['reason_code'],
+          !exactPosition
+              ? 'order_ownership_unavailable'
+              : foreignProtective
+              ? 'external_order_active'
+              : 'managed_entry_filled',
+        );
+        expect(posts, 1);
+      },
+    );
+  }
+
   for (final (maxEffects, maintenance) in [(1, false), (1, true), (2, true)]) {
     test(
       'managed cancellation preserves entry budget $maxEffects maintenance=$maintenance',

@@ -246,14 +246,97 @@ Future<String> runOneDeterministicOrder({
       activeOrders: activeOrders,
       stateHome: stateHome,
     );
-    if (ownership.order == null || ownership.placementOperationId == null) {
+    if (ownership.placementOperationId == null) {
       return _blocked(cycleOperationId, ownership.reasonCode);
     }
+    final openEntry = activeOrders.where(
+      (active) =>
+          active.orderId == ownership.orderId &&
+          active.clientOrderId == ownership.clientOrderId,
+    );
+    if (activeOrders.length != 1 || openEntry.length != 1) {
+      BingxFuturesOrderQueryResult exact;
+      try {
+        exact = await exchange.getOrder(
+          credentials: credentials,
+          symbol: admission.mandate.symbol,
+          orderId: ownership.orderId,
+        );
+      } on Object {
+        return _blocked(
+          cycleOperationId,
+          'managed_order_reconciliation_unavailable',
+        );
+      }
+      if (!exact.isSuccess || exact.order == null) {
+        return _blocked(
+          cycleOperationId,
+          'managed_order_reconciliation_unavailable',
+        );
+      }
+      final order = exact.order!;
+      if (order.orderId != ownership.orderId ||
+          order.clientOrderId != ownership.clientOrderId ||
+          order.symbol.toUpperCase() != admission.mandate.symbol ||
+          order.side.toUpperCase() != ownership.side ||
+          order.positionSide.toUpperCase() !=
+              (ownership.side == 'BUY' ? 'LONG' : 'SHORT')) {
+        return _blocked(cycleOperationId, 'order_ownership_unavailable');
+      }
+      final status = order.status.toUpperCase();
+      if (status == 'FILLED' || status == 'PARTIALLY_FILLED') {
+        if ((num.tryParse(order.executedQuantityDecimal ?? '') ?? 0) <= 0) {
+          return _blocked(cycleOperationId, 'order_ownership_unavailable');
+        }
+        final positionId = order.positionId?.trim() ?? '';
+        final protectiveSide = ownership.side == 'BUY' ? 'SELL' : 'BUY';
+        final protectiveOrders = activeOrders.where(
+          (active) => active.orderId != order.orderId,
+        );
+        if (protectiveOrders.any(
+          (active) =>
+              positionId.isEmpty ||
+              active.positionId != positionId ||
+              active.side.toUpperCase() != protectiveSide ||
+              !const {
+                'STOP',
+                'STOP_MARKET',
+                'TAKE_PROFIT',
+                'TAKE_PROFIT_MARKET',
+                'TRAILING_STOP_MARKET',
+                'TRAILING_TP_SL',
+              }.contains(active.orderType.toUpperCase()),
+        )) {
+          return _blocked(cycleOperationId, 'external_order_active');
+        }
+        return _blocked(
+          cycleOperationId,
+          status == 'FILLED'
+              ? 'managed_entry_filled'
+              : 'managed_entry_partially_filled',
+        );
+      }
+      if (const {
+        'CANCELLED',
+        'CANCELED',
+        'REJECTED',
+        'EXPIRED',
+      }.contains(status)) {
+        return _blocked(
+          cycleOperationId,
+          (num.tryParse(order.executedQuantityDecimal ?? '') ?? 0) > 0
+              ? 'managed_entry_partially_filled'
+              : 'managed_order_terminal',
+        );
+      }
+      return _blocked(cycleOperationId, 'order_ownership_unavailable');
+    }
+    final order = openEntry.single;
     final anchor = await _revalidateManagedAnchor(
       options: options,
       admission: admission,
       runnerKey: runnerPublicKey,
-      order: ownership.order!,
+      order: order,
       placementOperationId: ownership.placementOperationId!,
       exchange: exchange,
       now: now,
@@ -279,7 +362,7 @@ Future<String> runOneDeterministicOrder({
     }
     return cancelManagedOrder(
       admission: admission,
-      order: ownership.order!,
+      order: order,
       placementOperationId: ownership.placementOperationId!,
       effectOperationId: cycleOperationId,
       credentials: credentials,
@@ -486,7 +569,9 @@ Future<String> _revalidateManagedAnchor({
 Future<
   ({
     String reasonCode,
-    BingxFuturesOpenOrder? order,
+    String? orderId,
+    String? clientOrderId,
+    String? side,
     String? placementOperationId,
   })
 >
@@ -495,13 +580,6 @@ _managedActiveOrder({
   required List<BingxFuturesOpenOrder> activeOrders,
   required String stateHome,
 }) async {
-  if (activeOrders.length != 1) {
-    return (
-      reasonCode: 'order_ownership_unavailable',
-      order: null,
-      placementOperationId: null,
-    );
-  }
   try {
     final effects = ExternalEffectService(
       readActiveCapsuleRootHex: () => admission.mandate.capsuleRootHex,
@@ -514,7 +592,15 @@ _managedActiveOrder({
       for (var index = 0; index < admission.authorizedUses; index += 1)
         admission.deterministicCycleOperationId(index)!,
     };
-    final managedOperations = <String, String>{};
+    final managedOperations =
+        <
+          ({
+            String orderId,
+            String clientOrderId,
+            String side,
+            String operationId,
+          })
+        >[];
     for (final operation in await effects.list(
       pluginId: bingxFuturesTradingPluginId,
     )) {
@@ -535,7 +621,9 @@ _managedActiveOrder({
       if (decoded is! Map<String, dynamic>) {
         return (
           reasonCode: 'order_ownership_unavailable',
-          order: null,
+          orderId: null,
+          clientOrderId: null,
+          side: null,
           placementOperationId: null,
         );
       }
@@ -545,30 +633,57 @@ _managedActiveOrder({
           receiptOrderId.isNotEmpty &&
           (operation.providerReferenceId == null ||
               operation.providerReferenceId == receiptOrderId)) {
-        managedOperations['${payload.clientOrderId}|$receiptOrderId'] =
-            operation.operationId;
+        managedOperations.add((
+          orderId: receiptOrderId,
+          clientOrderId: payload.clientOrderId,
+          side: payload.side.toUpperCase(),
+          operationId: operation.operationId,
+        ));
       }
     }
-    final order = activeOrders.single;
-    final clientOrderId = order.clientOrderId?.trim() ?? '';
-    final placementOperationId =
-        managedOperations['$clientOrderId|${order.orderId}'];
-    if (clientOrderId.isEmpty || placementOperationId == null) {
+    if (managedOperations.isEmpty) {
       return (
         reasonCode: 'external_order_active',
-        order: null,
+        orderId: null,
+        clientOrderId: null,
+        side: null,
         placementOperationId: null,
       );
     }
+    final matchingOpen = managedOperations.where(
+      (managed) => activeOrders.any(
+        (active) =>
+            active.orderId == managed.orderId &&
+            active.clientOrderId == managed.clientOrderId,
+      ),
+    );
+    if (matchingOpen.length > 1 ||
+        (matchingOpen.isEmpty && managedOperations.length != 1)) {
+      return (
+        reasonCode: 'order_ownership_unavailable',
+        orderId: null,
+        clientOrderId: null,
+        side: null,
+        placementOperationId: null,
+      );
+    }
+    final managed =
+        matchingOpen.isNotEmpty
+            ? matchingOpen.single
+            : managedOperations.single;
     return (
       reasonCode: 'managed_order_active',
-      order: order,
-      placementOperationId: placementOperationId,
+      orderId: managed.orderId,
+      clientOrderId: managed.clientOrderId,
+      side: managed.side,
+      placementOperationId: managed.operationId,
     );
   } on Object {
     return (
       reasonCode: 'order_ownership_unavailable',
-      order: null,
+      orderId: null,
+      clientOrderId: null,
+      side: null,
       placementOperationId: null,
     );
   }
