@@ -259,6 +259,7 @@ class BingxFuturesFeatureExtractorService {
     final lowPivots = <_Pivot>[];
     final buyLevels = <_MutableLevel>[];
     final sellLevels = <_MutableLevel>[];
+    String? lastPivotSide;
 
     for (var i = 0; i < candles.length; i++) {
       final p = i - 1;
@@ -267,16 +268,27 @@ class BingxFuturesFeatureExtractorService {
           i < 10 ? 0.0 : _atr(candles, period: 10, endIndex: i) / liqMar;
       if (_isPivotHigh(candles, p, left: liqLen, right: 1)) {
         final pivot = _Pivot(index: p, price: candles[p].high);
-        highPivots.insert(0, pivot);
-        if (highPivots.length > 50) highPivots.removeLast();
-        final cluster =
-            highPivots
+        final record =
+            !lineBreach ||
+            lastPivotSide != 'buyside' ||
+            (highPivots.isNotEmpty && pivot.price > highPivots.first.price);
+        if (record) {
+          if (lineBreach && lastPivotSide == 'buyside') {
+            highPivots.removeAt(0);
+          }
+          highPivots.insert(0, pivot);
+          lastPivotSide = 'buyside';
+          if (highPivots.length > 50) highPivots.removeLast();
+        }
+        final cluster = record
+            ? highPivots
                 .where(
                   (item) =>
                       item.price >= pivot.price - band &&
                       item.price <= pivot.price + band,
                 )
-                .toList();
+                .toList()
+            : const <_Pivot>[];
         if (cluster.length > 2 && i >= 10) {
           final anchor = cluster
               .map((e) => e.index)
@@ -287,7 +299,10 @@ class BingxFuturesFeatureExtractorService {
           final maxP = cluster
               .map((e) => e.price)
               .reduce((a, b) => a > b ? a : b);
-          final center = (minP + maxP) / 2.0;
+          final center =
+              lineBreach
+                  ? cluster.firstWhere((item) => item.index == anchor).price
+                  : (minP + maxP) / 2.0;
           _upsertLevel(
             levels: buyLevels,
             side: 'buyside',
@@ -304,16 +319,27 @@ class BingxFuturesFeatureExtractorService {
 
       if (_isPivotLow(candles, p, left: liqLen, right: 1)) {
         final pivot = _Pivot(index: p, price: candles[p].low);
-        lowPivots.insert(0, pivot);
-        if (lowPivots.length > 50) lowPivots.removeLast();
-        final cluster =
-            lowPivots
+        final record =
+            !lineBreach ||
+            lastPivotSide != 'sellside' ||
+            (lowPivots.isNotEmpty && pivot.price < lowPivots.first.price);
+        if (record) {
+          if (lineBreach && lastPivotSide == 'sellside') {
+            lowPivots.removeAt(0);
+          }
+          lowPivots.insert(0, pivot);
+          lastPivotSide = 'sellside';
+          if (lowPivots.length > 50) lowPivots.removeLast();
+        }
+        final cluster = record
+            ? lowPivots
                 .where(
                   (item) =>
                       item.price >= pivot.price - band &&
                       item.price <= pivot.price + band,
                 )
-                .toList();
+                .toList()
+            : const <_Pivot>[];
         if (cluster.length > 2 && i >= 10) {
           final anchor = cluster
               .map((e) => e.index)
@@ -324,7 +350,10 @@ class BingxFuturesFeatureExtractorService {
           final maxP = cluster
               .map((e) => e.price)
               .reduce((a, b) => a > b ? a : b);
-          final center = (minP + maxP) / 2.0;
+          final center =
+              lineBreach
+                  ? cluster.firstWhere((item) => item.index == anchor).price
+                  : (minP + maxP) / 2.0;
           _upsertLevel(
             levels: sellLevels,
             side: 'sellside',

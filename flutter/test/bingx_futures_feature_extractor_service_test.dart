@@ -115,76 +115,98 @@ void main() {
       expect(after.pivotCount, before.pivotCount);
     });
 
-    test(
-      '30m line exists before touch and becomes consumed at touch',
-      () {
-        BingxFuturesMarketSnapshotInput input({bool touch = false}) {
-          final base = _buildInput(permuted: false);
-          List<BingxFuturesCandle> series(String timeframe, Duration step) {
-            final start = DateTime.utc(2026, 4, 1);
-            return List.generate(80, (index) {
-              final from = start.add(step * index);
-              final pivot = const {8, 16, 24}.contains(index);
-              return _singleCandle(
-                timeframe,
-                from.toIso8601String(),
-                from.add(step).toIso8601String(),
-                100,
-                pivot || (touch && timeframe == '30m' && index == 79)
-                    ? 110
-                    : 104,
-                pivot ? 90 : 95,
-                100,
-              );
-            });
-          }
-
-          return BingxFuturesMarketSnapshotInput(
-            instrument: base.instrument,
-            prices: base.prices,
-            candles: [
-              ...base.candles.where(
-                (c) => c.timeframe != '1h' && c.timeframe != '1d',
-              ),
-              ...series('30m', const Duration(minutes: 30)),
-              ...series('1h', const Duration(hours: 1)),
-              ...series('1d', const Duration(days: 1)),
-            ],
-            trades: base.trades,
-            openInterest: base.openInterest,
-            funding: base.funding,
-            liquidityLevels: base.liquidityLevels,
-            sessionVolumes: base.sessionVolumes,
-            orderBookTopLevels: base.orderBookTopLevels,
-          );
+    test('30m line exists before touch and becomes consumed at touch', () {
+      BingxFuturesMarketSnapshotInput input({
+        bool touch = false,
+        bool alternating = true,
+      }) {
+        final base = _buildInput(permuted: false);
+        List<BingxFuturesCandle> series(String timeframe, Duration step) {
+          final start = DateTime.utc(2026, 4, 1);
+          return List.generate(80, (index) {
+            final from = start.add(step * index);
+            final pivotHigh = <int, double>{8: 110, 16: 109.6, 24: 109.8}[index];
+            return _singleCandle(
+              timeframe,
+              from.toIso8601String(),
+              from.add(step).toIso8601String(),
+              100,
+              touch && timeframe == '30m' && index == 79
+                  ? 110
+                  : pivotHigh ?? 104,
+              alternating && const {12, 20}.contains(index) ? 90 : 95,
+              100,
+            );
+          });
         }
 
-        BingxDetectedLiquidityLevel line(bool touch) => featureService
-            .extract(
-              snapshotService.build(
-                input(touch: touch),
-                strategyVersion: bingxPrebreachLineStrategyVersion,
-              ),
-              strategyVersion: bingxPrebreachLineStrategyVersion,
-            )
-            .liquidityLevels
-            .singleWhere(
-              (level) =>
-                  level.timeframe == '30m' &&
-                  level.side == 'buyside' &&
-                  level.anchorIndex == 8,
-            );
+        return BingxFuturesMarketSnapshotInput(
+          instrument: base.instrument,
+          prices: base.prices,
+          candles: [
+            ...base.candles.where(
+              (c) => c.timeframe != '1h' && c.timeframe != '1d',
+            ),
+            ...series('30m', const Duration(minutes: 30)),
+            ...series('1h', const Duration(hours: 1)),
+            ...series('1d', const Duration(days: 1)),
+          ],
+          trades: base.trades,
+          openInterest: base.openInterest,
+          funding: base.funding,
+          liquidityLevels: base.liquidityLevels,
+          sessionVolumes: base.sessionVolumes,
+          orderBookTopLevels: base.orderBookTopLevels,
+        );
+      }
 
-        final before = line(false);
-        final after = line(true);
-        expect(before.breached, isFalse);
-        expect(before.centerPriceDecimal, '110.00000000');
-        expect(before.confirmedAtUtc, isNotEmpty);
-        expect(after.breached, isTrue);
-        expect(after.centerPriceDecimal, before.centerPriceDecimal);
-        expect(after.confirmedAtUtc, before.confirmedAtUtc);
-      },
-    );
+      BingxDetectedLiquidityLevel line(bool touch) => featureService
+          .extract(
+            snapshotService.build(
+              input(touch: touch),
+              strategyVersion: bingxPrebreachLineStrategyVersion,
+            ),
+            strategyVersion: bingxPrebreachLineStrategyVersion,
+          )
+          .liquidityLevels
+          .singleWhere(
+            (level) =>
+                level.timeframe == '30m' &&
+                level.side == 'buyside' &&
+                level.anchorIndex == 8,
+          );
+
+      final before = line(false);
+      final after = line(true);
+      expect(before.breached, isFalse);
+      expect(before.centerPriceDecimal, '110.00000000');
+      expect(
+        (double.parse(before.zoneTopDecimal) +
+                double.parse(before.zoneBottomDecimal)) /
+            2,
+        110,
+      );
+      expect(before.confirmedAtUtc, isNotEmpty);
+      expect(after.breached, isTrue);
+      expect(after.centerPriceDecimal, before.centerPriceDecimal);
+      expect(after.confirmedAtUtc, before.confirmedAtUtc);
+      final noAlternatingSwing = featureService.extract(
+        snapshotService.build(
+          input(alternating: false),
+          strategyVersion: bingxPrebreachLineStrategyVersion,
+        ),
+        strategyVersion: bingxPrebreachLineStrategyVersion,
+      );
+      expect(
+        noAlternatingSwing.liquidityLevels.where(
+          (level) =>
+              level.timeframe == '30m' &&
+              level.side == 'buyside' &&
+              !level.breached,
+        ),
+        isEmpty,
+      );
+    });
 
     test('recent swept clusters cannot evict an untouched older zone', () {
       final candles = List<BingxFuturesCandle>.generate(90, (index) {
