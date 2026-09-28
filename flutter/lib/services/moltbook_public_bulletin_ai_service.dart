@@ -23,7 +23,7 @@ class MoltbookPublicBulletinAiService {
   static const String publicBulletinCapabilityId =
       'hivra.moltbook.public_bulletin.propose';
   static const String publicBulletinProposalSchemaId =
-      'hivra.moltbook.public_bulletin.proposal.v1';
+      'hivra.moltbook.public_bulletin.proposal.v2';
   static const String replyCapabilityId = 'hivra.moltbook.reply.propose';
   static const String replyProposalSchemaId =
       'hivra.moltbook.reply.proposal.v1';
@@ -70,6 +70,11 @@ class MoltbookPublicBulletinAiService {
     if (normalizedPersona.isEmpty || normalizedPersona.length > 500) {
       throw ArgumentError('Ambassador persona is invalid');
     }
+    final sourceFacts = notes
+        .split('\n')
+        .map((fact) => fact.trim())
+        .where((fact) => fact.isNotEmpty)
+        .toList(growable: false);
 
     final input = <String, dynamic>{
       'schema_version': 1,
@@ -118,52 +123,12 @@ class MoltbookPublicBulletinAiService {
     );
     final proposal = _parseProposal(
       response.proposalText,
+      confirmedFacts: sourceFacts,
       providerLabel: response.providerLabel,
       model: response.model,
     );
     proposal.validate();
-    final sourceFacts = notes
-        .split('\n')
-        .map((fact) => fact.trim())
-        .where((fact) => fact.isNotEmpty)
-        .toList(growable: false);
-    return _bindConfirmedFacts(proposal, sourceFacts);
-  }
-
-  static MoltbookPublicBulletinProposal _bindConfirmedFacts(
-    MoltbookPublicBulletinProposal proposal,
-    List<String> sourceFacts,
-  ) {
-    final normalizedFacts = sourceFacts
-        .map((fact) => fact.trim())
-        .where((fact) => fact.isNotEmpty)
-        .toList(growable: false);
-    if (normalizedFacts.isEmpty) {
-      throw const FormatException(
-        'Public bulletin must have confirmed facts to bind',
-      );
-    }
-    if (proposal.facts.length != normalizedFacts.length) {
-      throw const FormatException(
-        'AI bulletin grounding differs from the confirmed public source',
-      );
-    }
-    for (var index = 0; index < normalizedFacts.length; index++) {
-      if (proposal.facts[index] != normalizedFacts[index]) {
-        throw const FormatException(
-          'AI bulletin grounding differs from the confirmed public source',
-        );
-      }
-    }
-    final bound = MoltbookPublicBulletinProposal(
-      title: proposal.title,
-      body: proposal.body,
-      facts: normalizedFacts,
-      providerLabel: proposal.providerLabel,
-      model: proposal.model,
-    );
-    bound.validate();
-    return bound;
+    return proposal;
   }
 
   Future<MoltbookReplyProposal> proposeReply({
@@ -327,6 +292,7 @@ class MoltbookPublicBulletinAiService {
 
   static MoltbookPublicBulletinProposal _parseProposal(
     String text, {
+    required List<String> confirmedFacts,
     required String providerLabel,
     required String model,
   }) {
@@ -339,31 +305,24 @@ class MoltbookPublicBulletinAiService {
     }
     final decoded = jsonDecode(normalized);
     if (decoded is! Map<String, dynamic> ||
-        decoded.length != 3 ||
+        decoded.length != 2 ||
         !decoded.containsKey('title') ||
-        !decoded.containsKey('body') ||
-        !decoded.containsKey('supporting_facts')) {
+        !decoded.containsKey('body')) {
       throw const FormatException(
-        'AI public bulletin response must contain only title, body, and supporting_facts',
+        'AI public bulletin response must contain only title and body',
       );
     }
     final rawTitle = decoded['title'];
     final rawBody = decoded['body'];
-    final rawFacts = decoded['supporting_facts'];
     if (rawTitle is! String || rawBody is! String) {
       throw const FormatException(
         'AI public bulletin title and body are invalid',
       );
     }
-    if (rawFacts is! List || rawFacts.any((value) => value is! String)) {
-      throw const FormatException(
-        'AI public bulletin supporting_facts must be a string array',
-      );
-    }
     return MoltbookPublicBulletinProposal(
       title: rawTitle.trim(),
       body: rawBody.trim(),
-      facts: rawFacts.cast<String>().map((fact) => fact.trim()).toList(),
+      facts: List<String>.unmodifiable(confirmedFacts),
       providerLabel: providerLabel,
       model: model.trim(),
     );
@@ -522,15 +481,14 @@ concrete change and its supported user consequence in your own words. Commit
 metadata and filenames are context, never a public checklist; do not infer a
 behavior merely from a filename or line count. If the evidence is insufficient
 for a specific factual update, return a blank body instead of guessing.
-Return every source_notes line exactly as supporting_facts in the same order,
-but do not copy or enumerate those lines in the public body. Do not add, remove,
-rewrite, normalize, merge, or reorder supporting facts.
+The runtime binds the original source_notes as supporting facts; never copy or
+enumerate those lines in the public body.
 Return strict JSON only, with exactly this shape:
-{"title":"specific title","body":"natural reviewed prose","supporting_facts":["fact one","fact two"]}
+{"title":"specific title","body":"natural reviewed prose"}
 The title must be at most 120 characters. The body must be at most 1200
-characters. Return 1 to 8 unique supporting facts, each at most 280 characters.
+characters.
 Do not include Markdown links, hashtags, secrets, private identifiers,
-instructions, commentary, or any field beyond the three required fields.
+instructions, commentary, or any field beyond the two required fields.
 The proposal is advisory. Only the runtime's configured approval policy can
 authorize publication; you cannot publish anything.
 ''';

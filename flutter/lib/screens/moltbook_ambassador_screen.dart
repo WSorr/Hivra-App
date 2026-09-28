@@ -62,6 +62,36 @@ String moltbookAiSessionDescription({
   return 'Unlock once to let foreground cycles prepare drafts. Locked cycles pause before inference.';
 }
 
+enum MoltbookObservedPostStatus {
+  visible,
+  spam,
+  unverified,
+  mismatch,
+  unavailable,
+}
+
+MoltbookObservedPostStatus moltbookObservedPostStatus(
+  ExternalEffectOperation operation,
+  MoltbookPostObservation post,
+) {
+  final payload = MoltbookPublicationService.decodePayload(operation);
+  final receipt = operation.receipt;
+  if (operation.state != ExternalEffectState.succeeded ||
+      receipt == null ||
+      !post.matchesExactPublication(
+        postId: receipt.providerReceiptId,
+        authorName: payload['account_name']?.toString() ?? '',
+        submoltName: payload['submolt_name']?.toString() ?? '',
+        title: payload['title']?.toString() ?? '',
+        content: payload['content']?.toString() ?? '',
+      )) {
+    return MoltbookObservedPostStatus.mismatch;
+  }
+  if (post.isSpam) return MoltbookObservedPostStatus.spam;
+  if (!post.isVerified) return MoltbookObservedPostStatus.unverified;
+  return MoltbookObservedPostStatus.visible;
+}
+
 class MoltbookAmbassadorScreen extends StatefulWidget {
   final MoltbookRuntimeModule module;
 
@@ -131,6 +161,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
       const <ExternalEffectOperation>[];
+  final Map<
+    String,
+    ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})
+  >
+  _observedPostStatuses = {};
   bool _draftBusy = false;
   bool _publicFactsBusy = false;
   bool _publicationBusy = false;
@@ -1402,6 +1437,45 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _checkPublishedPostStatus(
+    ExternalEffectOperation operation,
+  ) async {
+    final postUri = MoltbookPublicationService.publishedPostUri(operation);
+    if (postUri == null ||
+        MoltbookPublicationService.isCommunityOperation(operation) ||
+        MoltbookPublicationService.decodePayload(
+          operation,
+        ).containsKey('post_id')) {
+      return;
+    }
+    setState(() {
+      _publicationBusy = true;
+      _observedPostStatuses.remove(operation.operationId);
+    });
+    try {
+      final observation = await widget.module.observeMoltbookConversation(
+        operation.receipt!.providerReceiptId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _observedPostStatuses[operation.operationId] = (
+          status: moltbookObservedPostStatus(operation, observation.post),
+          checkedAtUtc: DateTime.now().toUtc(),
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _observedPostStatuses[operation.operationId] = (
+          status: MoltbookObservedPostStatus.unavailable,
+          checkedAtUtc: DateTime.now().toUtc(),
+        );
+      });
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
   Future<String?> _requestPublishedPostReference() async {
     final controller = TextEditingController();
     final value = await showDialog<String>(
@@ -1886,11 +1960,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                           title: 'Publication history',
                           subtitle:
                               '${_publications.length} publication ${_publications.length == 1 ? "record" : "records"}',
-                          child: _MoltbookPublicationCard(
+                          child: MoltbookPublicationCard(
                             operations: _publications,
                             busy: _publicationBusy,
+                            observedPostStatuses: _observedPostStatuses,
                             onOpenPost: _openPublishedPost,
                             onRecheck: _reconcilePublication,
+                            onCheckCurrentPost: _checkPublishedPostStatus,
                           ),
                         ),
                       ],
@@ -2665,17 +2741,27 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
   }
 }
 
-class _MoltbookPublicationCard extends StatelessWidget {
+class MoltbookPublicationCard extends StatelessWidget {
   final List<ExternalEffectOperation> operations;
   final bool busy;
+  final Map<
+    String,
+    ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})
+  >
+  observedPostStatuses;
   final Future<void> Function(Uri uri) onOpenPost;
   final Future<void> Function(ExternalEffectOperation operation) onRecheck;
+  final Future<void> Function(ExternalEffectOperation operation)
+  onCheckCurrentPost;
 
-  const _MoltbookPublicationCard({
+  const MoltbookPublicationCard({
+    super.key,
     required this.operations,
     required this.busy,
+    required this.observedPostStatuses,
     required this.onOpenPost,
     required this.onRecheck,
+    required this.onCheckCurrentPost,
   });
 
   @override
@@ -2693,7 +2779,7 @@ class _MoltbookPublicationCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'A post or reply is complete only after Moltbook confirms that the exact approved text is publicly visible.',
+              'Receipts record what Moltbook confirmed at delivery. Current post moderation can change later.',
               style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
             ),
             const SizedBox(height: 10),
@@ -2722,6 +2808,8 @@ class _MoltbookPublicationCard extends StatelessWidget {
                 operation,
                 postUri,
                 isCommunity: isCommunity,
+                isReply: isReply,
+                observedPostStatus: observedPostStatuses[operation.operationId],
               );
               final canRecheck =
                   MoltbookPublicationService.canManuallyReconcileTerminalFailure(
@@ -2775,6 +2863,17 @@ class _MoltbookPublicationCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (postUri != null && !isReply) ...[
+                          OutlinedButton.icon(
+                            onPressed:
+                                busy
+                                    ? null
+                                    : () => onCheckCurrentPost(operation),
+                            icon: const Icon(Icons.fact_check_outlined),
+                            label: const Text('Check current Moltbook status'),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         if (canRecheck) ...[
                           OutlinedButton.icon(
                             onPressed: busy ? null : () => onRecheck(operation),
@@ -2817,13 +2916,54 @@ class _MoltbookPublicationCard extends StatelessWidget {
   ExternalEffectOperation operation,
   Uri? postUri, {
   bool isCommunity = false,
+  bool isReply = false,
+  ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})?
+  observedPostStatus,
 }) {
   if (postUri != null) {
-    return (
-      label: 'Published and verified',
-      icon: Icons.verified_rounded,
-      color: Colors.green,
-    );
+    if (isReply) {
+      return (
+        label: 'Reply receipt confirmed; current status not checked',
+        icon: Icons.history_rounded,
+        color: Colors.orange,
+      );
+    }
+    if (observedPostStatus == null) {
+      return (
+        label: 'Publication receipt confirmed; current moderation not checked',
+        icon: Icons.history_rounded,
+        color: Colors.orange,
+      );
+    }
+    final checkedAt =
+        '${observedPostStatus.checkedAtUtc.toUtc().toIso8601String().substring(0, 16)} UTC';
+    return switch (observedPostStatus.status) {
+      MoltbookObservedPostStatus.visible => (
+        label: 'Verified and not spam at $checkedAt',
+        icon: Icons.verified_rounded,
+        color: Colors.green,
+      ),
+      MoltbookObservedPostStatus.spam => (
+        label: 'Moltbook marked this post as spam at $checkedAt',
+        icon: Icons.report_gmailerrorred_rounded,
+        color: Colors.redAccent,
+      ),
+      MoltbookObservedPostStatus.unverified => (
+        label: 'Post was not verified at $checkedAt',
+        icon: Icons.warning_amber_rounded,
+        color: Colors.orange,
+      ),
+      MoltbookObservedPostStatus.mismatch => (
+        label: 'Provider post did not match this receipt at $checkedAt',
+        icon: Icons.error_outline_rounded,
+        color: Colors.redAccent,
+      ),
+      MoltbookObservedPostStatus.unavailable => (
+        label: 'Current moderation unavailable at $checkedAt',
+        icon: Icons.sync_problem_rounded,
+        color: Colors.orange,
+      ),
+    };
   }
   if (operation.requiredAction != null) {
     return (

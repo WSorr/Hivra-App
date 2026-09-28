@@ -9,9 +9,7 @@ void main() {
     final runtime = _RecordingRuntime(
       responseText:
           '{"title":"Bounded Moltbook review lands in Hivra",'
-          '"body":"Hivra added bounded Moltbook conversation review. Engagement planning cannot publish external content.",'
-          '"supporting_facts":["Hivra added bounded Moltbook conversation review.",'
-          '"Engagement planning cannot publish external content."]}',
+          '"body":"Hivra added bounded Moltbook conversation review. Engagement planning cannot publish external content."}',
     );
     final service = MoltbookPublicBulletinAiService(runtime: runtime);
 
@@ -62,8 +60,7 @@ void main() {
       runtime: _RecordingRuntime(
         responseText:
             '{"title":"Chat survives an app restart",'
-            '"body":"The latest Chat change keeps conversations available after the app restarts, so a session can continue instead of beginning again.",'
-            '"supporting_facts":["Capsule Chat now resumes after restart."]}',
+            '"body":"The latest Chat change keeps conversations available after the app restarts, so a session can continue instead of beginning again."}',
       ),
     );
 
@@ -76,27 +73,27 @@ void main() {
     expect(proposal.facts, <String>['Capsule Chat now resumes after restart.']);
   });
 
-  test('rejects changed grounding instead of replacing AI prose', () async {
+  test('binds confirmed facts without asking AI to repeat them', () async {
     final service = MoltbookPublicBulletinAiService(
       runtime: _RecordingRuntime(
         responseText:
             '{"title":"Capsule runtime update",'
-            '"body":"Capsule owns the runtime. A paraphrased plugin note.",'
-            '"supporting_facts":["Capsule owns the runtime.",'
-            '"A fabricated plugin change."]}',
+            '"body":"The Capsule remains the runtime while plugins stay replaceable."}',
       ),
     );
 
-    await expectLater(
-      service.propose(
-        sourceNotes:
-            'Capsule owns the runtime.\n'
-            'Plugins are replaceable tools.',
-        category: 'hivra-development',
-        personaSummary: 'Explain facts.',
-      ),
-      throwsA(isA<FormatException>()),
+    final proposal = await service.propose(
+      sourceNotes:
+          'Capsule owns the runtime.\n'
+          'Plugins are replaceable tools.',
+      category: 'hivra-development',
+      personaSummary: 'Explain facts.',
     );
+    expect(proposal.facts, <String>[
+      'Capsule owns the runtime.',
+      'Plugins are replaceable tools.',
+    ]);
+    expect(proposal.body, isNot(contains('Plugins are replaceable tools.')));
   });
 
   test('rejects positioning that contradicts Capsule-first axis', () async {
@@ -104,8 +101,7 @@ void main() {
       runtime: _RecordingRuntime(
         responseText:
             '{"title":"Hivra concept",'
-            '"body":"Hivra is a relationship-first concept system for coordinated value.",'
-            '"supporting_facts":["A source note."]}',
+            '"body":"Hivra is a relationship-first concept system for coordinated value."}',
       ),
     );
 
@@ -130,8 +126,7 @@ void main() {
       runtime: _RecordingRuntime(
         responseText:
             '{"title":"Moltbook repository news restored",'
-            '"body":"The public commit restored Moltbook repository news before test20 (#302).",'
-            '"supporting_facts":["The public commit restored Moltbook repository news before test20 (#302)."]}',
+            '"body":"The public commit restored Moltbook repository news before test20 (#302)."}',
       ),
     );
 
@@ -150,8 +145,7 @@ void main() {
       runtime: _RecordingRuntime(
         responseText:
             '{"title":"One change",'
-            '"body":"One public fact. #Hivra",'
-            '"supporting_facts":["One public fact."]}',
+            '"body":"One public fact. #Hivra"}',
       ),
     );
 
@@ -176,7 +170,7 @@ void main() {
       runtime: _RecordingRuntime(
         responseText:
             '{"title":"One change","body":"One public fact.",'
-            '"supporting_facts":["One public fact."],"publish_allowed":true}',
+            '"publish_allowed":true}',
       ),
     );
 
@@ -384,9 +378,7 @@ void main() {
   test('rejects invisible text controls in public output', () async {
     final service = MoltbookPublicBulletinAiService(
       runtime: _RecordingRuntime(
-        responseText:
-            '{"title":"Release update","body":"Safe text\u202Eevil",'
-            '"supporting_facts":["One public fact."]}',
+        responseText: '{"title":"Release update","body":"Safe text\u202Eevil"}',
       ),
     );
 
@@ -448,9 +440,7 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   bool unlocked;
 
   _RecordingRuntime({
-    this.responseText =
-        '{"title":"One change","body":"One public fact.",'
-            '"supporting_facts":["One public fact."]}',
+    this.responseText = '{"title":"One change","body":"One public fact."}',
     this.error,
     this.unlocked = true,
   });

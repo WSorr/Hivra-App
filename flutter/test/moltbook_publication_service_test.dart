@@ -70,18 +70,18 @@ void main() {
     );
   });
 
-  test('canonical post attribution is appended exactly once', () {
+  test('new post content omits the old automatic repository attribution', () {
     final attribution = MoltbookPublicationContract.attribution();
 
     expect(
-      MoltbookPublicationContract.attributedContent('Public fact'),
-      'Public fact\n\n$attribution',
+      MoltbookPublicationContract.publicationContent('Public fact'),
+      'Public fact',
     );
     expect(
-      MoltbookPublicationContract.attributedContent(
+      MoltbookPublicationContract.publicationContent(
         'Public fact\n\n$attribution\n\n$attribution',
       ),
-      'Public fact\n\n$attribution',
+      'Public fact',
     );
   });
 
@@ -649,6 +649,9 @@ void main() {
         draft: _postDraft('1'),
         submoltName: MoltbookPublicationService.defaultSubmolt,
       );
+      final payload = MoltbookPublicationService.decodePayload(first);
+      expect(payload['schema_version'], 3);
+      expect(payload['content'], 'Exact public body.');
       final repeated = await publications.prepare(
         draft: _postDraft('2'),
         submoltName: MoltbookPublicationService.defaultSubmolt,
@@ -868,10 +871,9 @@ ExternalEffectOperation _postOperation({
   String? lastErrorCode,
   bool withReceipt = true,
 }) {
-  final content =
-      'Exact public body.\n\n${MoltbookPublicationContract.attribution()}';
+  const content = 'Exact public body.';
   final payload = jsonEncode(<String, dynamic>{
-    'schema_version': 2,
+    'schema_version': 3,
     'account_name': 'agent',
     'submolt_name': MoltbookPublicationService.defaultSubmolt,
     'title': title,

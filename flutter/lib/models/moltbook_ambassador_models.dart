@@ -58,10 +58,7 @@ class MoltbookPublicBulletinProposal {
       );
     }
     if (body.contains(
-      RegExp(
-        r'https?://|#[a-z_]|\[hivra-effect:',
-        caseSensitive: false,
-      ),
+      RegExp(r'https?://|#[a-z_]|\[hivra-effect:', caseSensitive: false),
     )) {
       throw const FormatException(
         'AI public bulletin body contains unsupported formatting',
@@ -725,14 +722,14 @@ class MoltbookPublicationContract {
     return '[Hivra on GitHub]($repositoryUrl)';
   }
 
-  static String attributedContent(String body) {
+  static String publicationContent(String body) {
     final suffix = attribution();
     var content = body.trimRight();
     while (content.endsWith(suffix)) {
       content =
           content.substring(0, content.length - suffix.length).trimRight();
     }
-    return '$content\n\n$suffix';
+    return content;
   }
 
   static String legacyAttribution(String operationId) {
