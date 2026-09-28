@@ -1,16 +1,89 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
+import 'package:hivra_app/models/consensus_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/capsule_chat_plugin_screen.dart';
 import 'package:hivra_app/services/plugin_runtime_module_service.dart';
 import 'package:hivra_app/widgets/capsule_chat_conversation_workspace.dart';
+import 'package:hivra_app/utils/peer_identity_format.dart';
 
 void main() {
   const peerHex =
       '2222222222222222222222222222222222222222222222222222222222222222';
   const capsuleHex =
       '1111111111111111111111111111111111111111111111111111111111111111';
+
+  testWidgets('sidebar lists trusted contacts and opens the selected chat', (
+    tester,
+  ) async {
+    const otherPeerHex =
+        '3333333333333333333333333333333333333333333333333333333333333333';
+    String? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            height: 500,
+            child: CapsuleChatContactSidebar(
+              contacts: const <ConsensusPreview>[
+                ConsensusPreview(
+                  peerHex: peerHex,
+                  peerLabel: '',
+                  invitationCount: 1,
+                  relationshipCount: 1,
+                  hashHex: '',
+                  canonicalJson: '',
+                  blockingFacts: <ConsensusBlockingFact>[],
+                ),
+                ConsensusPreview(
+                  peerHex: otherPeerHex,
+                  peerLabel: '',
+                  invitationCount: 1,
+                  relationshipCount: 1,
+                  hashHex: '',
+                  canonicalJson: '',
+                  blockingFacts: <ConsensusBlockingFact>[],
+                ),
+              ],
+              messages: const <CapsuleChatInboxMessage>[
+                CapsuleChatInboxMessage(
+                  id: 'recent',
+                  fromHex: otherPeerHex,
+                  toHex: capsuleHex,
+                  messageText: 'See you soon',
+                  createdAtUtc: '2026-09-27T00:00:00Z',
+                  envelopeHashHex: '',
+                  timestampMs: 10,
+                  direction: CapsuleChatMessageDirection.incoming,
+                  deliveryState: CapsuleChatMessageDeliveryState.received,
+                ),
+              ],
+              contactLabels: <String, String>{
+                PeerIdentityFormat.capsuleKeyFromRootHex(peerHex)!: 'Ada',
+                PeerIdentityFormat.capsuleKeyFromRootHex(otherPeerHex)!: 'Ben',
+              },
+              unreadByPeer: const <String, int>{otherPeerHex: 2},
+              selectedPeerHex: peerHex,
+              enabled: true,
+              refreshing: false,
+              onSelect: (peer) => selected = peer,
+              onRefresh: () async {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Conversations'), findsOneWidget);
+    expect(find.text('Ada'), findsOneWidget);
+    expect(find.text('Ben'), findsOneWidget);
+    expect(find.text('See you soon'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    await tester.tap(find.text('Ben'));
+    expect(selected, otherPeerHex);
+  });
 
   testWidgets('shows a conversation instead of transport controls', (
     tester,
