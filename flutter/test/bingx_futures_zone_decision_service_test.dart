@@ -1068,6 +1068,37 @@ void main() {
       expect(second.anchorExecutable, isTrue);
       expect(first.liquidityEventId, second.liquidityEventId);
     });
+    test('line entry and opposite target ignore asymmetric zone midpoints', () {
+      final result = service.decide(
+        input: _htfReclaimInput(
+          side: 'buy',
+          strategyVersion: bingxPrebreachLineStrategyVersion,
+          restingZoneEntry: true,
+          clusters: [
+            _line(
+              timeframe: '1h',
+              side: 'sellside',
+              center: 91,
+              bottom: 89,
+              top: 92,
+            ),
+            _line(
+              timeframe: '30m',
+              side: 'buyside',
+              center: 101,
+              bottom: 99,
+              top: 102,
+            ),
+          ],
+        ),
+      );
+      expect(result.anchorExecutable, isTrue);
+      expect((result.zoneLow + result.zoneHigh) / 2, 91);
+      expect(result.externalSellRetest, 101);
+      expect(result.parentZone?['timeframe'], '1h');
+      expect(result.targetRetestPct, 0);
+      expect(result.needsFartherRetest, isFalse);
+    });
     test('equidistant opposite lines need an explicit side', () {
       final result = service.decide(
         input: _htfReclaimInput(
@@ -1450,6 +1481,8 @@ BingxDetectedLiquidityLevel _line({
   required String timeframe,
   required String side,
   required num center,
+  num? bottom,
+  num? top,
   bool breached = false,
 }) => BingxDetectedLiquidityLevel(
   timeframe: timeframe,
@@ -1459,8 +1492,8 @@ BingxDetectedLiquidityLevel _line({
   side: side,
   levelClass: 'internal',
   centerPriceDecimal: '$center',
-  zoneBottomDecimal: '${center - 1}',
-  zoneTopDecimal: '${center + 1}',
+  zoneBottomDecimal: '${bottom ?? center - 1}',
+  zoneTopDecimal: '${top ?? center + 1}',
   pivotCount: 3,
   breached: breached,
   anchorIndex: 7,

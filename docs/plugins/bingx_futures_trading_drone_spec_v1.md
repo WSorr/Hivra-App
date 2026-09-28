@@ -279,11 +279,15 @@ not a numerical port of LuxAlgo:
    - replay MUST NOT apply the final snapshot ATR retroactively to earlier
      clusters. Later volatility alone cannot resize their recorded geometry.
 3. Cluster acceptance:
-   - level is valid only when `count > 2` pivots in cluster
+   - level is valid only when `count > 2` pivots in cluster;
+   - for the pre-breach line, consecutive same-side pivots without an
+     intervening opposite swing count as one extreme, not several confirmations.
 4. Level price:
-   - cluster center = `avg(minPivotPrice, maxPivotPrice)`
+   - legacy zone center = `avg(minPivotPrice, maxPivotPrice)`;
+   - pre-breach line price = the earliest contributing confirmed pivot price,
+     not the midpoint of the cluster's outer geometry.
 5. Zone thickness:
-   - top/bottom around center by `± (ATR10 / liqMar)`
+   - top/bottom around the applicable level price by `± (ATR10 / liqMar)`
 6. External/Internal class:
    - buyside external = highest active buyside level
    - sellside external = lowest active sellside level
@@ -331,6 +335,9 @@ authorize an order. Buyside liquidity above price selects a short, and
 sellside liquidity below price selects a long. Place a resting limit at the
 selected line price, rounded to a valid exchange tick, before the first touch;
 do not wait for a sweep, reclaim, directional candle, or post-breach zone.
+Sweep, trend, volume, and retest diagnostics do not change this entry line or
+trade side. The profit target is the price of a still-active opposite line,
+not the midpoint of its zone; without such a target, no new intent is prepared.
 There is no universal one-percent displacement from the line. A line already
 crossed before order placement is not a new entry opportunity. The current
 forming `5M` candle can invalidate a confirmed line but cannot confirm a new
