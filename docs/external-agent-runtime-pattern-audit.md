@@ -28,14 +28,13 @@ reimplemented under new agent terminology:
 - provider abstraction and isolated WASM drone execution;
 - separation of AI proposal, deterministic authority, approval, effect, and
   receipt;
-- signed and identity-bound Remote Runner evidence.
 
 ## 3. Patterns Worth Adopting
 
 ### 3.1 Operations Center
 
 Provide one human-readable projection of work already owned by the existing
-Chat, Moltbook, Trading, transport-delivery, and external-effect lifecycles.
+Chat, Moltbook, transport-delivery, and external-effect lifecycles.
 Useful fields are operation, Capsule, drone, state, next action, last evidence,
 and terminal or unresolved reason.
 
@@ -109,30 +108,13 @@ None of these steps is selected automatically. Each requires one named owner,
 a capability-closure proof, a removed or sealed ambiguity, and regression
 evidence before implementation.
 
-## 6. Remote Runner Readiness Fact
-
-An operator has reported that a dedicated BingX futures subaccount now exists
-for later Remote Runner validation. This is external preparation only:
-
-- no account identifier, API key, secret, host path, or server credential is
-  recorded here;
-- the report does not prove the exchange permission set or key restrictions;
-- it does not authorize credential transfer, account reads, service
-  activation, scheduling, orders, cancellation, or reconciliation;
-- the active Pass T gates remain authoritative.
-
-Before any later account or effect pass, evidence must independently verify at
-least futures-only API rights, withdrawals disabled, IP restriction where the
-provider supports it, isolated balance/risk limits, explicit expiry or
-revocation, and an operator-tested kill path.
-
-## 7. Revisit Trigger
+## 6. Revisit Trigger
 
 Re-run this audit only when a concrete Hivra product finding requires one of
 the patterns above or when an external source has materially changed. Do not
 poll competitor roadmaps into Hivra's active development board.
 
-## 8. Forward Scenario Model
+## 7. Forward Scenario Model
 
 This section is a scenario model, not a product claim or forecast. Current
 signals support increasing agent interoperability, hybrid edge/cloud

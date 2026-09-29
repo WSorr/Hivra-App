@@ -6,10 +6,6 @@ import 'package:crypto/crypto.dart';
 import '../ffi/app_runtime_runtime.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
-import 'bingx_futures_credential_store.dart';
-import 'bingx_futures_exchange_service.dart';
-import 'bingx_futures_order_tracking_store.dart';
-import 'bingx_futures_risk_history_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_contact_label_store.dart';
 import 'capsule_diagnostics_service.dart';
@@ -242,7 +238,6 @@ class AppRuntimeService {
     );
     return PluginHostApiService(
       handlers: <PluginHostContractHandler>[
-        const BingxFuturesPluginContractHandler(),
         CapsuleChatPluginContractHandler(
           readSignable: consensus.signable,
           readAttestedSignable: attestedGuard.signable,
@@ -253,28 +248,6 @@ class AppRuntimeService {
       resolveRuntimeInvoke:
           (request, binding) =>
               wasmRuntime.invoke(request: request, binding: binding),
-    );
-  }
-
-  BingxFuturesCredentialStore buildBingxFuturesCredentialStore() {
-    return BingxFuturesCredentialStore(
-      readActiveCapsuleRootHex: activeCapsuleRootHex,
-    );
-  }
-
-  BingxFuturesExchangeService buildBingxFuturesExchangeService() {
-    return BingxFuturesExchangeService();
-  }
-
-  BingxFuturesOrderTrackingStore buildBingxFuturesOrderTrackingStore() {
-    return BingxFuturesOrderTrackingStore(
-      readActiveCapsuleRootHex: activeCapsuleRootHex,
-    );
-  }
-
-  BingxFuturesRiskHistoryService buildBingxFuturesRiskHistoryService() {
-    return BingxFuturesRiskHistoryService(
-      readActiveCapsuleRootHex: activeCapsuleRootHex,
     );
   }
 

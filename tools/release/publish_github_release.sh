@@ -235,8 +235,7 @@ require_clean_tracked_worktree
   --allow-existing-remote-tag
 
 info "Automated preflight"
-"$ROOT/tools/release/preflight.sh" \
-  --trading-evidence-build-tag "$VERSION"
+"$ROOT/tools/release/preflight.sh"
 
 info "Manual signoff gate"
 "$ROOT/tools/release/check_manual_release_signoff.sh" \

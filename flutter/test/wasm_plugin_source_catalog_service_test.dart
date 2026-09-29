@@ -51,8 +51,8 @@ void main() {
       'plugin/manifest.json': jsonEncode({
         'schema': 'hivra.plugin.manifest',
         'version': 1,
-        'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-        'contract': {'kind': 'bingx_futures_order_intent'},
+        'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+        'contract': {'kind': 'moltbook_ambassador_draft'},
         'runtime': {
           'abi': 'hivra_host_abi_v2',
           'entry_export': 'hivra_evaluate_v1',
@@ -99,9 +99,9 @@ void main() {
       sourceName: 'Hivra Plugins',
       entries: [
         {
-          'id': 'bingx-futures-catalog',
-          'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-          'display_name': 'BingX Futures Trading',
+          'id': 'moltbook-catalog',
+          'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+          'display_name': 'Moltbook Ambassador',
           'version': '0.1.0',
           'download_url': downloadUrl,
           'package_kind': 'zip',
@@ -157,7 +157,7 @@ void main() {
     expect(catalog.entries.length, 1);
     expect(
       catalog.entries.first.pluginId,
-      'hivra.contract.bingx-futures-trading.v1',
+      'hivra.contract.moltbook-ambassador.v1',
     );
     expect(catalogCacheControl, contains('no-cache'));
     expect(catalogPragma, contains('no-cache'));
@@ -209,9 +209,9 @@ void main() {
         sourceName: 'Hivra Plugins',
         entries: [
           {
-            'id': 'bingx-futures-catalog',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-            'display_name': 'BingX Futures Trading',
+            'id': 'moltbook-catalog',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'display_name': 'Moltbook Ambassador',
             'version': '0.1.0',
             'download_url': downloadUrl,
             'package_kind': 'zip',
@@ -257,7 +257,7 @@ void main() {
       );
 
       expect(catalog.sourceId, 'wsorr.hivra.plugins');
-      expect(catalog.entries.single.id, 'bingx-futures-catalog');
+      expect(catalog.entries.single.id, 'moltbook-catalog');
     },
   );
 
@@ -269,9 +269,9 @@ void main() {
         sourceName: 'Hivra Plugins',
         entries: [
           {
-            'id': 'bingx-futures-catalog',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-            'display_name': 'BingX Futures Trading',
+            'id': 'moltbook-catalog',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'display_name': 'Moltbook Ambassador',
             'version': '0.1.0',
             'download_url':
                 'http://127.0.0.1:${server.port}/packages/demo-plugin.zip',
@@ -327,8 +327,8 @@ void main() {
       );
 
       expect(record.packageKind, 'zip');
-      expect(record.pluginId, 'hivra.contract.bingx-futures-trading.v1');
-      expect(record.contractKind, 'bingx_futures_order_intent');
+      expect(record.pluginId, 'hivra.contract.moltbook-ambassador.v1');
+      expect(record.contractKind, 'moltbook_ambassador_draft');
     },
   );
 
@@ -346,9 +346,9 @@ void main() {
         'source_name': 'Local Hivra Plugins',
         'entries': [
           {
-            'id': 'bingx-futures-local',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-            'display_name': 'BingX Futures Local',
+            'id': 'moltbook-local',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'display_name': 'Moltbook Local',
             'version': '0.1.0',
             'download_url': File(packagePath).uri.toString(),
             'package_kind': 'zip',
@@ -363,7 +363,7 @@ void main() {
     expect(catalog.entries.length, 1);
 
     final record = await service.installFromSourceEntry(catalog.entries.first);
-    expect(record.pluginId, 'hivra.contract.bingx-futures-trading.v1');
+    expect(record.pluginId, 'hivra.contract.moltbook-ambassador.v1');
   });
 
   test(
@@ -384,8 +384,8 @@ void main() {
           'entries': [
             {
               'id': 'fallback-local',
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'display_name': 'BingX Futures Local Fallback',
+              'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+              'display_name': 'Moltbook Local Fallback',
               'version': '0.1.0',
               'download_url': File(packagePath).uri.toString(),
               'package_kind': 'zip',
@@ -426,8 +426,8 @@ void main() {
           'entries': [
             {
               'id': 'local-first',
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'display_name': 'BingX Futures Local First',
+              'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+              'display_name': 'Moltbook Local First',
               'version': '0.2.2',
               'download_url': File(packagePath).uri.toString(),
               'package_kind': 'zip',
@@ -457,7 +457,7 @@ void main() {
 
     final entry = WasmPluginSourceCatalogEntry(
       id: 'bad-hash',
-      pluginId: 'hivra.contract.bingx-futures-trading.v1',
+      pluginId: 'hivra.contract.moltbook-ambassador.v1',
       displayName: 'Bad Hash',
       version: '0.1.0',
       downloadUrl: File(packagePath).uri.toString(),
@@ -483,7 +483,7 @@ void main() {
         'entries': [
           {
             'id': 'bad-sha-shape',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'Bad SHA Shape',
             'version': '0.1.0',
             'download_url': 'file:///tmp/any.zip',
@@ -512,7 +512,7 @@ void main() {
         'entries': [
           {
             'id': 'missing-sha',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'Missing SHA',
             'version': '0.1.0',
             'download_url': 'https://example.com/plugin.zip',
@@ -541,7 +541,7 @@ void main() {
         'entries': [
           {
             'id': 'valid-http',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'Valid HTTP',
             'version': '0.1.0',
             'download_url': 'https://example.com/plugin.zip',
@@ -549,7 +549,7 @@ void main() {
           },
           {
             'id': 'bad-ftp',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'Bad FTP',
             'version': '0.1.0',
             'download_url': 'ftp://example.com/plugin.zip',
@@ -576,7 +576,7 @@ void main() {
         'entries': [
           {
             'id': 'dup-id',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'First',
             'version': '0.1.0',
             'download_url': 'https://example.com/first.zip',
@@ -612,7 +612,7 @@ void main() {
         'entries': [
           {
             'id': 'valid-id-shape',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'Valid Plugin Id',
             'version': '0.1.0',
             'download_url': 'https://example.com/valid.zip',
@@ -620,7 +620,7 @@ void main() {
           },
           {
             'id': 'bad-id-shape',
-            'plugin_id': 'bingx-futures-trading',
+            'plugin_id': 'moltbook-ambassador',
             'display_name': 'Bad Plugin Id',
             'version': '0.1.0',
             'download_url': 'https://example.com/bad.zip',
@@ -647,7 +647,7 @@ void main() {
         'entries': [
           {
             'id': 'valid-version-shape',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'Valid Version',
             'version': '0.1.0',
             'download_url': 'https://example.com/valid.zip',
@@ -655,7 +655,7 @@ void main() {
           },
           {
             'id': 'bad-version-shape',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'display_name': 'Bad Version',
             'version': 'v0.1',
             'download_url': 'https://example.com/bad.zip',
@@ -685,7 +685,7 @@ void main() {
           'entries': [
             {
               'id': 'entry-a',
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
               'display_name': 'First',
               'version': '0.1.0',
               'download_url': 'https://example.com/first.zip',
@@ -693,7 +693,7 @@ void main() {
             },
             {
               'id': 'entry-b',
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
               'display_name': 'Second same plugin/version',
               'version': '0.1.0',
               'download_url': 'https://example.com/second.zip',
@@ -701,7 +701,7 @@ void main() {
             },
             {
               'id': 'entry-c',
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
               'display_name': 'Different version',
               'version': '0.2.0',
               'download_url': 'https://example.com/third.zip',
@@ -733,8 +733,8 @@ void main() {
 
     final entry = WasmPluginSourceCatalogEntry(
       id: 'metadata-mismatch',
-      pluginId: 'hivra.contract.bingx-futures-trading.v1',
-      displayName: 'Expected BingX Futures Plugin',
+      pluginId: 'hivra.contract.moltbook-ambassador.v1',
+      displayName: 'Expected Moltbook Plugin',
       version: '0.1.0',
       downloadUrl: File(packagePath).uri.toString(),
       packageKind: 'zip',

@@ -3,17 +3,16 @@
 This log is the canonical proof that packaged release artifacts were manually
 exercised before GitHub publication.
 
-Automated preflight, deterministic fixtures, and trading-drone evidence rows do
-not satisfy this log. Add a row only after installing or launching the packaged
-artifact for that exact platform and completing the platform release checklist.
+Automated preflight and deterministic fixtures do not satisfy this log. Add a
+row only after installing or launching the packaged artifact for that exact
+platform and completing the platform release checklist.
 
 Required status values:
 
 - `PASS`: gate was manually completed for this exact build tag and artifact.
-- `N/A`: gate is intentionally not applicable to this platform. For Trading
-  provider receipt, restart reconciliation, and duplicate suppression, a
-  `public` release permits it only when the same field is `PASS` on the other
-  packaged platform. A `test` prerelease may use `N/A` on both platforms.
+- `N/A`: gate is intentionally not applicable to this platform. The retained
+  Trading columns are historical after the 1.x Trading capability retirement
+  and must be `N/A` for later release candidates.
 - `LEGACY`: historical broad evidence predates the split Trading acceptance
   fields and cannot satisfy a new publication or promotion.
 - `INVALID`: the historical exercise is retained, but it does not prove the
@@ -25,20 +24,10 @@ retain the digest of the bytes that were actually exercised and mark the row
 may return to `PASS` only after the exact published bytes are exercised again.
 
 For publication, macOS and Android must each have one row for the build tag.
-`Manual Smoke`, Trading READY/BLOCKED, Trading Risk Rejection,
-`Moltbook Smoke`, and `User Lifetime` must be `PASS` on both platforms.
-Provider receipt, restart reconciliation, and duplicate suppression attest the
-single canonical effect lifecycle. A `public` release requires each field to
-be `PASS` on at least one packaged platform and permits `N/A` on the other. A
-`test` prerelease may use `N/A` on both platforms so the exact packaged build
-can collect rare live-market evidence; its notes must state that no provider
-effect was observed. A paused scan or deterministic fixture cannot be recorded
-as a live-effect `PASS`. `AI Surface` records the release's canonical AI
-product surface: current candidates must complete the Capsule Analyst smoke on
-macOS and may use `PASS` or `N/A` on Android. Historical rows retain the result
-for the AI surface that existed in that artifact; they do not authorize its
-restoration. Historical rows created before the Moltbook gate retain `N/A`;
-new release candidates may not use `N/A` for Moltbook.
+`Manual Smoke`, `Moltbook Smoke`, and `User Lifetime` must be `PASS` on both
+platforms. `AI Surface` must be `PASS` on macOS and may be `PASS` or `N/A` on
+Android. Historical rows and their Trading evidence remain immutable; the
+retired columns no longer authorize or gate future product behavior.
 
 | Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading READY/BLOCKED | Trading Risk Rejection | Trading Provider Receipt | Trading Restart Reconciliation | Trading Duplicate Suppression | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|

@@ -74,18 +74,12 @@ check_platform() {
   [ "$field_count" -eq 18 ] ||
     die "$platform signoff row has a malformed or retired field layout"
 
-  local date artifact manual trading_decision trading_risk trading_receipt
-  local trading_restart trading_dedupe moltbook lifetime ai_surface signer
+  local date artifact manual moltbook lifetime ai_surface signer
   local artifact_sha256
   date="$(field_value "$row" 3)"
   artifact="$(field_value "$row" 5)"
   artifact_sha256="$(field_value "$row" 6)"
   manual="$(field_value "$row" 7)"
-  trading_decision="$(field_value "$row" 8)"
-  trading_risk="$(field_value "$row" 9)"
-  trading_receipt="$(field_value "$row" 10)"
-  trading_restart="$(field_value "$row" 11)"
-  trading_dedupe="$(field_value "$row" 12)"
   moltbook="$(field_value "$row" 13)"
   lifetime="$(field_value "$row" 14)"
   ai_surface="$(field_value "$row" 15)"
@@ -99,16 +93,6 @@ check_platform() {
     die "$platform signoff date must be UTC ISO-8601 seconds: $date"
 
   status_is_pass "$manual" || die "$platform Manual Smoke must be PASS"
-  status_is_pass "$trading_decision" ||
-    die "$platform Trading READY/BLOCKED must be PASS"
-  status_is_pass "$trading_risk" ||
-    die "$platform Trading Risk Rejection must be PASS"
-  status_is_pass_or_na "$trading_receipt" ||
-    die "$platform Trading Provider Receipt must be PASS or N/A"
-  status_is_pass_or_na "$trading_restart" ||
-    die "$platform Trading Restart Reconciliation must be PASS or N/A"
-  status_is_pass_or_na "$trading_dedupe" ||
-    die "$platform Trading Duplicate Suppression must be PASS or N/A"
   status_is_pass "$moltbook" || die "$platform Moltbook Smoke must be PASS"
   status_is_pass "$lifetime" || die "$platform User Lifetime must be PASS"
 
@@ -119,21 +103,6 @@ check_platform() {
   fi
 
   echo "PASS manual-signoff: $BUILD_TAG $platform"
-}
-
-check_shared_trading_effect() {
-  local field="$1"
-  local label="$2"
-  local mac_row android_row mac_value android_value
-  mac_row="$(find_row macOS)"
-  android_row="$(find_row Android)"
-  [ -n "$mac_row" ] || die "missing macOS signoff row for shared $label evidence"
-  [ -n "$android_row" ] || die "missing Android signoff row for shared $label evidence"
-  mac_value="$(field_value "$mac_row" "$field")"
-  android_value="$(field_value "$android_row" "$field")"
-  if ! status_is_pass "$mac_value" && ! status_is_pass "$android_value"; then
-    die "$label must be PASS on at least one packaged platform"
-  fi
 }
 
 run_check() {
@@ -154,11 +123,6 @@ run_check() {
     all)
       check_platform macOS
       check_platform Android
-      if [ "$CHANNEL" = "public" ]; then
-        check_shared_trading_effect 10 "Trading Provider Receipt"
-        check_shared_trading_effect 11 "Trading Restart Reconciliation"
-        check_shared_trading_effect 12 "Trading Duplicate Suppression"
-      fi
       ;;
     *)
       die "--platform must be macOS, Android, or all"
@@ -174,8 +138,8 @@ self_test() {
 
 | Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading READY/BLOCKED | Trading Risk Rejection | Trading Provider Receipt | Trading Restart Reconciliation | Trading Duplicate Suppression | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | codex | self-test |
-| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | PASS | PASS | N/A | N/A | N/A | PASS | PASS | N/A | codex | self-test |
+| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | N/A | N/A | N/A | N/A | N/A | PASS | PASS | PASS | codex | self-test |
+| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | N/A | N/A | N/A | N/A | N/A | PASS | PASS | N/A | codex | self-test |
 | v-invalid | 2026-01-01T00:00:02Z | macOS | hivra_app-v-invalid-macos-universal.zip | 1111111111111111111111111111111111111111111111111111111111111111 | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | codex | invalidated historical evidence |
 | v-retired | 2026-01-01T00:00:03Z | macOS | hivra_app-v-retired-macos-universal.zip | 2222222222222222222222222222222222222222222222222222222222222222 | PASS | PASS | PASS | PASS | PASS | codex | retired broad Trading Smoke layout |
 EOF
@@ -210,7 +174,7 @@ EOF
   fi
 
   local field mutated
-  for field in 8 9 10 11 12; do
+  for field in 7 13 14 15; do
     mutated="$(mktemp)"
     awk -F'|' -v OFS='|' -v field="$field" '
       $2 ~ /^[[:space:]]*v-selftest[[:space:]]*$/ &&
@@ -222,27 +186,7 @@ EOF
       --platform macOS \
       --channel public >/dev/null 2>&1; then
       rm -f "$tmp" "$mutated"
-      die "self-test expected Trading field $field mutation to fail"
-    fi
-    rm -f "$mutated"
-  done
-
-  for field in 10 11 12; do
-    mutated="$(mktemp)"
-    awk -F'|' -v OFS='|' -v field="$field" '
-      $2 ~ /^[[:space:]]*v-selftest[[:space:]]*$/ { $field = " N/A " }
-      { print }
-    ' "$tmp" > "$mutated"
-    HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
-      --build-tag v-selftest \
-      --platform all \
-      --channel test >/dev/null
-    if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
-      --build-tag v-selftest \
-      --platform all \
-      --channel public >/dev/null 2>&1; then
-      rm -f "$tmp" "$mutated"
-      die "self-test expected shared Trading field $field without PASS to fail"
+      die "self-test expected required field $field mutation to fail"
     fi
     rm -f "$mutated"
   done

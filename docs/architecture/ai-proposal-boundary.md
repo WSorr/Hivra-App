@@ -49,7 +49,7 @@ or proof that an effect occurred.
 
 ### 3.1 Core
 
-Core knows nothing about Gemini, OpenAI, local models, Moltbook, trading
+Core knows nothing about Gemini, OpenAI, local models, Moltbook, financial
 analysis, prompts, conversations, or model responses. Core continues to own
 only its protocol facts and deterministic transitions.
 
@@ -57,7 +57,7 @@ only its protocol facts and deterministic transitions.
 
 Each WASM drone owns its domain semantics, proposal schema, deterministic
 policy, and capability intent. A Moltbook proposal is not interchangeable with
-a trading or staking proposal merely because all three may contain text.
+a financial or staking proposal merely because all three may contain text.
 
 ### 3.3 Host
 
@@ -124,7 +124,7 @@ Even under that assumption, hostile input MUST NOT be able to:
 - choose or mutate an operation id, approval state, retry state, receipt, or
   deterministic policy;
 - invoke Core mutation, ledger append, plugin installation, filesystem write,
-  repository mutation, signing, publication, trading, staking, or transfer;
+  repository mutation, signing, publication, financial execution, staking, or transfer;
 - convert a timeout, malformed response, or missing receipt into success;
 - bypass a required exact preview, user approval, rate budget, kill switch, or
   capability-specific hard gate.
@@ -196,15 +196,7 @@ or reply prose. The Moltbook WASM drone binds exact reviewed text. The host
 creates a canonical publication effect. The pinned Moltbook adapter publishes
 only after explicit approval and records success only from a matching receipt.
 
-### 8.2 Trading Drone
-
-AI may explain normalized market snapshots, deterministic TVH decisions, risk
-blocks, and tracked orders. It cannot select side, entry, leverage, notional,
-risk policy, or execution state. Trading eligibility remains owned by the
-deterministic trading pipeline and risk governor. Exchange submission uses its
-own effect contract.
-
-### 8.3 Staking Drone
+### 8.2 Staking Drone
 
 AI may explain normalized positions and deterministic alerts. It cannot sign,
 move funds, select validators, compound, unstake, or create wallet effects.

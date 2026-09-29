@@ -410,7 +410,7 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       stopwatch.stop();
       await _module.uiLog.log(
         'chat.fetch.result',
-        'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus} deferred=${result.deferredByConsensus}'
+        'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} dropped=${result.droppedByConsensus} deferred=${result.deferredByConsensus}'
             '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
       );
       if (!mounted) return;

@@ -218,7 +218,6 @@ PLUGIN_CONTRACT_HANDLERS="$ROOT/flutter/lib/services/plugin_contract_handlers.da
 WASM_REGISTRY="$ROOT/flutter/lib/services/wasm_plugin_registry_service.dart"
 SCREENS="$ROOT/flutter/lib/screens"
 MAIN_SCREEN="$SCREENS/main_screen.dart"
-TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
 MOLTBOOK_AMBASSADOR_SCREEN="$SCREENS/moltbook_ambassador_screen.dart"
 MOLTBOOK_PROVIDER_ADAPTER="$ROOT/flutter/lib/services/moltbook_provider_adapter.dart"
@@ -550,25 +549,15 @@ require_present "$EXTERNAL_PLUGIN_SOURCE" '`Hivra-App` repository is host/runtim
   "external plugin source doc fixes Hivra-App host-only ownership"
 require_present "$EXTERNAL_PLUGIN_SOURCE" 'WASM plugin implementation source and plugin package release flow belong to `hivra-plugins` repository\.' \
   "external plugin source doc fixes plugin-source ownership in hivra-plugins"
-require_present "$PLUGIN_HOST_API_DOC" 'rank_bingx_futures_signals' \
-  "host API docs include plugin-owned futures signal ranking method"
-require_present "$PLUGIN_HOST_API_DOC" 'host must not mirror plugin-side ranking/scoring semantics' \
-  "host API docs forbid mirrored signal ranking semantics"
-require_present "$PLUGIN_HOST_API_DOC" 'Drone consensus scopes are explicit' \
-  "host API docs define explicit drone consensus scopes"
-require_present "$PLUGIN_HOST_API_DOC" 'host code must never replace a missing or unresolved `peer_hex` with "any' \
+require_present "$PLUGIN_HOST_API_DOC" '^## Consensus Scopes$' \
+  "host API docs define explicit consensus scopes"
+require_present "$PLUGIN_HOST_API_DOC" 'never substitutes a missing peer with an arbitrary signable peer' \
   "host API docs forbid peer fallback for pair-scoped consensus"
 if find "$ROOT/tools/plugins" -maxdepth 1 -type f \
   -name 'build_*_plugin_zip.sh' | grep -q .; then
   fail "Hivra-App contains plugin package build scripts owned by hivra-plugins"
 else
   pass "Hivra-App does not duplicate external plugin package build sources"
-fi
-if rg -q 'bingx_futures_(credential|exchange|intent|live|risk|execution)' \
-  "$ROOT/flutter/lib/screens/wasm_plugins_screen.dart"; then
-  fail "plugin catalog screen contains trading-drone orchestration"
-else
-  pass "plugin catalog screen is free of trading-drone orchestration"
 fi
 
 # 4) Flutter invitation flow application boundary.
@@ -635,7 +624,7 @@ require_present "$PASSIVE_RECEIVE_COORDINATOR" 'invitations\.fetchInvitationsQui
 require_present "$PASSIVE_RECEIVE_COORDINATOR" '_drainAttestations\(\)' \
   "passive receive drains attestations after canonical ingress"
 require_present "$PASSIVE_RECEIVE_COORDINATOR" '_drainChat\(\)' \
-  "passive receive drains chat and trading after canonical ingress"
+  "passive receive drains chat after canonical ingress"
 require_absent "$SCREENS" 'receiveAndFilter|receiveAndAnswerStored|fetchInvitationsQuick\(|fetchInvitations\(' \
   "screens cannot own direct passive receive routes"
 require_absent "$INVITATIONS_SCREEN" 'Timer\.periodic' \
@@ -804,9 +793,9 @@ require_present "$PLUGIN_GUARD" 'class PluginExecutionGuardService' \
   "plugin execution guard service exists"
 require_present "$PLUGIN_GUARD" 'inspectHostReadiness' \
   "plugin guard exposes readiness inspection"
-require_absent "$PLUGIN_HOST" 'bingx_trading_contract_service|capsule_chat_contract_service' \
+require_absent "$PLUGIN_HOST" 'capsule_chat_contract_service' \
   "generic plugin host does not import concrete plugin contracts"
-require_absent "$PLUGIN_HOST" 'Bingx|CapsuleChat|bingx|capsule_chat' \
+require_absent "$PLUGIN_HOST" 'CapsuleChat|capsule_chat' \
   "generic plugin host does not branch on concrete plugin identities"
 require_present "$FFI_TOML" 'hivra-wasm-runtime = \{ path = "../hivra-wasm-runtime" \}' \
   "FFI depends downward on isolated wasm runtime"
@@ -816,26 +805,14 @@ require_present "$WASM_RUNTIME" 'module\.imports\(\)\.next\(\)\.is_some\(\)' \
   "wasm runtime rejects host imports"
 require_present "$WASM_RUNTIME_SERVICE" "hivra_host_abi_v2" \
   "Flutter runtime boundary requires semantic ABI v2"
-require_absent "$SERVICES" 'class BingxTradingContractService|class CapsuleChatContractService' \
+require_absent "$SERVICES" 'class CapsuleChatContractService' \
   "Flutter does not mirror external plugin contract evaluators"
-require_present "$PLUGIN_CONTRACT_HANDLERS" 'rankBingxFuturesSignalsMethod' \
-  "Flutter host exposes futures signal ranking method boundary"
-require_absent "$SERVICES" 'fn signal_score|signal_score\(|signal_bucket\(|bucket_priority\(|rank_signal_candidate\(' \
-  "Flutter services do not mirror plugin futures signal ranking scorer"
-require_absent "$SCREENS" 'BingxFuturesLiveSnapshotBuilderService|BingxFuturesLiveDecisionInput' \
-  "screens do not orchestrate BingX snapshot and live decision pipeline"
-require_absent "$SCREENS" 'BingxFuturesRiskGovernorInput|_riskGovernor\.evaluate' \
-  "screens do not construct or evaluate BingX risk governor inputs"
-require_absent "$TRADING_SCREEN" 'buildBingx|buildPluginHostApiService|buildManualConsensusCheckService|buildCapsuleChatDeliveryService' \
-  "trading drone screen uses module boundary instead of assembling service graph"
 require_absent "$WASM_PLUGINS_SCREEN" 'buildPluginHostApiService|buildManualConsensusCheckService|buildCapsuleChatDeliveryService|WasmPluginRegistryService\(|WasmPluginSourceCatalogService\(' \
   "wasm plugins screen uses module boundary instead of assembling service graph"
 require_absent "$MAIN_SCREEN" 'build[A-Za-z0-9_]*Service\(' \
   "main screen uses module boundary instead of assembling child service graph"
 require_absent "$INVITATIONS_SCREEN" 'buildRelationshipService|buildCapsuleAddressService|late final [A-Za-z0-9_]+Service ' \
   "invitations screen uses module boundary instead of assembling service graph"
-require_absent "$TRADING_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
-  "trading drone screen does not keep individual service fields"
 require_absent "$WASM_PLUGINS_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
   "wasm plugins screen does not keep individual service fields"
 require_absent "$WASM_PLUGINS_SCREEN" 'MoltbookAmbassadorConfiguration' \
@@ -930,26 +907,6 @@ require_present "$PLUGIN_RUNTIME_MODULE" "_secretVault\\.deletePlugin\\(pluginId
   "plugin removal cleans its secrets across Capsules"
 require_absent "$WASM_PLUGINS_SCREEN" "services/wasm_plugin_(registry|source_catalog)_service\\.dart" \
   "wasm plugins screen imports plugin DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_order_tracking_store\\.dart" \
-  "trading drone screen imports order-tracking DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_risk_governor_service\\.dart" \
-  "trading drone screen imports risk DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_live_decision_service\\.dart" \
-  "trading drone screen imports live-decision DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_exchange_service\\.dart" \
-  "trading drone screen imports exchange DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_order_sizing_service\\.dart" \
-  "trading drone screen imports order-sizing DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_signal_rank_use_case_service\\.dart" \
-  "trading drone screen imports signal-rank DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_live_strategy_use_case_service\\.dart" \
-  "trading drone screen imports live-strategy DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_intent_use_case_service\\.dart" \
-  "trading drone screen imports intent DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_exchange_execution_use_case_service\\.dart" \
-  "trading drone screen imports exchange-execution DTOs from model boundary"
-require_absent "$TRADING_SCREEN" "services/bingx_futures_order_replacement_service\\.dart" \
-  "trading drone screen imports replacement DTOs from model boundary"
 require_absent "$SCREENS" "services/capsule_chat_delivery_service\\.dart" \
   "screens import capsule chat DTOs from model boundary"
 require_absent "$SCREENS" "services/plugin_contract_handlers\\.dart" \
@@ -1122,7 +1079,7 @@ require_present "$TRANSPORT_HEALTH_POLICY" 'class TransportHealthSnapshot' \
 require_present "$INV_INTENT" '_transportHealth\.canRun\(' \
   "invitation and relationship receive use shared transport health policy"
 require_absent "$CAPSULE_CHAT_DELIVERY" '_transportHealth\.canRun\(' \
-  "chat and trading drains cannot own a second receive health decision"
+  "chat drain cannot own a second receive health decision"
 require_absent "$ATTESTATION_SYNC" '_transportHealth\.canRun\(' \
   "pair attestation drain cannot own a second receive health decision"
 require_present "$MAIN_SCREEN" '_passiveReceive\.trigger\(' \

@@ -14,7 +14,8 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] `main` contains the intended release commits.
 - [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/toolchain/verify_environment.sh --full` passes against the checked-in baseline.
-- [ ] `tools/release/preflight.sh --trading-evidence-build-tag <version-tag>` passes before packaging; this validates deterministic evidence, not packaged manual signoff.
+- [ ] `tools/release/preflight.sh` passes before packaging; this validates the
+      repository and build environment, not packaged manual signoff.
 - [ ] `flutter build macos --release` succeeds.
 - [ ] Release packaging used `tools/release/macos_release.sh` with explicit `--channel` (`test` or `public`).
 - [ ] `libhivra_ffi.dylib` inside the app bundle is universal (`x86_64` + `arm64`).
@@ -35,19 +36,6 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Settings -> Open local data folder opens `~/Library/Application Support/Hivra` in Finder.
 - [ ] Update build does not re-materialize previously resolved invitation history.
 - [ ] Legacy container migration does not rehydrate deleted canonical capsule files on relaunch.
-- [ ] Trading Drone smoke gate completed:
-  - packaged READY and BLOCKED paths exercised
-  - risk rejection exercised
-  - for `public`, successful provider receipt observed for the exact effect on
-    at least one packaged platform
-  - for `public`, the same effect reconciled after app restart on that platform
-  - for `public`, duplicate attempt suppressed without a second provider effect
-    on that platform
-  - for `test`, unavailable live-effect evidence is recorded as `N/A`, never
-    inferred from a paused scan or deterministic fixture
-- [ ] Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log.md` (via `tools/release/record_trading_drone_evidence.sh`).
-- [ ] Trading Drone evidence coverage validated for this build tag via `tools/release/check_trading_drone_evidence.sh --build-tag <version-tag>`.
-- [ ] Trading drone spec/runtime parity checklist was completed (`docs/checklists/trading-drone-spec-runtime-parity.md`).
 - [ ] Capsule Analyst release smoke checklist was completed (`docs/checklists/capsule-analyst-release-smoke.md`).
 - [ ] Moltbook release smoke checklist was completed (`docs/checklists/moltbook-release-smoke.md`).
 - [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.

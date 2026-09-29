@@ -12,7 +12,8 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 ## Build
 
 - [ ] `tools/toolchain/verify_environment.sh --full` passes against the checked-in baseline.
-- [ ] `tools/release/preflight.sh --trading-evidence-build-tag <version-tag>` passes before packaging; this validates deterministic evidence, not packaged manual signoff.
+- [ ] `tools/release/preflight.sh` passes before packaging; this validates the
+      repository and build environment, not packaged manual signoff.
 - [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/release/android_release.sh --version <version> --channel <test|public>` is used for packaging.
 - [ ] `--channel` was chosen explicitly (`test` for internal/pre-release, `public` for stable release).
@@ -29,19 +30,6 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Invitation send succeeds.
 - [ ] Invitation accept succeeds.
 - [ ] Backup/recovery entry path is reachable and operational.
-- [ ] Trading Drone smoke gate completed:
-  - packaged READY and BLOCKED paths exercised
-  - risk rejection exercised
-  - for `public`, successful provider receipt observed for the exact effect on
-    at least one packaged platform
-  - for `public`, the same effect reconciled after app restart on that platform
-  - for `public`, duplicate attempt suppressed without a second provider effect
-    on that platform
-  - for `test`, unavailable live-effect evidence is recorded as `N/A`, never
-    inferred from a paused scan or deterministic fixture
-- [ ] Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log.md` (via `tools/release/record_trading_drone_evidence.sh`).
-- [ ] Trading Drone evidence coverage validated for this build tag via `tools/release/check_trading_drone_evidence.sh --build-tag <version-tag>`.
-- [ ] Trading drone spec/runtime parity checklist was completed (`docs/checklists/trading-drone-spec-runtime-parity.md`).
 - [ ] Moltbook release smoke checklist was completed (`docs/checklists/moltbook-release-smoke.md`).
 - [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
 

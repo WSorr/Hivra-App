@@ -65,7 +65,6 @@ PLUGIN_PREFLIGHT="$ROOT/flutter/lib/services/wasm_plugin_package_preflight_servi
 PLUGIN_SOURCE_CATALOG="$ROOT/flutter/lib/services/wasm_plugin_source_catalog_service.dart"
 PLUGIN_SOURCE_CATALOG_TEST="$ROOT/flutter/test/wasm_plugin_source_catalog_service_test.dart"
 WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
-CREDENTIAL_STORE="$ROOT/flutter/lib/services/bingx_futures_credential_store.dart"
 SEED_STORE="$ROOT/flutter/lib/services/capsule_seed_store.dart"
 if rg -q 'legacy installed records|Backward-compatible for legacy registry' \
   "$PLUGIN_HOST"; then
@@ -102,13 +101,6 @@ if rg -q 'defaultTrustedRemoteCatalogPublicKeyHexes' "$PLUGIN_SOURCE_CATALOG" &&
   pass "remote plugin catalog supports signed trust and pinned-digest fallback"
 else
   fail "remote plugin catalog lacks signed trust or independent digest fallback"
-fi
-
-if rg -q '_writeScopeFallback|api_secret.*writeAsString|apiSecret.*writeAsString' \
-  "$CREDENTIAL_STORE"; then
-  fail "BingX credentials can be written to plaintext file storage"
-else
-  pass "BingX credentials are secure-storage only"
 fi
 
 if rg -q '_writeSeedFallback|encodedSeed.*writeAsString' "$SEED_STORE"; then

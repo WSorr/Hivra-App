@@ -12,7 +12,6 @@ import 'package:hivra_app/models/consensus_models.dart';
 import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
-import 'package:hivra_app/services/bingx_futures_execution_command_service.dart';
 import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/capsule_chat_deferred_inbox_store.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
@@ -28,74 +27,6 @@ import 'package:hivra_app/screens/main_screen.dart';
 import 'package:flutter/material.dart';
 
 void main() {
-  group('tradeSignalInboxRecordId', () {
-    test('separates same signal_id from different peers', () {
-      const signalId = 'sig-123';
-      final a = tradeSignalInboxRecordId(
-        fromHex:
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        signalId: signalId,
-        timestampMs: 1,
-        payloadJson: '{"x":1}',
-      );
-      final b = tradeSignalInboxRecordId(
-        fromHex:
-            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-        signalId: signalId,
-        timestampMs: 1,
-        payloadJson: '{"x":1}',
-      );
-
-      expect(a, isNot(equals(b)));
-    });
-
-    test('keeps stable id for same peer and same signal_id', () {
-      const fromHex =
-          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
-      const signalId = 'sig-123';
-      final first = tradeSignalInboxRecordId(
-        fromHex: fromHex,
-        signalId: signalId,
-        timestampMs: 11,
-        payloadJson: '{"x":1}',
-      );
-      final second = tradeSignalInboxRecordId(
-        fromHex: fromHex,
-        signalId: signalId,
-        timestampMs: 12,
-        payloadJson: '{"x":2}',
-      );
-
-      expect(first, equals(second));
-    });
-
-    test('falls back to deterministic hash when signal_id is empty', () {
-      const fromHex =
-          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
-      final first = tradeSignalInboxRecordId(
-        fromHex: fromHex,
-        signalId: '',
-        timestampMs: 10,
-        payloadJson: '{"a":1}',
-      );
-      final second = tradeSignalInboxRecordId(
-        fromHex: fromHex,
-        signalId: '',
-        timestampMs: 10,
-        payloadJson: '{"a":1}',
-      );
-      final third = tradeSignalInboxRecordId(
-        fromHex: fromHex,
-        signalId: '',
-        timestampMs: 11,
-        payloadJson: '{"a":1}',
-      );
-
-      expect(first, equals(second));
-      expect(first, isNot(equals(third)));
-    });
-  });
-
   group('Capsule chat conversation timeline', () {
     const capsuleHex =
         '1111111111111111111111111111111111111111111111111111111111111111';
@@ -279,7 +210,6 @@ void main() {
       await firstStore.mergeDurably(
         capsuleHex,
         messages: const <CapsuleChatInboxMessage>[incoming],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
       await firstStore.upsertMessageDurably(capsuleHex, pending);
       await firstStore.upsertMessageDurably(
@@ -349,7 +279,6 @@ void main() {
       await store.mergeDurably(
         capsuleHex,
         messages: const <CapsuleChatInboxMessage>[message, message],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
       await store.mergeDurably(
         capsuleHex,
@@ -364,7 +293,6 @@ void main() {
             timestampMs: 2,
           ),
         ],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
       final restartedStore = CapsuleDeliveryInboxStore(
         fileStore: fileStore,
@@ -421,7 +349,6 @@ void main() {
           message('middle', 2),
           message('new', 3),
         ],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
       final restartedStore = CapsuleDeliveryInboxStore(
         maxRecordsPerCapsule: 2,
@@ -555,100 +482,6 @@ void main() {
     expect(acknowledged, <String>['chat-event-one']);
   });
 
-  test(
-    'trade signals received by chat remain available to trading drone',
-    () async {
-      const peerHex =
-          '1111111111111111111111111111111111111111111111111111111111111111';
-      const localRootHex =
-          '2222222222222222222222222222222222222222222222222222222222222222';
-      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
-      addTearDown(() async {
-        if (await tempHome.exists()) await tempHome.delete(recursive: true);
-      });
-      final store = CapsuleDeliveryInboxStore(
-        fileStore: CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
-        ),
-        loadTimelineSeed:
-            (_) async => Uint8List.fromList(List<int>.filled(32, 12)),
-      );
-      final runtime = _FakeRuntime(
-        capsuleRootKey: _hexToBytes(localRootHex),
-        workerBootstrap: const <String, Object?>{
-          'activeCapsuleHex': localRootHex,
-        },
-      );
-      final checks = _FakeManualConsensusCheckService(<ManualConsensusCheck>[
-        const ManualConsensusCheck(
-          peerHex: peerHex,
-          peerLabel: 'peer',
-          invitationCount: 1,
-          relationshipCount: 1,
-          hashHex:
-              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-          canonicalJson: '{}',
-          blockingFacts: <ConsensusBlockingFact>[],
-        ),
-      ]);
-      final payloadJson = jsonEncode(<String, Object?>{
-        'contract_kind': 'bingx_trade_signal_v1',
-        'signal_id': 'sig-shared',
-        'symbol': 'BTC-USDT',
-        'side': 'buy',
-        'order_type': 'limit',
-        'quantity_decimal': '0.01',
-        'entry_mode': 'zone_pending',
-        'intent_hash_hex':
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        'created_at_utc': '2026-06-13T09:00:00.000Z',
-        'canonical_intent_json': '{"symbol":"BTC-USDT"}',
-      });
-      final acknowledged = <String>[];
-      final chatService = CapsuleChatDeliveryService(
-        runtime: runtime,
-        manualChecks: checks,
-        deliveryInboxStore: store,
-        receiveWorkerRunner:
-            (_) async => <String, Object?>{
-              'result': 1,
-              'json': jsonEncode(<Map<String, Object?>>[
-                <String, Object?>{
-                  'event_id': 'trade-event-one',
-                  'from_hex': peerHex,
-                  'payload_json': payloadJson,
-                  'timestamp_ms': 1,
-                },
-              ]),
-              'lastError': null,
-            },
-        acknowledgeWorkerRunner: (args) async {
-          acknowledged.addAll(
-            (args['eventIds'] as List<Object?>).map(
-              (value) => value.toString(),
-            ),
-          );
-          return <String, Object?>{'result': 0, 'lastError': null};
-        },
-      );
-      final droneService = CapsuleChatDeliveryService(
-        runtime: runtime,
-        manualChecks: checks,
-        deliveryInboxStore: store,
-      );
-
-      final received = await chatService.drainAndFilter();
-
-      expect(received.tradeSignals, hasLength(1));
-      expect(droneService.loadCachedTradeSignals(), hasLength(1));
-      expect(
-        droneService.loadCachedTradeSignals().single.signalId,
-        equals('sig-shared'),
-      );
-      expect(acknowledged, equals(<String>['trade-event-one']));
-    },
-  );
-
   test('chat handoff acknowledgement failure is fail-closed', () async {
     const peerHex =
         '1111111111111111111111111111111111111111111111111111111111111111';
@@ -698,6 +531,69 @@ void main() {
     expect(result.code, -9);
     expect(result.errorMessage, 'durable acknowledgement failed');
   });
+
+  test(
+    'retired trading payload is acknowledged without creating state',
+    () async {
+      const peerHex =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      const localRootHex =
+          '2222222222222222222222222222222222222222222222222222222222222222';
+      final acknowledged = <String>[];
+      final service = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ]),
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 1,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'event_id': 'retired-trading-event',
+                  'from_hex': peerHex,
+                  'payload_json': jsonEncode(<String, Object?>{
+                    'contract_kind': 'bingx_trade_signal_v1',
+                    'signal_id': 'retired-signal',
+                    'symbol': 'BTC-USDT',
+                  }),
+                  'timestamp_ms': 1,
+                },
+              ]),
+              'lastError': null,
+            },
+        acknowledgeWorkerRunner: (args) async {
+          acknowledged.addAll(
+            (args['eventIds'] as List<Object?>).map(
+              (value) => value.toString(),
+            ),
+          );
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final result = await service.drainAndFilter();
+
+      expect(result.code, 1);
+      expect(result.messages, isEmpty);
+      expect(service.loadCachedMessages(), isEmpty);
+      expect(acknowledged, <String>['retired-trading-event']);
+    },
+  );
 
   test(
     'chat timeline persistence failure blocks handoff acknowledgement',
@@ -843,7 +739,6 @@ void main() {
               errorMessage: 'Transport receive timed out',
               droppedByConsensus: 0,
               messages: <CapsuleChatInboxMessage>[],
-              tradeSignals: <CapsuleTradeSignalInboxMessage>[],
             ),
         projectMessages: (messages) => projected = messages,
       );
@@ -881,7 +776,6 @@ void main() {
     store.merge(
       firstCapsule,
       messages: const <CapsuleChatInboxMessage>[first, replacement],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
 
     expect(store.loadMessages(firstCapsule), hasLength(1));
@@ -910,27 +804,9 @@ void main() {
           envelopeHashHex: '',
           timestampMs: timestampMs,
         );
-    CapsuleTradeSignalInboxMessage signal(String id, int timestampMs) =>
-        CapsuleTradeSignalInboxMessage(
-          id: id,
-          signalId: id,
-          fromHex: secondCapsule,
-          symbol: 'BTC-USDT',
-          side: 'buy',
-          orderType: 'limit',
-          quantityDecimal: '0.01',
-          entryMode: 'zone_pending',
-          intentHashHex: '',
-          createdAtUtc: '2026-08-09T08:00:00.000Z',
-          strategyTag: null,
-          canonicalIntentJson: '{}',
-          timestampMs: timestampMs,
-        );
-
     store.merge(
       firstCapsule,
       messages: <CapsuleChatInboxMessage>[message('first', 1)],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
     store.merge(
       secondCapsule,
@@ -939,26 +815,16 @@ void main() {
         message('middle', 2),
         message('new', 3),
       ],
-      tradeSignals: <CapsuleTradeSignalInboxMessage>[
-        signal('old-signal', 1),
-        signal('middle-signal', 2),
-        signal('new-signal', 3),
-      ],
     );
     store.merge(
       thirdCapsule,
       messages: <CapsuleChatInboxMessage>[message('third', 4)],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
 
     expect(store.loadMessages(firstCapsule), isEmpty);
     expect(
       store.loadMessages(secondCapsule).map((message) => message.id),
       <String>['middle', 'new'],
-    );
-    expect(
-      store.loadTradeSignals(secondCapsule).map((signal) => signal.id),
-      <String>['middle-signal', 'new-signal'],
     );
     expect(store.loadMessages(thirdCapsule), hasLength(1));
   });
@@ -980,12 +846,10 @@ void main() {
     store.merge(
       deletedCapsule,
       messages: const <CapsuleChatInboxMessage>[message],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
     store.merge(
       retainedCapsule,
       messages: const <CapsuleChatInboxMessage>[message],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
 
     store.clearCapsule(deletedCapsule);
@@ -1047,7 +911,6 @@ void main() {
     firstStore.merge(
       capsuleHex,
       messages: const <CapsuleChatInboxMessage>[first, second, third, outgoing],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
     expect(await firstStore.unreadMessageCount(capsuleHex), 3);
     expect(
@@ -1071,7 +934,6 @@ void main() {
         outgoing,
         first,
       ],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
 
     expect(await restartedStore.unreadMessageCount(capsuleHex), 2);
@@ -1107,11 +969,7 @@ void main() {
       envelopeHashHex: '',
       timestampMs: 1,
     );
-    store.merge(
-      capsuleHex,
-      messages: const <CapsuleChatInboxMessage>[message],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-    );
+    store.merge(capsuleHex, messages: const <CapsuleChatInboxMessage>[message]);
     final capsuleDir = await fileStore.capsuleDirForHex(
       capsuleHex,
       create: true,
@@ -1159,13 +1017,11 @@ void main() {
     store.merge(
       capsuleHex,
       messages: <CapsuleChatInboxMessage>[message('old', 1)],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
     await store.markMessagesRead(capsuleHex, const <String>['old']);
     store.merge(
       capsuleHex,
       messages: <CapsuleChatInboxMessage>[message('new', 2)],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
 
     expect(store.loadMessages(capsuleHex).single.id, 'new');
@@ -1203,7 +1059,6 @@ void main() {
           message('first', 1),
           message('second', 2),
         ],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
 
       await Future.wait(<Future<void>>[
@@ -1852,472 +1707,6 @@ void main() {
     expect(ready.deferredByConsensus, 0);
     expect(await deferredStore.load(localRootHex), isEmpty);
     expect(acknowledgedEventIds, contains('nostr-event-one'));
-  });
-
-  group('CapsuleChatDeliveryService execution command flow', () {
-    const peerHex =
-        '1111111111111111111111111111111111111111111111111111111111111111';
-    const localRootHex =
-        '2222222222222222222222222222222222222222222222222222222222222222';
-
-    test(
-      'evaluates incoming futures execution command and emits receipt decision',
-      () async {
-        final tempHome = await Directory.systemTemp.createTemp(
-          'hivra-control-',
-        );
-        addTearDown(() async {
-          if (await tempHome.exists()) await tempHome.delete(recursive: true);
-        });
-        final deliveryStore = CapsuleDeliveryInboxStore(
-          fileStore: CapsuleFileStore(
-            dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
-          ),
-          loadTimelineSeed:
-              (_) async => Uint8List.fromList(List<int>.filled(32, 41)),
-        );
-        final replayStore = InMemoryBingxExecutionCommandReplayStore();
-        final commandService = BingxFuturesExecutionCommandService(
-          replayStore: replayStore,
-        );
-        final commandEnvelope = commandService.buildCommandEnvelope(
-          commandId: 'cmd-1',
-          intentHashHex:
-              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-          symbol: 'BTCUSDT',
-          side: 'buy',
-          quantityDecimal: '0.1',
-          entryPriceDecimal: '65000',
-          stopLossDecimal: '64000',
-          takeProfitDecimal: '68000',
-          leverageDecimal: '3',
-          riskPercentDecimal: '1.5',
-          createdAtUtc: DateTime.utc(2026, 4, 25, 12, 0, 0).toIso8601String(),
-          expiresAtUtc: DateTime.utc(2026, 4, 25, 12, 5, 0).toIso8601String(),
-          targetCapsuleRootHex: localRootHex,
-        );
-
-        final service = CapsuleChatDeliveryService(
-          runtime: _FakeRuntime(
-            capsuleRootKey: _hexToBytes(localRootHex),
-            workerBootstrap: const <String, Object?>{
-              'activeCapsuleHex': localRootHex,
-            },
-          ),
-          manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
-            const ManualConsensusCheck(
-              peerHex: peerHex,
-              peerLabel: 'peer',
-              invitationCount: 1,
-              relationshipCount: 1,
-              hashHex:
-                  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-              canonicalJson: '{}',
-              blockingFacts: <ConsensusBlockingFact>[],
-            ),
-          ]),
-          executionCommandService: commandService,
-          executionPolicyForPeer:
-              (_) => const BingxExecutionPolicy(
-                allowedSymbols: <String>{'BTCUSDT'},
-                maxLeverage: 5,
-                maxRiskPercent: 2,
-              ),
-          nowUtc: () => DateTime.utc(2026, 4, 25, 12, 1, 0),
-          deliveryInboxStore: deliveryStore,
-          receiveWorkerRunner:
-              (_) async => <String, Object?>{
-                'result': 0,
-                'json': jsonEncode(<Map<String, Object?>>[
-                  <String, Object?>{
-                    'from_hex': peerHex,
-                    'payload_json': commandEnvelope,
-                    'timestamp_ms': 1,
-                  },
-                ]),
-                'lastError': null,
-              },
-        );
-
-        final result = await service.drainAndFilter();
-
-        expect(result.code, equals(0));
-        expect(result.messages, isEmpty);
-        expect(result.tradeSignals, isEmpty);
-        expect(result.executionReceipts, isEmpty);
-        expect(result.executionDecisions, hasLength(1));
-        expect(result.executionDecisions.single.commandId, equals('cmd-1'));
-        expect(result.executionDecisions.single.decision, equals('accepted'));
-        expect(
-          result.executionDecisions.single.decisionCode,
-          equals('accepted_for_execution'),
-        );
-        expect(
-          result.executionDecisions.single.receiptDeliveryCode,
-          equals(-2003),
-        );
-      },
-    );
-
-    test('retries the exact durable execution receipt after restart', () async {
-      final tempHome = await Directory.systemTemp.createTemp(
-        'hivra-control-restart-',
-      );
-      addTearDown(() async {
-        if (await tempHome.exists()) await tempHome.delete(recursive: true);
-      });
-      final dirs = UserVisibleDataDirectoryService(homeOverride: tempHome.path);
-      Future<Uint8List?> loadSeed(_) async =>
-          Uint8List.fromList(List<int>.filled(32, 43));
-      CapsuleDeliveryInboxStore buildStore() => CapsuleDeliveryInboxStore(
-        fileStore: CapsuleFileStore(dirs: dirs),
-        loadTimelineSeed: loadSeed,
-      );
-      const transportHex =
-          '3333333333333333333333333333333333333333333333333333333333333333';
-      const trustedCards = <CapsuleAddressCard>[
-        CapsuleAddressCard(
-          rootKey: 'h1-test-peer',
-          rootHex: peerHex,
-          nostrNpub: 'npub1-test-peer',
-          nostrHex: transportHex,
-        ),
-      ];
-      const checks = <ManualConsensusCheck>[
-        ManualConsensusCheck(
-          peerHex: peerHex,
-          peerLabel: 'peer',
-          invitationCount: 1,
-          relationshipCount: 1,
-          hashHex:
-              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-          canonicalJson: '{}',
-          blockingFacts: <ConsensusBlockingFact>[],
-        ),
-      ];
-      final commandEnvelope = BingxFuturesExecutionCommandService(
-        replayStore: InMemoryBingxExecutionCommandReplayStore(),
-      ).buildCommandEnvelope(
-        commandId: 'cmd-restart',
-        intentHashHex:
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        symbol: 'BTCUSDT',
-        side: 'buy',
-        quantityDecimal: '0.1',
-        entryPriceDecimal: '65000',
-        stopLossDecimal: '64000',
-        takeProfitDecimal: '68000',
-        leverageDecimal: '3',
-        riskPercentDecimal: '1.5',
-        createdAtUtc: DateTime.utc(2026, 4, 25, 12).toIso8601String(),
-        expiresAtUtc: DateTime.utc(2026, 4, 25, 12, 5).toIso8601String(),
-        targetCapsuleRootHex: localRootHex,
-      );
-      String? firstReceipt;
-      final acknowledged = <String>[];
-      final firstStore = buildStore();
-      final firstService = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-          workerBootstrap: const <String, Object?>{
-            'activeCapsuleHex': localRootHex,
-          },
-        ),
-        manualChecks: _FakeManualConsensusCheckService(checks),
-        listTrustedCards: () async => trustedCards,
-        deliveryInboxStore: firstStore,
-        executionCommandService: BingxFuturesExecutionCommandService(
-          replayStore: InMemoryBingxExecutionCommandReplayStore(),
-        ),
-        executionPolicyForPeer:
-            (_) => const BingxExecutionPolicy(
-              allowedSymbols: <String>{'BTCUSDT'},
-              maxLeverage: 5,
-              maxRiskPercent: 2,
-            ),
-        nowUtc: () => DateTime.utc(2026, 4, 25, 12, 1),
-        receiveWorkerRunner:
-            (_) async => <String, Object?>{
-              'result': 0,
-              'json': jsonEncode(<Map<String, Object?>>[
-                <String, Object?>{
-                  'event_id': 'execution-command-event',
-                  'from_hex': peerHex,
-                  'payload_json': commandEnvelope,
-                  'timestamp_ms': 1,
-                },
-              ]),
-              'lastError': null,
-            },
-        sendWorkerRunner: (args) async {
-          firstReceipt = args['payloadJson']?.toString();
-          return <String, Object?>{
-            'result': -1003,
-            'lastError': 'temporary relay timeout',
-          };
-        },
-        acknowledgeWorkerRunner: (args) async {
-          acknowledged.addAll(
-            (args['eventIds'] as List<Object?>).map((value) => '$value'),
-          );
-          return <String, Object?>{'result': 0, 'lastError': null};
-        },
-      );
-
-      final first = await firstService.drainAndFilter();
-
-      expect(first.executionDecisions, hasLength(1));
-      expect(first.executionDecisions.single.receiptDeliveryCode, -1003);
-      expect(firstReceipt, isNotNull);
-      expect(acknowledged, <String>['execution-command-event']);
-
-      String? retriedReceipt;
-      var retryCalls = 0;
-      final restartedStore = buildStore();
-      final restartedService = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-          workerBootstrap: const <String, Object?>{
-            'activeCapsuleHex': localRootHex,
-          },
-        ),
-        manualChecks: _FakeManualConsensusCheckService(checks),
-        listTrustedCards: () async => trustedCards,
-        deliveryInboxStore: restartedStore,
-        receiveWorkerRunner:
-            (_) async => <String, Object?>{
-              'result': 0,
-              'json': '[]',
-              'lastError': null,
-            },
-        sendWorkerRunner: (args) async {
-          retryCalls += 1;
-          retriedReceipt = args['payloadJson']?.toString();
-          return <String, Object?>{'result': 0, 'lastError': null};
-        },
-      );
-
-      final restarted = await restartedService.drainAndFilter();
-
-      expect(restarted.code, 0);
-      expect(retryCalls, 1);
-      expect(retriedReceipt, firstReceipt);
-      final retained = restartedStore.loadExecutionDecisions(localRootHex);
-      expect(retained, hasLength(1));
-      expect(retained.single.commandId, 'cmd-restart');
-      expect(retained.single.receiptDeliveryCode, 0);
-      expect(retained.single.canonicalReceiptJson, firstReceipt);
-
-      var unavailableTimelineAcknowledged = false;
-      final unavailableTimelineService = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-          workerBootstrap: const <String, Object?>{
-            'activeCapsuleHex': localRootHex,
-          },
-        ),
-        manualChecks: _FakeManualConsensusCheckService(checks),
-        deliveryInboxStore: CapsuleDeliveryInboxStore(
-          fileStore: CapsuleFileStore(dirs: dirs),
-          loadTimelineSeed: (_) async => null,
-        ),
-        receiveWorkerRunner:
-            (_) async => <String, Object?>{
-              'result': 0,
-              'json': jsonEncode(<Map<String, Object?>>[
-                <String, Object?>{
-                  'event_id': 'unavailable-timeline-command-event',
-                  'from_hex': peerHex,
-                  'payload_json': commandEnvelope,
-                  'timestamp_ms': 2,
-                },
-              ]),
-              'lastError': null,
-            },
-        acknowledgeWorkerRunner: (_) async {
-          unavailableTimelineAcknowledged = true;
-          return <String, Object?>{'result': 0, 'lastError': null};
-        },
-      );
-
-      final unavailable = await unavailableTimelineService.drainAndFilter();
-
-      expect(unavailable.code, -2005);
-      expect(unavailableTimelineAcknowledged, isFalse);
-    });
-
-    test('parses incoming execution receipt envelope', () async {
-      final tempHome = await Directory.systemTemp.createTemp('hivra-control-');
-      addTearDown(() async {
-        if (await tempHome.exists()) await tempHome.delete(recursive: true);
-      });
-      final deliveryStore = CapsuleDeliveryInboxStore(
-        fileStore: CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
-        ),
-        loadTimelineSeed:
-            (_) async => Uint8List.fromList(List<int>.filled(32, 42)),
-      );
-      final payloadJson = jsonEncode(<String, Object?>{
-        'schema_version': 1,
-        'receipt_kind': 'futures_execution_receipt_v1',
-        'command_id': 'cmd-9',
-        'intent_hash_hex':
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        'decision': 'rejected',
-        'decision_code': 'policy_symbol_blocked',
-        'decision_message': 'Symbol is not allowed by local policy',
-        'target_capsule_root_hex': peerHex,
-        'peer_hex': localRootHex,
-        'receipt_created_at_utc':
-            DateTime.utc(2026, 4, 25, 12, 2, 0).toIso8601String(),
-      });
-
-      final acknowledged = <String>[];
-      final service = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-          workerBootstrap: const <String, Object?>{
-            'activeCapsuleHex': localRootHex,
-          },
-        ),
-        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
-          const ManualConsensusCheck(
-            peerHex: peerHex,
-            peerLabel: 'peer',
-            invitationCount: 1,
-            relationshipCount: 1,
-            hashHex:
-                'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-            canonicalJson: '{}',
-            blockingFacts: <ConsensusBlockingFact>[],
-          ),
-        ]),
-        deliveryInboxStore: deliveryStore,
-        receiveWorkerRunner:
-            (_) async => <String, Object?>{
-              'result': 0,
-              'json': jsonEncode(<Map<String, Object?>>[
-                <String, Object?>{
-                  'event_id': 'execution-receipt-event',
-                  'from_hex': peerHex,
-                  'payload_json': payloadJson,
-                  'timestamp_ms': 99,
-                },
-              ]),
-              'lastError': null,
-            },
-        acknowledgeWorkerRunner: (args) async {
-          acknowledged.addAll(
-            (args['eventIds'] as List<Object?>).map((value) => '$value'),
-          );
-          return <String, Object?>{'result': 0, 'lastError': null};
-        },
-      );
-
-      final result = await service.drainAndFilter();
-
-      expect(result.code, equals(0));
-      expect(result.executionDecisions, isEmpty);
-      expect(result.executionReceipts, hasLength(1));
-      expect(result.executionReceipts.single.commandId, equals('cmd-9'));
-      expect(result.executionReceipts.single.decision, equals('rejected'));
-      expect(
-        result.executionReceipts.single.decisionCode,
-        equals('policy_symbol_blocked'),
-      );
-      expect(acknowledged, <String>['execution-receipt-event']);
-
-      final restartedStore = CapsuleDeliveryInboxStore(
-        fileStore: CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
-        ),
-        loadTimelineSeed:
-            (_) async => Uint8List.fromList(List<int>.filled(32, 42)),
-      );
-      expect(await restartedStore.hydrateCapsule(localRootHex), isTrue);
-      final retained = restartedStore.loadExecutionReceipts(localRootHex);
-      expect(retained, hasLength(1));
-      expect(retained.single.commandId, 'cmd-9');
-      expect(retained.single.fromHex, peerHex);
-      await restartedStore.mergeDurably(
-        localRootHex,
-        messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-        executionReceipts: <CapsuleExecutionReceiptInboxMessage>[
-          CapsuleExecutionReceiptInboxMessage(
-            id: retained.single.id,
-            fromHex: peerHex,
-            commandId: 'cmd-9',
-            decision: 'accepted',
-            decisionCode: 'conflicting_acceptance',
-            decisionMessage:
-                'Conflicting replay must not replace first receipt',
-            targetCapsuleRootHex: peerHex,
-            peerHex: localRootHex,
-            receiptCreatedAtUtc:
-                DateTime.utc(2026, 4, 25, 12, 3).toIso8601String(),
-            timestampMs: 100,
-          ),
-        ],
-      );
-      expect(
-        restartedStore.loadExecutionReceipts(localRootHex).single.decision,
-        'rejected',
-      );
-
-      final wrongBinding =
-          Map<String, Object?>.from(jsonDecode(payloadJson) as Map)
-            ..['command_id'] = 'cmd-wrong-binding'
-            ..['target_capsule_root_hex'] = localRootHex;
-      final rejectedEventIds = <String>[];
-      final rejectingService = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-          workerBootstrap: const <String, Object?>{
-            'activeCapsuleHex': localRootHex,
-          },
-        ),
-        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
-          const ManualConsensusCheck(
-            peerHex: peerHex,
-            peerLabel: 'peer',
-            invitationCount: 1,
-            relationshipCount: 1,
-            hashHex:
-                'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-            canonicalJson: '{}',
-            blockingFacts: <ConsensusBlockingFact>[],
-          ),
-        ]),
-        deliveryInboxStore: restartedStore,
-        receiveWorkerRunner:
-            (_) async => <String, Object?>{
-              'result': 0,
-              'json': jsonEncode(<Map<String, Object?>>[
-                <String, Object?>{
-                  'event_id': 'wrong-binding-receipt-event',
-                  'from_hex': peerHex,
-                  'payload_json': jsonEncode(wrongBinding),
-                  'timestamp_ms': 100,
-                },
-              ]),
-              'lastError': null,
-            },
-        acknowledgeWorkerRunner: (args) async {
-          rejectedEventIds.addAll(
-            (args['eventIds'] as List<Object?>).map((value) => '$value'),
-          );
-          return <String, Object?>{'result': 0, 'lastError': null};
-        },
-      );
-
-      final rejected = await rejectingService.drainAndFilter();
-
-      expect(rejected.executionReceipts, isEmpty);
-      expect(rejectedEventIds, <String>['wrong-binding-receipt-event']);
-      expect(restartedStore.loadExecutionReceipts(localRootHex), hasLength(1));
-    });
   });
 }
 

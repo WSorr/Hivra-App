@@ -1165,9 +1165,6 @@ class _InstalledPluginTile extends StatelessWidget {
 
   static Color _accentForName(String name) {
     final lower = name.toLowerCase();
-    if (lower.contains('bingx') || lower.contains('trading')) {
-      return const Color(0xFFFFC76A);
-    }
     if (lower.contains('chat')) return const Color(0xFFC5A8FF);
     if (lower.contains('matrix')) return const Color(0xFFFFB347);
     if (lower.contains('bluetooth') || lower.contains('ble')) {
@@ -1182,9 +1179,6 @@ class _InstalledPluginTile extends StatelessWidget {
 
   static IconData _iconForFileName(String fileName) {
     final lower = fileName.toLowerCase();
-    if (lower.contains('bingx') || lower.contains('trading')) {
-      return Icons.candlestick_chart_rounded;
-    }
     if (lower.contains('chat')) return Icons.forum_outlined;
     if (lower.contains('matrix')) return Icons.grid_view_rounded;
     if (lower.contains('bluetooth') || lower.contains('ble')) {

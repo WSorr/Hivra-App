@@ -8,7 +8,6 @@ void main() {
     final profiles = <(String, String)>[
       (capsuleChatPluginId, capsuleChatContractKind),
       (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind),
-      (bingxFuturesTradingPluginId, bingxFuturesContractKind),
     ];
 
     for (final (pluginId, contractKind) in profiles) {

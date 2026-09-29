@@ -63,7 +63,6 @@ stale_patterns = [
     (re.compile(r"\brelationship-based app\b", re.I), "relationship-based app"),
     (re.compile(r"\bAI Doctor\b", re.I), "AI Doctor"),
     (re.compile(r"\bHivra Doctor\b", re.I), "Hivra Doctor"),
-    (re.compile(r"\bbingx[_ -]spot\b", re.I), "BingX spot naming"),
     (re.compile(r"v3\.2\."), "legacy v3.2 release line"),
 ]
 stale_hits = []

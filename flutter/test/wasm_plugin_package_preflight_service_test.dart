@@ -25,10 +25,16 @@ void main() {
 
   test('accepts valid wasm binary package', () async {
     final file = File('${tempDir.path}/valid.wasm');
-    await file.writeAsBytes(
-      const <int>[0, 97, 115, 109, 1, 0, 0, 0],
-      flush: true,
-    );
+    await file.writeAsBytes(const <int>[
+      0,
+      97,
+      115,
+      109,
+      1,
+      0,
+      0,
+      0,
+    ], flush: true);
 
     final preflight = await service.inspect(file);
 
@@ -39,15 +45,18 @@ void main() {
 
   test('rejects wasm package with invalid header', () async {
     final file = File('${tempDir.path}/invalid.wasm');
-    await file.writeAsBytes(
-      const <int>[0, 97, 115, 109, 0, 0, 0, 0],
-      flush: true,
-    );
+    await file.writeAsBytes(const <int>[
+      0,
+      97,
+      115,
+      109,
+      0,
+      0,
+      0,
+      0,
+    ], flush: true);
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('accepts valid zip package with manifest and wasm module', () async {
@@ -55,24 +64,19 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'release_version': '0.1.0',
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'contract': {'kind': 'bingx_futures_order_intent'},
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-                'module_path': 'plugin/module.wasm',
-              },
-              'capabilities': [
-                'exchange.trade.bingx.futures',
-                'consensus_guard.read'
-              ],
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'release_version': '0.1.0',
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'contract': {'kind': 'moltbook_ambassador_draft'},
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
+              'module_path': 'plugin/module.wasm',
             },
-          ),
+            'capabilities': ['content.draft.prepare', 'consensus_guard.read'],
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
@@ -82,16 +86,16 @@ void main() {
     final preflight = await service.inspect(file);
 
     expect(preflight.packageKind, 'zip');
-    expect(preflight.pluginId, 'hivra.contract.bingx-futures-trading.v1');
+    expect(preflight.pluginId, 'hivra.contract.moltbook-ambassador.v1');
     expect(preflight.pluginVersion, '0.1.0');
-    expect(preflight.contractKind, 'bingx_futures_order_intent');
+    expect(preflight.contractKind, 'moltbook_ambassador_draft');
     expect(preflight.runtimeAbi, 'hivra_host_abi_v2');
     expect(preflight.runtimeEntryExport, 'hivra_evaluate_v1');
     expect(preflight.runtimeModulePath, 'plugin/module.wasm');
-    expect(
-      preflight.capabilities,
-      ['consensus_guard.read', 'exchange.trade.bingx.futures'],
-    );
+    expect(preflight.capabilities, [
+      'consensus_guard.read',
+      'content.draft.prepare',
+    ]);
   });
 
   test('rejects zip package when runtime module_path is missing', () async {
@@ -99,28 +103,23 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-                'module_path': 'plugin/entry.wasm',
-              },
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
+              'module_path': 'plugin/entry.wasm',
             },
-          ),
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('accepts runtime module_path containing dots inside segment', () async {
@@ -128,23 +127,18 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'contract': {'kind': 'bingx_futures_order_intent'},
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-                'module_path': 'plugin/v1..2/module.wasm',
-              },
-              'capabilities': [
-                'consensus_guard.read',
-                'exchange.trade.bingx.futures',
-              ],
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'contract': {'kind': 'moltbook_ambassador_draft'},
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
+              'module_path': 'plugin/v1..2/module.wasm',
             },
-          ),
+            'capabilities': ['consensus_guard.read', 'content.draft.prepare'],
+          }),
           'plugin/v1..2/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
@@ -160,121 +154,105 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-                'module_path': 'plugin/../module.wasm',
-              },
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
+              'module_path': 'plugin/../module.wasm',
             },
-          ),
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
-  test('rejects zip package when all wasm entries use parent traversal',
-      () async {
-    final file = File('${tempDir.path}/only_traversal_wasm.zip');
-    await file.writeAsBytes(
-      _zipBytes(
-        files: {
-          'plugin/manifest.json': jsonEncode(
-            {
+  test(
+    'rejects zip package when all wasm entries use parent traversal',
+    () async {
+      final file = File('${tempDir.path}/only_traversal_wasm.zip');
+      await file.writeAsBytes(
+        _zipBytes(
+          files: {
+            'plugin/manifest.json': jsonEncode({
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v2',
                 'entry_export': 'hivra_evaluate_v1',
               },
-            },
-          ),
-          '../evil.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
-        },
-      ),
-      flush: true,
-    );
+            }),
+            '../evil.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+          },
+        ),
+        flush: true,
+      );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
-  });
+      expect(() => service.inspect(file), throwsA(isA<FormatException>()));
+    },
+  );
 
-  test('accepts zip package when at least one safe wasm entry exists',
-      () async {
-    final file = File('${tempDir.path}/mixed_wasm_paths.zip');
-    await file.writeAsBytes(
-      _zipBytes(
-        files: {
-          'plugin/manifest.json': jsonEncode(
-            {
+  test(
+    'accepts zip package when at least one safe wasm entry exists',
+    () async {
+      final file = File('${tempDir.path}/mixed_wasm_paths.zip');
+      await file.writeAsBytes(
+        _zipBytes(
+          files: {
+            'plugin/manifest.json': jsonEncode({
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'contract': {'kind': 'bingx_futures_order_intent'},
+              'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+              'contract': {'kind': 'moltbook_ambassador_draft'},
               'runtime': {
                 'abi': 'hivra_host_abi_v2',
                 'entry_export': 'hivra_evaluate_v1',
                 'module_path': 'plugin/module.wasm',
               },
-              'capabilities': [
-                'consensus_guard.read',
-                'exchange.trade.bingx.futures',
-              ],
-            },
-          ),
-          '../evil.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
-          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
-        },
-      ),
-      flush: true,
-    );
+              'capabilities': ['consensus_guard.read', 'content.draft.prepare'],
+            }),
+            '../evil.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+            'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+          },
+        ),
+        flush: true,
+      );
 
-    final preflight = await service.inspect(file);
-    expect(preflight.packageKind, 'zip');
-    expect(preflight.runtimeModulePath, 'plugin/module.wasm');
-  });
+      final preflight = await service.inspect(file);
+      expect(preflight.packageKind, 'zip');
+      expect(preflight.runtimeModulePath, 'plugin/module.wasm');
+    },
+  );
 
   test('rejects zip package without contract kind', () async {
     final file = File('${tempDir.path}/missing_contract_kind.zip');
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-              },
-              'capabilities': ['exchange.trade.bingx.futures'],
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
             },
-          ),
+            'capabilities': ['content.draft.prepare'],
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects zip package without capabilities', () async {
@@ -282,28 +260,23 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'contract': {'kind': 'bingx_futures_order_intent'},
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-              },
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'contract': {'kind': 'moltbook_ambassador_draft'},
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
             },
-          ),
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects non-list capabilities field in manifest', () async {
@@ -311,28 +284,23 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-              },
-              'capabilities': 'not-a-list',
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
             },
-          ),
+            'capabilities': 'not-a-list',
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects unknown capability in manifest', () async {
@@ -340,28 +308,23 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-              },
-              'capabilities': ['oracle.read.untrusted_source'],
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
             },
-          ),
+            'capabilities': ['oracle.read.untrusted_source'],
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects zip package without manifest', () async {
@@ -375,10 +338,7 @@ void main() {
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects zip package without wasm module', () async {
@@ -386,26 +346,21 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'runtime': {
-                'abi': 'hivra_host_abi_v2',
-                'entry_export': 'hivra_evaluate_v1',
-              },
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
             },
-          ),
+          }),
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects zip package without runtime section', () async {
@@ -413,23 +368,18 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-            },
-          ),
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects zip package with unsupported runtime ABI', () async {
@@ -437,27 +387,22 @@ void main() {
     await file.writeAsBytes(
       _zipBytes(
         files: {
-          'plugin/manifest.json': jsonEncode(
-            {
-              'schema': 'hivra.plugin.manifest',
-              'version': 1,
-              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-              'runtime': {
-                'abi': 'wrong_abi',
-                'entry_export': 'hivra_evaluate_v1',
-              },
+          'plugin/manifest.json': jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'runtime': {
+              'abi': 'wrong_abi',
+              'entry_export': 'hivra_evaluate_v1',
             },
-          ),
+          }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,
     );
 
-    expect(
-      () => service.inspect(file),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => service.inspect(file), throwsA(isA<FormatException>()));
   });
 }
 

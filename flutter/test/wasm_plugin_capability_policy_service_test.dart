@@ -13,9 +13,9 @@ void main() {
       'content.feed.plan',
       'content.reply.delegate',
       'content.reply.prepare',
-      'exchange.read.bingx.market',
-      'exchange.trade.bingx.futures',
-      'exchange.trade.bingx.futures',
+      'content.feed.plan',
+      'content.draft.prepare',
+      'content.draft.prepare',
     ]);
 
     expect(normalized, <String>[
@@ -25,8 +25,6 @@ void main() {
       'content.feed.plan',
       'content.reply.delegate',
       'content.reply.prepare',
-      'exchange.read.bingx.market',
-      'exchange.trade.bingx.futures',
     ]);
   });
 

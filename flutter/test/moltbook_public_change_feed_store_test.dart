@@ -393,6 +393,9 @@ void main() {
       final raw = await rootBundle.loadString(
         'assets/moltbook_public_changes.v1.json',
       );
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final changes = (decoded['changes'] as List).cast<Map<String, dynamic>>();
+      final newestSourceId = changes.last['source_id'] as String;
       final inserted = await store.ingestManifest(
         raw,
         allowedTopics:
@@ -400,15 +403,9 @@ void main() {
       );
 
       expect(inserted, hasLength(1));
-      expect(
-        inserted.single.sourceId,
-        'trading-reconciliation-test19-2026-09-07',
-      );
+      expect(inserted.single.sourceId, newestSourceId);
       expect(await store.load(), hasLength(1));
-      expect(
-        (await store.nextPending())?.sourceId,
-        'trading-reconciliation-test19-2026-09-07',
-      );
+      expect((await store.nextPending())?.sourceId, newestSourceId);
     },
   );
 
@@ -420,6 +417,8 @@ void main() {
     final changes = List<Map<String, dynamic>>.from(
       (decoded['changes'] as List).cast<Map<String, dynamic>>(),
     );
+    final previousSourceId = changes[changes.length - 2]['source_id'] as String;
+    final newestSourceId = changes.last['source_id'] as String;
     final previousRaw = jsonEncode(<String, dynamic>{
       ...decoded,
       'changes': changes.take(changes.length - 1).toList(growable: false),
@@ -430,10 +429,7 @@ void main() {
       allowedTopics:
           MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
     );
-    expect(
-      previousInserted.single.sourceId,
-      'moltbook-pfr-destination-2026-09-02',
-    );
+    expect(previousInserted.single.sourceId, previousSourceId);
 
     final inserted = await store.ingestManifest(
       raw,
@@ -441,12 +437,9 @@ void main() {
           MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
     );
 
-    expect(
-      inserted.single.sourceId,
-      'trading-reconciliation-test19-2026-09-07',
-    );
+    expect(inserted.single.sourceId, newestSourceId);
     expect((await store.load()).map((change) => change.sourceId), <String>[
-      'trading-reconciliation-test19-2026-09-07',
+      newestSourceId,
     ]);
   });
 
@@ -460,6 +453,7 @@ void main() {
       final changes = List<Map<String, dynamic>>.from(
         (decoded['changes'] as List).cast<Map<String, dynamic>>(),
       );
+      final newestSourceId = changes.last['source_id'] as String;
       final previousRaw = jsonEncode(<String, dynamic>{
         ...decoded,
         'changes': changes.take(changes.length - 1).toList(growable: false),
@@ -480,14 +474,8 @@ void main() {
       );
 
       expect(appended, hasLength(1));
-      expect(
-        appended.single.sourceId,
-        'trading-reconciliation-test19-2026-09-07',
-      );
-      expect(
-        (await store.nextPending())?.sourceId,
-        'trading-reconciliation-test19-2026-09-07',
-      );
+      expect(appended.single.sourceId, newestSourceId);
+      expect((await store.nextPending())?.sourceId, newestSourceId);
     },
   );
 

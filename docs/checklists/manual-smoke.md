@@ -80,19 +80,6 @@ docs/checklists/release-manual-signoff-log.md
 - [ ] Old resolved invitations do not resurrect as pending after launch receive.
 - [ ] Switching capsules does not mix ledgers.
 
-## Trading Drone (Observability Gate)
-
-- [ ] The packaged artifact exposes both READY and BLOCKED decisions without
-      converting a blocked decision into executable fields.
-- [ ] Risk rejection is exercised without a provider effect.
-- [ ] One exact successful provider receipt is observed for the submitted
-      effect; an intent or execution envelope alone is not a receipt.
-- [ ] After app restart, the same effect is reconciled from retained ownership
-      evidence.
-- [ ] Repeating the same semantic operation does not create a second provider
-      effect.
-- [ ] Trading drone parity checklist is completed: `docs/checklists/trading-drone-spec-runtime-parity.md`.
-
 ## Moltbook Ambassador
 
 - [ ] Moltbook release smoke checklist is completed: `docs/checklists/moltbook-release-smoke.md`.

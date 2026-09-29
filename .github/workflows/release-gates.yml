@@ -29,14 +29,6 @@ jobs:
         with:
           sdk: 3.13.3
 
-      - name: Prove Linux x64 runner startup boundary
-        run: |
-          artifact_root="$(mktemp -d)"
-          artifact="$artifact_root/linux-x64"
-          trap 'rm -rf "$artifact_root"' EXIT
-          bash tools/trading/public_shadow_runner_artifact.sh --build "$artifact" --target-os linux --target-arch x64
-          bash tools/trading/public_shadow_runner_artifact.sh --runtime-smoke "$artifact"
-
       - name: Install pinned Flutter SDK
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:

@@ -21,10 +21,7 @@ class UserVisibleDataDirectoryService {
     'logs',
     'Developer Cache',
   ];
-  static const List<String> _runtimeFileNames = <String>[
-    _cardsFileName,
-    'bingx_futures_credentials.json',
-  ];
+  static const List<String> _runtimeFileNames = <String>[_cardsFileName];
   static Future<void> _migrationTail = Future<void>.value();
   static String? _testHomeOverride;
 

@@ -24,7 +24,6 @@ import 'invitations_screen.dart';
 import 'moltbook_ambassador_screen.dart';
 import 'relationships_screen.dart';
 import 'settings_screen.dart';
-import 'trading_drone_screen.dart';
 import 'wasm_plugins_screen.dart';
 
 @visibleForTesting
@@ -44,8 +43,6 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
     (capsuleChatPluginId, capsuleChatContractKind) => capsuleChatContractKind,
     (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind) =>
       moltbookAmbassadorContractKind,
-    (bingxFuturesTradingPluginId, bingxFuturesContractKind) =>
-      bingxFuturesContractKind,
     _ => null,
   };
 }
@@ -298,8 +295,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (!mounted || _isStaleCapsuleSyncRequest(result.capsuleHex)) return;
     if (result.ingress.code >= 0 ||
         result.attestations.storedCount > 0 ||
-        result.chat.messages.isNotEmpty ||
-        result.chat.tradeSignals.isNotEmpty) {
+        result.chat.messages.isNotEmpty) {
       _loadCapsuleData();
       await _refreshChatUnreadCount(capsuleHex: result.capsuleHex);
     }
@@ -568,12 +564,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   VoidCallback? _installedPluginWorkspaceAction(WasmPluginRecord record) {
     switch (installedPluginWorkspaceContractKind(record)) {
-      case bingxFuturesContractKind:
-        return () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => TradingDroneScreen(runtime: _runtime),
-          ),
-        );
       case capsuleChatContractKind:
         return () => Navigator.of(context).push(
           MaterialPageRoute<void>(

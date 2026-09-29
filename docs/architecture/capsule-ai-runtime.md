@@ -56,8 +56,8 @@ It does not own:
 - Core facts or ledger projections;
 - drone business semantics or deterministic policy;
 - approval, capability grants, effect identity, retry, or receipts;
-- provider-specific product behavior such as Moltbook publication or BingX
-  trading;
+- provider-specific product behavior such as Moltbook publication or financial
+  execution;
 - UI workflow state beyond a projection of AI-session/request status.
 
 ## 3. Canonical Request Path
@@ -156,7 +156,7 @@ A drone never receives:
 - another Capsule's context or another plugin's private state;
 - authority inferred from model output.
 
-The drone owns the meaning of its proposal. Moltbook prose, trading analysis,
+The drone owns the meaning of its proposal. Moltbook prose, financial analysis,
 staking alerts, and Capsule diagnostics remain different contracts even when
 they use the same inference runtime.
 

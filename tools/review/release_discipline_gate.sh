@@ -59,8 +59,6 @@ PRECHECK="$ROOT/tools/release/preflight.sh"
 MAC_RELEASE_SCRIPT="$ROOT/tools/release/macos_release.sh"
 ANDROID_RELEASE_SCRIPT="$ROOT/tools/release/android_release.sh"
 RELEASE_VERSION_GUARD="$ROOT/tools/release/release_version_guard.sh"
-DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
-DRONE_EVIDENCE_FIXTURE="$ROOT/tools/release/trading_drone_evidence_fixture.json"
 MANUAL_SIGNOFF_CHECK="$ROOT/tools/release/check_manual_release_signoff.sh"
 GITHUB_RELEASE_PUBLISH="$ROOT/tools/release/publish_github_release.sh"
 FLUTTER_VERSION_DERIVER="$ROOT/tools/release/derive_flutter_version.sh"
@@ -74,8 +72,6 @@ for path in \
   "$MAC_RELEASE_SCRIPT" \
   "$ANDROID_RELEASE_SCRIPT" \
   "$RELEASE_VERSION_GUARD" \
-  "$DRONE_EVIDENCE_CHECK" \
-  "$DRONE_EVIDENCE_FIXTURE" \
   "$MANUAL_SIGNOFF_CHECK" \
   "$GITHUB_RELEASE_PUBLISH" \
   "$FLUTTER_VERSION_DERIVER" \
@@ -87,7 +83,6 @@ for path in \
   "$ROOT/docs/checklists/manual-smoke.md" \
   "$ROOT/docs/checklists/release-manual-signoff-log.md" \
   "$ROOT/docs/checklists/user-lifetime-safety-pack.md" \
-  "$ROOT/docs/checklists/trading-drone-evidence-log.md" \
   "$ROOT/docs/checklists/moltbook-release-smoke.md" \
   "$ROOT/docs/checklists/capsule-analyst-release-smoke.md"; do
   require_file "$path" "${path#$ROOT/} exists"
@@ -128,8 +123,6 @@ require_present "$CI_REPOSITORY_GATES" 'tools/release/check_manual_release_signo
 
 run_self_test "$RELEASE_VERSION_GUARD" \
   "release version guard self-test passes"
-run_self_test "$DRONE_EVIDENCE_CHECK" \
-  "trading evidence mutation self-test passes"
 run_self_test "$MANUAL_SIGNOFF_CHECK" \
   "manual signoff mutation self-test passes"
 run_self_test "$GITHUB_RELEASE_PUBLISH" \
@@ -161,8 +154,6 @@ require_present "$PRECHECK" 'check_packaged_macos_release_bundle' \
   "preflight validates the packaged macOS artifact"
 require_present "$PRECHECK" 'check_android_release_bundle' \
   "preflight validates the Android bundle"
-require_present "$PRECHECK" 'check_trading_drone_evidence_coverage' \
-  "preflight validates trading evidence"
 require_present "$PRECHECK" 'user_lifetime_safety_gate\.sh' \
   "preflight validates user-lifetime coverage"
 
@@ -175,8 +166,6 @@ for script in "$MAC_RELEASE_SCRIPT" "$ANDROID_RELEASE_SCRIPT"; do
     "${script#$ROOT/} records source commit"
   require_present "$script" 'source_tree_dirty=no' \
     "${script#$ROOT/} records clean source"
-  require_present "$script" 'trading-evidence-build-tag "\$VERSION"' \
-    "${script#$ROOT/} binds trading evidence to version"
   require_present "$script" '\-\-build-name "\$FLUTTER_BUILD_NAME"' \
     "${script#$ROOT/} embeds the derived version"
 done
