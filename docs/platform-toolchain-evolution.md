@@ -210,7 +210,7 @@ Required evidence:
 - release packages built with the candidate toolchain for both macOS and
   Android;
 - cold start, secure-storage access, capsule selection, restore, invitation,
-  chat, plugin install, and trading-drone smoke from those packages;
+  chat, plugin install, and Moltbook smoke from those packages;
 - explicit comparison of generated platform files and a documented rollback to
   the prior baseline.
 

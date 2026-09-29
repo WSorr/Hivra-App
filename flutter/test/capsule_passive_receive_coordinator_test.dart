@@ -326,5 +326,4 @@ const _emptyChat = CapsuleChatDeliveryReceiveResult(
   errorMessage: null,
   droppedByConsensus: 0,
   messages: <CapsuleChatInboxMessage>[],
-  tradeSignals: <CapsuleTradeSignalInboxMessage>[],
 );

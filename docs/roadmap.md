@@ -27,19 +27,16 @@ The following product foundations are implemented and retained:
 - Moltbook proposal, publication, reply, receipt, and restart lifecycle;
 - dedicated Moltbook capability runtime ownership outside the generic plugin
   and Chat module;
-- Trading decision, bounded execution, reconciliation, and Remote Runner
-  acceptance;
-- risk-fitted Remote Runner authorization proven by one bounded live effect
-  while the packaged application was closed, with no duplicate effect;
-- exact managed-position post-trade reconciliation with durable net PnL;
-- dedicated Trading capability ownership with one Capsule-local pending-intent
-  cycle, direct symbol-to-local-runner start, and no peer-selected or
-  Chat-signal route;
 - guarded repository integration and exact-artifact release signoff.
 
-Trading Remote Runner product control exposes the exact verified signed session
-and resumes it after pause without issuing replacement authority. Reconciliation
-keeps internal provider identifiers behind an explicit details disclosure.
+## Retired 1.x Capability
+
+The former Trading implementation was removed as a single bounded retirement:
+strategy and sizing code, provider execution, managed-order state, Chat-carried
+execution payloads, embedded and remote runners, UI, tests, ownership entries,
+and release obligations. Historical Git and release evidence remains available,
+but no Trading runtime, replacement strategy, compatibility path, or active
+roadmap promise is retained.
 
 ## Design-Only Hivra 2.0 Evidence
 

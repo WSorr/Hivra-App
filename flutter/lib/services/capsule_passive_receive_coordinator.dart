@@ -259,7 +259,6 @@ class CapsulePassiveReceiveCoordinator implements CapsulePassiveReceivePort {
         errorMessage: 'Chat inbox drain failed: $error',
         droppedByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
     final result = CapsulePassiveReceiveResult(
@@ -276,8 +275,7 @@ class CapsulePassiveReceiveCoordinator implements CapsulePassiveReceivePort {
           'transport.passive_receive',
           'reason=${reason.name} capsule=$capsuleHex ingress=${ingress.code} '
               'attestation=${attestations.code}/${attestations.storedCount} '
-              'chat=${chat.code}/${chat.messages.length} '
-              'trade=${chat.tradeSignals.length}',
+              'chat=${chat.code}/${chat.messages.length}',
         ),
       );
     }

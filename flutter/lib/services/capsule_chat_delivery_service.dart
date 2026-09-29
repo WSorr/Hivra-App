@@ -9,7 +9,6 @@ import '../models/capsule_chat_models.dart';
 import '../models/consensus_models.dart';
 import '../models/invitation.dart';
 import '../models/relationship.dart';
-import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_chat_deferred_inbox_store.dart';
 import 'capsule_delivery_inbox_store.dart';
@@ -22,23 +21,6 @@ import 'transport_health_policy_service.dart';
 // transport still completes on a later relay.
 const Duration _chatSendWorkerTimeout = Duration(seconds: 35);
 const Duration _chatDrainWorkerTimeout = Duration(seconds: 10);
-const int _receiptPendingDeliveryCode = -2010;
-const int _receiptRetryLimitPerDrain = 8;
-
-String tradeSignalInboxRecordId({
-  required String fromHex,
-  required String signalId,
-  required int timestampMs,
-  required String payloadJson,
-}) {
-  final normalizedFrom = fromHex.trim().toLowerCase();
-  final normalizedSignalId = signalId.trim();
-  if (normalizedSignalId.isNotEmpty) {
-    return '$normalizedFrom::$normalizedSignalId';
-  }
-  final canonical = '$normalizedFrom|$timestampMs|$payloadJson';
-  return sha256.convert(utf8.encode(canonical)).toString();
-}
 
 typedef ChatWorkerRunner =
     Future<Map<String, Object?>> Function(Map<String, Object?> args);
@@ -47,8 +29,6 @@ typedef ChatInvitationsLoader = List<Invitation> Function();
 typedef ChatTrustedCardsLoader = Future<List<CapsuleAddressCard>> Function();
 typedef ChatAttestedSignableReader =
     Future<ConsensusSignableResult> Function(String peerRootHex);
-typedef ExecutionPolicyResolver = BingxExecutionPolicy Function(String peerHex);
-typedef ExecutionKnownIntentLookup = bool Function(String intentHashHex);
 typedef UtcNowProvider = DateTime Function();
 
 Future<Map<String, Object?>> _defaultSendWorkerRunner(
@@ -90,13 +70,6 @@ CapsuleChatMessageDeliveryState outgoingChatStateForDeliveryCode(int code) {
   return CapsuleChatMessageDeliveryState.failed;
 }
 
-BingxExecutionPolicy _defaultExecutionPolicyForPeer(String _) =>
-    const BingxExecutionPolicy(
-      allowedSymbols: <String>{},
-      maxLeverage: 1000,
-      maxRiskPercent: 100,
-    );
-
 class CapsuleChatDeliveryService {
   final AppRuntimeRuntime _runtime;
   final ManualConsensusCheckService _manualChecks;
@@ -110,9 +83,6 @@ class CapsuleChatDeliveryService {
   final CapsuleFfiWorkerQueue _workerQueue;
   final CapsuleChatDeferredInboxStore _deferredInboxStore;
   final CapsuleDeliveryInboxStore _deliveryInboxStore;
-  final BingxFuturesExecutionCommandService _executionCommandService;
-  final ExecutionPolicyResolver _executionPolicyForPeer;
-  final ExecutionKnownIntentLookup? _hasKnownIntentHash;
   final UtcNowProvider _nowUtc;
   final TransportHealthPolicyService _transportHealth;
   CapsuleChatDeliveryService({
@@ -128,9 +98,6 @@ class CapsuleChatDeliveryService {
     CapsuleFfiWorkerQueue? workerQueue,
     CapsuleChatDeferredInboxStore? deferredInboxStore,
     CapsuleDeliveryInboxStore? deliveryInboxStore,
-    BingxFuturesExecutionCommandService? executionCommandService,
-    ExecutionPolicyResolver? executionPolicyForPeer,
-    ExecutionKnownIntentLookup? hasKnownIntentHash,
     UtcNowProvider nowUtc = _defaultNowUtc,
     TransportHealthPolicyService? transportHealth,
   }) : _runtime = runtime,
@@ -147,14 +114,6 @@ class CapsuleChatDeliveryService {
            deferredInboxStore ?? const CapsuleChatDeferredInboxStore(),
        _deliveryInboxStore =
            deliveryInboxStore ?? CapsuleDeliveryInboxStore.shared,
-       _executionCommandService =
-           executionCommandService ??
-           BingxFuturesExecutionCommandService(
-             replayStore: InMemoryBingxExecutionCommandReplayStore(),
-           ),
-       _executionPolicyForPeer =
-           executionPolicyForPeer ?? _defaultExecutionPolicyForPeer,
-       _hasKnownIntentHash = hasKnownIntentHash,
        _nowUtc = nowUtc,
        _transportHealth =
            transportHealth ?? TransportHealthPolicyService.shared;
@@ -177,14 +136,6 @@ class CapsuleChatDeliveryService {
       throw StateError('Chat history is unavailable or invalid');
     }
     return _deliveryInboxStore.loadMessages(capsuleRootHex);
-  }
-
-  List<CapsuleTradeSignalInboxMessage> loadCachedTradeSignals() {
-    final root = _runtime.capsuleRootPublicKey();
-    if (root == null || root.length != 32) {
-      return const <CapsuleTradeSignalInboxMessage>[];
-    }
-    return _deliveryInboxStore.loadTradeSignals(_hex(root));
   }
 
   Future<int> unreadCachedMessageCount() async {
@@ -424,7 +375,6 @@ class CapsuleChatDeliveryService {
         droppedByConsensus: 0,
         deferredByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
 
@@ -451,7 +401,6 @@ class CapsuleChatDeliveryService {
         droppedByConsensus: 0,
         deferredByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
 
@@ -469,7 +418,6 @@ class CapsuleChatDeliveryService {
           droppedByConsensus: 0,
           deferredByConsensus: 0,
           messages: const <CapsuleChatInboxMessage>[],
-          tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
         );
       }
       if (parsed is! List) {
@@ -479,7 +427,6 @@ class CapsuleChatDeliveryService {
           droppedByConsensus: 0,
           deferredByConsensus: 0,
           messages: const <CapsuleChatInboxMessage>[],
-          tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
         );
       }
       decoded = List<dynamic>.from(parsed);
@@ -489,29 +436,6 @@ class CapsuleChatDeliveryService {
         bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase() ??
         localRootHex ??
         '';
-    final timelineHydrated =
-        _isLowerHex64(activeCapsuleHex) &&
-        await _deliveryInboxStore.hydrateCapsule(activeCapsuleHex);
-    final containsExecutionControl = decoded.any((raw) {
-      if (raw is! Map) return false;
-      final payloadJson = raw['payload_json']?.toString() ?? '';
-      final envelope = _parseJsonMap(payloadJson);
-      return envelope != null &&
-          (envelope['command_kind'] ==
-                  BingxFuturesExecutionCommandService.commandKind ||
-              envelope['receipt_kind'] ==
-                  BingxFuturesExecutionCommandService.receiptKind);
-    });
-    if (containsExecutionControl && !timelineHydrated) {
-      return CapsuleChatDeliveryReceiveResult(
-        code: -2005,
-        errorMessage: 'Chat control timeline is unavailable or invalid',
-        droppedByConsensus: 0,
-        deferredByConsensus: 0,
-        messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-      );
-    }
     final identityIndex = await _loadPeerIdentityIndex();
     final signableCache = <String, ConsensusSignableResult>{};
 
@@ -525,11 +449,6 @@ class CapsuleChatDeliveryService {
     }
 
     final byId = <String, CapsuleChatInboxMessage>{};
-    final byTradeSignalId = <String, CapsuleTradeSignalInboxMessage>{};
-    final byExecutionDecisionId =
-        <String, CapsuleExecutionCommandDecisionMessage>{};
-    final byExecutionReceiptId =
-        <String, CapsuleExecutionReceiptInboxMessage>{};
     var droppedByConsensus = 0;
     var deferredByConsensus = 0;
     final remainingDeferred = <CapsuleChatDeferredInboxItem>[];
@@ -641,88 +560,16 @@ class CapsuleChatDeliveryService {
         continue;
       }
 
-      final executionDecision = await _processExecutionCommandEnvelope(
-        payloadJson: payloadJson,
-        consensusPeerHex: consensusPeerHex,
-        isSignablePeer: isSignablePeer,
-        timestampMs: timestampMs,
-      );
-      if (executionDecision != null) {
-        byExecutionDecisionId[executionDecision.id] = executionDecision;
-        if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
-        continue;
-      }
-
-      final executionReceipt = _parseExecutionReceiptEnvelope(payloadJson);
-      if (executionReceipt != null) {
-        if (executionReceipt['target_capsule_root_hex'] != consensusPeerHex ||
-            executionReceipt['peer_hex'] != activeCapsuleHex) {
-          if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
-          continue;
-        }
-        final id = _executionControlId(
-          consensusPeerHex,
-          executionReceipt['command_id']!,
-        );
-        byExecutionReceiptId[id] = CapsuleExecutionReceiptInboxMessage(
-          id: id,
-          fromHex: consensusPeerHex,
-          commandId: executionReceipt['command_id']!,
-          decision: executionReceipt['decision']!,
-          decisionCode: executionReceipt['decision_code']!,
-          decisionMessage: executionReceipt['decision_message']!,
-          targetCapsuleRootHex: executionReceipt['target_capsule_root_hex']!,
-          peerHex: executionReceipt['peer_hex']!,
-          receiptCreatedAtUtc: executionReceipt['receipt_created_at_utc']!,
-          timestampMs: timestampMs,
-        );
-        if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
-        continue;
-      }
-
-      final tradeSignal = _parseTradeSignalEnvelope(payloadJson);
-      if (tradeSignal == null) {
-        if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
-        continue;
-      }
-      final signalId = tradeSignal['signal_id']!;
-      final id = tradeSignalInboxRecordId(
-        fromHex: consensusPeerHex,
-        signalId: signalId,
-        timestampMs: timestampMs,
-        payloadJson: payloadJson,
-      );
-      byTradeSignalId[id] = CapsuleTradeSignalInboxMessage(
-        id: id,
-        signalId: signalId.isEmpty ? id : signalId,
-        fromHex: consensusPeerHex,
-        symbol: tradeSignal['symbol']!,
-        side: tradeSignal['side']!,
-        orderType: tradeSignal['order_type']!,
-        quantityDecimal: tradeSignal['quantity_decimal']!,
-        entryMode: tradeSignal['entry_mode']!,
-        intentHashHex: tradeSignal['intent_hash_hex']!,
-        createdAtUtc: tradeSignal['created_at_utc']!,
-        strategyTag: tradeSignal['strategy_tag'],
-        canonicalIntentJson: tradeSignal['canonical_intent_json']!,
-        timestampMs: timestampMs,
-      );
       if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
     }
 
     final messages =
         byId.values.toList()
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    final tradeSignals =
-        byTradeSignalId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     try {
       await _deliveryInboxStore.mergeDurably(
         activeCapsuleHex,
         messages: messages,
-        tradeSignals: tradeSignals,
-        executionDecisions: byExecutionDecisionId.values,
-        executionReceipts: byExecutionReceiptId.values,
       );
     } catch (error) {
       return CapsuleChatDeliveryReceiveResult(
@@ -731,9 +578,6 @@ class CapsuleChatDeliveryService {
         droppedByConsensus: droppedByConsensus,
         deferredByConsensus: deferredByConsensus,
         messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
-        tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
-          tradeSignals,
-        ),
       );
     }
     if (localRootHex != null) {
@@ -749,51 +593,6 @@ class CapsuleChatDeliveryService {
         now: now,
       );
     }
-    final pendingExecutionDecisions =
-        byExecutionDecisionId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    try {
-      if (timelineHydrated || pendingExecutionDecisions.isNotEmpty) {
-        await _retryPendingExecutionReceipts(
-          activeCapsuleHex,
-          include: pendingExecutionDecisions,
-        );
-      }
-      final durableById = <String, CapsuleExecutionCommandDecisionMessage>{
-        for (final decision in _deliveryInboxStore.loadExecutionDecisions(
-          activeCapsuleHex,
-        ))
-          decision.id: decision,
-      };
-      for (final id in byExecutionDecisionId.keys.toList(growable: false)) {
-        final durable = durableById[id];
-        if (durable != null) byExecutionDecisionId[id] = durable;
-      }
-      final durableReceiptsById = <String, CapsuleExecutionReceiptInboxMessage>{
-        for (final receipt in _deliveryInboxStore.loadExecutionReceipts(
-          activeCapsuleHex,
-        ))
-          receipt.id: receipt,
-      };
-      for (final id in byExecutionReceiptId.keys.toList(growable: false)) {
-        final durable = durableReceiptsById[id];
-        if (durable != null) byExecutionReceiptId[id] = durable;
-      }
-    } catch (error) {
-      return CapsuleChatDeliveryReceiveResult(
-        code: -2005,
-        errorMessage: 'Execution receipt persistence failed: $error',
-        droppedByConsensus: droppedByConsensus,
-        deferredByConsensus: deferredByConsensus,
-        messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
-        tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
-          tradeSignals,
-        ),
-      );
-    }
-    final executionDecisions =
-        byExecutionDecisionId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     if (terminalEventIds.isNotEmpty) {
       final acknowledgement = await _workerQueue.run(
         _ffiQueueKey(bootstrapOwner),
@@ -812,15 +611,9 @@ class CapsuleChatDeliveryService {
           droppedByConsensus: droppedByConsensus,
           deferredByConsensus: deferredByConsensus,
           messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
-          tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
-            tradeSignals,
-          ),
         );
       }
     }
-    final executionReceipts =
-        byExecutionReceiptId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
 
     return CapsuleChatDeliveryReceiveResult(
       code: code,
@@ -828,117 +621,7 @@ class CapsuleChatDeliveryService {
       droppedByConsensus: droppedByConsensus,
       deferredByConsensus: deferredByConsensus,
       messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
-      tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
-        tradeSignals,
-      ),
-      executionDecisions:
-          List<CapsuleExecutionCommandDecisionMessage>.unmodifiable(
-            executionDecisions,
-          ),
-      executionReceipts: List<CapsuleExecutionReceiptInboxMessage>.unmodifiable(
-        executionReceipts,
-      ),
     );
-  }
-
-  Future<CapsuleExecutionCommandDecisionMessage?>
-  _processExecutionCommandEnvelope({
-    required String payloadJson,
-    required String consensusPeerHex,
-    required bool isSignablePeer,
-    required int timestampMs,
-  }) async {
-    final decoded = _parseJsonMap(payloadJson);
-    if (decoded == null) return null;
-    if (decoded['plugin_id']?.toString() !=
-            BingxFuturesExecutionCommandService.pluginId ||
-        decoded['command_kind']?.toString() !=
-            BingxFuturesExecutionCommandService.commandKind) {
-      return null;
-    }
-
-    final localCapsuleRootHex = _localCapsuleRootHex() ?? '';
-    final commandId = decoded['command_id']?.toString().trim() ?? '-';
-    for (final retained in _deliveryInboxStore.loadExecutionDecisions(
-      localCapsuleRootHex,
-    )) {
-      if (retained.fromHex == consensusPeerHex &&
-          retained.commandId == commandId) {
-        return retained;
-      }
-    }
-    final decision = _executionCommandService.evaluateIncomingCommand(
-      commandEnvelopeJson: payloadJson,
-      localCapsuleRootHex: localCapsuleRootHex,
-      fromPeerHex: consensusPeerHex,
-      isPeerSignable: isSignablePeer,
-      nowUtc: _nowUtc(),
-      policy: _executionPolicyForPeer(consensusPeerHex),
-      hasKnownIntentHash: _hasKnownIntentHash,
-    );
-
-    final decisionValue =
-        decision.status == BingxExecutionDecisionStatus.accepted
-            ? 'accepted'
-            : 'rejected';
-    final id = _executionControlId(consensusPeerHex, commandId);
-    return CapsuleExecutionCommandDecisionMessage(
-      id: id,
-      fromHex: consensusPeerHex,
-      commandId: commandId.isEmpty ? '-' : commandId,
-      decision: decisionValue,
-      decisionCode: decision.decisionCode,
-      decisionMessage: decision.decisionMessage,
-      receiptHashHex: decision.receiptHashHex,
-      canonicalReceiptJson: decision.canonicalReceiptJson,
-      receiptDeliveryCode: _receiptPendingDeliveryCode,
-      receiptDeliveryError: 'Execution receipt is pending delivery.',
-      timestampMs: timestampMs,
-    );
-  }
-
-  Future<void> _retryPendingExecutionReceipts(
-    String capsuleRootHex, {
-    Iterable<CapsuleExecutionCommandDecisionMessage> include =
-        const <CapsuleExecutionCommandDecisionMessage>[],
-  }) async {
-    final byId = <String, CapsuleExecutionCommandDecisionMessage>{
-      for (final decision in _deliveryInboxStore.loadExecutionDecisions(
-        capsuleRootHex,
-      ))
-        decision.id: decision,
-      for (final decision in include) decision.id: decision,
-    };
-    final pending = byId.values
-        .where(
-          (decision) =>
-              decision.receiptDeliveryCode != 0 &&
-              decision.canonicalReceiptJson != null,
-        )
-        .take(_receiptRetryLimitPerDrain)
-        .toList(growable: false);
-    for (final decision in pending) {
-      final delivery = await sendCanonicalEnvelope(
-        peerHex: decision.fromHex,
-        canonicalEnvelopeJson: decision.canonicalReceiptJson!,
-        expectedCapsuleRootHex: capsuleRootHex,
-      );
-      await _deliveryInboxStore.mergeDurably(
-        capsuleRootHex,
-        messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-        executionDecisions: <CapsuleExecutionCommandDecisionMessage>[
-          decision.copyWithReceiptDelivery(
-            code: delivery.code,
-            error: delivery.errorMessage,
-          ),
-        ],
-      );
-    }
-  }
-
-  String _executionControlId(String peerHex, String commandId) {
-    return sha256.convert(utf8.encode('$peerHex|$commandId')).toString();
   }
 
   ManualConsensusCheck? _manualConsensusForPeer(String peerHex) {
@@ -1161,100 +844,6 @@ class CapsuleChatDeliveryService {
     }
   }
 
-  Map<String, String?>? _parseTradeSignalEnvelope(String payloadJson) {
-    try {
-      final decoded = jsonDecode(payloadJson);
-      if (decoded is! Map) return null;
-      final map = Map<String, dynamic>.from(decoded);
-      if (map['contract_kind']?.toString() != 'bingx_trade_signal_v1') {
-        return null;
-      }
-
-      final signalId = map['signal_id']?.toString() ?? '';
-      final symbol = map['symbol']?.toString() ?? '';
-      final side = map['side']?.toString() ?? '';
-      final orderType = map['order_type']?.toString() ?? '';
-      final quantityDecimal = map['quantity_decimal']?.toString() ?? '';
-      final entryMode = map['entry_mode']?.toString() ?? 'direct';
-      final intentHashHex =
-          (map['intent_hash_hex']?.toString() ?? '').toLowerCase();
-      final createdAtUtc = map['created_at_utc']?.toString() ?? '';
-      final canonicalIntentJson =
-          map['canonical_intent_json']?.toString() ?? '';
-      final strategyTag = map['strategy_tag']?.toString();
-
-      if (symbol.isEmpty ||
-          side.isEmpty ||
-          orderType.isEmpty ||
-          quantityDecimal.isEmpty ||
-          intentHashHex.isEmpty ||
-          createdAtUtc.isEmpty ||
-          canonicalIntentJson.isEmpty) {
-        return null;
-      }
-      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(intentHashHex)) {
-        return null;
-      }
-
-      return <String, String?>{
-        'signal_id': signalId,
-        'symbol': symbol,
-        'side': side,
-        'order_type': orderType,
-        'quantity_decimal': quantityDecimal,
-        'entry_mode': entryMode,
-        'intent_hash_hex': intentHashHex,
-        'created_at_utc': createdAtUtc,
-        'strategy_tag': strategyTag,
-        'canonical_intent_json': canonicalIntentJson,
-      };
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Map<String, String>? _parseExecutionReceiptEnvelope(String payloadJson) {
-    try {
-      final decoded = jsonDecode(payloadJson);
-      if (decoded is! Map) return null;
-      final map = Map<String, dynamic>.from(decoded);
-      if (map['receipt_kind']?.toString() !=
-          BingxFuturesExecutionCommandService.receiptKind) {
-        return null;
-      }
-
-      final commandId = map['command_id']?.toString().trim() ?? '';
-      final decision = map['decision']?.toString().trim().toLowerCase() ?? '';
-      final decisionCode = map['decision_code']?.toString().trim() ?? '';
-      final decisionMessage = map['decision_message']?.toString().trim() ?? '';
-      final targetCapsuleRootHex =
-          map['target_capsule_root_hex']?.toString().trim().toLowerCase() ?? '';
-      final peerHex = map['peer_hex']?.toString().trim().toLowerCase() ?? '';
-      final receiptCreatedAtUtc =
-          map['receipt_created_at_utc']?.toString().trim() ?? '';
-      if (commandId.isEmpty ||
-          decisionCode.isEmpty ||
-          decisionMessage.isEmpty ||
-          !const <String>{'accepted', 'rejected'}.contains(decision) ||
-          !_isLowerHex64(targetCapsuleRootHex) ||
-          !_isLowerHex64(peerHex) ||
-          !_isIsoUtc(receiptCreatedAtUtc)) {
-        return null;
-      }
-      return <String, String>{
-        'command_id': commandId,
-        'decision': decision,
-        'decision_code': decisionCode,
-        'decision_message': decisionMessage,
-        'target_capsule_root_hex': targetCapsuleRootHex,
-        'peer_hex': peerHex,
-        'receipt_created_at_utc': receiptCreatedAtUtc,
-      };
-    } catch (_) {
-      return null;
-    }
-  }
-
   String? _localCapsuleRootHex() {
     final root = _runtime.capsuleRootPublicKey();
     if (root != null && root.length == 32) {
@@ -1265,21 +854,6 @@ class CapsuleChatDeliveryService {
       return _hex(nostr);
     }
     return null;
-  }
-
-  Map<String, dynamic>? _parseJsonMap(String payloadJson) {
-    try {
-      final decoded = jsonDecode(payloadJson);
-      if (decoded is! Map) return null;
-      return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  bool _isIsoUtc(String value) {
-    final parsed = DateTime.tryParse(value);
-    return parsed != null && parsed.isUtc;
   }
 
   String _stableMessageId(String fromHex, int timestampMs, String payloadJson) {

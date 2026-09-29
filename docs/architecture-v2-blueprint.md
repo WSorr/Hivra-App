@@ -431,13 +431,12 @@ Pass A completed on 2026-08-04 with:
   `tools/review/ownership_registry_gate.sh`;
 - no runtime-code or production-path changes.
 
-The Pass A baseline recorded twelve known capability families with
-`trading_drone` and `person_runtime_shell` explicitly `NEEDS_CONTRACT`; no
-placeholder 2.0 contract was added to make them appear ready. Subsequent
-reference-grade 1.x convergence assigned Trading one Capsule-local cycle and
-sealed its peer-selected route, so the current registry marks `trading_drone`
-`READY`. This is admission evidence only: it does not authorize V2 runtime or
-UI implementation. `person_runtime_shell` remains `NEEDS_CONTRACT`.
+The Pass A baseline recorded twelve known capability families, including the
+then-active Trading capability and `person_runtime_shell`, as
+`NEEDS_CONTRACT`; no placeholder 2.0 contract was added to make them appear
+ready. Trading was later retired from 1.x and removed from the current
+registry, so it provides no active admission path into V2.
+`person_runtime_shell` remains `NEEDS_CONTRACT`.
 
 Selected pass B:
 
@@ -447,8 +446,8 @@ Selected pass B:
   classified as supporting evidence, or explicitly bounded compatibility debt;
 - report service-locator and oversized owner surfaces without moving files or
   creating a replacement facade;
-- keep `trading_drone` and `person_runtime_shell` contract work deferred until
-  discovery proves their complete current boundaries.
+- keep `person_runtime_shell` contract work deferred until discovery proves
+  its complete current boundary.
 
 Pass B completed on 2026-08-04 with:
 
@@ -460,8 +459,8 @@ Pass B completed on 2026-08-04 with:
   compatibility debt;
 - zero generic service-locator pattern occurrences;
 - an entropy report exposing fifteen candidate files at or above the 800-line
-  review threshold, including the current Trading, Moltbook, plugin, exchange,
-  persistence, chat, and invitation surfaces;
+  review threshold, including the then-current Trading, Moltbook, plugin,
+  exchange, persistence, chat, and invitation surfaces;
 - negative tests for an unclassified owner, a builder outside composition, and
   a generic locator escaping its allowance.
 

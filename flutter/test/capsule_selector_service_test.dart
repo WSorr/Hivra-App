@@ -420,7 +420,6 @@ void main() {
           timestampMs: 1,
         ),
       ],
-      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
     );
     final service = CapsuleSelectorService(
       runtime,
@@ -455,7 +454,6 @@ void main() {
             timestampMs: 1,
           ),
         ],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
       final service = CapsuleSelectorService(
         runtime,

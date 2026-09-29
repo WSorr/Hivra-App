@@ -169,17 +169,14 @@ void main() {
             'schema': 'hivra.plugin.manifest',
             'version': 1,
             'release_version': '0.1.0',
-            'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-            'contract': {'kind': 'bingx_futures_order_intent'},
+            'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+            'contract': {'kind': 'moltbook_ambassador_draft'},
             'runtime': {
               'abi': 'hivra_host_abi_v2',
               'entry_export': 'hivra_evaluate_v1',
               'module_path': 'plugin/module.wasm',
             },
-            'capabilities': [
-              'consensus_guard.read',
-              'exchange.trade.bingx.futures',
-            ],
+            'capabilities': ['consensus_guard.read', 'content.draft.prepare'],
           }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
@@ -190,21 +187,21 @@ void main() {
     final installed = await service.installPluginFromFile(sourceFile);
 
     expect(installed.packageKind, 'zip');
-    expect(installed.pluginId, 'hivra.contract.bingx-futures-trading.v1');
+    expect(installed.pluginId, 'hivra.contract.moltbook-ambassador.v1');
     expect(installed.pluginVersion, '0.1.0');
-    expect(installed.contractKind, 'bingx_futures_order_intent');
+    expect(installed.contractKind, 'moltbook_ambassador_draft');
     expect(installed.runtimeAbi, 'hivra_host_abi_v2');
     expect(installed.runtimeEntryExport, 'hivra_evaluate_v1');
     expect(installed.runtimeModulePath, 'plugin/module.wasm');
     expect(installed.capabilities, [
       'consensus_guard.read',
-      'exchange.trade.bingx.futures',
+      'content.draft.prepare',
     ]);
 
     final loaded = await service.loadPlugins();
     expect(loaded, isNotEmpty);
     expect(loaded.first.packageKind, 'zip');
-    expect(loaded.first.pluginId, 'hivra.contract.bingx-futures-trading.v1');
+    expect(loaded.first.pluginId, 'hivra.contract.moltbook-ambassador.v1');
   });
 
   test(
@@ -219,16 +216,13 @@ void main() {
                 'schema': 'hivra.plugin.manifest',
                 'version': 1,
                 'release_version': '0.1.0',
-                'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-                'contract': {'kind': 'bingx_futures_order_intent'},
+                'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
+                'contract': {'kind': 'moltbook_ambassador_draft'},
                 'runtime': {
                   'abi': 'hivra_host_abi_v2',
                   'entry_export': 'hivra_evaluate_v1',
                 },
-                'capabilities': [
-                  'exchange.read.bingx.market',
-                  'exchange.trade.bingx.futures',
-                ],
+                'capabilities': ['content.feed.plan', 'content.draft.prepare'],
               }),
               'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
             },
@@ -239,14 +233,14 @@ void main() {
       }
 
       final first = await service.installPluginFromFile(
-        await createPackage('bingx-a-0.1.0.zip'),
+        await createPackage('moltbook-a-0.1.0.zip'),
       );
       final pluginsDir = await service.pluginsDirectory();
       final firstStored = File('${pluginsDir.path}/${first.storedFileName}');
       expect(await firstStored.exists(), isTrue);
 
       final second = await service.installPluginFromFile(
-        await createPackage('bingx-b-0.1.0.zip'),
+        await createPackage('moltbook-b-0.1.0.zip'),
       );
       final secondStored = File('${pluginsDir.path}/${second.storedFileName}');
       expect(await secondStored.exists(), isTrue);
@@ -257,7 +251,7 @@ void main() {
           records
               .where(
                 (r) =>
-                    r.pluginId == 'hivra.contract.bingx-futures-trading.v1' &&
+                    r.pluginId == 'hivra.contract.moltbook-ambassador.v1' &&
                     r.pluginVersion == '0.1.0',
               )
               .toList();
@@ -424,24 +418,24 @@ void main() {
         jsonEncode([
           {
             'id': 'fresh-id',
-            'displayName': 'BingX',
-            'originalFileName': 'bingx_futures_test_plugin-0.2.0.zip',
+            'displayName': 'Moltbook',
+            'originalFileName': 'moltbook_ambassador_plugin-0.2.0.zip',
             'storedFileName': 'fresh.zip',
             'sizeBytes': 10,
             'installedAtIso': '2026-04-09T12:00:00Z',
             'packageKind': 'zip',
-            'pluginId': 'hivra.contract.bingx-futures-trading.v1',
+            'pluginId': 'hivra.contract.moltbook-ambassador.v1',
             'pluginVersion': '0.2.0',
           },
           {
             'id': 'stale-id',
-            'displayName': 'BingX',
-            'originalFileName': 'bingx_futures_test_plugin-0.1.0.zip',
+            'displayName': 'Moltbook',
+            'originalFileName': 'moltbook_ambassador_plugin-0.1.0.zip',
             'storedFileName': 'stale.zip',
             'sizeBytes': 11,
             'installedAtIso': '2026-04-09T11:00:00Z',
             'packageKind': 'zip',
-            'pluginId': 'hivra.contract.bingx-futures-trading.v1',
+            'pluginId': 'hivra.contract.moltbook-ambassador.v1',
             'pluginVersion': '0.1.0',
           },
         ]),
@@ -474,7 +468,7 @@ void main() {
             'sizeBytes': 10,
             'installedAtIso': '2026-04-10T12:00:00Z',
             'packageKind': 'zip',
-            'pluginId': 'hivra.contract.bingx-futures-trading.v1',
+            'pluginId': 'hivra.contract.moltbook-ambassador.v1',
             'pluginVersion': '0.1.0',
           },
           {

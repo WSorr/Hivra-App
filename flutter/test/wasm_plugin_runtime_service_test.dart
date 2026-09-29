@@ -35,7 +35,7 @@ void main() {
             expect(moduleBytes.take(4), <int>[0, 0x61, 0x73, 0x6d]);
             final input = jsonDecode(utf8.decode(inputJsonBytes));
             expect(input['plugin_id'], _pluginId);
-            expect(input['host_method'], 'place_bingx_futures_order_intent');
+            expect(input['host_method'], 'place_moltbook_ambassador_draft');
             expect(input['symbol'], 'BTC-USDT');
             return _executedOutput;
           },
@@ -108,7 +108,7 @@ void main() {
             runtimeAbi: 'hivra_host_abi_v1',
             runtimeEntryExport: WasmPluginRuntimeService.requiredEntryExport,
             runtimeModulePath: 'plugin/module.wasm',
-            contractKind: 'bingx_futures_order_intent',
+            contractKind: 'moltbook_ambassador_draft',
           ),
         ),
         throwsA(isA<FormatException>()),
@@ -126,7 +126,7 @@ String? _executedInvoker({
 PluginHostApiRequest _request() => const PluginHostApiRequest(
   schemaVersion: 1,
   pluginId: _pluginId,
-  method: 'place_bingx_futures_order_intent',
+  method: 'place_moltbook_ambassador_draft',
   args: <String, dynamic>{'symbol': 'BTC-USDT'},
 );
 
@@ -151,7 +151,7 @@ Future<_TestPackage> _writePackage() async {
       runtimeAbi: WasmPluginRuntimeService.requiredRuntimeAbi,
       runtimeEntryExport: WasmPluginRuntimeService.requiredEntryExport,
       runtimeModulePath: 'plugin/module.wasm',
-      contractKind: 'bingx_futures_order_intent',
+      contractKind: 'moltbook_ambassador_draft',
     ),
   );
 }
@@ -170,7 +170,7 @@ class _TestPackage {
   Future<void> dispose() => tempDir.delete(recursive: true);
 }
 
-const String _pluginId = 'hivra.contract.bingx-futures-trading.v1';
+const String _pluginId = 'hivra.contract.moltbook-ambassador.v1';
 const List<int> _wasmHeader = <int>[
   0x00,
   0x61,
@@ -183,7 +183,7 @@ const List<int> _wasmHeader = <int>[
 ];
 const String _executedOutput =
     '{"schema_version":1,"status":"executed","result":'
-    '{"canonical_json":"{\\"plugin_id\\":\\"hivra.contract.bingx-futures-trading.v1\\"}",'
+    '{"canonical_json":"{\\"plugin_id\\":\\"hivra.contract.moltbook-ambassador.v1\\"}",'
     '"intent_hash_hex":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},'
     '"error_code":null,"error_message":null}';
 

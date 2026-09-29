@@ -21,7 +21,6 @@ run_check "capsule_ai_runtime_gate.sh"
 run_check "ui_ffi_boundary_gate.sh"
 run_check "docs_integrity_gate.sh"
 run_check "release_discipline_gate.sh"
-run_check "trading_drone_parity_gate.sh"
 run_check "user_lifetime_safety_gate.sh"
 run_check "security_check.sh"
 
