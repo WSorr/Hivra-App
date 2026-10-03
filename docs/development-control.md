@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-03
+Status date: 2026-10-04
 
 ## Current State
 
@@ -285,17 +285,37 @@ It restores the existing host grant without requiring a provider response at
 startup, accepts package/Capsule-bound commands over a private Unix socket,
 and refuses a second process for the same data directory. Process health and
 unavailable exchange observation are separate results. The actual compiled
-macOS process with local Jack `0.1.9` passed timer, restart, singleton and
-unchanged grant/state/journal checks using isolated synthetic data only.
+macOS process with local Jack `0.1.9` passed handoff, timer, restart, exact
+replay, singleton and unchanged grant/state/journal checks using isolated
+synthetic data only.
 The process timer exercised read-only `open`, not a live trading cycle;
 no exchange request or order was sent by that process smoke.
-Linux packaging is wired to the canonical Ubuntu 24.04 x86_64 CI builder;
-that new workflow has not yet run. The target VPS was read-only identified
-as Debian 13 x86-64; no deployment, credentials or orders were changed.
-Capsule SSH provisioning, authenticated artifact delivery and an exclusive
-local-to-server state/journal handoff are not implemented yet. Do not expose
-remote Start or claim app-closed VPS trading acceptance before that journey
-passes on the Linux artifact. Strategy/effect owners remain one each.
+Canonical Ubuntu 24.04 x86_64 CI passed on `f015788` (run `37151925424`),
+including Linux runner compilation and clean checkout. That run retained no
+downloadable runner; the pending workflow change uploads the existing archive
+and its digest only after all checks pass. It is a candidate, not a release.
+The target VPS was read-only identified as Debian 13 x86-64; no deployment,
+credentials or orders were changed.
+
+Pending handoff source work uses the existing host grant to bind execution to
+local or one explicit VPS identity, without renewing its expiry or copying
+credentials into package state. The source drains actions and remains detached
+after restart or local package removal. The destination atomically adopts
+opaque workspace state and the canonical effect journal into an unused
+workspace. Exact replay acknowledges without restoring older files, renewing
+expired authority or undoing Stop. One staging directory bounds interrupted
+imports; no second strategy, effect journal or execution owner was added.
+Pre-field local grants are read as local only for existing 24-hour grants;
+remove this default when those stored grants are no longer supported.
+Executor identity must be established independently by authenticated host
+transport, not trusted from the incoming checkpoint alone.
+
+Capsule SSH provisioning, authenticated artifact delivery and peer identity
+discovery/pinning remain incomplete, as do remote UI routing, return to local
+execution and remote admission removal during package replacement/uninstall.
+Do not expose remote Start or claim app-closed VPS trading acceptance before
+that complete journey passes on the Linux artifact. Strategy/effect owners
+remain one each.
 
 Earlier local implementation evidence, not autonomy acceptance: app and headless
 used the same workspace executor and effect journal. The `0.1.7` candidate

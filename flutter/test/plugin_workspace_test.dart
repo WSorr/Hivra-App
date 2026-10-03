@@ -32,6 +32,408 @@ import '../bin/plugin_workspace_runner.dart';
 
 void main() {
   test(
+    'handoff freezes local execution and exact replay never rolls back VPS',
+    () async {
+      final root = await Directory('/tmp').createTemp('hivra_handoff_');
+      addTearDown(() => root.delete(recursive: true));
+      final localFiles = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(
+          runtimeRootOverride: '${root.path}/local',
+        ),
+      );
+      final remoteFiles = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(
+          runtimeRootOverride: '${root.path}/vps',
+        ),
+      );
+      final registry = _Registry();
+      const owner =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      var digest = 'b' * 64;
+      final scope = {
+        'account_id': 'c' * 64,
+        'symbol': 'DASH-USDT',
+        'action': 'independent_cycle',
+        'interval_seconds': 30,
+        'max_margin': 1.0,
+        'max_stop_percent': 20.0,
+      };
+      registry.executionBinding =
+          () => PluginRuntimeBinding.externalPackage(
+            packageId: registry.record.id,
+            packageVersion: registry.record.pluginVersion,
+            packageKind: 'zip',
+            packageDigestHex: digest,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: const [
+              'workspace.render',
+              'workspace.continue',
+              'state.plugin.read_write',
+              'workspace.schedule',
+            ],
+          );
+      Completer<void>? hold;
+      final entered = Completer<void>();
+      var invocations = 0;
+      final host = PluginHostApiService(
+        handlers: [],
+        resolveRuntimeBinding: registry.resolveRuntimeBinding,
+        resolveRuntimeInvoke: (request, _) async {
+          invocations++;
+          if (request.args['action'] == 'held') {
+            entered.complete();
+            await hold!.future;
+          }
+          return PluginRuntimeInvokeEvidence(
+            mode: 'wasmi_v1',
+            modulePath: 'plugin/module.wasm',
+            moduleSelection: 'zip_manifest',
+            moduleDigestHex: 'd' * 64,
+            invokeDigestHex: 'e' * 64,
+            semanticStatus: PluginHostApiStatus.executed,
+            semanticErrorCode: null,
+            semanticErrorMessage: null,
+            semanticResult: {
+              'state':
+                  request.args['state'] ??
+                  {
+                    'not_a_trading_state': [3, 'opaque'],
+                  },
+              'requests': <Object>[],
+              'view': {...view(), 'schedule': scope},
+            },
+          );
+        },
+      );
+      PluginWorkspaceRuntime runtime(CapsuleFileStore files, String location) =>
+          PluginWorkspaceRuntime(
+            registry: registry,
+            pluginHostApi: host,
+            fileStore: files,
+            readActiveCapsuleRootHex: () => owner,
+            executionHost: location,
+            executionIdentity: location == 'vps' ? 'f' * 64 : null,
+            scheduleTimers: false,
+            readCredentials:
+                ({required owner, required pluginId}) async =>
+                    throw StateError('No credentials'),
+            writeCredentials:
+                ({required owner, required pluginId, required value}) async =>
+                    throw StateError('No credentials'),
+          );
+      final local = runtime(localFiles, 'local');
+      final remote = runtime(remoteFiles, 'vps');
+      final record = registry.record;
+      await local.setWorkspaceExecution(
+        record: record,
+        enabled: true,
+        approvedScope: scope,
+      );
+      final directory = await localFiles.capsuleDirForHex(owner);
+      final effects = ExternalEffectService(
+        readActiveCapsuleRootHex: () => owner,
+        fileStore: localFiles,
+        resolveAdapter: (_) => null,
+      );
+      await effects.prepare(
+        operationId: 'f' * 64,
+        pluginId: record.pluginId!,
+        providerId: 'bingx',
+        accountBindingId: 'c' * 64,
+        effectKind: 'order.entry.place',
+        canonicalPayloadJson: '{"existing":"receipt identity"}',
+      );
+      final originalGrant = jsonDecode(
+        (await localFiles.readPluginState(
+          directory,
+          record.pluginId!,
+          'workspace-execution.v1.json',
+        ))!,
+      );
+      hold = Completer<void>();
+      final action = local.runWorkspaceAction(record: record, action: 'held');
+      await entered.future;
+      var exported = false;
+      final transfer = local
+          .releaseWorkspaceToVps(record, executorId: 'f' * 64)
+          .then((value) {
+            exported = true;
+            return value;
+          });
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(exported, false, reason: 'Handoff must drain the current action');
+      hold.complete();
+      await action;
+      final checkpoint = await transfer;
+      expect(checkpoint['workspace'], contains('not_a_trading_state'));
+      expect(
+        checkpoint['execution']['expires_at_ms'],
+        originalGrant['expires_at_ms'],
+      );
+      expect(
+        checkpoint['effects'],
+        await localFiles.readPluginState(
+          directory,
+          record.pluginId!,
+          'external_effects.v1.json',
+        ),
+      );
+      final before = invocations;
+      final restartedLocal = runtime(localFiles, 'local');
+      await expectLater(
+        restartedLocal.runWorkspaceAction(record: record, action: 'open'),
+        throwsStateError,
+      );
+      await expectLater(
+        restartedLocal.setWorkspaceExecution(
+          record: record,
+          enabled: true,
+          approvedScope: scope,
+        ),
+        throwsStateError,
+      );
+      await expectLater(
+        restartedLocal.setWorkspaceExecution(record: record, enabled: false),
+        throwsStateError,
+      );
+      await expectLater(
+        restartedLocal.runScheduledWorkspaceCycle(record),
+        throwsStateError,
+      );
+      expect(
+        invocations,
+        before,
+        reason: 'The detached source must not invoke WASM',
+      );
+      expect(
+        jsonEncode(
+          await local.releaseWorkspaceToVps(record, executorId: 'f' * 64),
+        ),
+        jsonEncode(checkpoint),
+      );
+      final destination = await remoteFiles.capsuleDirForHex(owner);
+      await remoteFiles.writePluginState(
+        destination,
+        record.pluginId!,
+        'workspace.v1.json',
+        '{"existing":"must survive rejected adoption"}',
+      );
+      await expectLater(
+        remote.adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint),
+        throwsStateError,
+      );
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'workspace.v1.json',
+        ),
+        '{"existing":"must survive rejected adoption"}',
+      );
+      await remoteFiles.deletePluginState(
+        destination,
+        record.pluginId!,
+        'workspace.v1.json',
+      );
+      final missingJournal =
+          {...checkpoint}
+            ..remove('effects')
+            ..['unrecognized'] = null;
+      await expectLater(
+        remote.adoptWorkspaceFromLocal(
+          record: record,
+          checkpoint: missingJournal,
+        ),
+        throwsStateError,
+        reason: 'Missing fields must not silently discard the effect journal',
+      );
+      final destinationState = await remoteFiles.pluginStateDirectory(
+        destination,
+        record.pluginId!,
+      );
+      final interruptedStage = Directory('${destinationState.path}.checkpoint');
+      await interruptedStage.create();
+      await File(
+        '${interruptedStage.path}/workspace.v1.json',
+      ).writeAsString('interrupted');
+      await remote.adoptWorkspaceFromLocal(
+        record: record,
+        checkpoint: checkpoint,
+      );
+      await expectLater(
+        local.releaseWorkspaceToVps(record, executorId: 'e' * 64),
+        throwsStateError,
+      );
+      final otherVps = PluginWorkspaceRuntime(
+        registry: registry,
+        pluginHostApi: host,
+        fileStore: remoteFiles,
+        readActiveCapsuleRootHex: () => owner,
+        executionHost: 'vps',
+        executionIdentity: 'e' * 64,
+        scheduleTimers: false,
+        readCredentials: ({required owner, required pluginId}) async => null,
+        writeCredentials:
+            ({required owner, required pluginId, required value}) async {},
+      );
+      await expectLater(
+        otherVps.adoptWorkspaceFromLocal(
+          record: record,
+          checkpoint: checkpoint,
+        ),
+        throwsStateError,
+      );
+      expect(await interruptedStage.exists(), false);
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'workspace.v1.json',
+        ),
+        checkpoint['workspace'],
+      );
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'external_effects.v1.json',
+        ),
+        checkpoint['effects'],
+      );
+      await remote.runScheduledWorkspaceCycle(record);
+      await remote.setWorkspaceExecution(record: record, enabled: false);
+      const progressed = '{"new_shape":{"after":"server progress"}}';
+      await remoteFiles.writePluginState(
+        destination,
+        record.pluginId!,
+        'workspace.v1.json',
+        progressed,
+      );
+      final stopped = await remoteFiles.readPluginState(
+        destination,
+        record.pluginId!,
+        'workspace-execution.v1.json',
+      );
+      await runtime(
+        remoteFiles,
+        'vps',
+      ).adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint);
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'workspace.v1.json',
+        ),
+        progressed,
+      );
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'workspace-execution.v1.json',
+        ),
+        stopped,
+      );
+      final expired = jsonEncode({
+        ...jsonDecode(stopped!) as Map,
+        'expires_at_ms': DateTime.now().millisecondsSinceEpoch - 1,
+      });
+      await remoteFiles.writePluginState(
+        destination,
+        record.pluginId!,
+        'workspace-execution.v1.json',
+        expired,
+      );
+      await runtime(
+        remoteFiles,
+        'vps',
+      ).adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint);
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'workspace-execution.v1.json',
+        ),
+        expired,
+        reason: 'Replay cannot renew expired authority',
+      );
+      expect(
+        (await effects.list(pluginId: record.pluginId!)).single.operationId,
+        'f' * 64,
+      );
+      for (final mutation in [
+        {...checkpoint, 'owner': 'e' * 64},
+        {...checkpoint, 'workspace': '{"changed":true}'},
+        {
+          ...checkpoint,
+          'execution': {
+            ...checkpoint['execution'] as Map,
+            'handoff_id': 'e' * 64,
+          },
+        },
+        {...checkpoint, 'package_digest': 'e' * 64},
+      ]) {
+        await expectLater(
+          remote.adoptWorkspaceFromLocal(record: record, checkpoint: mutation),
+          throwsStateError,
+        );
+      }
+      final module = PluginRuntimeModule(
+        registry: registry,
+        sourceCatalog: const WasmPluginSourceCatalogService(),
+        manualChecks: _Manual(),
+        pluginHostApi: host,
+        attestationExchange: _Attestations(),
+        chatDelivery: _Delivery(),
+        passiveReceive: _Passive(),
+        contactLabels: _Labels(),
+        uiLog: const UiEventLogService(),
+        moltbook: _Moltbook(),
+        fileStore: localFiles,
+        secretVault: _Vault(),
+        readActiveCapsuleRootHex: () => owner,
+      );
+      await module.removePlugin(record);
+      expect(
+        await localFiles.readPluginState(
+          directory,
+          record.pluginId!,
+          'workspace.v1.json',
+        ),
+        isNull,
+      );
+      expect(
+        jsonDecode(
+          (await localFiles.readPluginState(
+            directory,
+            record.pluginId!,
+            'workspace-execution.v1.json',
+          ))!,
+        )['executor_id'],
+        'f' * 64,
+        reason: 'Uninstall must not erase remote ownership',
+      );
+      registry.installed = true;
+      digest = 'e' * 64;
+      await expectLater(
+        restartedLocal.runWorkspaceAction(record: record, action: 'open'),
+        throwsStateError,
+      );
+      await expectLater(
+        remote.adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint),
+        throwsStateError,
+      );
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'workspace.v1.json',
+        ),
+        progressed,
+      );
+    },
+  );
+  test(
     'runner socket restores authority, rejects duplicates and binds commands',
     () async {
       final root = await Directory('/tmp').createTemp('hivra_runner_');
@@ -100,6 +502,8 @@ void main() {
         pluginHostApi: host,
         fileStore: files,
         readActiveCapsuleRootHex: () => owner,
+        executionHost: 'vps',
+        executionIdentity: 'f' * 64,
         readCredentials:
             ({required owner, required pluginId}) async =>
                 throw StateError('No credentials for this package'),
@@ -112,6 +516,7 @@ void main() {
         'plugin_id': registry.record.pluginId,
         'package_id': registry.record.id,
         'package_digest': digest,
+        'executor_id': 'f' * 64,
       };
       WorkspaceRunner runner() => WorkspaceRunner(
         root: root,

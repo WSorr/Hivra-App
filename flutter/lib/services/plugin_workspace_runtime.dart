@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 
 import '../models/external_effect_models.dart';
 import '../models/plugin_contract_ids.dart';
@@ -41,6 +44,8 @@ class PluginWorkspaceRuntime {
   _writeCredentials;
   final BingxMarketDataAdapter _market;
   final bool scheduleTimers;
+  final String executionHost;
+  final String? executionIdentity;
 
   PluginWorkspaceRuntime({
     required this.registry,
@@ -60,11 +65,24 @@ class PluginWorkspaceRuntime {
     writeCredentials,
     BingxMarketDataAdapter? market,
     this.scheduleTimers = true,
+    this.executionHost = 'local',
+    this.executionIdentity,
   }) : _fileStore = fileStore,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
        _readCredentials = readCredentials,
        _writeCredentials = writeCredentials,
-       _market = market ?? BingxMarketDataAdapter();
+       _market = market ?? BingxMarketDataAdapter() {
+    if (!{'local', 'vps'}.contains(executionHost)) {
+      throw ArgumentError('Unsupported execution host');
+    }
+    if (executionHost == 'vps' &&
+        (executionIdentity == null ||
+            !RegExp(r'^[0-9a-f]{64}$').hasMatch(executionIdentity!))) {
+      throw ArgumentError(
+        'VPS identity must be established by its host transport',
+      );
+    }
+  }
 
   String? activeCapsuleRootHex() => _readActiveCapsuleRootHex();
 
@@ -106,15 +124,19 @@ class PluginWorkspaceRuntime {
     final key = '$owner::$pluginId';
     return _serialize(
       key,
-      () => _runWorkspaceOwned(
+      () => _withWorkspaceLease(
         owner,
         record,
-        action,
-        settings,
-        optionsForField,
-        credentials,
-        approvedOrder,
-        executionRevision,
+        () => _runWorkspaceOwned(
+          owner,
+          record,
+          action,
+          settings,
+          optionsForField,
+          credentials,
+          approvedOrder,
+          executionRevision,
+        ),
       ),
     );
   }
@@ -995,6 +1017,12 @@ class PluginWorkspaceRuntime {
         'plugin_id': record.pluginId,
         'package_id': record.id,
         'package_digest': binding.packageDigestHex,
+        'executor': executionHost,
+        if (executionHost == 'vps') 'executor_id': executionIdentity,
+        if (previous?['handoff_id'] != null)
+          'handoff_id': previous!['handoff_id'],
+        if (previous?['handoff_digest'] != null)
+          'handoff_digest': previous!['handoff_digest'],
         'scope': scope,
         'settings': settings,
         'expires_at_ms':
@@ -1013,26 +1041,32 @@ class PluginWorkspaceRuntime {
       };
     }
     if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
-    await _serialize('$owner::${record.pluginId}::execution', () async {
-      final current = await _readExecution(record, owner);
-      if (current?['revision'] != previous?['revision']) {
-        throw StateError('Execution authority changed during confirmation');
-      }
-      final binding = await registry.resolveRuntimeBinding(record.pluginId!);
-      if (binding.packageId != control['package_id'] ||
-          binding.packageDigestHex != control['package_digest'] ||
-          !binding.capabilities.contains('workspace.schedule')) {
-        throw StateError('Execution package changed during confirmation');
-      }
-      if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
-      final directory = await _fileStore.capsuleDirForHex(owner, create: true);
-      await _fileStore.writePluginState(
-        directory,
-        record.pluginId!,
-        _executionFile,
-        jsonEncode(control),
-      );
-    });
+    await _serialize(
+      '$owner::${record.pluginId}::execution',
+      () => _withWorkspaceLease(owner, record, () async {
+        final current = await _readExecution(record, owner);
+        if (current?['revision'] != previous?['revision']) {
+          throw StateError('Execution authority changed during confirmation');
+        }
+        final binding = await registry.resolveRuntimeBinding(record.pluginId!);
+        if (binding.packageId != control['package_id'] ||
+            binding.packageDigestHex != control['package_digest'] ||
+            !binding.capabilities.contains('workspace.schedule')) {
+          throw StateError('Execution package changed during confirmation');
+        }
+        if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
+        final directory = await _fileStore.capsuleDirForHex(
+          owner,
+          create: true,
+        );
+        await _fileStore.writePluginState(
+          directory,
+          record.pluginId!,
+          _executionFile,
+          jsonEncode(control),
+        );
+      }, authorityOnly: true),
+    );
     _armScheduledExecution(record, owner, control);
     return runWorkspaceAction(record: record, action: 'open');
   }
@@ -1090,8 +1124,9 @@ class PluginWorkspaceRuntime {
 
   Future<Map<String, dynamic>?> _readExecution(
     WasmPluginRecord record,
-    String owner,
-  ) async {
+    String owner, {
+    bool enforceHost = true,
+  }) async {
     final directory = await _fileStore.capsuleDirForHex(owner, create: false);
     var raw = await _fileStore.readPluginState(
       directory,
@@ -1112,16 +1147,56 @@ class PluginWorkspaceRuntime {
       throw StateError('Execution grant exceeds the storage bound');
     }
     final control = jsonDecode(raw);
+    _validateExecutionControl(control, owner, record.pluginId!);
+    if (enforceHost &&
+        ((control['executor'] ?? 'local') != executionHost ||
+            (executionHost == 'vps' &&
+                control['executor_id'] != executionIdentity))) {
+      throw StateError(
+        'Workspace execution belongs to VPS; connect to its current state',
+      );
+    }
+    if (control['package_id'] != record.id ||
+        binding.packageId != record.id ||
+        control['package_digest'] != binding.packageDigestHex ||
+        !binding.capabilities.contains('workspace.schedule')) {
+      // Package replacement cannot inherit authority, but must not erase a
+      // remote assignment and let a newly installed local package trade.
+      return null;
+    }
+    return Map<String, dynamic>.from(control);
+  }
+
+  static void _validateExecutionControl(
+    dynamic control,
+    String owner,
+    String pluginId,
+  ) {
     if (control is! Map ||
         control['version'] != 1 ||
         control['owner'] != owner ||
-        control['plugin_id'] != record.pluginId ||
+        control['plugin_id'] != pluginId ||
         control['revision'] is! int ||
         control['revision'] <= 0 ||
         control['allow_new_entries'] is! bool ||
         control['expires_at_ms'] is! int ||
         control['settings'] is! Map ||
-        control['scope'] is! Map) {
+        control['scope'] is! Map ||
+        control['package_id'] is! String ||
+        (control['package_id'] as String).isEmpty ||
+        (control['package_id'] as String).length > 128 ||
+        control['package_digest'] is! String ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(control['package_digest']) ||
+        !{'local', 'vps'}.contains(control['executor'] ?? 'local') ||
+        (control['executor'] == 'vps' &&
+            (control['executor_id'] is! String ||
+                !RegExp(r'^[0-9a-f]{64}$').hasMatch(control['executor_id']))) ||
+        ['handoff_id', 'handoff_digest'].any(
+          (key) =>
+              control[key] != null &&
+              (control[key] is! String ||
+                  !RegExp(r'^[0-9a-f]{64}$').hasMatch(control[key])),
+        )) {
       throw StateError(
         'Execution grant is unreadable; no cycle or effect admitted',
       );
@@ -1133,15 +1208,218 @@ class PluginWorkspaceRuntime {
       throw StateError('Execution settings are invalid');
     }
     _validateSchedule(Map<String, dynamic>.from(control['scope'] as Map));
-    if (control['package_id'] != record.id ||
-        binding.packageId != record.id ||
-        control['package_digest'] != binding.packageDigestHex ||
-        !binding.capabilities.contains('workspace.schedule')) {
-      // Replaced/revoked code can still open its workspace for a new explicit
-      // Start, but never inherits the previous package's execution authority.
-      return null;
+  }
+
+  /// Called by the host transport, never by WASM. The source stays detached
+  /// even if upload or acknowledgement is lost; there is no local fallback.
+  Future<Map<String, dynamic>> releaseWorkspaceToVps(
+    WasmPluginRecord record, {
+    required String executorId,
+  }) async {
+    final owner = activeCapsuleRootHex()?.trim().toLowerCase();
+    if (executionHost != 'local' ||
+        owner == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(executorId)) {
+      throw StateError('A local workspace is required for handoff');
     }
-    return Map<String, dynamic>.from(control);
+    final key = '$owner::${record.pluginId}';
+    return _serialize(
+      key,
+      () => _withWorkspaceLease(
+        owner,
+        record,
+        () => _serialize(
+          '$key::execution',
+          () => _withWorkspaceLease(owner, record, () async {
+            final control = await _readExecution(
+              record,
+              owner,
+              enforceHost: false,
+            );
+            if (control == null) {
+              throw StateError('Authorize execution before handoff');
+            }
+            if (control['executor'] == 'vps' && control['handoff_id'] == null) {
+              throw StateError('Workspace is already assigned elsewhere');
+            }
+            if (control['executor'] == 'vps' &&
+                control['executor_id'] != executorId) {
+              throw StateError('Execution was released to another VPS');
+            }
+            final directory = await _fileStore.capsuleDirForHex(owner);
+            final state = await _fileStore.readPluginState(
+              directory,
+              record.pluginId!,
+              'workspace.v1.json',
+            );
+            final effects = await _fileStore.readPluginState(
+              directory,
+              record.pluginId!,
+              'external_effects.v1.json',
+            );
+            final random = Random.secure();
+            final released =
+                control['executor'] == 'vps'
+                    ? control
+                    : {
+                      ...control,
+                      'executor': 'vps',
+                      'executor_id': executorId,
+                      'handoff_id':
+                          sha256
+                              .convert(
+                                List<int>.generate(
+                                  32,
+                                  (_) => random.nextInt(256),
+                                ),
+                              )
+                              .toString(),
+                      'revision': (control['revision'] as int) + 1,
+                    };
+            final checkpoint = {
+              'owner': owner,
+              'plugin_id': record.pluginId,
+              'package_digest': control['package_digest'],
+              'execution': released,
+              'workspace': state,
+              'effects': effects,
+            };
+            _validateCheckpoint(checkpoint, owner, record.pluginId!);
+            final binding = await registry.resolveRuntimeBinding(
+              record.pluginId!,
+            );
+            if (!_isStillOwnedBy(owner) ||
+                binding.packageId != record.id ||
+                binding.packageDigestHex != control['package_digest'] ||
+                !binding.capabilities.contains('workspace.schedule')) {
+              throw StateError('Handoff package or Capsule changed');
+            }
+            await _fileStore.writePluginState(
+              directory,
+              record.pluginId!,
+              _executionFile,
+              jsonEncode(released),
+            );
+            stopWorkspaceScheduling(pluginId: record.pluginId);
+            return checkpoint;
+          }, authorityOnly: true),
+        ),
+      ),
+    );
+  }
+
+  /// Adopt opaque state and the canonical effect journal without renewing
+  /// authority. An exact replay acknowledges, never restores old files.
+  Future<void> adoptWorkspaceFromLocal({
+    required WasmPluginRecord record,
+    required Map<String, dynamic> checkpoint,
+  }) async {
+    final owner = activeCapsuleRootHex()?.trim().toLowerCase();
+    if (executionHost != 'vps' || owner == null) {
+      throw StateError('A VPS executor is required for adoption');
+    }
+    _validateCheckpoint(checkpoint, owner, record.pluginId!);
+    // Keep one immutable input across asynchronous registry/storage checks.
+    checkpoint = Map<String, dynamic>.from(
+      jsonDecode(jsonEncode(checkpoint)) as Map,
+    );
+    final digest =
+        sha256.convert(utf8.encode(_canonical(checkpoint))).toString();
+    final incoming = Map<String, dynamic>.from(checkpoint['execution'] as Map);
+    if (incoming['executor_id'] != executionIdentity) {
+      throw StateError('Checkpoint belongs to another VPS');
+    }
+    final key = '$owner::${record.pluginId}';
+    await _serialize(
+      key,
+      () => _withWorkspaceLease(
+        owner,
+        record,
+        () => _serialize(
+          '$key::execution',
+          () => _withWorkspaceLease(owner, record, () async {
+            final binding = await registry.resolveRuntimeBinding(
+              record.pluginId!,
+            );
+            if (binding.packageId != record.id ||
+                binding.packageDigestHex != checkpoint['package_digest'] ||
+                !binding.capabilities.contains('workspace.schedule') ||
+                !_isStillOwnedBy(owner)) {
+              throw StateError('Handoff package or Capsule changed');
+            }
+            final previous = await _readExecution(record, owner);
+            if (previous != null) {
+              if (previous['handoff_id'] == incoming['handoff_id'] &&
+                  previous['handoff_digest'] == digest) {
+                return;
+              }
+              throw StateError('VPS already owns another workspace checkpoint');
+            }
+            final directory = await _fileStore.capsuleDirForHex(
+              owner,
+              create: true,
+            );
+            await _fileStore.restorePluginCheckpoint(
+              directory,
+              record.pluginId!,
+              {
+                if (checkpoint['workspace'] != null)
+                  'workspace.v1.json': checkpoint['workspace'] as String,
+                if (checkpoint['effects'] != null)
+                  'external_effects.v1.json': checkpoint['effects'] as String,
+                _executionFile: jsonEncode({
+                  ...incoming,
+                  'package_id': record.id,
+                  'handoff_digest': digest,
+                }),
+              },
+            );
+          }, authorityOnly: true),
+        ),
+      ),
+    );
+    await resumeWorkspaceScheduling(record);
+  }
+
+  static void _validateCheckpoint(
+    Map<String, dynamic> checkpoint,
+    String owner,
+    String pluginId,
+  ) {
+    if (checkpoint.length != 6 ||
+        !checkpoint.keys.toSet().containsAll(const {
+          'owner',
+          'plugin_id',
+          'package_digest',
+          'execution',
+          'workspace',
+          'effects',
+        }) ||
+        checkpoint['owner'] != owner ||
+        checkpoint['plugin_id'] != pluginId ||
+        checkpoint['package_digest'] is! String ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(checkpoint['package_digest']) ||
+        checkpoint['execution'] is! Map ||
+        utf8.encode(jsonEncode(checkpoint)).length > 8 * 1024 * 1024 ||
+        [
+          'workspace',
+          'effects',
+        ].any((key) => checkpoint[key] != null && checkpoint[key] is! String)) {
+      throw StateError('Invalid workspace checkpoint');
+    }
+    final control = checkpoint['execution'];
+    _validateExecutionControl(control, owner, pluginId);
+    if (control['executor'] != 'vps' ||
+        control['handoff_id'] == null ||
+        control['handoff_digest'] != null ||
+        control['package_digest'] != checkpoint['package_digest'] ||
+        utf8.encode(jsonEncode(control)).length > 8192 ||
+        (checkpoint['workspace'] != null &&
+            utf8.encode(checkpoint['workspace']).length > 32 * 1024)) {
+      throw StateError(
+        'Checkpoint does not carry released execution authority',
+      );
+    }
   }
 
   static void _validateSchedule(Map<String, dynamic> scope) {
@@ -1211,11 +1489,11 @@ class PluginWorkspaceRuntime {
     }
   }
 
-  static Map<String, dynamic> _executionPresentation(
+  Map<String, dynamic> _executionPresentation(
     Map<String, dynamic> control,
     Map<String, dynamic>? observation,
   ) => {
-    'mode': 'local',
+    'mode': executionHost,
     'allow_new_entries':
         control['allow_new_entries'] == true &&
         DateTime.now().millisecondsSinceEpoch < control['expires_at_ms'],
@@ -1229,7 +1507,9 @@ class PluginWorkspaceRuntime {
     String owner,
     Map<String, dynamic> control,
   ) {
-    if (!scheduleTimers) return;
+    if (!scheduleTimers || (control['executor'] ?? 'local') != executionHost) {
+      return;
+    }
     final key = '$owner::${record.pluginId}';
     final binding =
         '${record.id}::${control['package_digest']}::${control['revision']}';
@@ -1308,6 +1588,26 @@ class PluginWorkspaceRuntime {
           : key.endsWith('::$pluginId')) {
         _clearSchedule(key);
       }
+    }
+  }
+
+  Future<T> _withWorkspaceLease<T>(
+    String owner,
+    WasmPluginRecord record,
+    Future<T> Function() work, {
+    bool authorityOnly = false,
+  }) async {
+    final directory = await _fileStore.capsuleDirForHex(owner, create: true);
+    // Use the storage owner's validation, not an unchecked package path.
+    await _fileStore.pluginStateDirectory(directory, record.pluginId!);
+    final lock = await File(
+      '${directory.path}/workspace-${authorityOnly ? 'authority' : 'state'}-${record.pluginId}.lock',
+    ).open(mode: FileMode.append);
+    try {
+      await lock.lock(FileLock.exclusive);
+      return await work();
+    } finally {
+      await lock.close();
     }
   }
 

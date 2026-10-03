@@ -314,6 +314,51 @@ class CapsuleFileStore {
     if (await file.exists()) await file.delete();
   }
 
+  /// Publish a complete checkpoint only into an unused workspace. No reader
+  /// may see state without the corresponding journal and host authority.
+  Future<void> restorePluginCheckpoint(
+    Directory capsuleDir,
+    String pluginId,
+    Map<String, String> files,
+  ) async {
+    final target = await pluginStateDirectory(capsuleDir, pluginId);
+    for (final name in files.keys) {
+      pluginStateFile(target, name);
+    }
+    await target.parent.create(recursive: true);
+    final kind = await FileSystemEntity.type(target.path, followLinks: false);
+    if (kind != FileSystemEntityType.notFound &&
+        (kind != FileSystemEntityType.directory ||
+            !await target.list(followLinks: false).isEmpty)) {
+      throw StateError('Destination workspace is not empty');
+    }
+    // One owned staging directory per workspace bounds crash leftovers.
+    // The caller holds the workspace lease through publication and cleanup.
+    final stage = Directory('${target.path}.checkpoint');
+    final stageKind = await FileSystemEntity.type(
+      stage.path,
+      followLinks: false,
+    );
+    if (stageKind == FileSystemEntityType.directory) {
+      await stage.delete(recursive: true);
+    } else if (stageKind != FileSystemEntityType.notFound) {
+      throw StateError('Checkpoint staging is not a directory');
+    }
+    await stage.create();
+    try {
+      for (final entry in files.entries) {
+        await _atomicWrites.writeString(
+          pluginStateFile(stage, entry.key),
+          entry.value,
+        );
+      }
+      if (kind == FileSystemEntityType.directory) await target.delete();
+      await stage.rename(target.path);
+    } finally {
+      if (await stage.exists()) await stage.delete(recursive: true);
+    }
+  }
+
   Future<void> deletePluginStateFromAllCapsules(
     String pluginId, {
     Set<String> preserveFileNames = const {},

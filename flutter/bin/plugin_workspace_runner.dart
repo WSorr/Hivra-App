@@ -33,14 +33,16 @@ Future<void> main(List<String> args) async {
     final config = await _readPrivateJson(File('${root.path}/runner.json'));
     final owner = config['owner'];
     final pluginId = config['plugin_id'];
-    if (config.length != 4 ||
+    if (config.length != 5 ||
         owner is! String ||
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner) ||
         pluginId is! String ||
         !RegExp(r'^[a-z][a-z0-9._-]{0,127}$').hasMatch(pluginId) ||
         config['package_id'] is! String ||
         config['package_digest'] is! String ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(config['package_digest'])) {
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(config['package_digest']) ||
+        config['executor_id'] is! String ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(config['executor_id'])) {
       throw const FormatException('Invalid runner binding');
     }
     final dirs = UserVisibleDataDirectoryService(
@@ -62,6 +64,8 @@ Future<void> main(List<String> args) async {
       ),
       fileStore: CapsuleFileStore(dirs: dirs),
       readActiveCapsuleRootHex: () => owner,
+      executionHost: 'vps',
+      executionIdentity: config['executor_id'] as String,
       readCredentials: ({required owner, required pluginId}) async {
         final stored = await _readPrivateJson(
           File('${root.path}/credentials.json'),
@@ -145,6 +149,10 @@ class WorkspaceRunner {
   Future<WasmPluginRecord> _record() async {
     if (runtime.activeCapsuleRootHex() != binding['owner']) {
       throw StateError('Runner Capsule changed');
+    }
+    if (runtime.executionHost != 'vps' ||
+        runtime.executionIdentity != binding['executor_id']) {
+      throw StateError('Runner host identity changed');
     }
     final records = await registry.loadPlugins();
     final matching = records.where(
@@ -253,7 +261,8 @@ class WorkspaceRunner {
         request['owner'] != binding['owner'] ||
         request['plugin_id'] != binding['plugin_id'] ||
         request['package_id'] != binding['package_id'] ||
-        request['package_digest'] != binding['package_digest']) {
+        request['package_digest'] != binding['package_digest'] ||
+        request['executor_id'] != binding['executor_id']) {
       throw StateError('Workspace request binding mismatch');
     }
     final record = await _record();
@@ -261,8 +270,16 @@ class WorkspaceRunner {
     Map<String, dynamic>? view;
     String? observationError;
     switch (command) {
+      case 'adopt':
+        if (request.length != 7 || request['checkpoint'] is! Map) {
+          throw const FormatException();
+        }
+        await runtime.adoptWorkspaceFromLocal(
+          record: record,
+          checkpoint: Map<String, dynamic>.from(request['checkpoint'] as Map),
+        );
       case 'status':
-        if (request.length != 5) throw const FormatException();
+        if (request.length != 6) throw const FormatException();
         try {
           view = await runtime.runWorkspaceAction(
             record: record,
@@ -274,7 +291,7 @@ class WorkspaceRunner {
               'runner is running, retained lifecycle is not verified';
         }
       case 'action':
-        if (request.length != 7 ||
+        if (request.length != 8 ||
             request['action'] is! String ||
             request['settings'] is! Map) {
           throw const FormatException();
@@ -285,7 +302,7 @@ class WorkspaceRunner {
           settings: Map<String, dynamic>.from(request['settings'] as Map),
         );
       case 'execution':
-        if (request.length != 8 ||
+        if (request.length != 9 ||
             request['enabled'] is! bool ||
             request['settings'] is! Map ||
             (request['scope'] != null && request['scope'] is! Map)) {
@@ -306,14 +323,7 @@ class WorkspaceRunner {
     return {
       'binding': binding,
       'runner': {'state': 'running', 'started_at_ms': _startedAt},
-      'view':
-          view == null
-              ? null
-              : {
-                ...view,
-                if (view['execution'] is Map)
-                  'execution': {...view['execution'] as Map, 'mode': 'vps'},
-              },
+      'view': view,
       if (observationError != null) 'observation_error': observationError,
     };
   }
@@ -362,7 +372,7 @@ Future<Map<String, dynamic>> _readMessage(Stream<List<int>> stream) async {
   await for (final chunk in stream.timeout(const Duration(seconds: 90))) {
     final end = chunk.indexOf(10);
     bytes.addAll(end < 0 ? chunk : chunk.sublist(0, end));
-    if (bytes.length > 1024 * 1024) throw const FormatException();
+    if (bytes.length > 8 * 1024 * 1024) throw const FormatException();
     if (end >= 0) break;
   }
   final decoded = jsonDecode(utf8.decode(bytes));

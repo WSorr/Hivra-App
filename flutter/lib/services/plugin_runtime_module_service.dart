@@ -127,7 +127,10 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       await _secretVault.deletePlugin(pluginId);
       await _fileStore.deletePluginStateFromAllCapsules(
         pluginId,
-        preserveFileNames: const {'external_effects.v1.json'},
+        preserveFileNames: const {
+          'external_effects.v1.json',
+          'workspace-execution.v1.json',
+        },
       );
     }
   }
