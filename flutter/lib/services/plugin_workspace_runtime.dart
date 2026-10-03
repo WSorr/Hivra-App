@@ -68,6 +68,20 @@ class PluginWorkspaceRuntime {
 
   String? activeCapsuleRootHex() => _readActiveCapsuleRootHex();
 
+  /// Restore only host authority/timing. Provider availability must not be a
+  /// prerequisite for bringing up the process that will retry observation.
+  Future<void> resumeWorkspaceScheduling(WasmPluginRecord record) async {
+    final owner = activeCapsuleRootHex()?.trim().toLowerCase();
+    if (owner == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
+      throw StateError('An active Capsule is required');
+    }
+    final control = await _readExecution(record, owner);
+    if (control != null &&
+        DateTime.now().millisecondsSinceEpoch < control['expires_at_ms']) {
+      _armScheduledExecution(record, owner, control);
+    }
+  }
+
   Future<Map<String, dynamic>> runWorkspaceAction({
     required WasmPluginRecord record,
     required String action,

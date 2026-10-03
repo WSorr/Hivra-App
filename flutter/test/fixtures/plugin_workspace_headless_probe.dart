@@ -15,13 +15,16 @@ import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 import 'package:hivra_app/services/wasm_plugin_runtime_service.dart';
 import 'package:crypto/crypto.dart';
 
+import '../../bin/plugin_workspace_runner.dart';
+
 // Run with Dart as well as Flutter: the executor must not depend on dart:ui,
 // mobile vaults, Chat or Moltbook, even when using an unrelated package shape.
 Future<void> main(List<String> args) async {
-  if (args.length == 2) {
+  if (args.length == 2 || args.length == 3) {
     await _checkInstalledWasm(
       File(args[0]).absolute,
       Directory(args[1]).absolute,
+      args.length == 3 ? File(args[2]).absolute : null,
     );
     return;
   }
@@ -149,8 +152,9 @@ Future<void> main(List<String> args) async {
 Future<void> _checkInstalledWasm(
   File package,
   Directory libraryDirectory,
+  File? runnerExecutable,
 ) async {
-  final home = await Directory.systemTemp.createTemp('hivra_real_wasm_');
+  final home = await Directory('/tmp').createTemp('hivra_real_wasm_');
   final previousDirectory = Directory.current;
   Directory.current = libraryDirectory;
   try {
@@ -159,7 +163,7 @@ Future<void> _checkInstalledWasm(
     final registry = WasmPluginRegistryService(dataDirs: dirs);
     final record = await registry.installPluginFromFile(package);
     final wasm = WasmPluginRuntimeService(
-      invokeJson: HivraBindings().invokeWasmJson,
+      invokeJson: HivraBindings.invokeInstalledWasmJson,
     );
     final host = PluginHostApiService(
       handlers: [],
@@ -472,9 +476,167 @@ Future<void> _checkInstalledWasm(
     stdout.writeln(
       'installed WASM headless lifecycle/cancellation PASS; synthetic DELETE=1, POST=0; no network',
     );
+    if (runnerExecutable != null) {
+      await _checkProductionProcess(
+        runnerExecutable,
+        registry,
+        files,
+        record,
+        owner,
+      );
+    }
   } finally {
     Directory.current = previousDirectory;
     await home.delete(recursive: true);
+  }
+}
+
+Future<void> _checkProductionProcess(
+  File executable,
+  WasmPluginRegistryService fixtureRegistry,
+  CapsuleFileStore fixtureFiles,
+  WasmPluginRecord fixtureRecord,
+  String owner,
+) async {
+  final root = await Directory('/tmp').createTemp('hivra_runner_process_');
+  final dirs = UserVisibleDataDirectoryService(runtimeRootOverride: root.path);
+  final registry = WasmPluginRegistryService(dataDirs: dirs);
+  final files = CapsuleFileStore(dirs: dirs);
+  final fixtureBinding = await fixtureRegistry.resolveRuntimeBinding(
+    fixtureRecord.pluginId!,
+  );
+  final record = await registry.installPluginFromFile(
+    File(fixtureBinding.packageFilePath!),
+  );
+  final binding = await registry.resolveRuntimeBinding(record.pluginId!);
+  final config = {
+    'owner': owner,
+    'plugin_id': record.pluginId,
+    'package_id': record.id,
+    'package_digest': binding.packageDigestHex,
+  };
+  final configFile = File('${root.path}/runner.json');
+  await configFile.writeAsString(jsonEncode(config), flush: true);
+  if ((await Process.run('chmod', ['700', root.path])).exitCode != 0 ||
+      (await Process.run('chmod', ['600', configFile.path])).exitCode != 0) {
+    throw StateError('Cannot prepare private runner fixture');
+  }
+  final capsule = await files.capsuleDirForHex(owner);
+  final rawGrant =
+      (await fixtureFiles.readPluginState(
+        await fixtureFiles.capsuleDirForHex(owner),
+        fixtureRecord.pluginId!,
+        'workspace-execution.v1.json',
+      ))!;
+  final grant = Map<String, dynamic>.from(jsonDecode(rawGrant) as Map);
+  grant['package_id'] = record.id;
+  grant['package_digest'] = binding.packageDigestHex;
+  // This synthetic grant exercises timer recovery with read-only open;
+  // it cannot submit a provider request or require live credentials.
+  grant['scope']['action'] = 'open';
+  grant['scope']['interval_seconds'] = 30;
+  grant['allow_new_entries'] = false;
+  await files.writePluginState(
+    capsule,
+    record.pluginId!,
+    'workspace-execution.v1.json',
+    jsonEncode(grant),
+  );
+  final effectsBefore = await files.readPluginState(
+    capsule,
+    record.pluginId!,
+    'external_effects.v1.json',
+  );
+  Future<Process> start() async {
+    final process = await Process.start(executable.path, ['serve', root.path]);
+    final errors = process.stderr.transform(utf8.decoder).join();
+    final ready = await process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .take(1)
+        .toList()
+        .then((lines) => lines.firstOrNull)
+        .timeout(const Duration(seconds: 10));
+    if (ready != 'Workspace runner ready') {
+      process.kill();
+      await process.exitCode;
+      throw StateError(
+        'Production process did not become ready: ${await errors}',
+      );
+    }
+    return process;
+  }
+
+  Future<Map<String, dynamic>> status() async {
+    final response = await WorkspaceRunner.request(root, {
+      ...config,
+      'command': 'status',
+    });
+    if (response['ok'] != true) throw StateError('Runner status failed');
+    return Map<String, dynamic>.from(response['result'] as Map);
+  }
+
+  Process? process;
+  try {
+    process = await start();
+    final duplicate = await Process.run(executable.path, ['serve', root.path]);
+    if (duplicate.exitCode != 1 ||
+        !duplicate.stderr.toString().contains('Workspace runner unavailable')) {
+      throw StateError('Second production process was not refused');
+    }
+    final first = await status();
+    if (first['runner']['state'] != 'running' ||
+        first['view']['execution']['mode'] != 'vps' ||
+        first['view']['execution']['allow_new_entries'] != false) {
+      throw StateError('Production runner misrepresented its authority');
+    }
+    await Future<void>.delayed(const Duration(seconds: 31));
+    final cycled = await status();
+    if (cycled['view']['execution']['last_checked_at_ms'] is! int) {
+      throw StateError('Production timer did not resume its persisted grant');
+    }
+    final stateBefore = await files.readPluginState(
+      capsule,
+      record.pluginId!,
+      'workspace.v1.json',
+    );
+    process.kill(ProcessSignal.sigterm);
+    if (await process.exitCode.timeout(const Duration(seconds: 10)) != 0) {
+      throw StateError('Production shutdown failed');
+    }
+    process = await start();
+    await status();
+    if (await files.readPluginState(
+          capsule,
+          record.pluginId!,
+          'workspace-execution.v1.json',
+        ) !=
+        jsonEncode(grant)) {
+      throw StateError('Restart changed authority');
+    }
+    if (await files.readPluginState(
+          capsule,
+          record.pluginId!,
+          'workspace.v1.json',
+        ) !=
+        stateBefore) {
+      throw StateError('Restart changed opaque state');
+    }
+    if (await files.readPluginState(
+          capsule,
+          record.pluginId!,
+          'external_effects.v1.json',
+        ) !=
+        effectsBefore) {
+      throw StateError('Restart changed effect journal');
+    }
+    stdout.writeln(
+      'production runner process/timer/restart/singleton PASS; real installed WASM; no network',
+    );
+  } finally {
+    process?.kill(ProcessSignal.sigterm);
+    if (process != null) await process.exitCode;
+    await root.delete(recursive: true);
   }
 }
 

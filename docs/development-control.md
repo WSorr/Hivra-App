@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-02
+Status date: 2026-10-03
 
 ## Current State
 
@@ -278,9 +278,28 @@ The existing VET order is observation evidence, not permission to cancel it or
 create another. Live orders, VPS mutation, commit, push and release still need
 their own authorization. The retired Trading runner must not be restored.
 
-Implementation in progress, not autonomy acceptance: app and headless use the
-same workspace executor and effect journal. The locally built `0.1.7` candidate
-adds a real opposite-line reducing limit exit, fixed at dispatch and reconciled
+Server execution remains in progress. The standalone workspace process now
+uses the same executor and installed WASM through a WASM-only build of the
+existing FFI, without Capsule, Ledger, Keychain or transport dependencies.
+It restores the existing host grant without requiring a provider response at
+startup, accepts package/Capsule-bound commands over a private Unix socket,
+and refuses a second process for the same data directory. Process health and
+unavailable exchange observation are separate results. The actual compiled
+macOS process with local Jack `0.1.9` passed timer, restart, singleton and
+unchanged grant/state/journal checks using isolated synthetic data only.
+The process timer exercised read-only `open`, not a live trading cycle;
+no exchange request or order was sent by that process smoke.
+Linux packaging is wired to the canonical Ubuntu 24.04 x86_64 CI builder;
+that new workflow has not yet run. The target VPS was read-only identified
+as Debian 13 x86-64; no deployment, credentials or orders were changed.
+Capsule SSH provisioning, authenticated artifact delivery and an exclusive
+local-to-server state/journal handoff are not implemented yet. Do not expose
+remote Start or claim app-closed VPS trading acceptance before that journey
+passes on the Linux artifact. Strategy/effect owners remain one each.
+
+Earlier local implementation evidence, not autonomy acceptance: app and headless
+used the same workspace executor and effect journal. The `0.1.7` candidate
+added a real opposite-line reducing limit exit, fixed at dispatch and reconciled
 by exact client/provider identity. WASM owns selection, state and retirement;
 the host's new `position.exit.place` provider capability checks the journaled
 entry and current position without interpreting private package state. Stop
@@ -293,9 +312,10 @@ The dense actual-WASM exit fixture uses unchanged memory/fuel limits. Changing
 state is serialized once; swings are written as compact triples with a one-way
 import of `0.1.6` objects. Remove that import when `0.1.6` stored state is no longer
 supported; there is no second strategy/reducer or host-owned state migration.
-The installed package is still `0.1.6`, not the candidate: archive `57a6bd10`
-on unchanged macOS binary `c2428660`. No live effects or VPS mutation were made.
-Candidate evidence: Jack Rust 49/49, full Flutter 801/801, analyze and plugin
+The package installed during that earlier smoke was `0.1.6`, not the candidate:
+archive `57a6bd10` on macOS binary `c2428660`. No live effects or VPS mutation
+were made in that check. Earlier candidate evidence: Jack Rust 49/49, full
+Flutter 801/801, analyze and plugin
 validation passed. The packaged-WASM dense exit/reopen and headless lifecycle
 fixtures passed with synthetic evidence only. Candidate ZIP SHA-256 is
 `f93b273599317257f75b489e1a854c0151b1c0ec7b901e75a87b1ca4970f4cf7`.

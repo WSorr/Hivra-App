@@ -28,7 +28,197 @@ import 'package:hivra_app/services/moltbook_runtime_module.dart';
 import 'package:hivra_app/services/external_effect_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
+import '../bin/plugin_workspace_runner.dart';
+
 void main() {
+  test(
+    'runner socket restores authority, rejects duplicates and binds commands',
+    () async {
+      final root = await Directory('/tmp').createTemp('hivra_runner_');
+      addTearDown(() => root.delete(recursive: true));
+      expect((await Process.run('chmod', ['700', root.path])).exitCode, 0);
+      final files = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
+      );
+      final registry = _Registry();
+      const owner =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      var digest = 'b' * 64;
+      final scope = {
+        'account_id': 'c' * 64,
+        'symbol': 'DASH-USDT',
+        'action': 'independent_cycle',
+        'interval_seconds': 30,
+        'max_margin': 1.0,
+        'max_stop_percent': 20.0,
+      };
+      registry.executionBinding =
+          () => PluginRuntimeBinding.externalPackage(
+            packageId: registry.record.id,
+            packageVersion: registry.record.pluginVersion,
+            packageKind: 'zip',
+            packageDigestHex: digest,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: const [
+              'workspace.render',
+              'workspace.continue',
+              'state.plugin.read_write',
+              'workspace.schedule',
+            ],
+          );
+      var observed = 0;
+      var providerDown = false;
+      final host = PluginHostApiService(
+        handlers: [],
+        resolveRuntimeBinding: registry.resolveRuntimeBinding,
+        resolveRuntimeInvoke: (request, _) async {
+          if (providerDown) throw StateError('secret-key provider URL');
+          observed++;
+          return PluginRuntimeInvokeEvidence(
+            mode: 'wasmi_v1',
+            modulePath: 'plugin/module.wasm',
+            moduleSelection: 'zip_manifest',
+            moduleDigestHex: 'd' * 64,
+            invokeDigestHex: 'e' * 64,
+            semanticStatus: PluginHostApiStatus.executed,
+            semanticErrorCode: null,
+            semanticErrorMessage: null,
+            semanticResult: {
+              'state':
+                  request.args['state'] ??
+                  {
+                    'unrelated_private_shape': ['not', 'Jack', 'fields'],
+                  },
+              'requests': <Object>[],
+              'view': {...view(), 'schedule': scope},
+            },
+          );
+        },
+      );
+      PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
+        registry: registry,
+        pluginHostApi: host,
+        fileStore: files,
+        readActiveCapsuleRootHex: () => owner,
+        readCredentials:
+            ({required owner, required pluginId}) async =>
+                throw StateError('No credentials for this package'),
+        writeCredentials:
+            ({required owner, required pluginId, required value}) async =>
+                throw StateError('No credential writes'),
+      );
+      final binding = {
+        'owner': owner,
+        'plugin_id': registry.record.pluginId,
+        'package_id': registry.record.id,
+        'package_digest': digest,
+      };
+      WorkspaceRunner runner() => WorkspaceRunner(
+        root: root,
+        runtime: runtime(),
+        registry: registry,
+        binding: binding,
+      );
+      final first = runner();
+      addTearDown(first.close);
+      await first.start();
+      expect(
+        observed,
+        0,
+        reason: 'Process startup must not require the provider',
+      );
+      Future<Map<String, dynamic>> command(
+        String command, [
+        Map<String, dynamic> fields = const {},
+      ]) => WorkspaceRunner.request(root, {
+        ...binding,
+        'command': command,
+        ...fields,
+      });
+      final initial = await command('status');
+      expect(initial['ok'], true);
+      expect(initial['result']['runner']['state'], 'running');
+      expect(initial['result']['view']['execution'], isNull);
+      providerDown = true;
+      final unavailable = await command('status');
+      expect(unavailable['ok'], true);
+      expect(unavailable['result']['runner']['state'], 'running');
+      expect(unavailable['result']['view'], isNull);
+      expect(
+        unavailable['result']['observation_error'],
+        contains('unavailable'),
+      );
+      expect(jsonEncode(unavailable), isNot(contains('secret-key')));
+      providerDown = false;
+      await expectLater(runner().start(), throwsStateError);
+      expect((await command('status'))['ok'], true);
+      final mismatched = await command('status', {'owner': 'f' * 64});
+      expect(mismatched['ok'], false);
+      final before = observed;
+      expect((await command('status', {'approvedOrder': {}}))['ok'], false);
+      expect(observed, before, reason: 'Extra authority cannot reach WASM');
+      final started = await command('execution', {
+        'enabled': true,
+        'scope': scope,
+        'settings': <String, dynamic>{},
+      });
+      expect(started['ok'], true);
+      expect(started['result']['view']['execution']['mode'], 'vps');
+      expect(started['result']['view']['execution']['allow_new_entries'], true);
+      final capsule = await files.capsuleDirForHex(owner);
+      final grant = await files.readPluginState(
+        capsule,
+        registry.record.pluginId!,
+        'workspace-execution.v1.json',
+      );
+      final state = await files.readPluginState(
+        capsule,
+        registry.record.pluginId!,
+        'workspace.v1.json',
+      );
+      await first.close();
+      final restarted = runner();
+      addTearDown(restarted.close);
+      await restarted.start();
+      expect(
+        (await command(
+          'status',
+        ))['result']['view']['execution']['allow_new_entries'],
+        true,
+      );
+      expect(
+        await files.readPluginState(
+          capsule,
+          registry.record.pluginId!,
+          'workspace-execution.v1.json',
+        ),
+        grant,
+        reason: 'Restart must not renew or replace authority',
+      );
+      expect(
+        await files.readPluginState(
+          capsule,
+          registry.record.pluginId!,
+          'workspace.v1.json',
+        ),
+        state,
+        reason: 'Runner must not migrate private state',
+      );
+      final stopped = await command('execution', {
+        'enabled': false,
+        'scope': null,
+        'settings': <String, dynamic>{},
+      });
+      expect(
+        stopped['result']['view']['execution']['allow_new_entries'],
+        false,
+      );
+      digest = 'f' * 64;
+      expect((await command('status'))['ok'], false);
+      await restarted.close();
+      await expectLater(runner().start(), throwsStateError);
+    },
+  );
   test(
     'exact cancellation reconciles uncertainty and fill races without another DELETE',
     () async {

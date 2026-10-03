@@ -8,7 +8,7 @@ on:
 
 jobs:
   review-gates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,12 +39,18 @@ jobs:
       - name: Test platform-neutral Rust workspace
         run: cargo test --workspace --exclude hivra-ffi --locked
 
+      - name: Test standalone WASM FFI without Capsule dependencies
+        run: cargo test -p hivra-ffi --no-default-features --locked
+
       - name: Analyze and test Flutter application
         working-directory: flutter
         run: |
           flutter pub get --enforce-lockfile
           flutter analyze --no-pub
           flutter test --no-pub
+
+      - name: Build canonical standalone workspace runner
+        run: bash tools/release/workspace_runner.sh "$RUNNER_TEMP/workspace-runner"
 
       - name: Review gates
         run: bash tools/review/review_all.sh
