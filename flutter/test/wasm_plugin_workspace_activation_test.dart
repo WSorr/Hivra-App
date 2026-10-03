@@ -34,6 +34,45 @@ void main() {
       expect(installedPluginWorkspaceContractKind(record), isNull);
     }
   });
+
+  test(
+    'installed workspace does not require a product-specific shell route',
+    () {
+      final record = _record(
+        pluginId: 'hivra.contract.independent-package.v1',
+        contractKind: pluginWorkspaceContractKind,
+        capabilities: const [
+          'workspace.render',
+          'workspace.continue',
+          'state.plugin.read_write',
+        ],
+      );
+      expect(
+        installedPluginWorkspaceContractKind(record),
+        pluginWorkspaceContractKind,
+      );
+      expect(
+        installedPluginWorkspaceContractKind(
+          _record(
+            pluginId: record.pluginId!,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: const ['workspace.render'],
+          ),
+        ),
+        isNull,
+      );
+      expect(
+        installedPluginWorkspaceContractKind(
+          _record(
+            pluginId: record.pluginId!,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: const ['workspace.render', 'state.plugin.read_write'],
+          ),
+        ),
+        isNull,
+      );
+    },
+  );
 }
 
 WasmPluginRecord _record({
@@ -43,6 +82,7 @@ WasmPluginRecord _record({
   String runtimeAbi = 'hivra_host_abi_v2',
   String runtimeEntryExport = 'hivra_evaluate_v1',
   String runtimeModulePath = 'plugin/module.wasm',
+  List<String> capabilities = const ['consensus_guard.read'],
 }) => WasmPluginRecord(
   id: 'package-id',
   displayName: 'Plugin',
@@ -57,5 +97,5 @@ WasmPluginRecord _record({
   runtimeAbi: runtimeAbi,
   runtimeEntryExport: runtimeEntryExport,
   runtimeModulePath: runtimeModulePath,
-  capabilities: const <String>['consensus_guard.read'],
+  capabilities: capabilities,
 );

@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import '../models/consensus_models.dart';
 import '../models/plugin_host_api_models.dart';
 import 'plugin_host_contract_handler.dart';
+import 'plugin_contract_handlers.dart';
+import '../models/plugin_contract_ids.dart';
 import 'wasm_plugin_capability_policy_service.dart';
 
 class PluginHostApiService {
@@ -111,7 +113,7 @@ class PluginHostApiService {
         runtimeInvoke: null,
       );
     }
-    final handler = _handlerFor(request.pluginId);
+    final handler = _handlerFor(request.pluginId, runtimeBinding);
     if (handler == null) {
       return _rejected(
         pluginId: request.pluginId,
@@ -201,8 +203,11 @@ class PluginHostApiService {
     };
   }
 
-  bool _requiresExternalRuntimeExecution(PluginHostApiRequest request) {
-    final handler = _handlerFor(request.pluginId);
+  bool _requiresExternalRuntimeExecution(
+    PluginHostApiRequest request,
+    PluginRuntimeBinding binding,
+  ) {
+    final handler = _handlerFor(request.pluginId, binding);
     return handler != null &&
         handler.methods.contains(request.method) &&
         handler.requiresExternalRuntime;
@@ -238,13 +243,13 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
       );
     }
-    if (_requiresExternalRuntimeExecution(request)) {
+    if (_requiresExternalRuntimeExecution(request, runtimeBinding)) {
       if (runtimeBinding.source != 'external_package') {
         return _rejected(
           pluginId: request.pluginId,
           method: request.method,
           code: 'runtime_invoke_unavailable',
-          message: 'Runtime package is required for futures plugin execution',
+          message: 'Runtime package is required for plugin execution',
           runtimeBinding: runtimeBinding,
           runtimeInvoke: runtimeInvoke,
         );
@@ -289,7 +294,7 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
       );
     }
-    final handler = _handlerFor(request.pluginId);
+    final handler = _handlerFor(request.pluginId, runtimeBinding);
     if (handler != null) {
       if (!handler.methods.contains(request.method)) {
         return _rejected(
@@ -344,7 +349,7 @@ class PluginHostApiService {
     if (runtimeBinding.source != 'external_package') {
       return null;
     }
-    final expected = _expectedContractKindForPlugin(pluginId);
+    final expected = _handlerFor(pluginId, runtimeBinding)?.contractKind;
     if (expected == null) {
       return null;
     }
@@ -356,10 +361,6 @@ class PluginHostApiService {
       return 'Runtime contract kind does not match requested plugin id';
     }
     return null;
-  }
-
-  String? _expectedContractKindForPlugin(String pluginId) {
-    return _handlerFor(pluginId)?.contractKind;
   }
 
   String? _validateRuntimeCapabilities({
@@ -380,10 +381,9 @@ class PluginHostApiService {
     } on FormatException {
       return 'Runtime capabilities contain unsupported entries';
     }
-    final required = _requiredCapabilitiesFor(
-      pluginId: pluginId,
-      method: method,
-    );
+    final required =
+        _handlerFor(pluginId, runtimeBinding)?.requiredCapabilities(method) ??
+        const <String>{};
     final normalizedSet = normalized.toSet();
     final missing =
         required.where((cap) => !normalizedSet.contains(cap)).toList()..sort();
@@ -393,17 +393,16 @@ class PluginHostApiService {
     return null;
   }
 
-  Set<String> _requiredCapabilitiesFor({
-    required String pluginId,
-    required String method,
-  }) {
-    return _handlerFor(pluginId)?.requiredCapabilities(method) ??
-        const <String>{};
-  }
-
-  PluginHostContractHandler? _handlerFor(String pluginId) {
+  PluginHostContractHandler? _handlerFor(
+    String pluginId, [
+    PluginRuntimeBinding? binding,
+  ]) {
     for (final handler in _handlers) {
       if (handler.pluginId == pluginId) return handler;
+    }
+    if (binding?.source == 'external_package' &&
+        binding?.contractKind == pluginWorkspaceContractKind) {
+      return PluginWorkspaceContractHandler(pluginId: pluginId);
     }
     return null;
   }

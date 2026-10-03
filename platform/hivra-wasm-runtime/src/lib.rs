@@ -10,7 +10,7 @@ pub const DEFAULT_ENTRY_EXPORT: &str = "hivra_evaluate_v1";
 const MAX_MODULE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_INPUT_BYTES: usize = 64 * 1024;
 const MAX_OUTPUT_BYTES: usize = 128 * 1024;
-const MAX_LINEAR_MEMORY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_LINEAR_MEMORY_BYTES: usize = 128 * 1024 * 1024;
 const FUEL_LIMIT: u64 = 5_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,8 +149,11 @@ mod tests {
     use super::*;
 
     fn echo_module() -> Vec<u8> {
-        wat::parse_str(
-            r#"
+        wat::parse_str(echo_module_text()).expect("test WASM compiles")
+    }
+
+    fn echo_module_text() -> &'static str {
+        r#"
             (module
               (memory (export "memory") 1)
               (global $next (mut i32) (i32.const 1024))
@@ -171,9 +174,7 @@ mod tests {
                 local.get $len
                 i64.extend_i32_u
                 i64.or))
-            "#,
-        )
-        .expect("test WASM compiles")
+            "#
     }
 
     #[test]
@@ -201,7 +202,7 @@ mod tests {
         let module = wat::parse_str(
             r#"
             (module
-              (memory (export "memory") 300)
+              (memory (export "memory") 2049)
               (func (export "hivra_alloc_v1") (param i32) (result i32) i32.const 1)
               (func (export "hivra_dealloc_v1") (param i32 i32))
               (func (export "hivra_evaluate_v1") (param i32 i32) (result i64) i64.const 0))
@@ -211,6 +212,26 @@ mod tests {
         assert!(matches!(
             invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
             Err(RuntimeError::InstantiationFailed(_)),
+        ));
+    }
+
+    #[test]
+    fn allows_memory_at_limit_but_rejects_growth_beyond_it() {
+        let echo = echo_module_text();
+        let at_limit = echo.replace("(export \"memory\") 1", "(export \"memory\") 2048");
+        let module = wat::parse_str(&at_limit).unwrap();
+        assert_eq!(
+            invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+            Ok(b"{}".to_vec())
+        );
+        let growing = at_limit.replace("local.get $ptr\n                i64.extend_i32_u", "i32.const 1\n                memory.grow\n                drop\n                local.get $ptr\n                i64.extend_i32_u");
+        assert!(matches!(
+            invoke_json(
+                &wat::parse_str(growing).unwrap(),
+                DEFAULT_ENTRY_EXPORT,
+                b"{}"
+            ),
+            Err(RuntimeError::ExecutionFailed(_)),
         ));
     }
 }

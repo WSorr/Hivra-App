@@ -33,6 +33,14 @@ An implemented component is not a completed product journey.
    document instead of creating implementation diaries or pass narratives.
 10. **V2 is design-only until explicitly activated.** Only reference-grade 1.x
     mechanisms may inform V2; do not copy temporary 1.x structure into it.
+11. **Design for package replacement before implementation.** Within supported
+    capabilities, a package must be replaceable without rebuilding Capsule.
+    Plugin decisions and private state interpretation belong to WASM. The host
+    owns authorization, credentials, persistence, normalized provider evidence,
+    and permitted effects through explicit contracts. It must not inspect private
+    plugin fields or implement a temporary strategy/lifecycle fallback. A genuinely
+    new platform/provider capability may extend the host; a strategy or private
+    state change must not.
 
 ## Change Discipline
 
@@ -41,6 +49,12 @@ canonical owner, duplicates, compatibility paths, and existing tests. If the
 proposed change adds more owners or execution paths than it removes, redesign
 it before editing unless the user-visible capability cannot reuse an existing
 owner.
+
+For plugin work, define the host/package boundary before editing. Ask whether a
+replacement package with a different private state shape can use the same host
+contract. Verify that boundary with existing tests, including package replacement
+or removal during an action; a working single-package journey alone is not proof
+of replaceability. Do not add a framework, registry, or gate merely to enforce this.
 
 For product work, state the user journey, its observable end result, and the
 evidence that would prove it works on the supported runtime. Implement and

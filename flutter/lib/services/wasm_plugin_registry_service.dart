@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
+import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import 'atomic_file_write_service.dart';
 import 'user_visible_data_directory_service.dart';
@@ -26,6 +29,44 @@ class WasmPluginRegistryService {
 
   Future<Directory> pluginsDirectory({bool create = false}) async {
     return _dataDirs.pluginsDirectory(create: create);
+  }
+
+  Future<PluginRuntimeBinding> resolveRuntimeBinding(String pluginId) async {
+    final normalizedPluginId = pluginId.trim();
+    if (normalizedPluginId.isEmpty) {
+      return const PluginRuntimeBinding.hostFallback();
+    }
+
+    final records = await loadPlugins();
+    final pluginsDir = await pluginsDirectory();
+    for (final record in records) {
+      final recordPluginId = record.pluginId?.trim();
+      if (recordPluginId == null || recordPluginId.isEmpty) {
+        continue;
+      }
+      if (recordPluginId != normalizedPluginId) {
+        continue;
+      }
+      final packagePath = '${pluginsDir.path}/${record.storedFileName}';
+      final packageFile = File(packagePath);
+      final bytes = await packageFile.readAsBytes();
+      final packageDigestHex =
+          bytes.isEmpty ? null : sha256.convert(bytes).toString();
+      return PluginRuntimeBinding.externalPackage(
+        packageId: record.id,
+        packageVersion: record.pluginVersion,
+        packageKind: record.packageKind,
+        packageDigestHex: packageDigestHex,
+        packageFilePath: packagePath,
+        runtimeAbi: record.runtimeAbi,
+        runtimeEntryExport: record.runtimeEntryExport,
+        runtimeModulePath: record.runtimeModulePath,
+        contractKind: record.contractKind,
+        capabilities: record.capabilities,
+      );
+    }
+
+    return const PluginRuntimeBinding.hostFallback();
   }
 
   Future<File> _registryFile({bool createDir = false}) async {

@@ -56,25 +56,33 @@ deterministic state machine, decisions, and reconciliation rules. The Runtime
 API owns bounded access to projections, storage, delivery, effects, and
 credentials. Core and Ledger know no product plugin by name.
 
-The three current product capabilities migrate vertically:
+The product capability targets are:
 
 1. Chat gives a person a usable cross-device conversation with durable
    delivery, receipt, deduplication, offline history, and restart continuity.
 2. Moltbook turns permitted changes and conversations into original proposals,
    bounded publications and replies, with visible receipts and recovery.
-3. Trading lets a person configure and run one bounded remote session without
-   terminal work, then follows each managed order through its actual provider
-   state, position protection, and terminal result without duplicate effects.
+3. Trading lets a person configure and run one bounded
+   remote session without terminal work, then follow each managed order
+   through its actual provider state without duplicate effects. Its product
+   brief is `plugins/trading-plugin-mvp.md`. Availability and acceptance belong
+   to `development-control.md`, not this target architecture.
 
-The selected capability first reaches its complete 1.x user journey on its
-existing canonical effect path. Tests prove semantics; packaged and, where
-applicable, live evidence prove the journey. A running service, accepted order,
-prepared draft, or green gate is intermediate evidence, not completion. Once a
-capability is reference-grade, its plugin-owned behavior may move behind the
-Runtime API; the same migration removes the replaced host path. Do not copy
-unfinished Flutter orchestration into a plugin or create a universal agent,
-intent, DTO, or mandate runtime in advance. The active outcome and its release
-blocker are recorded only in `development-control.md`.
+Within supported host capabilities, replacing a package must replace its
+decisions, settings and workspace without rebuilding the App Shell. The host
+does not select strategy evidence or interpret private plugin state. A genuinely
+new platform/provider operation may require one host capability extension; a
+strategy revision must not.
+
+The selected maintained capability first reaches its complete 1.x user journey
+on its existing canonical effect path. Tests prove semantics; packaged and,
+where applicable, live evidence prove the journey. A running service,
+accepted order, prepared draft, or green gate is intermediate evidence, not
+completion. A new capability requires an explicit product decision and a
+minimal host boundary, not restoration of a retired host implementation. Do
+not copy unfinished Flutter orchestration into a plugin or create a universal
+agent, intent, DTO, or mandate runtime in advance. The active outcome and its
+release blocker are recorded only in `development-control.md`.
 
 ## Version Boundary
 
