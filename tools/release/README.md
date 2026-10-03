@@ -11,6 +11,11 @@ Hivra.
   metadata from a clean checkout.
 - `android_release.sh`: creates a versioned universal APK, checksums, and
   source metadata from a clean checkout.
+- `workspace_runner.sh`: builds the standalone installed-WASM host candidate
+  on Ubuntu 24.04 x86_64 with the pinned Dart/Rust toolchains. It includes the
+  existing FFI library, one systemd unit, source metadata and archive digest.
+  It neither installs a VPS nor publishes a release. Capsule provisioning and
+  a tested state handoff are required before exposing remote Start to users.
 - `derive_flutter_version.sh`: derives one monotonic cross-platform build
   number from the release tag.
 - `check_manual_release_signoff.sh`: requires digest-bound macOS and Android

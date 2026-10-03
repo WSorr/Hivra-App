@@ -4,6 +4,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
+  test('server root is exact and never imports desktop runtime data', () async {
+    final home = await Directory.systemTemp.createTemp('hivra_server_root_');
+    addTearDown(() => home.delete(recursive: true));
+    final desktop = Directory('${home.path}/Documents/Hivra/capsules');
+    await desktop.create(recursive: true);
+    await File('${desktop.path}/desktop.json').writeAsString('{}');
+    final service = UserVisibleDataDirectoryService(
+      homeOverride: home.path,
+      runtimeRootOverride: '${home.path}/server',
+    );
+    final root = await service.rootDirectory(create: true);
+    expect(root.path, '${home.path}/server');
+    expect(await root.list().toList(), isEmpty);
+    expect(
+      (await service.pluginsDirectory(create: true)).path,
+      '${root.path}/Plugins',
+    );
+    await expectLater(
+      const UserVisibleDataDirectoryService(
+        runtimeRootOverride: 'relative',
+      ).rootDirectory(),
+      throwsArgumentError,
+    );
+  });
   test('runtime migration runs once and does not rehydrate deleted data', () async {
     final tempHome = await Directory.systemTemp.createTemp(
       'hivra-user-visible-dirs-',

@@ -26,12 +26,15 @@ class UserVisibleDataDirectoryService {
   static String? _testHomeOverride;
 
   final String? _homeOverride;
+  final String? _runtimeRootOverride;
   final AtomicFileWriteService _atomicWrites;
 
   const UserVisibleDataDirectoryService({
     String? homeOverride,
+    String? runtimeRootOverride,
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
   }) : _homeOverride = homeOverride,
+       _runtimeRootOverride = runtimeRootOverride,
        _atomicWrites = atomicWrites;
 
   static String? get testHomeOverride => _testHomeOverride;
@@ -42,7 +45,9 @@ class UserVisibleDataDirectoryService {
 
   Future<Directory> rootDirectory({bool create = false}) async {
     final root = await _runtimeRootDirectory();
-    await _serializeMigration(() => _migrateRuntimeDataIfNeeded(root));
+    if (_runtimeRootOverride == null) {
+      await _serializeMigration(() => _migrateRuntimeDataIfNeeded(root));
+    }
 
     if (create && !await root.exists()) {
       await root.create(recursive: true);
@@ -104,6 +109,13 @@ class UserVisibleDataDirectoryService {
   }
 
   Future<Directory> _runtimeRootDirectory() async {
+    final override = _runtimeRootOverride;
+    if (override != null) {
+      if (!override.startsWith('/') || override.trim() != override) {
+        throw ArgumentError('Runtime root must be an absolute path');
+      }
+      return Directory(override);
+    }
     final home = _resolvedHome;
     if ((_homeOverride != null ||
             _testHomeOverride != null ||

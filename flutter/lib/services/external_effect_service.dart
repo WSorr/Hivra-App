@@ -186,6 +186,8 @@ class ExternalEffectService {
         if (!const <String>{
           'credential_rejected',
           'permission_rejected',
+          'entry_not_sent',
+          'cancel_not_sent',
         }.contains(current.lastErrorCode)) {
           throw StateError(
             'External effect failure is not a confirmed rejected delivery',

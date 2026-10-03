@@ -27,7 +27,7 @@ import 'moltbook_public_repository_source_adapter.dart';
 import 'moltbook_publication_service.dart';
 import 'moltbook_provider_adapter.dart';
 import 'moltbook_runtime_module.dart';
-import 'plugin_host_api_service.dart';
+import 'plugin_workspace_runtime.dart';
 import 'ui_event_log_service.dart';
 import 'wasm_plugin_registry_service.dart';
 import 'wasm_plugin_source_catalog_service.dart';
@@ -57,11 +57,9 @@ class PluginChatSendResult {
   bool get isSuccess => status == PluginChatSendStatus.sent;
 }
 
-class PluginRuntimeModule {
-  final WasmPluginRegistryService registry;
+class PluginRuntimeModule extends PluginWorkspaceRuntime {
   final WasmPluginSourceCatalogService sourceCatalog;
   final ManualConsensusCheckService manualChecks;
-  final PluginHostApiService pluginHostApi;
   final ConsensusAttestationExchangeService attestationExchange;
   final CapsuleChatDeliveryService chatDelivery;
   final CapsulePassiveReceivePort passiveReceive;
@@ -73,32 +71,68 @@ class PluginRuntimeModule {
   final String? Function() _readActiveCapsuleRootHex;
 
   PluginRuntimeModule({
-    required this.registry,
+    required super.registry,
     required this.sourceCatalog,
     required this.manualChecks,
-    required this.pluginHostApi,
+    required super.pluginHostApi,
     required this.attestationExchange,
     required this.chatDelivery,
     required this.passiveReceive,
     required this.contactLabels,
     required this.uiLog,
     required this.moltbook,
-    required CapsuleFileStore fileStore,
+    required super.fileStore,
     required CapsuleScopedSecretVault secretVault,
-    required String? Function() readActiveCapsuleRootHex,
+    required super.readActiveCapsuleRootHex,
+    super.market,
   }) : _fileStore = fileStore,
        _secretVault = secretVault,
-       _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
-
-  String? activeCapsuleRootHex() => _readActiveCapsuleRootHex();
+       _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
+       super(
+         readCredentials:
+             ({required owner, required pluginId}) => secretVault.loadSecret(
+               capsuleHex: owner,
+               pluginId: pluginId,
+               providerId: 'bingx',
+               accountId: 'primary',
+               secretName: 'credentials',
+             ),
+         writeCredentials:
+             ({required owner, required pluginId, required value}) =>
+                 value == null
+                     ? secretVault.deleteAccount(
+                       capsuleHex: owner,
+                       pluginId: pluginId,
+                       providerId: 'bingx',
+                       accountId: 'primary',
+                     )
+                     : secretVault.saveSecret(
+                       capsuleHex: owner,
+                       pluginId: pluginId,
+                       providerId: 'bingx',
+                       accountId: 'primary',
+                       secretName: 'credentials',
+                       secretValue: value,
+                     ),
+       );
 
   Future<void> removePlugin(WasmPluginRecord record) async {
+    // Stop admission first, then let in-flight continuations fail before
+    // deleting state; otherwise a late write can recreate an uninstalled plugin.
+    await registry.removePlugin(record.id);
     final pluginId = record.pluginId?.trim();
     if (pluginId != null && pluginId.isNotEmpty) {
+      stopWorkspaceScheduling(pluginId: pluginId);
+      await drainWorkspaceActions(pluginId);
       await _secretVault.deletePlugin(pluginId);
-      await _fileStore.deletePluginStateFromAllCapsules(pluginId);
+      await _fileStore.deletePluginStateFromAllCapsules(
+        pluginId,
+        preserveFileNames: const {
+          'external_effects.v1.json',
+          'workspace-execution.v1.json',
+        },
+      );
     }
-    await registry.removePlugin(record.id);
   }
 
   Future<PluginChatSendResult> sendChatMessage({

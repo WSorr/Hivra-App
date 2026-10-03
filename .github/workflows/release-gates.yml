@@ -8,7 +8,7 @@ on:
 
 jobs:
   review-gates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,12 +39,18 @@ jobs:
       - name: Test platform-neutral Rust workspace
         run: cargo test --workspace --exclude hivra-ffi --locked
 
+      - name: Test standalone WASM FFI without Capsule dependencies
+        run: cargo test -p hivra-ffi --no-default-features --locked
+
       - name: Analyze and test Flutter application
         working-directory: flutter
         run: |
           flutter pub get --enforce-lockfile
           flutter analyze --no-pub
           flutter test --no-pub
+
+      - name: Build canonical standalone workspace runner
+        run: bash tools/release/workspace_runner.sh "$RUNNER_TEMP/workspace-runner"
 
       - name: Review gates
         run: bash tools/review/review_all.sh
@@ -61,3 +67,14 @@ jobs:
 
       - name: Release artifact binding self-test
         run: bash tools/release/publish_github_release.sh --self-test
+
+      - name: Retain verified standalone runner candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: workspace-runner-linux-x64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/workspace-runner/hivra-workspace-runner-linux-x64.tar.gz
+            ${{ runner.temp }}/workspace-runner/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

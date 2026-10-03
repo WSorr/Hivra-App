@@ -12,6 +12,176 @@ typedef PluginConsensusSignableReader =
 typedef PluginConsensusAsyncSignableReader =
     Future<ConsensusSignableResult> Function(String peerHex);
 
+class PluginWorkspaceContractHandler implements PluginHostContractHandler {
+  @override
+  final String pluginId;
+
+  const PluginWorkspaceContractHandler({required this.pluginId});
+
+  @override
+  String get contractKind => pluginWorkspaceContractKind;
+  @override
+  Set<String> get methods => const {pluginWorkspaceMethod};
+  @override
+  bool get requiresExternalRuntime => true;
+  @override
+  Set<String> requiredCapabilities(String method) => const {
+    'workspace.render',
+    'workspace.continue',
+    'state.plugin.read_write',
+  };
+  @override
+  PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
+  @override
+  Future<PluginHostContractResult?> preflightAsync(
+    PluginHostApiRequest request,
+  ) async => null;
+
+  @override
+  PluginHostContractResult execute(
+    PluginHostApiRequest request, {
+    PluginRuntimeInvokeEvidence? runtimeInvoke,
+  }) {
+    if (runtimeInvoke == null) {
+      return const PluginHostContractResult.rejected(
+        code: 'runtime_invoke_unavailable',
+        message: 'Installed WASM is required',
+      );
+    }
+    if (runtimeInvoke.semanticStatus != PluginHostApiStatus.executed) {
+      return PluginHostContractResult.rejected(
+        code: runtimeInvoke.semanticErrorCode ?? 'plugin_rejected',
+        message:
+            runtimeInvoke.semanticErrorMessage ?? 'Plugin rejected the action',
+      );
+    }
+    final result = runtimeInvoke.semanticResult;
+    try {
+      if (result == null ||
+          result['state'] is! Map ||
+          utf8.encode(jsonEncode(result['state'])).length > 32 * 1024) {
+        throw const FormatException('Invalid bounded plugin state');
+      }
+      validateView(Map<String, dynamic>.from(result['view'] as Map));
+      final requests = result['requests'] as List;
+      if (requests.length > 7 || requests.any((r) => r is! Map)) {
+        throw const FormatException('Invalid bounded plugin requests');
+      }
+      final resume = result['resume_action'];
+      if (resume != null &&
+          (resume is! String ||
+              !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(resume) ||
+              requests.isEmpty ||
+              requests.any(
+                (r) =>
+                    !const {
+                      'market.candles.read',
+                      'account.snapshot.read',
+                      'order.snapshot.read',
+                    }.contains(r['kind']) ||
+                    r['scope'] == 'open',
+              ))) {
+        throw const FormatException('Invalid bounded workspace continuation');
+      }
+      return PluginHostContractResult.executed(result);
+    } catch (_) {
+      return const PluginHostContractResult.rejected(
+        code: 'invalid_workspace',
+        message: 'Plugin returned an invalid workspace',
+      );
+    }
+  }
+
+  static void validateView(Map<String, dynamic> view) {
+    if (utf8.encode(jsonEncode(view)).length > 16 * 1024 ||
+        view['title'] is! String ||
+        (view['title'] as String).isEmpty ||
+        view['message'] is! String ||
+        (view['summary'] != null && view['summary'] is! String) ||
+        (view['details_title'] != null &&
+            (view['details_title'] is! String ||
+                (view['details_title'] as String).isEmpty ||
+                (view['details_title'] as String).length > 128)) ||
+        view['details'] is! String) {
+      throw const FormatException('Invalid workspace text');
+    }
+    final fields = view['fields'] as List;
+    if (view['confirmation'] != null &&
+        (view['confirmation'] is! Map ||
+            !const {
+              'order.entry.place',
+              'order.entry.cancel',
+              'position.exit.place',
+            }.contains((view['confirmation'] as Map)['kind']) ||
+            (view['confirmation'] as Map)['provider'] != 'bingx' ||
+            (view['confirmation'] as Map)['plan'] is! Map ||
+            ((view['confirmation'] as Map)['kind'] == 'order.entry.cancel' &&
+                ((view['confirmation'] as Map)['order_id'] is! String ||
+                    !RegExp(
+                      r'^[1-9][0-9]{0,29}$',
+                    ).hasMatch((view['confirmation'] as Map)['order_id']))))) {
+      throw const FormatException('Invalid order confirmation');
+    }
+    final actions = view['actions'] as List;
+    final columns = view['columns'] as List;
+    final rows = view['rows'] as List;
+    if (fields.length > 8 ||
+        actions.length > 4 ||
+        columns.length > 6 ||
+        (rows.isNotEmpty && columns.isEmpty) ||
+        rows.length > 64 ||
+        columns.any((c) => c is! String) ||
+        rows.any(
+          (r) =>
+              r is! List ||
+              r.length != columns.length ||
+              r.any((c) => c is! String),
+        )) {
+      throw const FormatException('Invalid workspace size or table');
+    }
+    final ids = <String>{};
+    for (final field in fields) {
+      if (field is! Map ||
+          field['id'] is! String ||
+          field['label'] is! String ||
+          !ids.add(field['id'] as String) ||
+          (field['advanced'] != null && field['advanced'] is! bool) ||
+          !const {
+            'text',
+            'integer',
+            'number',
+            'choice',
+          }.contains(field['type']) ||
+          !(field['value'] is String || field['value'] is num)) {
+        throw const FormatException('Invalid workspace field');
+      }
+      if (field['type'] == 'choice' &&
+          (field['value'] is! String ||
+              field['source'] is! Map ||
+              (field['source'] as Map)['kind'] != 'market.instruments.read' ||
+              (field['source'] as Map)['provider'] != 'bingx')) {
+        throw const FormatException('Invalid workspace choice source');
+      }
+    }
+    ids.clear();
+    for (final action in actions) {
+      if (action is! Map ||
+          action['id'] is! String ||
+          action['label'] is! String ||
+          (action['host'] != null &&
+              !const {
+                'bingx.account.connect',
+                'bingx.order.submit',
+                'workspace.start',
+                'workspace.stop',
+              }.contains(action['host'])) ||
+          !ids.add(action['id'] as String)) {
+        throw const FormatException('Invalid workspace action');
+      }
+    }
+  }
+}
+
 class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
   final PluginConsensusSignableReader _readSignable;
   final PluginConsensusAsyncSignableReader? _readAttestedSignable;
