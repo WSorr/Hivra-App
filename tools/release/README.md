@@ -14,6 +14,11 @@ Hivra.
 - `workspace_runner.sh`: builds the standalone installed-WASM host candidate
   on Ubuntu 24.04 x86_64 with the pinned Dart/Rust toolchains. It includes the
   existing FFI library, one systemd unit, source metadata and archive digest.
+  `--prepare-assets <CI-artifact-directory> <verified-archive-sha256>` embeds a
+  verified canonical candidate for the same source tree into Flutter assets.
+  `--verify-assets` checks that component; both app packagers verify its exact
+  digest again inside their compiled artifact. Binary assets remain ignored by
+  Git. Preparation does not rebuild the runner on macOS or Android.
   It neither installs a VPS nor publishes a release. Capsule provisioning and
   a tested state handoff are required before exposing remote Start to users.
 - `derive_flutter_version.sh`: derives one monotonic cross-platform build
@@ -28,7 +33,9 @@ Hivra.
 1. Obtain the next allowed tag with
    `tools/release/release_version_guard.sh --suggest`.
 2. Run `tools/release/preflight.sh`.
-3. Build each platform once with its release script.
+3. Prepare the matching green-CI runner component, then build each platform once
+   with its release script. The component is delivered inside Capsule, not as
+   an extra installation step for its users.
 4. Exercise those exact packaged bytes using the matching platform checklist.
 5. Record both rows in
    `docs/checklists/release-manual-signoff-log.md`.

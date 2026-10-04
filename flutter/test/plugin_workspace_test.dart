@@ -33,6 +33,170 @@ import '../bin/plugin_workspace_runner.dart';
 
 void main() {
   test(
+    'Capsule runner assets bind canonical source and exact distributed bytes',
+    () async {
+      final root = await Directory('/tmp').createTemp('hivra_component_');
+      addTearDown(() => root.delete(recursive: true));
+      final helper = File('${root.path}/tools/release/workspace_runner.sh');
+      await helper.parent.create(recursive: true);
+      await File('../tools/release/workspace_runner.sh').copy(helper.path);
+      final config = File('${root.path}/toolchains/hivra-baseline.conf');
+      await config.parent.create(recursive: true);
+      await File('../toolchains/hivra-baseline.conf').copy(config.path);
+      final baseline = await config.readAsString();
+      String pin(String name) =>
+          RegExp(
+            '^$name=(.+)\$',
+            multiLine: true,
+          ).firstMatch(baseline)!.group(1)!;
+      final assetDir = Directory(
+        '${root.path}/flutter/assets/workspace_runner',
+      );
+      await assetDir.create(recursive: true);
+      await File('${assetDir.path}/.keep').writeAsString('');
+      await File('${root.path}/.gitignore').writeAsString(
+        'flutter/assets/workspace_runner/*.tar.gz\nSHA256SUMS.txt\n',
+      );
+      Future<String> git(List<String> args) async {
+        final result = await Process.run(
+          'git',
+          [
+            '-c',
+            'core.hooksPath=/dev/null',
+            '-c',
+            'user.name=Fixture',
+            '-c',
+            'user.email=fixture@example.invalid',
+            ...args,
+          ],
+          workingDirectory: root.path,
+          environment: {
+            'GIT_CONFIG_GLOBAL': '/dev/null',
+            'GIT_CONFIG_NOSYSTEM': '1',
+          },
+        );
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        return result.stdout.toString().trim();
+      }
+
+      await git(['init', '-q']);
+      await git(['add', '.']);
+      await git([
+        'commit',
+        '--no-gpg-sign',
+        '-qm',
+        'Isolated packaging fixture',
+      ]);
+      final commit = await git(['rev-parse', 'HEAD']);
+      final tree = await git(['rev-parse', 'HEAD^{tree}']);
+      final stage = Directory('${root.path}/stage');
+      await Directory('${stage.path}/bin').create(recursive: true);
+      // These are packaging fixtures, not executable or provider evidence.
+      for (final name in [
+        'bin/hivra-workspace-runner',
+        'bin/libhivra_ffi.so',
+        'hivra-workspace-runner.service',
+      ]) {
+        await File(
+          '${stage.path}/$name',
+        ).writeAsString('Synthetic component fixture: $name');
+      }
+      const archiveName = 'hivra-workspace-runner-linux-x64.tar.gz';
+      final candidate = Directory('${root.path}/candidate');
+      await candidate.create();
+      final archive = File('${candidate.path}/$archiveName');
+      String metadata({String? sourceTree, String protocol = '1'}) =>
+          'source_commit=$commit\nsource_tree=${sourceTree ?? tree}\nsource_dirty=0\nplatform=linux-x64\nworkspace_protocol=$protocol\nrust=${pin('RUST_VERSION')}\ndart=${pin('DART_VERSION')}\n';
+      Future<String> pack(String raw) async {
+        await File('${stage.path}/BUILD-METADATA.txt').writeAsString(raw);
+        final result = await Process.run('tar', [
+          '-czf',
+          archive.path,
+          '-C',
+          stage.path,
+          '.',
+        ]);
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        return sha256.convert(await archive.readAsBytes()).toString();
+      }
+
+      Future<ProcessResult> run(List<String> args) =>
+          Process.run('bash', [helper.path, ...args]);
+      expect(
+        (await run(['--verify-assets'])).exitCode,
+        isNot(0),
+        reason: 'Missing assets cannot silently pass',
+      );
+      final digest = await pack(metadata());
+      final prepared = await run(['--prepare-assets', candidate.path, digest]);
+      expect(prepared.exitCode, 0, reason: prepared.stderr.toString());
+      expect(prepared.stdout.toString().trim(), digest);
+      final stored = File('${assetDir.path}/$archiveName');
+      final bytes = await stored.readAsBytes();
+      expect(sha256.convert(bytes).toString(), digest);
+      final verified = await run(['--verify-assets']);
+      expect(verified.exitCode, 0, reason: verified.stderr.toString());
+      expect(verified.stdout.toString().trim(), digest);
+      final packaged = Directory('${root.path}/packaged');
+      await packaged.create();
+      await stored.copy('${packaged.path}/$archiveName');
+      await File(
+        '${assetDir.path}/SHA256SUMS.txt',
+      ).copy('${packaged.path}/SHA256SUMS.txt');
+      expect((await run(['--verify-assets', packaged.path])).exitCode, 0);
+      await File('${packaged.path}/$archiveName').writeAsBytes([...bytes, 0]);
+      expect(
+        (await run(['--verify-assets', packaged.path])).exitCode,
+        isNot(0),
+      );
+      final wrongPin = await run([
+        '--prepare-assets',
+        candidate.path,
+        '0' * 64,
+      ]);
+      expect(wrongPin.exitCode, isNot(0));
+      for (final invalid in [
+        metadata(sourceTree: '0' * 40),
+        metadata(protocol: '0'),
+        '${metadata()}source_dirty=0\n',
+      ]) {
+        final bad = await pack(invalid);
+        expect(
+          (await run(['--prepare-assets', candidate.path, bad])).exitCode,
+          isNot(0),
+        );
+        expect(
+          await stored.readAsBytes(),
+          bytes,
+          reason: 'Rejected candidates cannot replace selected assets',
+        );
+      }
+      final unexpected = File('${stage.path}/unexpected');
+      await unexpected.writeAsString('Not part of the component');
+      var bad = await pack(metadata());
+      expect(
+        (await run(['--prepare-assets', candidate.path, bad])).exitCode,
+        isNot(0),
+      );
+      await unexpected.delete();
+      final lib = File('${stage.path}/bin/libhivra_ffi.so');
+      await lib.delete();
+      await Link(lib.path).create(helper.path);
+      bad = await pack(metadata());
+      expect(
+        (await run(['--prepare-assets', candidate.path, bad])).exitCode,
+        isNot(0),
+      );
+      expect(await stored.readAsBytes(), bytes);
+      await config.writeAsString('$baseline\n# dirty fixture\n');
+      expect(
+        (await run(['--prepare-assets', candidate.path, digest])).exitCode,
+        isNot(0),
+      );
+      expect(await stored.readAsBytes(), bytes);
+    },
+  );
+  test(
     'VPS Start admits the target directly without a local execution window',
     () async {
       final root = await Directory('/tmp').createTemp('hivra_direct_start_');

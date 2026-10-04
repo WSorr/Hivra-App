@@ -98,6 +98,7 @@ info "Release preflight"
 require_clean_tracked_worktree
 
 info "Build Android release APK"
+RUNNER_DIGEST="$(bash "$ROOT/tools/release/workspace_runner.sh" --verify-assets)"
 (
   cd "$FLUTTER_DIR"
   flutter build apk --release \
@@ -124,6 +125,11 @@ META_PATH="$OUTPUT_DIR/RELEASE-METADATA.txt"
 
 info "Package APK artifact"
 cp "$APK_SOURCE_PATH" "$APK_PATH"
+runner_digest="$(unzip -p "$APK_PATH" \
+  assets/flutter_assets/assets/workspace_runner/hivra-workspace-runner-linux-x64.tar.gz | shasum -a 256 | awk '{print $1}')"
+[ "$runner_digest" = "$RUNNER_DIGEST" ] || die 'Bundled workspace runner differs from the selected canonical artifact'
+runner_checksum="$(unzip -p "$APK_PATH" assets/flutter_assets/assets/workspace_runner/SHA256SUMS.txt)"
+[ "$runner_checksum" = "$RUNNER_DIGEST  hivra-workspace-runner-linux-x64.tar.gz" ] || die 'Bundled workspace runner checksum is missing or mismatched'
 
 info "Generate SHA256SUMS"
 APK_SHA="$(shasum -a 256 "$APK_PATH" | awk '{print $1}')"
@@ -139,6 +145,7 @@ channel=$CHANNEL
 pre_release_expected=$([ "$CHANNEL" = "test" ] && echo "yes" || echo "no")
 asset=$ASSET_NAME
 asset_sha256=$APK_SHA
+workspace_runner_sha256=$RUNNER_DIGEST
 source_apk=$APK_SOURCE_PATH
 EOF
 

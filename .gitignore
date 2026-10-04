@@ -32,6 +32,8 @@ __pycache__/
 *.dmg
 *.zip
 SHA256SUMS.txt
+/flutter/assets/workspace_runner/*.tar.gz
+/flutter/assets/workspace_runner/*.next
 
 # Local user exports and backups
 capsule-backup-*.json
