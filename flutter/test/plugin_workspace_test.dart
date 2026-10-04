@@ -19,6 +19,7 @@ import 'package:hivra_app/services/plugin_workspace_remote_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
@@ -329,6 +330,44 @@ void main() {
       await expectLater(
         serverRuntime.runScheduledWorkspaceCycle(serverRegistry.record),
         throwsStateError,
+      );
+      Future<void> reconnect() => module.connectWorkspaceVps(
+        record: localRegistry.record,
+        host: 'test.invalid',
+        port: 22,
+        password: '',
+        trustPeer: (_) async => throw StateError('Existing pin must be reused'),
+      );
+      offline = true;
+      await expectLater(reconnect(), throwsA(isA<TimeoutException>()));
+      expect(
+        (await remote.connection(
+          ownerHex,
+          localRegistry.record.pluginId!,
+        ))!['selected'],
+        false,
+      );
+      offline = false;
+      await reconnect();
+      expect(
+        (await remote.connection(
+          ownerHex,
+          localRegistry.record.pluginId!,
+        ))!['selected'],
+        true,
+      );
+      expect(
+        (await module.readWorkspaceExecution(
+          localRegistry.record,
+        ))!['expires_at_ms'],
+        0,
+      );
+      expect(
+        (await serverRuntime.readWorkspaceExecution(
+          serverRegistry.record,
+          enforceHost: false,
+        ))!['allow_new_entries'],
+        false,
       );
       await module.removePlugin(localRegistry.record);
       expect(localRegistry.installed, false);
@@ -1726,6 +1765,98 @@ void main() {
     },
   );
 
+  for (final remote in [true, false]) {
+    testWidgets(
+      '${remote ? "VPS" : "Local"} status refresh is visible-only and independent of execution',
+      (tester) async {
+        final navigator = GlobalKey<NavigatorState>();
+        var reads = 0;
+        final actions = <String>[];
+        final interval = Duration(seconds: remote ? 60 : 15);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigator,
+            home: PluginWorkspaceScreen(
+              runWorkspaceAction: (
+                action,
+                settings, {
+                credentials,
+                approvedOrder,
+              }) async {
+                actions.add(action);
+                reads++;
+                return {
+                  ...view(),
+                  'fields': <dynamic>[],
+                  'execution': {
+                    'allow_new_entries': true,
+                    'mode': remote ? 'vps' : 'local',
+                    'expires_at_ms': 2000000000000,
+                  },
+                  'host_connection': {'target': remote ? 'vps' : 'local'},
+                };
+              },
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(reads, 1);
+        await tester.pump(interval - const Duration(seconds: 1));
+        expect(reads, 1);
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pump();
+        expect(reads, 2);
+        for (final state in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+        ]) {
+          tester.binding.handleAppLifecycleStateChanged(state);
+        }
+        await tester.pump(const Duration(minutes: 2));
+        expect(reads, 2);
+        for (final state in [
+          AppLifecycleState.hidden,
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]) {
+          tester.binding.handleAppLifecycleStateChanged(state);
+        }
+        await tester.pump();
+        expect(reads, 3);
+        unawaited(
+          navigator.currentState!.push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Another screen')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(minutes: 2));
+        expect(reads, 3);
+        navigator.currentState!.pop();
+        await tester.pump();
+        await tester.pumpAndSettle();
+        expect(
+          ModalRoute.of(
+            tester.element(find.byType(PluginWorkspaceScreen)),
+          )!.isCurrent,
+          isTrue,
+        );
+        await tester.pump(interval);
+        await tester.pump();
+        expect(reads, 4);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(minutes: 2));
+        expect(reads, 4);
+        expect(actions, List.filled(4, 'open'));
+      },
+    );
+  }
+
   testWidgets(
     'VPS connection failure stays visible and Start confirms its target',
     (tester) async {
@@ -1818,6 +1949,62 @@ void main() {
       await tester.tap(find.text('Start VPS cycles'));
       await tester.pumpAndSettle();
       expect(grants, 1);
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Saved VPS selection reuses its key without a password or Start',
+    (tester) async {
+      var selected = false;
+      var starts = 0;
+      Map<String, dynamic> shown() => {
+        ...view(),
+        'fields': <dynamic>[],
+        'host_connection': {
+          'target': selected ? 'vps' : 'local',
+          'host': 'test.invalid',
+          'port': 2222,
+          'installed': true,
+          'health': 'not_started',
+        },
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            runWorkspaceAction:
+                (action, settings, {credentials, approvedOrder}) async =>
+                    shown(),
+            configureExecution: ({
+              required enabled,
+              approvedScope,
+              settings = const {},
+            }) async {
+              starts++;
+              return shown();
+            },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+            }) async {
+              expect(host, 'test.invalid');
+              expect(port, 2222);
+              expect(password, isEmpty);
+              selected = true;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect VPS'));
+      await tester.pumpAndSettle();
+      expect(selected, true);
+      expect(starts, 0);
+      expect(find.text('Connect your VPS'), findsNothing);
+      expect(find.text('Root password (installation only)'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       expect(tester.takeException(), isNull);
     },
@@ -1956,6 +2143,14 @@ void main() {
         'exit_oneway',
         'exit_removed',
         'exit_unsafe_evidence',
+        'exit_prior_open',
+        'exit_prior_partial',
+        'exit_prior_filled',
+        'exit_prior_cancelled',
+        'exit_prior_unavailable',
+        'exit_prior_foreign',
+        'exit_prior_replaced',
+        'exit_prior_removed',
       ]) {
         final home = await Directory.systemTemp.createTemp('hivra_scheduled_');
         addTearDown(() => home.delete(recursive: true));
@@ -1993,10 +2188,16 @@ void main() {
           fixture.deleteFillRace = fault == 'cancel_fill';
         }
         final plan = entryPlan();
+        final priorFilled = fault == 'exit_prior_filled';
+        final exitQuantity = priorFilled ? 0.418 : 0.518;
+        if (priorFilled) {
+          fixture.positionData[0]['positionAmt'] = '$exitQuantity';
+          fixture.exitQuantity = '$exitQuantity';
+        }
         final exitPlan = {
           'entry_plan': plan,
           'position_id': '42',
-          'quantity': 0.518,
+          'quantity': exitQuantity,
           'average_price': 96.4,
           'price': 105.0,
           'prepared_at_ms': fixture.now,
@@ -2157,6 +2358,65 @@ void main() {
             }),
           );
         }
+        if (fault.startsWith('exit_prior_')) {
+          final previous = {...exitPlan, 'quantity': 0.1, 'price': 106.0};
+          final previousId = BingxMarketDataAdapter.exitOperationId(previous);
+          final previousClient = previousId.substring(0, 40);
+          fixture.exitOrders[previousClient] = {
+            'orderID': '2103610529511862274',
+            'symbol': fault == 'exit_prior_foreign' ? 'DASH-USDT' : 'BTC-USDT',
+            'clientOrderId': previousClient,
+            'side': 'SELL',
+            'positionSide': 'LONG',
+            'type': 'LIMIT',
+            'origQty': '0.1',
+            'price': '106.0',
+            'executedQty':
+                priorFilled
+                    ? '0.1'
+                    : fault == 'exit_prior_partial'
+                    ? '0.05'
+                    : '0',
+            'avgPrice':
+                priorFilled || fault == 'exit_prior_partial' ? '106.0' : '0',
+            'status':
+                priorFilled
+                    ? 'FILLED'
+                    : [
+                      'exit_prior_cancelled',
+                      'exit_prior_replaced',
+                      'exit_prior_removed',
+                    ].contains(fault)
+                    ? 'CANCELED'
+                    : fault == 'exit_prior_partial'
+                    ? 'PARTIALLY_FILLED'
+                    : 'NEW',
+          };
+          if (fault == 'exit_prior_unavailable') {
+            fixture.exitOrders[previousClient] = null;
+          }
+          if (fault == 'exit_prior_replaced') {
+            fixture.afterExitRead = () => digest = 'c' * 64;
+          }
+          if (fault == 'exit_prior_removed') {
+            fixture.afterExitRead = () => registry.installed = false;
+          }
+          final keys = previous.keys.toList()..sort();
+          await ExternalEffectService(
+            readActiveCapsuleRootHex: () => owner,
+            fileStore: files,
+            resolveAdapter: (_) => null,
+          ).prepare(
+            operationId: previousId,
+            pluginId: registry.record.pluginId!,
+            providerId: 'bingx',
+            accountBindingId: plan['account_id'],
+            effectKind: 'position.exit.place',
+            canonicalPayloadJson: jsonEncode({
+              for (final k in keys) k: previous[k],
+            }),
+          );
+        }
         Future<void> revoke() async {
           final saved =
               jsonDecode(
@@ -2234,6 +2494,12 @@ void main() {
           'exit_unknown',
           'exit_removed',
           'exit_unsafe_evidence',
+          'exit_prior_open',
+          'exit_prior_partial',
+          'exit_prior_unavailable',
+          'exit_prior_foreign',
+          'exit_prior_replaced',
+          'exit_prior_removed',
         ].contains(fault)) {
           await expectLater(
             executor.runScheduledWorkspaceCycle(registry.record),
@@ -2252,6 +2518,8 @@ void main() {
                 'exit_unknown',
                 'exit_oneway',
                 'exit_unsafe_evidence',
+                'exit_prior_filled',
+                'exit_prior_cancelled',
               ].contains(fault)
               ? 1
               : 0,
@@ -2304,6 +2572,37 @@ void main() {
           ['cancel', 'cancel_unknown', 'cancel_fill'].contains(fault) ? 1 : 0,
           reason: fault,
         );
+        if (fault.startsWith('exit_prior_')) {
+          expect(
+            fixture.exitOrderReads,
+            greaterThanOrEqualTo(1),
+            reason: fault,
+          );
+          if (['exit_prior_filled', 'exit_prior_cancelled'].contains(fault)) {
+            fixture.exitOrders.updateAll((_, _) => null);
+            await files.writePluginState(
+              directory,
+              registry.record.pluginId!,
+              'workspace.v1.json',
+              jsonEncode({'unrelated_bundle': false}),
+            );
+            await runtime().runScheduledWorkspaceCycle(registry.record);
+            expect(
+              fixture.posts,
+              1,
+              reason:
+                  'Lost private state replays the exact exit without another POST, even if older provider history is unavailable',
+            );
+          }
+          expect(fixture.deletes, 0, reason: 'No broad exit cancellation');
+          expect(
+            fixture.postParams?['quantity'],
+            ['exit_prior_filled', 'exit_prior_cancelled'].contains(fault)
+                ? '$exitQuantity'
+                : null,
+            reason: fault,
+          );
+        }
         if (['cancel', 'cancel_unknown', 'cancel_fill'].contains(fault)) {
           await runtime().runScheduledWorkspaceCycle(registry.record);
           expect(
@@ -2386,7 +2685,7 @@ void main() {
     },
   );
   test(
-    'lifecycle evidence uses explicit grants and revalidates ownership after reads',
+    'lifecycle evidence validates grants, opaque-state completion and replacement before retention',
     () async {
       for (final fault in [
         'none',
@@ -2394,13 +2693,24 @@ void main() {
         'revoked',
         'replaced',
         'capsule',
+        'closed',
+        'retirement_foreign',
+        'retirement_nonflat',
+        'retirement_open',
+        'retirement_wrong_action',
+        'closed_replaced',
+        'closed_removed',
+        'closed_journal_write_failure',
+        'closed_state_write_failure',
       ]) {
         final home = await Directory.systemTemp.createTemp(
           'hivra_lifecycle_scope_',
         );
         addTearDown(() => home.delete(recursive: true));
+        final writes = _CompletionWrites();
         final files = CapsuleFileStore(
           dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+          atomicWrites: writes,
         );
         final registry = _Registry();
         var owner = 'a' * 64;
@@ -2439,10 +2749,33 @@ void main() {
           operationId: operationId,
         );
         fixture.posts = 0;
+        writes.failJournal = fault == 'closed_journal_write_failure';
+        writes.failClosedState = fault == 'closed_state_write_failure';
+        final completing =
+            fault == 'closed' ||
+            fault.startsWith('retirement_') ||
+            fault.startsWith('closed_');
+        if (completing && fault != 'retirement_open') {
+          fixture.status = 'FILLED';
+          fixture.filled = '0.518';
+        }
+        if (fault == 'retirement_nonflat') {
+          fixture.positionData = [
+            {
+              'symbol': 'BTC-USDT',
+              'positionId': '123',
+              'positionSide': 'LONG',
+              'positionAmt': '0.518',
+              'avgPrice': '96.4',
+            },
+          ];
+        }
         fixture.afterOpenOrdersRead = () {
           if (fault == 'revoked') positionGrant = false;
           if (fault == 'replaced') digest = 'c' * 64;
           if (fault == 'capsule') owner = 'd' * 64;
+          if (fault == 'closed_replaced') digest = 'c' * 64;
+          if (fault == 'closed_removed') registry.installed = false;
         };
         Map<String, dynamic>? admitted;
         final host = PluginHostApiService(
@@ -2479,9 +2812,18 @@ void main() {
               semanticErrorMessage: null,
               semanticResult: {
                 'state': {
+                  ...?request.args['state'] as Map?,
                   'opaque': [1, 2, 3],
+                  if (request.args['action'] == 'lifecycle') 'closed': true,
                 },
                 'view': view(),
+                if (completing &&
+                    (request.args['action'] == 'lifecycle' ||
+                        fault == 'retirement_wrong_action'))
+                  'retired_entry':
+                      fault == 'retirement_foreign'
+                          ? {...plan, 'symbol': 'DASH-USDT'}
+                          : plan,
                 'requests':
                     request.args['action'] == 'observe_position'
                         ? [
@@ -2516,7 +2858,7 @@ void main() {
           record: registry.record,
           action: 'observe_position',
         );
-        if (fault == 'none') {
+        if (fault == 'none' || fault == 'closed') {
           await observation;
           expect(admitted?['account_id'], plan['account_id']);
           expect(admitted?['positions'], isEmpty);
@@ -2527,9 +2869,62 @@ void main() {
           expect(jsonEncode(admitted), isNot(contains('test-secret')));
         } else {
           await expectLater(observation, throwsStateError);
-          expect(admitted, isNull, reason: fault);
+          if (![
+            'retirement_foreign',
+            'retirement_nonflat',
+            'retirement_open',
+            'closed_journal_write_failure',
+            'closed_state_write_failure',
+          ].contains(fault)) {
+            expect(admitted, isNull, reason: fault);
+          }
         }
         expect(fixture.posts, 0, reason: fault);
+        final retained = await ExternalEffectService(
+          readActiveCapsuleRootHex: () => 'a' * 64,
+          fileStore: files,
+          resolveAdapter: (_) => fixture.adapter(),
+        ).list(pluginId: registry.record.pluginId!);
+        expect(
+          retained.single.completedGroup,
+          ['closed', 'closed_state_write_failure'].contains(fault)
+              ? operationId
+              : null,
+          reason: fault,
+        );
+        if (completing) {
+          final raw = await files.readPluginState(
+            await files.capsuleDirForHex('a' * 64),
+            registry.record.pluginId!,
+            'workspace.v1.json',
+          );
+          expect(
+            raw == null ? null : (jsonDecode(raw) as Map)['closed'],
+            fault == 'closed' ? true : null,
+            reason: fault,
+          );
+        }
+        if (fault.endsWith('_write_failure')) {
+          final beforeRetry = retained.single.revision;
+          await runtime.runWorkspaceAction(
+            record: registry.record,
+            action: 'observe_position',
+          );
+          final afterRetry = await effects.list(
+            pluginId: registry.record.pluginId!,
+          );
+          expect(afterRetry.single.completedGroup, operationId);
+          if (fault == 'closed_state_write_failure') {
+            expect(afterRetry.single.revision, beforeRetry);
+          }
+          final saved = await files.readPluginState(
+            await files.capsuleDirForHex(owner),
+            registry.record.pluginId!,
+            'workspace.v1.json',
+          );
+          expect((jsonDecode(saved!) as Map)['closed'], true);
+          expect(fixture.posts, 0);
+        }
       }
     },
   );
@@ -5060,6 +5455,26 @@ Map<String, dynamic> openOrdersRequest() => {
   'symbol': 'BTC-USDT',
 };
 
+class _CompletionWrites extends AtomicFileWriteService {
+  bool failJournal = false;
+  bool failClosedState = false;
+
+  @override
+  Future<void> writeString(File target, String contents) async {
+    if (failJournal && target.path.endsWith('/external_effects.v1.json')) {
+      failJournal = false;
+      throw StateError('Interrupted completion journal write');
+    }
+    if (failClosedState &&
+        target.path.endsWith('/workspace.v1.json') &&
+        (jsonDecode(contents) as Map)['closed'] == true) {
+      failClosedState = false;
+      throw StateError('Interrupted private state write');
+    }
+    await super.writeString(target, contents);
+  }
+}
+
 class _EntryProvider {
   int posts = 0;
   int deletes = 0;
@@ -5080,6 +5495,10 @@ class _EntryProvider {
   bool exitMode = false;
   bool exitQueryUnavailable = false;
   bool unsafeExit = false;
+  String exitQuantity = '0.518';
+  final exitOrders = <String, Map<String, dynamic>?>{};
+  int exitOrderReads = 0;
+  void Function()? afterExitRead;
   bool existingOrder = false;
   bool wrappedOrders = false;
   dynamic openDataOverride;
@@ -5189,6 +5608,13 @@ class _EntryProvider {
                 ).substring(0, 40);
         if (isExit) {
           if (exitQueryUnavailable) throw TimeoutException('Unavailable');
+          if (exitOrders.containsKey(params['clientOrderId'])) {
+            exitOrderReads++;
+            final exact = exitOrders[params['clientOrderId']];
+            if (exact == null) throw TimeoutException('Unavailable');
+            afterExitRead?.call();
+            return jsonEncode({'code': 0, 'data': exact});
+          }
           return jsonEncode({
             'code': 0,
             'data': {
@@ -5199,7 +5625,7 @@ class _EntryProvider {
               'positionSide': positionSide,
               'reduceOnly': !unsafeExit,
               'type': 'LIMIT',
-              'origQty': '0.518',
+              'origQty': exitQuantity,
               'price': '105.0',
               'executedQty': '0',
               'avgPrice': '0',

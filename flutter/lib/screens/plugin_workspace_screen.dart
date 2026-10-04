@@ -43,7 +43,8 @@ class PluginWorkspaceScreen extends StatefulWidget {
   State<PluginWorkspaceScreen> createState() => _PluginWorkspaceScreenState();
 }
 
-class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
+class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
+    with WidgetsBindingObserver {
   final Map<String, TextEditingController> _fields = {};
   Map<String, dynamic>? _view;
   String? _error;
@@ -51,20 +52,43 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
   bool _edited = false;
   bool _choosing = false;
   Timer? _refresh;
+  AppLifecycleState? _appState;
 
   @override
   void initState() {
     super.initState();
+    _appState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
+    WidgetsBinding.instance.addObserver(this);
     _run('open');
   }
 
   @override
   void dispose() {
     _refresh?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     for (final controller in _fields.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appState = state;
+    if (state == AppLifecycleState.resumed) _refreshVisibleStatus();
+  }
+
+  void _refreshVisibleStatus() {
+    if (mounted &&
+        _appState == AppLifecycleState.resumed &&
+        ModalRoute.of(context)?.isCurrent == true &&
+        _view?['execution'] != null &&
+        !_busy &&
+        !_choosing &&
+        !_edited) {
+      _run('open');
+    }
   }
 
   Future<void> _run(String action) async {
@@ -273,15 +297,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
         _view = view;
         _edited = false;
       });
-      if (view['execution'] != null && _refresh == null) {
-        _refresh = Timer.periodic(const Duration(seconds: 15), (_) {
-          if (!_busy && !_choosing && !_edited) {
-            _run('open');
-          }
-        });
-      } else if (view['execution'] == null) {
-        _refresh?.cancel();
-        _refresh = null;
+      _refresh?.cancel();
+      _refresh = null;
+      if (view['execution'] != null) {
+        final remote = view['host_connection']?['target'] == 'vps';
+        _refresh = Timer.periodic(
+          Duration(seconds: remote ? 60 : 15),
+          (_) => _refreshVisibleStatus(),
+        );
       }
     } catch (error) {
       if (!mounted) return;
@@ -305,9 +328,33 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
   Future<void> _connectVps() async {
     if (_busy || _choosing || widget.connectVps == null) return;
     var host = _view?['host_connection']?['host']?.toString() ?? '';
-    var port = '22';
+    var port = _view?['host_connection']?['port']?.toString() ?? '22';
     var password = '';
     var connected = false;
+    if (_view?['host_connection']?['installed'] == true) {
+      setState(() => _busy = true);
+      try {
+        await widget.connectVps!(
+          host: host,
+          port: int.parse(port),
+          password: '',
+          trustPeer: (_) async => false,
+        );
+        connected = true;
+      } catch (_) {
+        if (mounted) {
+          setState(
+            () =>
+                _error =
+                    'Saved VPS connection was not acknowledged. Check server availability; no trading Start was granted.',
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+      if (mounted && connected) await _run('open');
+      return;
+    }
     setState(() => _choosing = true);
     try {
       final accepted =

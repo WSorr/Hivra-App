@@ -14,6 +14,7 @@ class ExternalEffectService {
   static const int _journalSchemaVersion = 1;
   static const int _maxJournalOperations = 1000;
   static const int _terminalRetentionTarget = 800;
+  static const int _completedGroupRetention = 5;
   static final Map<String, Future<ExternalEffectOperation>> _inFlight =
       <String, Future<ExternalEffectOperation>>{};
   static final Map<String, Future<void>> _journalTails =
@@ -85,7 +86,7 @@ class ExternalEffectService {
       _pruneTerminalOperations(operations);
       if (operations.length >= _maxJournalOperations) {
         throw StateError(
-          'External effect journal is full of non-terminal operations',
+          'External effect journal has no safely removable history',
         );
       }
       operations.add(proposed);
@@ -393,8 +394,63 @@ class ExternalEffectService {
         operations[index].validate();
         changed = true;
       }
+      changed |= _pruneTerminalOperations(operations);
       if (changed) await _save(ownerHex, pluginId, operations);
       return operations;
+    });
+  }
+
+  /// The host must verify lifecycle completion and the public replay deadline.
+  /// Acceptance receipts alone never make financial history disposable.
+  Future<void> completeGroup({
+    required String pluginId,
+    required String groupId,
+    required Set<String> operationIds,
+    required DateTime retainUntil,
+  }) {
+    final owner = _requireActiveOwner();
+    if (operationIds.isEmpty || operationIds.length > _maxJournalOperations) {
+      throw StateError('Completion requires bounded exact operations');
+    }
+    return _withJournalLock(owner, pluginId, () async {
+      final operations = await _load(owner, pluginId);
+      final selected =
+          operations
+              .where((o) => operationIds.contains(o.operationId))
+              .toList();
+      if (selected.length != operationIds.length ||
+          selected.any(
+            (o) =>
+                !o.state.isTerminal ||
+                _inFlight.containsKey('$owner::$pluginId::${o.operationId}') ||
+                (o.completedGroup != null && o.completedGroup != groupId),
+          ) ||
+          selected
+                  .map((o) => '${o.providerId}::${o.accountBindingId}')
+                  .toSet()
+                  .length !=
+              1) {
+        throw StateError(
+          'Active, unresolved or foreign effects cannot be compacted',
+        );
+      }
+      var changed = false;
+      for (var i = 0; i < operations.length; i++) {
+        if (operationIds.contains(operations[i].operationId) &&
+            operations[i].completedGroup == null) {
+          operations[i] = _copy(
+            operations[i],
+            state: operations[i].state,
+            receipt: operations[i].receipt,
+            completedGroup: groupId,
+            retainUntilUtc: retainUntil.toUtc().toIso8601String(),
+          );
+          operations[i].validate();
+          changed = true;
+        }
+      }
+      changed |= _pruneTerminalOperations(operations);
+      if (changed) await _save(owner, pluginId, operations);
     });
   }
 
@@ -698,6 +754,9 @@ class ExternalEffectService {
           'Invalid external effect transition from ${current.state.wireName}',
         );
       }
+      if (current.completedGroup != null) {
+        throw StateError('A completed lifecycle cannot be reauthorized');
+      }
       final next = update(current);
       next.validate();
       operations[index] = next;
@@ -861,17 +920,55 @@ class ExternalEffectService {
     }
   }
 
-  void _pruneTerminalOperations(List<ExternalEffectOperation> operations) {
-    if (operations.length < _maxJournalOperations) return;
+  bool _pruneTerminalOperations(List<ExternalEffectOperation> operations) {
+    final before = operations.length;
+    final groups = <String, List<ExternalEffectOperation>>{};
+    for (final o in operations) {
+      if (o.completedGroup != null) {
+        groups.putIfAbsent(o.completedGroup!, () => []).add(o);
+      }
+    }
+    final ordered =
+        groups.keys.toList()..sort((a, b) {
+          DateTime latest(String key) => groups[key]!
+              .map((o) => DateTime.parse(o.updatedAtUtc))
+              .reduce((a, b) => a.isAfter(b) ? a : b);
+          final order = latest(b).compareTo(latest(a));
+          return order == 0 ? b.compareTo(a) : order;
+        });
+    final now = _clock().toUtc();
+    final removable =
+        ordered
+            .skip(_completedGroupRetention)
+            .where(
+              (id) => groups[id]!.every(
+                (o) =>
+                    o.state.isTerminal &&
+                    !now.isBefore(DateTime.parse(o.retainUntilUtc!)) &&
+                    !_inFlight.containsKey(
+                      '${o.ownerCapsuleHex}::${o.pluginId}::${o.operationId}',
+                    ),
+              ),
+            )
+            .toSet();
+    operations.removeWhere((o) => removable.contains(o.completedGroup));
+    if (operations.length < _maxJournalOperations) {
+      return operations.length != before;
+    }
     var index = 0;
     while (operations.length > _terminalRetentionTarget &&
         index < operations.length) {
-      if (operations[index].state.isTerminal) {
+      // BingX acceptance may still be a live order. Its records require the
+      // explicit completed-group path above, never age/receipt-only eviction.
+      if (operations[index].state.isTerminal &&
+          operations[index].providerId != 'bingx' &&
+          operations[index].completedGroup == null) {
         operations.removeAt(index);
       } else {
         index += 1;
       }
     }
+    return operations.length != before;
   }
 
   String _boundedError(String value) {
@@ -895,6 +992,8 @@ class ExternalEffectService {
     String? providerReferenceId,
     bool clearError = false,
     bool clearRequiredAction = false,
+    String? completedGroup,
+    String? retainUntilUtc,
   }) {
     return ExternalEffectOperation(
       ownerCapsuleHex: current.ownerCapsuleHex,
@@ -920,6 +1019,8 @@ class ExternalEffectService {
       requiredAction:
           clearRequiredAction ? null : requiredAction ?? current.requiredAction,
       receipt: receipt,
+      completedGroup: completedGroup ?? current.completedGroup,
+      retainUntilUtc: retainUntilUtc ?? current.retainUntilUtc,
     );
   }
 

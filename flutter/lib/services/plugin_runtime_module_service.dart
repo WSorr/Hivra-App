@@ -336,6 +336,8 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         'host_connection': {
           'target': 'vps',
           'host': c['host'],
+          'port': c['port'],
+          'installed': c['package_id'] != null,
           'health': result['runner']['state'],
           'observation_error': result['observation_error'],
         },
@@ -356,6 +358,8 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       'host_connection': {
         'target': c?['selected'] == true ? 'vps' : 'local',
         'host': c?['host'],
+        'port': c?['port'],
+        'installed': c?['package_id'] != null,
         'health': 'not_started',
       },
     };

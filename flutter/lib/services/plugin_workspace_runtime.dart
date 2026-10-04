@@ -204,6 +204,22 @@ class PluginWorkspaceRuntime {
     Set<String> grantedCapabilities = {};
     var readingOpenOrders = false;
     var restoringEffects = false;
+    var deferringLifecycleState = false;
+    Future<void> persistState() async {
+      if (!deferringLifecycleState &&
+          !readingOpenOrders &&
+          !restoringEffects &&
+          credentials == null &&
+          approvedOrder == null) {
+        await _fileStore.writePluginState(
+          directory,
+          pluginId,
+          stateFile,
+          jsonEncode(state),
+        );
+      }
+    }
+
     Future<Map<String, dynamic>> invoke(
       String nextAction, {
       Map<String, dynamic>? snapshot,
@@ -254,6 +270,15 @@ class PluginWorkspaceRuntime {
         );
       }
       final output = response.result!;
+      if (output['retired_entry'] != null &&
+          (nextAction != 'lifecycle' ||
+              snapshot == null ||
+              output['retired_entry'] is! Map ||
+              jsonEncode(output['retired_entry']).length > 4096)) {
+        throw StateError(
+          'History completion requires exact lifecycle evidence',
+        );
+      }
       final effectRequests = (output['requests'] as List).where(
         (r) =>
             r['kind'] == 'order.entry.place' ||
@@ -272,17 +297,9 @@ class PluginWorkspaceRuntime {
       if (!readingOpenOrders) {
         state = Map<String, dynamic>.from(output['state'] as Map);
       }
-      if (!readingOpenOrders &&
-          !restoringEffects &&
-          credentials == null &&
-          approvedOrder == null) {
-        await _fileStore.writePluginState(
-          directory,
-          pluginId,
-          stateFile,
-          jsonEncode(state),
-        );
-      }
+      // Save completion in the journal first. An interrupted state write then
+      // repeats the exact provider read, rather than forgetting its cleanup.
+      if (nextAction != 'lifecycle') await persistState();
       return output;
     }
 
@@ -621,11 +638,14 @@ class PluginWorkspaceRuntime {
         if (writing) {
           operation = await _withEntryDispatchLease(owner, entryPlan, () async {
             if (exiting) {
-              // Losing opaque package state must not authorize a second exit
-              // for the same fill. Recovery must use the existing operation.
-              final conflicting = (await effects.list(pluginId: pluginId)).any((
-                o,
-              ) {
+              final journal = await effects.list(pluginId: pluginId);
+              final replay = journal.any(
+                (o) => o.operationId == operationId && o.attemptCount > 0,
+              );
+              // A receipt proves acceptance, not completion. Only an exact
+              // terminal provider read releases an earlier exit for this entry.
+              // An already-dispatched identity only reconciles its own order.
+              for (final o in replay ? <ExternalEffectOperation>[] : journal) {
                 if (o.effectKind != 'position.exit.place' ||
                     o.operationId == operationId ||
                     (o.state == ExternalEffectState.terminalFailure &&
@@ -633,16 +653,44 @@ class PluginWorkspaceRuntime {
                           'exit_not_sent',
                           'provider_rejected',
                         ].contains(o.lastErrorCode))) {
-                  return false;
+                  continue;
                 }
                 final payload = jsonDecode(o.canonicalPayloadJson) as Map;
-                return _canonical(payload['entry_plan']) ==
-                    _canonical(entryPlan);
-              });
-              if (conflicting) {
-                throw StateError(
-                  'A journaled exit already exists for this entry',
-                );
+                if (_canonical(payload['entry_plan']) !=
+                    _canonical(entryPlan)) {
+                  continue;
+                }
+                final Map<String, dynamic> prior;
+                try {
+                  prior = await adapter.readExit(
+                    ExternalEffectAdapterRequest(
+                      ownerCapsuleHex: owner,
+                      operationId: o.operationId,
+                      pluginId: pluginId,
+                      providerId: 'bingx',
+                      accountBindingId: o.accountBindingId,
+                      effectKind: o.effectKind,
+                      canonicalPayloadJson: o.canonicalPayloadJson,
+                      payloadHashHex: o.payloadHashHex,
+                      providerReferenceId:
+                          o.receipt?.providerReceiptId ?? o.providerReferenceId,
+                    ),
+                  );
+                } catch (_) {
+                  throw StateError(
+                    'Previous exit completion is unverified; no new exit sent',
+                  );
+                }
+                if (![
+                  'filled',
+                  'cancelled',
+                  'expired',
+                  'rejected',
+                ].contains(prior['status'])) {
+                  throw StateError(
+                    'A journaled exit is still active for this entry',
+                  );
+                }
               }
             }
             final prepared = await effects.prepare(
@@ -812,6 +860,7 @@ class PluginWorkspaceRuntime {
                 !grantedCapabilities.contains('position.snapshot.read'))) {
           throw StateError('Order read authority changed');
         }
+        deferringLifecycleState = evidenceAction == 'lifecycle';
         output = await invoke(evidenceAction, snapshot: evidence);
         if (output['resume_action'] != null ||
             (output['requests'] as List).isNotEmpty) {
@@ -843,12 +892,96 @@ class PluginWorkspaceRuntime {
         }
         if (cancelling &&
             operation.state == ExternalEffectState.terminalFailure) {
+          deferringLifecycleState = false;
+          await persistState();
           // The current order evidence is already saved. Surface non-dispatch
           // without rewriting the package view or treating the entry as closed.
           throw StateError(
             operation.lastErrorMessage ?? 'No cancellation sent',
           );
         }
+        if (output['retired_entry'] != null) {
+          const terminal = ['filled', 'cancelled', 'rejected', 'expired'];
+          if (evidenceAction != 'lifecycle' ||
+              _canonical(output['retired_entry']) != _canonical(entryPlan) ||
+              !terminal.contains((evidence['entry'] as Map)['status']) ||
+              evidence['positions'] is! List ||
+              (evidence['positions'] as List).isNotEmpty ||
+              evidence['orders'] is! List ||
+              (evidence['orders'] as List).isNotEmpty ||
+              (request['exit_plan'] != null &&
+                  (evidence['exit'] is! Map ||
+                      !terminal.contains(
+                        (evidence['exit'] as Map)['status'],
+                      )))) {
+            throw StateError(
+              'History completion is not confirmed by the provider',
+            );
+          }
+          final group =
+              (await effects.list(pluginId: pluginId)).where((o) {
+                if (o.providerId != 'bingx' ||
+                    o.accountBindingId != entryPlan['account_id']) {
+                  return false;
+                }
+                final payload = jsonDecode(o.canonicalPayloadJson);
+                return o.operationId == entryId ||
+                    (o.effectKind == 'order.entry.cancel' &&
+                        _canonical(payload['plan']) == _canonical(entryPlan)) ||
+                    (o.effectKind == 'position.exit.place' &&
+                        _canonical(payload['entry_plan']) ==
+                            _canonical(entryPlan));
+              }).toList();
+          // Unresolved journal records remain recoverable, even if the package
+          // has retired its private lifecycle. Never turn uncertainty into age.
+          if (group.isNotEmpty && group.every((o) => o.state.isTerminal)) {
+            var deadline = entryPlan['expires_at_ms'] as int;
+            for (final o in group) {
+              if (o.effectKind != 'position.exit.place') continue;
+              final payload = jsonDecode(o.canonicalPayloadJson) as Map;
+              final notDispatched =
+                  o.state == ExternalEffectState.terminalFailure &&
+                  [
+                    'exit_not_sent',
+                    'provider_rejected',
+                  ].contains(o.lastErrorCode);
+              if (o.attemptCount > 0 && !notDispatched) {
+                final prior = await adapter.readExit(
+                  ExternalEffectAdapterRequest(
+                    ownerCapsuleHex: owner,
+                    operationId: o.operationId,
+                    pluginId: pluginId,
+                    providerId: o.providerId,
+                    accountBindingId: o.accountBindingId,
+                    effectKind: o.effectKind,
+                    canonicalPayloadJson: o.canonicalPayloadJson,
+                    payloadHashHex: o.payloadHashHex,
+                    providerReferenceId:
+                        o.receipt?.providerReceiptId ?? o.providerReferenceId,
+                  ),
+                );
+                if (!terminal.contains(prior['status'])) {
+                  throw StateError('An earlier exit is not confirmed closed');
+                }
+              }
+              final exitDeadline = payload['expires_at_ms'] as int;
+              if (exitDeadline > deadline) deadline = exitDeadline;
+            }
+            // Provider reads above can outlive a package removal or replacement.
+            await invoke('open');
+            await effects.completeGroup(
+              pluginId: pluginId,
+              groupId: entryId,
+              operationIds: group.map((o) => o.operationId).toSet(),
+              retainUntil: DateTime.fromMillisecondsSinceEpoch(
+                deadline,
+                isUtc: true,
+              ),
+            );
+          }
+        }
+        deferringLifecycleState = false;
+        if (evidenceAction == 'lifecycle') await persistState();
         continue;
       }
       if (kind == 'account.connect' || kind == 'account.snapshot.read') {

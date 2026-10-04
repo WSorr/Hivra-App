@@ -117,7 +117,22 @@ class PluginWorkspaceRemoteService {
     required Future<bool> Function(String fingerprint) trustPeer,
     required bool Function() stillOwned,
   }) async {
-    // Refuse an incomplete/stale distribution before asking the server to change.
+    final previous = await connection(owner, record.pluginId!);
+    if (previous != null &&
+        (previous['host'] != host || previous['port'] != port)) {
+      throw StateError('Return to online mode before connecting another VPS');
+    }
+    if (password.isEmpty) {
+      if (previous == null || previous['package_id'] == null) {
+        throw StateError('Install your VPS before using its saved key');
+      }
+      if (!stillOwned()) throw StateError('Capsule changed');
+      final updated = await ensurePackage(owner, record);
+      if (!stillOwned()) throw StateError('Capsule changed');
+      await _save({...updated, 'selected': true});
+      return;
+    }
+    // First installation or explicit repair needs the bundled native runtime.
     final archive =
         (await rootBundle.load(
           'assets/workspace_runner/$_archive',
@@ -126,11 +141,6 @@ class PluginWorkspaceRemoteService {
       'assets/workspace_runner/SHA256SUMS.txt',
     );
     verifyDistribution(archive, sums);
-    final previous = await connection(owner, record.pluginId!);
-    if (previous != null &&
-        (previous['host'] != host || previous['port'] != port)) {
-      throw StateError('Return to online mode before connecting another VPS');
-    }
     final seed = await cryptography.Ed25519().newKeyPair();
     final data = await seed.extract();
     final generated = OpenSSHEd25519KeyPair(

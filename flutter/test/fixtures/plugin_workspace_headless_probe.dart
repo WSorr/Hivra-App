@@ -473,6 +473,123 @@ Future<void> _checkInstalledWasm(
     if (stopped['execution']['allow_new_entries'] != false || posts != 0) {
       throw StateError('Stop did not prevent new entries');
     }
+    // Exercise retention through the installed WASM and normal provider parser,
+    // not by asking the journal directly to forget test records.
+    final unconfirmed =
+        (await effects.list(
+          pluginId: record.pluginId!,
+        )).map((o) => _canonicalJson(o.toJson())).toSet();
+    final completedIds = <String>[];
+    for (var i = 0; i < 7; i++) {
+      plan['prepared_at_ms'] = now - 7200000 + i;
+      plan['expires_at_ms'] = now - 3600000 + i;
+      operationId = BingxMarketDataAdapter.entryOperationId(plan);
+      completedIds.add(operationId);
+      orderId = '${200 + i}';
+      orderStatus = 'FILLED';
+      final prepared = await effects.prepare(
+        operationId: operationId,
+        pluginId: record.pluginId!,
+        providerId: 'bingx',
+        accountBindingId: account,
+        effectKind: 'order.entry.place',
+        canonicalPayloadJson: _canonicalJson(plan),
+      );
+      final rawJournal =
+          jsonDecode(
+                (await files.readPluginState(
+                  directory,
+                  record.pluginId!,
+                  'external_effects.v1.json',
+                ))!,
+              )
+              as Map;
+      final rows = rawJournal['operations'] as List;
+      final index = rows.indexWhere((o) => o['operation_id'] == operationId);
+      // Seed a past acceptance receipt. All later closure/retention decisions
+      // use the real host/package path; no provider write is permitted here.
+      rows[index] = {
+        ...prepared.toJson(),
+        'state': 'succeeded',
+        'attempt_count': 1,
+        'receipt': {
+          'operation_id': operationId,
+          'provider_id': 'bingx',
+          'provider_receipt_id': orderId,
+          'evidence_hash_hex': 'b' * 64,
+          'received_at_utc': DateTime.now().toUtc().toIso8601String(),
+        },
+      };
+      await files.writePluginState(
+        directory,
+        record.pluginId!,
+        'external_effects.v1.json',
+        jsonEncode(rawJournal),
+      );
+      final saved = jsonDecode(retired) as Map;
+      saved['entry'] = {'plan': plan, 'attempted': true, 'evidence': null};
+      saved['retired_before_ms'] = 0;
+      await files.writePluginState(
+        directory,
+        record.pluginId!,
+        'workspace.v1.json',
+        jsonEncode(saved),
+      );
+      await runtime().runWorkspaceAction(
+        record: record,
+        action: 'refresh_order',
+      );
+      await runtime().runWorkspaceAction(
+        record: record,
+        action: 'refresh_order',
+      );
+      final journal = await effects.list(pluginId: record.pluginId!);
+      if (!journal.any((o) => o.completedGroup == operationId)) {
+        throw StateError(
+          'Installed WASM did not confirm completed lifecycle $i',
+        );
+      }
+    }
+    final compacted = await effects.list(pluginId: record.pluginId!);
+    final groups =
+        compacted.map((o) => o.completedGroup).whereType<String>().toSet();
+    if (groups.length != 5 ||
+        !groups.containsAll(completedIds.skip(2)) ||
+        !compacted
+            .map((o) => _canonicalJson(o.toJson()))
+            .toSet()
+            .containsAll(unconfirmed)) {
+      throw StateError(
+        'Retention removed unconfirmed history or kept old closed lifecycles',
+      );
+    }
+    final beforeRestart = await files.readPluginState(
+      directory,
+      record.pluginId!,
+      'external_effects.v1.json',
+    );
+    await runtime().runWorkspaceAction(record: record, action: 'open');
+    if (await files.readPluginState(
+              directory,
+              record.pluginId!,
+              'external_effects.v1.json',
+            ) !=
+            beforeRestart ||
+        posts != 0 ||
+        cancellations != 1) {
+      throw StateError('Reopen rewrote history or dispatched another effect');
+    }
+    final journalFiles =
+        await home
+            .list(recursive: true)
+            .where((f) => f.path.endsWith('/external_effects.v1.json'))
+            .toList();
+    if (journalFiles.length != 1) {
+      throw StateError('History created another journal');
+    }
+    stdout.writeln(
+      'installed WASM retention/restart PASS; seven closed lifecycles -> five; unconfirmed retained; one journal; no network',
+    );
     stdout.writeln(
       'installed WASM headless lifecycle/cancellation PASS; synthetic DELETE=1, POST=0; no network',
     );

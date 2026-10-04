@@ -274,9 +274,9 @@ Exit evidence:
 Strategy profitability and an order on every cycle are not autonomy acceptance.
 Missing PnL alone must not prevent reentry when position closure and remaining
 order evidence are conclusive; missing closure evidence must not enable it.
-The existing VET order is observation evidence, not permission to cancel it or
-create another. Live orders, VPS mutation, commit, push and release still need
-their own authorization. The retired Trading runner must not be restored.
+Existing exchange orders are observation evidence, not permission to cancel
+them or create another. Live orders, VPS mutation, commit, push and release
+still need their own authorization. The retired Trading runner must not be restored.
 
 Server execution remains in progress. The standalone workspace process now
 uses the same executor and installed WASM through a WASM-only build of the
@@ -290,11 +290,7 @@ replay, singleton and unchanged grant/state/journal checks using isolated
 synthetic data only.
 The process timer exercised read-only `open`, not a live trading cycle;
 no exchange request or order was sent by that process smoke.
-Canonical Ubuntu 24.04 x86_64 CI passed on `f9086e0` (run `37155240607`),
-including Linux compilation and clean checkout. Its retained runner archive
-and digest are a candidate, not a release or deployed VPS evidence.
-The target VPS was read-only identified as Debian 13 x86-64; no deployment,
-credentials or orders were changed.
+Those synthetic checks are not live exchange lifecycle evidence.
 
 Handoff uses the existing host grant to bind execution to
 local or one explicit VPS identity, without renewing its expiry or copying
@@ -317,7 +313,6 @@ reports process health without initializing WASM state. Direct VPS admission
 does not briefly arm a local timer or claim remote running status. Focused
 tests and the actual compiled macOS process with Jack `0.1.9` passed these
 isolated setup/reinstall/handoff/restart checks; no live provider effect occurred.
-The retained Ubuntu candidate predates setup and must not provision this path.
 
 Capsule source now connects workspace packages through one host-owned SSH
 transport: pinned server identity, verified bundled Linux artifact, one fixed
@@ -330,10 +325,81 @@ Local tests cover this journey with independent package state and distinct
 Mac/server package IDs, including retained Stop intent after a disconnected
 request. Flutter 809/809, analyze and the compiled macOS runner with Jack
 `0.1.11` passed setup, handoff, timer, restart and replay checks without network
-effects; this is not live VPS trading acceptance.
-The current matching Ubuntu artifact and real app-closed VPS journey are still
-required. Do not release or claim autonomy acceptance before that evidence.
+effects. Current Ubuntu CI `37196644177` passed for source tree `373dfbb6`
+matching host commit `d41fbc0`; runner archive digest is `ff4b5ee0774ce6e2`.
+The full macOS binary `f058e76c` provisioned that runner and exact installed
+Jack `0.1.11` archive `a8e11012` through Capsule on Debian 13 x86-64.
+With Capsule closed and the user-approved DASH grant active, the server
+cancelled invalidated order `2106427247753916416` and submitted replacement
+`2106703408299995136`, one journaled attempt each. Subsequent normalized
+provider evidence identified the replacement as open with zero fill.
+Reopening Capsule restored the server lifecycle. Stop disabled new entries;
+return to online sealed all server authority (`expires_at_ms=0`) and retrieved
+the same order and journal without starting local cycles or cancelling the order.
+Jack `0.1.12` then replaced `0.1.11` in the unchanged Capsule binary and retained
+that managed order. Package-owned wording no longer falsely calls VPS cycles local.
+nginx PID and the two Amnezia container IDs remained unchanged; installation
+uses the fixed managed directory rather than per-session runner copies.
+Live fill/protection, profit exit, closure/reentry and loss-of-response recovery
+remain unobserved; no full autonomy or release acceptance is claimed.
+Repeated VPS selection now uses the saved restricted key and existing setup
+operation, without a root-password prompt or trading Start. The rebuilt macOS
+binary `81f92dc9` updated the server to the same Jack `0.1.12` digest `6db7399b`
+without replacing the native runner or executor identity. Failed reconnection
+does not select a new target; provider credentials stay in the host store.
+Focused 38/38, full Flutter 810/810, analyze and review gates passed.
+The user then authorized DASH VPS cycles on `0.1.12` until
+2026-10-05T11:40:28.312Z. The first completed cycle at
+2026-10-04T11:42:16.219Z reread order `2106703408299995136` as open with zero
+fill, reported no cycle error, and added no effect-journal attempt. Capsule
+displayed the same successful-cycle timestamp. This does not prove a fill,
+exchange-side protection or closure/reentry.
 Strategy, workspace execution and effect owners remain one each.
+
+The local `0.1.13` candidate now allows a new opposite-line exit for a freshly matched
+remaining position after the previous exit is conclusively terminal. WASM
+owns that transition and sizing; the existing host journal checks the exact
+previous provider order before admitting another exit. Active, partial,
+unavailable or mismatched prior evidence still prevents duplicate delivery.
+The host admission fix needs a matching canonical native build; replacing WASM
+alone cannot remove the old native runner's permanent exit prohibition.
+This source change is not installed on VPS and does not prove live closure or
+reentry. Cleanup of still-open obsolete exits and conditional-stop verification
+remain outstanding; no additional owner, capability or execution route was added.
+Validation: Jack Rust 62/62, Flutter 810/810, both Rust workspaces, analyze and
+review gates passed. The compiled WASM ran terminal/open/partial exit scenarios
+inside the unchanged sandbox with synthetic evidence and no provider effects.
+Exact dispatched-exit replay also survived lost private state and unavailable
+older provider history without another POST; removal/replacement during the
+prior-order read prevented delivery. The live runner remained active with no
+restart; no package, grant or exchange order was changed by this validation.
+
+The same local candidate now adds automatic closed-lifecycle retention in the
+existing effect journal: last five confirmed groups, plus unexpired public replay
+windows and all unconfirmed records. WASM supplies the public retired plan;
+the host checks normalized provider closure and exact journal scope, not private
+package fields. Completion is journaled before private-state retirement;
+restart retries an interrupted write without dispatch. BingX acceptance receipts
+can no longer trigger capacity-based history eviction. This requires matching
+host/runner support and is not deployed; earlier unconfirmed history is not
+silently deleted. No additional file, owner, daemon or exchange effect route.
+Validation: Flutter 815/815, Jack Rust 62/62, both Rust workspaces, analyze,
+plugin validation and review gates passed. Synthetic provider tests cover
+five grouped lifecycles, expiry/restart, retained acceptance and interrupted
+journal/state writes; the compiled WASM passed closure/reopen without effects.
+Local candidate archive digest is `c2de33db`; installed `0.1.12` is unchanged.
+Packaged macOS smoke on binary `22bcef6e` restored the active DASH VPS view
+through the saved key, including order `2106703408299995136` shown open with
+zero fill and advancing cycle timestamps. No package, grant or order changed.
+The isolated actual-WASM probe reduced seven confirmed groups to five,
+preserved unconfirmed records, and reopened one unchanged journal without
+dispatch. The compiled production runner passed isolated handoff, timer,
+restart, singleton and replay smoke; this is not deployment evidence.
+UI status polling is now once per minute for VPS while the screen and app
+are active, with immediate refresh on app resume; local status keeps its
+15-second interval. Hidden-screen/background/disposal tests passed. This
+UI-only adjustment follows the packaged smoke and needs the next app build;
+it changes neither server scheduling nor authority.
 
 Earlier local implementation evidence, not autonomy acceptance: app and headless
 used the same workspace executor and effect journal. The `0.1.7` candidate
@@ -343,8 +409,8 @@ the host's new `position.exit.place` provider capability checks the journaled
 entry and current position without interpreting private package state. Stop
 disables entries/cancellations, not reducing exits within the unexpired grant.
 Unknown dispatch outcomes and package replacement cannot authorize a duplicate.
-Conditional-stop verification, resizing/cleanup after later partial fills or
-external changes, managed VPS provisioning and live exit smoke remain incomplete.
+Conditional-stop verification, resizing/cleanup while an earlier exit remains
+active, and live exit smoke remain incomplete.
 Do not claim SL/TP or autonomous product acceptance from this source evidence.
 The dense actual-WASM exit fixture uses unchanged memory/fuel limits. Changing
 state is serialized once; swings are written as compact triples with a one-way

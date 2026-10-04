@@ -173,6 +173,11 @@ quality is measured separately from actual closed-trade outcomes.
   at the first later opposite line that is still ahead of price and untouched.
   No independent TP-zone calculator or abstract R-multiple target is part of
   the strategy.
+  If that exit becomes terminal but a freshly matched position still remains
+  (for example after later entry fills), prepare a new exit for the observed
+  remainder. An open, partially filled or unverified previous exit cannot
+  authorize a second one. The host journal admits the replacement only after
+  an exact terminal provider read, not merely an acceptance receipt.
 - The user chooses one stop-loss percentage of their entry margin, not a
   percentage move in market price. After a fill, derive the protective stop
   trigger from the actual average fill price and filled quantity. For a
@@ -188,6 +193,16 @@ quality is measured separately from actual closed-trade outcomes.
   completed trade. TP/SL closure does not require a new user session while
   the existing trading authority remains valid. Restart resumes reconciliation
   of the current lifecycle before evaluating another entry.
+- Keep one effect journal, not files per past order. Retain the last five
+  provider-confirmed closed entry lifecycles and their entry/cancel/exit records.
+  Older completed groups expire only after every public plan's replay deadline;
+  accepted, active and unresolved effects are not disposable history. WASM
+  emits the exact public `retired_entry` plan during normalized lifecycle
+  observation. The host verifies terminal orders, no open position/order and
+  exact journal scope before marking completion, without reading private state.
+  Journal completion precedes private-state persistence so interruption can
+  repeat observation without another exchange effect. Reading the journal
+  also removes expired completed groups after restart; no cleaner is added.
 - Each candidate carries symbol, timeframe, side, line price, first-known time,
   placement time, invalidation condition, and stable zone identity. Its
   decision must be reproducible from the exact exchange candle input and
