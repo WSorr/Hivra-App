@@ -31,15 +31,16 @@ Future<void> main(List<String> args) async {
     if (!root.isAbsolute) throw const FormatException('Absolute root required');
     if (args[0] == 'request') {
       final input = await _readMessage(stdin);
+      _verifyTransportIdentity(input);
       final result = await WorkspaceRunner.request(root, input);
       stdout.writeln(jsonEncode(result));
+      if (result['ok'] != true) exitCode = 1;
       return;
     }
     if (args[0] == 'setup') {
-      final result = await WorkspaceRunner.setup(
-        root,
-        await _readMessage(stdin),
-      );
+      final input = await _readMessage(stdin);
+      _verifyTransportIdentity(input);
+      final result = await WorkspaceRunner.setup(root, input);
       stdout.writeln(jsonEncode(result));
       return;
     }
@@ -225,6 +226,7 @@ class WorkspaceRunner {
       await lease.lock(FileLock.exclusive);
       final configFile = File('${root.path}/runner.json');
       Map<String, dynamic>? previous;
+      bool replacing = false;
       if (await FileSystemEntity.type(configFile.path, followLinks: false) !=
           FileSystemEntityType.notFound) {
         previous = await _readPrivateJson(configFile);
@@ -232,9 +234,30 @@ class WorkspaceRunner {
             previous['package_id'] is! String ||
             previous['owner'] != input['owner'] ||
             previous['plugin_id'] != input['plugin_id'] ||
-            previous['executor_id'] != input['executor_id'] ||
-            previous['package_digest'] != input['package_digest']) {
+            previous['executor_id'] != input['executor_id']) {
           throw StateError('Installation already belongs to another binding');
+        }
+        replacing = previous['package_digest'] != input['package_digest'];
+        if (replacing) {
+          final files = CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(
+              runtimeRootOverride: root.path,
+            ),
+          );
+          final raw = await files.readPluginState(
+            await files.capsuleDirForHex(input['owner'] as String),
+            input['plugin_id'] as String,
+            'workspace-execution.v1.json',
+          );
+          final grant =
+              raw == null || utf8.encode(raw).length > 8192
+                  ? null
+                  : jsonDecode(raw);
+          PluginWorkspaceRuntime.validateInactiveWorkspaceGrant(
+            grant,
+            input['owner'] as String,
+            input['plugin_id'] as String,
+          );
         }
       }
       final registry = WasmPluginRegistryService(
@@ -247,7 +270,12 @@ class WorkspaceRunner {
         throw StateError('One workspace per installation');
       }
       WasmPluginRecord? record;
-      if (records.length == 1) {
+      if (records.length == 1 &&
+          (!replacing ||
+              (await registry.resolveRuntimeBinding(
+                    input['plugin_id'] as String,
+                  )).packageDigestHex ==
+                  input['package_digest'])) {
         final binding = await registry.resolveRuntimeBinding(
           input['plugin_id'] as String,
         );
@@ -278,15 +306,70 @@ class WorkspaceRunner {
       };
       if (record.contractKind != pluginWorkspaceContractKind ||
           !record.capabilities.contains('workspace.schedule') ||
-          (previous != null && previous['package_id'] != record.id)) {
+          (previous != null &&
+              !replacing &&
+              previous['package_id'] != record.id)) {
         throw StateError('Installed workspace binding changed');
       }
       if (credentials != null) {
+        if (previous != null) {
+          final files = CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(
+              runtimeRootOverride: root.path,
+            ),
+          );
+          final raw = await files.readPluginState(
+            await files.capsuleDirForHex(input['owner'] as String),
+            input['plugin_id'] as String,
+            'workspace-execution.v1.json',
+          );
+          final control = raw == null ? null : jsonDecode(raw);
+          if (control is Map &&
+              control['executor'] == 'vps' &&
+              control['expires_at_ms'] is int &&
+              control['expires_at_ms'] >
+                  DateTime.now().millisecondsSinceEpoch) {
+            final saved = await _readPrivateJson(
+              File('${root.path}/credentials.json'),
+            );
+            if (saved['credentials'] is! Map ||
+                [
+                  'api_key',
+                  'secret_key',
+                ].any((k) => saved['credentials'][k] != credentials[k])) {
+              throw StateError(
+                'Return authority before changing exchange credentials',
+              );
+            }
+          }
+        }
         await _writePrivateJson(File('${root.path}/credentials.json'), {
           'owner': input['owner'],
           'plugin_id': input['plugin_id'],
           'credentials': credentials,
         });
+      }
+      if (replacing) {
+        final files = CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
+        );
+        final capsule = await files.capsuleDirForHex(input['owner'] as String);
+        final raw = await files.readPluginState(
+          capsule,
+          input['plugin_id'] as String,
+          'workspace-execution.v1.json',
+        );
+        final stopped = Map<String, dynamic>.from(jsonDecode(raw!) as Map);
+        await files.writePluginState(
+          capsule,
+          input['plugin_id'] as String,
+          'workspace-execution.v1.json',
+          jsonEncode({
+            ...stopped,
+            'package_id': record.id,
+            'package_digest': input['package_digest'],
+          }),
+        );
       }
       await _writePrivateJson(configFile, binding);
       return binding;
@@ -451,16 +534,33 @@ class WorkspaceRunner {
               'runner is running, retained lifecycle is not verified';
         }
       case 'action':
-        if (request.length != 8 ||
+        if (request.length != 10 ||
             request['action'] is! String ||
-            request['settings'] is! Map) {
+            request['settings'] is! Map ||
+            (request['approved_order'] != null &&
+                request['approved_order'] is! Map) ||
+            (request['options_field'] != null &&
+                request['options_field'] is! String)) {
           throw const FormatException();
         }
         view = await runtime.runWorkspaceAction(
           record: record,
           action: request['action'] as String,
           settings: Map<String, dynamic>.from(request['settings'] as Map),
+          approvedOrder:
+              request['approved_order'] == null
+                  ? null
+                  : Map<String, dynamic>.from(request['approved_order'] as Map),
+          optionsForField: request['options_field'] as String?,
         );
+      case 'return':
+        if (request.length != 6) throw const FormatException();
+        final checkpoint = await runtime.returnWorkspaceToLocal(record);
+        return {
+          'binding': binding,
+          'runner': {'state': 'detached', 'started_at_ms': _startedAt},
+          'checkpoint': checkpoint,
+        };
       case 'execution':
         if (request.length != 9 ||
             request['enabled'] is! bool ||
@@ -477,6 +577,22 @@ class WorkspaceRunner {
                   : Map<String, dynamic>.from(request['scope'] as Map),
           settings: Map<String, dynamic>.from(request['settings'] as Map),
         );
+      case 'forget':
+        if (request.length != 6) throw const FormatException();
+        final control = await runtime.readWorkspaceExecution(
+          record,
+          enforceHost: false,
+        );
+        if (control != null &&
+            (control['executor'] != 'local' ||
+                control['expires_at_ms'] != 0 ||
+                control['allow_new_entries'] != false)) {
+          throw StateError('Return authority before uninstalling');
+        }
+        return {
+          'binding': binding,
+          'runner': {'state': 'detached'},
+        };
       default:
         throw const FormatException('Unsupported workspace command');
     }
@@ -524,6 +640,19 @@ class WorkspaceRunner {
     } finally {
       socket.destroy();
     }
+  }
+}
+
+void _verifyTransportIdentity(Map<String, dynamic> input) {
+  final expected = Platform.environment['HIVRA_WORKSPACE_EXECUTOR_ID'];
+  final command = Platform.environment['HIVRA_WORKSPACE_COMMAND'];
+  if (command != null && input['command'] != command) {
+    throw StateError('Transport command mismatch');
+  }
+  if (expected != null &&
+      (!RegExp(r'^[0-9a-f]{64}$').hasMatch(expected) ||
+          input['executor_id'] != expected)) {
+    throw StateError('SSH identity does not own this executor');
   }
 }
 

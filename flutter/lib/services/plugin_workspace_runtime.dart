@@ -87,13 +87,16 @@ class PluginWorkspaceRuntime {
   String? activeCapsuleRootHex() => _readActiveCapsuleRootHex();
 
   Future<Map<String, dynamic>?> readWorkspaceExecution(
-    WasmPluginRecord record,
-  ) async {
-    final owner = activeCapsuleRootHex()?.trim().toLowerCase();
+    WasmPluginRecord record, {
+    bool enforceHost = true,
+    String? ownerCapsuleHex,
+  }) async {
+    final owner =
+        ownerCapsuleHex ?? activeCapsuleRootHex()?.trim().toLowerCase();
     if (owner == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
       throw StateError('An active Capsule is required');
     }
-    return _readExecution(record, owner);
+    return _readExecution(record, owner, enforceHost: enforceHost);
   }
 
   /// Restore only host authority/timing. Provider availability must not be a
@@ -103,7 +106,10 @@ class PluginWorkspaceRuntime {
     if (owner == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
       throw StateError('An active Capsule is required');
     }
-    final control = await _readExecution(record, owner);
+    final control = await _readExecution(record, owner, enforceHost: false);
+    if (control != null && (control['executor'] ?? 'local') != executionHost) {
+      return;
+    }
     if (control != null &&
         DateTime.now().millisecondsSinceEpoch < control['expires_at_ms']) {
       _armScheduledExecution(record, owner, control);
@@ -1245,6 +1251,20 @@ class PluginWorkspaceRuntime {
     _validateSchedule(Map<String, dynamic>.from(control['scope'] as Map));
   }
 
+  /// Installation may rebind only a completely ended host grant.
+  static void validateInactiveWorkspaceGrant(
+    dynamic control,
+    String owner,
+    String pluginId,
+  ) {
+    _validateExecutionControl(control, owner, pluginId);
+    if (control['executor'] != 'local' ||
+        control['expires_at_ms'] != 0 ||
+        control['allow_new_entries'] != false) {
+      throw StateError('Return remote authority before package replacement');
+    }
+  }
+
   /// Called by the host transport, never by WASM. The source stays detached
   /// even if upload or acknowledgement is lost; there is no local fallback.
   Future<Map<String, dynamic>> releaseWorkspaceToVps(
@@ -1349,8 +1369,17 @@ class PluginWorkspaceRuntime {
     checkpoint = Map<String, dynamic>.from(
       jsonDecode(jsonEncode(checkpoint)) as Map,
     );
+    // The immutable custody checkpoint never changes. Entry revocation can
+    // travel with its source grant, but cannot restore state or renew authority.
+    final immutable = {
+      ...checkpoint,
+      'execution':
+          {...checkpoint['execution'] as Map}
+            ..remove('allow_new_entries')
+            ..remove('revision'),
+    };
     final digest =
-        sha256.convert(utf8.encode(_canonical(checkpoint))).toString();
+        sha256.convert(utf8.encode(_canonical(immutable))).toString();
     final incoming = Map<String, dynamic>.from(checkpoint['execution'] as Map);
     if (incoming['executor_id'] != executionIdentity) {
       throw StateError('Checkpoint belongs to another VPS');
@@ -1373,13 +1402,40 @@ class PluginWorkspaceRuntime {
                 !_isStillOwnedBy(owner)) {
               throw StateError('Handoff package or Capsule changed');
             }
-            final previous = await _readExecution(record, owner);
+            final previous = await _readExecution(
+              record,
+              owner,
+              enforceHost: false,
+            );
             if (previous != null) {
               if (previous['handoff_id'] == incoming['handoff_id'] &&
-                  previous['handoff_digest'] == digest) {
+                  previous['handoff_digest'] == digest &&
+                  previous['executor'] == 'vps') {
+                if (incoming['allow_new_entries'] == false &&
+                    previous['allow_new_entries'] == true) {
+                  final directory = await _fileStore.capsuleDirForHex(owner);
+                  await _fileStore.writePluginState(
+                    directory,
+                    record.pluginId!,
+                    _executionFile,
+                    jsonEncode({
+                      ...previous,
+                      'allow_new_entries': false,
+                      'revision': (previous['revision'] as int) + 1,
+                    }),
+                  );
+                }
                 return;
               }
-              throw StateError('VPS already owns another workspace checkpoint');
+              if (previous['executor'] != 'local' ||
+                  previous['expires_at_ms'] >
+                      DateTime.now().millisecondsSinceEpoch ||
+                  previous['allow_new_entries'] != false ||
+                  previous['handoff_id'] == incoming['handoff_id']) {
+                throw StateError(
+                  'VPS already owns another workspace checkpoint',
+                );
+              }
             }
             final directory = await _fileStore.capsuleDirForHex(
               owner,
@@ -1399,12 +1455,209 @@ class PluginWorkspaceRuntime {
                   'handoff_digest': digest,
                 }),
               },
+              replaceSealed: previous != null,
             );
           }, authorityOnly: true),
         ),
       ),
     );
     await resumeWorkspaceScheduling(record);
+  }
+
+  /// Record Stop even if the peer is unavailable or adoption was not delivered.
+  /// Acknowledging a later explicit Start may clear it only at the same source
+  /// revision; a concurrent Stop wins. This grant never runs locally.
+  Future<void> setReleasedWorkspaceEntries(
+    WasmPluginRecord record, {
+    required String executorId,
+    required bool enabled,
+    int? expectedRevision,
+  }) async {
+    final owner = activeCapsuleRootHex();
+    if (executionHost != 'local' || owner == null) {
+      throw StateError('Local custody is required');
+    }
+    await _serialize(
+      '$owner::${record.pluginId}::execution',
+      () => _withWorkspaceLease(owner, record, () async {
+        final control = await _readExecution(record, owner, enforceHost: false);
+        if (control == null ||
+            control['executor'] != 'vps' ||
+            control['executor_id'] != executorId ||
+            (expectedRevision != null &&
+                expectedRevision != control['revision']) ||
+            !_isStillOwnedBy(owner)) {
+          throw StateError('Remote authority changed');
+        }
+        final directory = await _fileStore.capsuleDirForHex(owner);
+        await _fileStore.writePluginState(
+          directory,
+          record.pluginId!,
+          _executionFile,
+          jsonEncode({
+            ...control,
+            'allow_new_entries': enabled,
+            'revision': (control['revision'] as int) + 1,
+          }),
+        );
+      }, authorityOnly: true),
+    );
+  }
+
+  /// End all remote authority before returning opaque state. Unlike Stop,
+  /// this also ends reducing exits and is durable before draining actions.
+  Future<Map<String, dynamic>> returnWorkspaceToLocal(
+    WasmPluginRecord record,
+  ) async {
+    final owner = activeCapsuleRootHex()?.trim().toLowerCase();
+    if (executionHost != 'vps' || owner == null) {
+      throw StateError('A VPS executor is required');
+    }
+    final key = '$owner::${record.pluginId}';
+    await _serialize(
+      '$key::execution',
+      () => _withWorkspaceLease(owner, record, () async {
+        final control = await _readExecution(record, owner, enforceHost: false);
+        if (control == null) throw StateError('No workspace to return');
+        if (control['executor'] == 'vps' &&
+            control['executor_id'] != executionIdentity) {
+          throw StateError('Workspace belongs to another executor');
+        }
+        if (control['executor'] == 'vps') {
+          final directory = await _fileStore.capsuleDirForHex(owner);
+          final sealed = {
+            ...control,
+            'executor': 'local',
+            'expires_at_ms': 0,
+            'allow_new_entries': false,
+            'revision': (control['revision'] as int) + 1,
+          }..remove('executor_id');
+          await _fileStore.writePluginState(
+            directory,
+            record.pluginId!,
+            _executionFile,
+            jsonEncode(sealed),
+          );
+        }
+        stopWorkspaceScheduling(pluginId: record.pluginId);
+      }, authorityOnly: true),
+    );
+    return _serialize(
+      key,
+      () => _withWorkspaceLease(owner, record, () async {
+        final control = await _readExecution(record, owner, enforceHost: false);
+        if (control == null ||
+            control['executor'] != 'local' ||
+            control['expires_at_ms'] != 0 ||
+            control['allow_new_entries'] != false) {
+          throw StateError('Remote authority has not been ended');
+        }
+        final directory = await _fileStore.capsuleDirForHex(owner);
+        return {
+          'owner': owner,
+          'plugin_id': record.pluginId,
+          'package_digest': control['package_digest'],
+          'execution': control,
+          'workspace': await _fileStore.readPluginState(
+            directory,
+            record.pluginId!,
+            'workspace.v1.json',
+          ),
+          'effects': await _fileStore.readPluginState(
+            directory,
+            record.pluginId!,
+            'external_effects.v1.json',
+          ),
+        };
+      }),
+    );
+  }
+
+  /// Transport has authenticated the returning peer; neither package state nor
+  /// a network failure may choose the execution host or renew its grant.
+  Future<void> restoreWorkspaceFromVps({
+    required WasmPluginRecord record,
+    required String executorId,
+    required Map<String, dynamic> checkpoint,
+    String? ownerCapsuleHex,
+  }) async {
+    final owner =
+        ownerCapsuleHex ?? activeCapsuleRootHex()?.trim().toLowerCase();
+    if (executionHost != 'local' ||
+        owner == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner) ||
+        checkpoint.length != 6 ||
+        checkpoint['owner'] != owner ||
+        checkpoint['plugin_id'] != record.pluginId ||
+        checkpoint['execution'] is! Map ||
+        utf8.encode(jsonEncode(checkpoint)).length > 8 * 1024 * 1024 ||
+        [
+          'workspace',
+          'effects',
+        ].any((k) => checkpoint[k] != null && checkpoint[k] is! String) ||
+        (checkpoint['workspace'] is String &&
+            utf8.encode(checkpoint['workspace']).length > 32 * 1024)) {
+      throw StateError('Invalid returned workspace');
+    }
+    checkpoint = Map<String, dynamic>.from(
+      jsonDecode(jsonEncode(checkpoint)) as Map,
+    );
+    final incoming = Map<String, dynamic>.from(checkpoint['execution'] as Map);
+    _validateExecutionControl(incoming, owner, record.pluginId!);
+    if (incoming['executor'] != 'local' ||
+        incoming['expires_at_ms'] != 0 ||
+        incoming['allow_new_entries'] != false ||
+        incoming['package_digest'] != checkpoint['package_digest']) {
+      throw StateError('Remote authority remains active');
+    }
+    await _serialize(
+      '$owner::${record.pluginId}',
+      () => _withWorkspaceLease(owner, record, () async {
+        final control = await _readExecution(record, owner, enforceHost: false);
+        if (control == null ||
+            control['executor'] != 'vps' ||
+            control['executor_id'] != executorId ||
+            control['handoff_id'] != incoming['handoff_id'] ||
+            control['package_digest'] != checkpoint['package_digest']) {
+          throw StateError('Return does not match the assigned workspace');
+        }
+        final restored =
+            {...incoming, 'package_id': record.id}
+              ..remove('handoff_id')
+              ..remove('handoff_digest');
+        final directory = await _fileStore.capsuleDirForHex(
+          owner,
+          create: true,
+        );
+        if (ownerCapsuleHex == null && !_isStillOwnedBy(owner)) {
+          throw StateError('Active Capsule changed during return');
+        }
+        for (final pair
+            in {
+              'workspace': 'workspace.v1.json',
+              'effects': 'external_effects.v1.json',
+            }.entries) {
+          if (checkpoint[pair.key] == null &&
+              await _fileStore.readPluginState(
+                    directory,
+                    record.pluginId!,
+                    pair.value,
+                  ) !=
+                  null) {
+            throw StateError(
+              'Returned checkpoint lost retained state or effect evidence',
+            );
+          }
+        }
+        await _fileStore.restorePluginCheckpoint(directory, record.pluginId!, {
+          if (checkpoint['workspace'] != null)
+            'workspace.v1.json': checkpoint['workspace'] as String,
+          if (checkpoint['effects'] != null)
+            'external_effects.v1.json': checkpoint['effects'] as String,
+          _executionFile: jsonEncode(restored),
+        }, replaceSealed: true);
+      }),
+    );
   }
 
   static void _validateCheckpoint(

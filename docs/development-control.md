@@ -319,12 +319,21 @@ tests and the actual compiled macOS process with Jack `0.1.9` passed these
 isolated setup/reinstall/handoff/restart checks; no live provider effect occurred.
 The retained Ubuntu candidate predates setup and must not provision this path.
 
-Capsule SSH provisioning, authenticated artifact delivery and peer identity
-discovery/pinning remain incomplete, as do remote UI routing, return to local
-execution and remote admission removal during package replacement/uninstall.
-Do not expose remote Start or claim app-closed VPS trading acceptance before
-that complete journey passes on the Linux artifact. Strategy/effect owners
-remain one each.
+Capsule source now connects workspace packages through one host-owned SSH
+transport: pinned server identity, verified bundled Linux artifact, one fixed
+installation and a restricted Capsule-held key. Root credentials are used only
+for installation. Start, Stop and observations route to the existing executor;
+return to local ends remote authority before restoring opaque state/journal.
+Package update first returns authority; uninstall also removes remote credentials
+and managed server data. Lost adoption acknowledgements do not permit local fallback.
+Local tests cover this journey with independent package state and distinct
+Mac/server package IDs, including retained Stop intent after a disconnected
+request. Flutter 809/809, analyze and the compiled macOS runner with Jack
+`0.1.11` passed setup, handoff, timer, restart and replay checks without network
+effects; this is not live VPS trading acceptance.
+The current matching Ubuntu artifact and real app-closed VPS journey are still
+required. Do not release or claim autonomy acceptance before that evidence.
+Strategy, workspace execution and effect owners remain one each.
 
 Earlier local implementation evidence, not autonomy acceptance: app and headless
 used the same workspace executor and effect journal. The `0.1.7` candidate

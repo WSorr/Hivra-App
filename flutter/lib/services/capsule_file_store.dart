@@ -314,19 +314,39 @@ class CapsuleFileStore {
     if (await file.exists()) await file.delete();
   }
 
-  /// Publish a complete checkpoint only into an unused workspace. No reader
-  /// may see state without the corresponding journal and host authority.
+  /// The caller holds the workspace lease. An unused workspace is published
+  /// atomically; a sealed workspace stays non-executable until authority is
+  /// written last. Interrupted returns remain remotely assigned and retryable.
   Future<void> restorePluginCheckpoint(
     Directory capsuleDir,
     String pluginId,
-    Map<String, String> files,
-  ) async {
+    Map<String, String> files, {
+    bool replaceSealed = false,
+  }) async {
     final target = await pluginStateDirectory(capsuleDir, pluginId);
     for (final name in files.keys) {
       pluginStateFile(target, name);
     }
     await target.parent.create(recursive: true);
     final kind = await FileSystemEntity.type(target.path, followLinks: false);
+    if (replaceSealed && kind == FileSystemEntityType.directory) {
+      if (!files.containsKey('workspace-execution.v1.json')) {
+        throw StateError('Checkpoint authority is required');
+      }
+      for (final entry in files.entries.where(
+        (e) => e.key != 'workspace-execution.v1.json',
+      )) {
+        await _atomicWrites.writeString(
+          pluginStateFile(target, entry.key),
+          entry.value,
+        );
+      }
+      await _atomicWrites.writeString(
+        pluginStateFile(target, 'workspace-execution.v1.json'),
+        files['workspace-execution.v1.json']!,
+      );
+      return;
+    }
     if (kind != FileSystemEntityType.notFound &&
         (kind != FileSystemEntityType.directory ||
             !await target.list(followLinks: false).isEmpty)) {

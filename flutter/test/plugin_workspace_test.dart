@@ -15,6 +15,7 @@ import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/services/plugin_runtime_module_service.dart';
 import 'package:hivra_app/services/plugin_workspace_runtime.dart';
+import 'package:hivra_app/services/plugin_workspace_remote_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
@@ -32,6 +33,312 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  test(
+    'Capsule routes opaque workspace authority through one remote executor and returns before uninstall',
+    () async {
+      final root = await Directory('/tmp').createTemp('hivra_transport_');
+      addTearDown(() => root.delete(recursive: true));
+      const ownerHex =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      String? active = ownerHex;
+      final localFiles = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(
+          runtimeRootOverride: '${root.path}/local',
+        ),
+      );
+      final serverFiles = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(
+          runtimeRootOverride: '${root.path}/server',
+        ),
+      );
+      final localRegistry = _Registry();
+      final serverRegistry = _Registry(id: 'server-package-id');
+      final package = File('${root.path}/fixture.zip');
+      await package.writeAsBytes([0, 97, 115, 109, 1, 0, 0, 0]);
+      final digest = sha256.convert(await package.readAsBytes()).toString();
+      for (final registry in [localRegistry, serverRegistry]) {
+        registry.executionBinding =
+            () => PluginRuntimeBinding.externalPackage(
+              packageId: registry.record.id,
+              packageVersion: registry.record.pluginVersion,
+              packageKind: 'zip',
+              packageDigestHex: digest,
+              packageFilePath: package.path,
+              contractKind: pluginWorkspaceContractKind,
+              capabilities: const [
+                'workspace.render',
+                'workspace.continue',
+                'state.plugin.read_write',
+                'workspace.schedule',
+              ],
+            );
+      }
+      final scope = {
+        'account_id': 'c' * 64,
+        'symbol': 'DASH-USDT',
+        'action': 'independent_cycle',
+        'interval_seconds': 30,
+        'max_margin': 1.0,
+        'max_stop_percent': 20.0,
+      };
+      PluginHostApiService host(_Registry registry) => PluginHostApiService(
+        handlers: [],
+        resolveRuntimeBinding: registry.resolveRuntimeBinding,
+        resolveRuntimeInvoke: (request, _) async {
+          final state = Map<String, dynamic>.from(
+            request.args['state'] as Map? ?? {'unrelated_private_shape': 0},
+          );
+          if (request.args['action'] == 'independent_cycle') {
+            state['unrelated_private_shape'] =
+                (state['unrelated_private_shape'] as int) + 1;
+          }
+          return PluginRuntimeInvokeEvidence(
+            mode: 'wasmi_v1',
+            modulePath: 'plugin/module.wasm',
+            moduleSelection: 'zip_manifest',
+            moduleDigestHex: 'd' * 64,
+            invokeDigestHex: 'e' * 64,
+            semanticStatus: PluginHostApiStatus.executed,
+            semanticErrorCode: null,
+            semanticErrorMessage: null,
+            semanticResult: {
+              'state': state,
+              'requests': [],
+              'view': {...view(), 'schedule': scope},
+            },
+          );
+        },
+      );
+      final serverRuntime = PluginWorkspaceRuntime(
+        registry: serverRegistry,
+        pluginHostApi: host(serverRegistry),
+        fileStore: serverFiles,
+        readActiveCapsuleRootHex: () => ownerHex,
+        executionHost: 'vps',
+        executionIdentity: 'f' * 64,
+        scheduleTimers: false,
+        readCredentials: ({required owner, required pluginId}) async => null,
+        writeCredentials:
+            ({required owner, required pluginId, required value}) async =>
+                throw StateError('No package credential writes'),
+      );
+      final serverBinding = {
+        'owner': ownerHex,
+        'plugin_id': localRegistry.record.pluginId,
+        'package_id': serverRegistry.record.id,
+        'package_digest': digest,
+        'executor_id': 'f' * 64,
+      };
+      final runner = WorkspaceRunner(
+        root: root,
+        runtime: serverRuntime,
+        registry: serverRegistry,
+        binding: serverBinding,
+      );
+      final connection = {
+        'owner': ownerHex,
+        'plugin_id': localRegistry.record.pluginId,
+        'host': 'test.invalid',
+        'port': 22,
+        'fingerprint': 'SHA256:${'a' * 43}',
+        'executor_id': 'f' * 64,
+        'package_id': serverRegistry.record.id,
+        'package_digest': digest,
+        'selected': true,
+      };
+      await localFiles.writePluginState(
+        await localFiles.capsuleDirForHex(ownerHex, create: true),
+        localRegistry.record.pluginId!,
+        PluginWorkspaceRemoteService.connectionFile,
+        jsonEncode(connection),
+      );
+      var loseAdoptAck = true;
+      var wrongBinding = false;
+      var offline = false;
+      final vault = _Vault();
+      final remote = PluginWorkspaceRemoteService(
+        files: localFiles,
+        vault: vault,
+        registry: localRegistry,
+        requestTransport: (c, command, bytes) async {
+          if (offline) throw TimeoutException('Peer unavailable');
+          final input = Map<String, dynamic>.from(
+            jsonDecode(utf8.decode(bytes)) as Map,
+          );
+          if (command == 'setup') return jsonEncode(serverBinding);
+          final result = await runner.dispatch(input);
+          if (input['command'] == 'adopt' && loseAdoptAck) {
+            loseAdoptAck = false;
+            throw TimeoutException('Lost acknowledgement');
+          }
+          if (command == 'uninstall') serverRegistry.installed = false;
+          return jsonEncode({
+            'ok': true,
+            'result':
+                wrongBinding
+                    ? {
+                      ...result,
+                      'binding': {...serverBinding, 'owner': 'b' * 64},
+                    }
+                    : result,
+          });
+        },
+      );
+      final module = PluginRuntimeModule(
+        registry: localRegistry,
+        sourceCatalog: WasmPluginSourceCatalogService(registry: localRegistry),
+        manualChecks: _Manual(),
+        pluginHostApi: host(localRegistry),
+        attestationExchange: _Attestations(),
+        chatDelivery: _Delivery(),
+        passiveReceive: _Passive(),
+        contactLabels: _Labels(),
+        uiLog: const UiEventLogService(),
+        moltbook: _Moltbook(),
+        fileStore: localFiles,
+        secretVault: vault,
+        readActiveCapsuleRootHex: () => active,
+        workspaceRemote: remote,
+      );
+      addTearDown(module.stopWorkspaceScheduling);
+      expect(
+        (await module.runWorkspaceAction(
+          record: localRegistry.record,
+          action: 'open',
+        ))['host_connection']['target'],
+        'vps',
+      );
+      await expectLater(
+        module.setWorkspaceExecution(
+          record: localRegistry.record,
+          enabled: true,
+          approvedScope: scope,
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(
+        (await module.readWorkspaceExecution(
+          localRegistry.record,
+          enforceHost: false,
+        ))!['executor'],
+        'vps',
+      );
+      await expectLater(
+        PluginWorkspaceRuntime(
+          registry: localRegistry,
+          pluginHostApi: host(localRegistry),
+          fileStore: localFiles,
+          readActiveCapsuleRootHex: () => active,
+          readCredentials: ({required owner, required pluginId}) async => null,
+          writeCredentials:
+              ({required owner, required pluginId, required value}) async {},
+        ).runWorkspaceAction(record: localRegistry.record, action: 'open'),
+        throwsStateError,
+      );
+      final running = await module.runWorkspaceAction(
+        record: localRegistry.record,
+        action: 'open',
+      );
+      expect(running['host_connection']['health'], 'running');
+      expect(running['execution']['mode'], 'vps');
+      active = null;
+      await serverRuntime.runScheduledWorkspaceCycle(serverRegistry.record);
+      active = ownerHex;
+      await module.runWorkspaceAction(
+        record: localRegistry.record,
+        action: 'open',
+      );
+      final serverCapsule = await serverFiles.capsuleDirForHex(ownerHex);
+      expect(
+        jsonDecode(
+          (await serverFiles.readPluginState(
+            serverCapsule,
+            serverRegistry.record.pluginId!,
+            'workspace.v1.json',
+          ))!,
+        )['unrelated_private_shape'],
+        1,
+      );
+      offline = true;
+      await expectLater(
+        module.setWorkspaceExecution(
+          record: localRegistry.record,
+          enabled: false,
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(
+        (await module.readWorkspaceExecution(
+          localRegistry.record,
+          enforceHost: false,
+        ))!['allow_new_entries'],
+        false,
+      );
+      offline = false;
+      expect(
+        (await module.runWorkspaceAction(
+          record: localRegistry.record,
+          action: 'open',
+        ))['execution']['allow_new_entries'],
+        false,
+      );
+      final stopped = await module.setWorkspaceExecution(
+        record: localRegistry.record,
+        enabled: false,
+      );
+      expect(stopped['execution']['allow_new_entries'], false);
+      final restarted = await module.setWorkspaceExecution(
+        record: localRegistry.record,
+        enabled: true,
+        approvedScope: scope,
+      );
+      expect(restarted['execution']['allow_new_entries'], true);
+      wrongBinding = true;
+      await expectLater(
+        module.runWorkspaceAction(record: localRegistry.record, action: 'open'),
+        throwsStateError,
+      );
+      wrongBinding = false;
+      await expectLater(
+        remote.request(connection, 'status', {'owner': 'b' * 64}),
+        throwsStateError,
+      );
+      await module.useWorkspaceOnline(localRegistry.record);
+      final localGrant = await module.readWorkspaceExecution(
+        localRegistry.record,
+      );
+      expect(localGrant!['executor'], 'local');
+      expect(localGrant['expires_at_ms'], 0);
+      expect(
+        (await remote.connection(
+          ownerHex,
+          localRegistry.record.pluginId!,
+        ))!['selected'],
+        false,
+      );
+      expect(
+        jsonDecode(
+          (await localFiles.readPluginState(
+            await localFiles.capsuleDirForHex(ownerHex),
+            localRegistry.record.pluginId!,
+            'workspace.v1.json',
+          ))!,
+        )['unrelated_private_shape'],
+        1,
+      );
+      await expectLater(
+        serverRuntime.runScheduledWorkspaceCycle(serverRegistry.record),
+        throwsStateError,
+      );
+      await module.removePlugin(localRegistry.record);
+      expect(localRegistry.installed, false);
+      expect(serverRegistry.installed, false);
+      expect(
+        await remote.connection(ownerHex, localRegistry.record.pluginId!),
+        isNull,
+      );
+    },
+  );
   test(
     'Capsule runner assets bind canonical source and exact distributed bytes',
     () async {
@@ -128,6 +435,31 @@ void main() {
         reason: 'Missing assets cannot silently pass',
       );
       final digest = await pack(metadata());
+      PluginWorkspaceRemoteService.verifyDistribution(
+        await archive.readAsBytes(),
+        '$digest  $archiveName\n',
+      );
+      expect(
+        () => PluginWorkspaceRemoteService.verifyDistribution([
+          1,
+          2,
+          3,
+        ], '$digest  $archiveName'),
+        throwsStateError,
+      );
+      final script = PluginWorkspaceRemoteService.installationScript(
+        await archive.readAsBytes(),
+        digest,
+        'ssh-ed25519 ${base64Encode(List<int>.filled(51, 1))} hivra-workspace-${'f' * 64}',
+        {'executor_id': 'f' * 64},
+      );
+      final shell = await Process.start('/bin/sh', ['-n']);
+      final shellError = shell.stderr.transform(utf8.decoder).join();
+      final shellOutput = shell.stdout.drain<void>();
+      shell.stdin.write(script);
+      await shell.stdin.close();
+      expect(await shell.exitCode, 0, reason: await shellError);
+      await shellOutput;
       final prepared = await run(['--prepare-assets', candidate.path, digest]);
       expect(prepared.exitCode, 0, reason: prepared.stderr.toString());
       expect(prepared.stdout.toString().trim(), digest);
@@ -346,6 +678,7 @@ void main() {
     () async {
       final root = await Directory('/tmp').createTemp('hivra_setup_');
       addTearDown(() => root.delete(recursive: true));
+      await Process.run('chmod', ['700', root.path]);
       const owner =
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       const plugin = 'hivra.contract.independent-workspace.v1';
@@ -402,6 +735,12 @@ void main() {
         'credentials': null,
       };
       final request = input(package());
+      await Process.run('chmod', ['755', root.path]);
+      await expectLater(
+        WorkspaceRunner.setup(root, request),
+        throwsFormatException,
+      );
+      await Process.run('chmod', ['700', root.path]);
       for (final invalid in [
         {...request, 'package_digest': 'e' * 64},
         {
@@ -503,6 +842,82 @@ void main() {
           opaque,
         );
       }
+      final ended = {
+        'version': 1,
+        'owner': owner,
+        'plugin_id': plugin,
+        'package_id': record.id,
+        'package_digest': request['package_digest'],
+        'executor': 'local',
+        'revision': 2,
+        'expires_at_ms': 0,
+        'allow_new_entries': false,
+        'settings': <String, dynamic>{},
+        'scope': {
+          'account_id': 'c' * 64,
+          'symbol': 'DASH-USDT',
+          'action': 'independent_cycle',
+          'interval_seconds': 30,
+          'max_margin': 1.0,
+          'max_stop_percent': 20.0,
+        },
+      };
+      await files.writePluginState(
+        capsule,
+        plugin,
+        'workspace-execution.v1.json',
+        jsonEncode({
+          ...ended,
+          'executor': 'vps',
+          'executor_id': 'f' * 64,
+          'expires_at_ms': DateTime.now().millisecondsSinceEpoch + 60000,
+        }),
+      );
+      await expectLater(
+        WorkspaceRunner.setup(root, {
+          ...secrets,
+          'credentials': {'api_key': 'different', 'secret_key': 'different'},
+        }),
+        throwsStateError,
+      );
+      expect(await credentialFile.readAsString(), credentials);
+      await files.writePluginState(
+        capsule,
+        plugin,
+        'workspace-execution.v1.json',
+        jsonEncode(ended),
+      );
+      final replacement = input(package(version: '2.0.0'));
+      final upgraded = await WorkspaceRunner.setup(root, replacement);
+      expect(upgraded['package_digest'], replacement['package_digest']);
+      expect(upgraded['package_id'], isNot(record.id));
+      expect(
+        await files.readPluginState(capsule, plugin, 'workspace.v1.json'),
+        opaque,
+      );
+      expect(
+        await files.readPluginState(
+          capsule,
+          plugin,
+          'external_effects.v1.json',
+        ),
+        journal,
+      );
+      final sealed = jsonDecode(
+        (await files.readPluginState(
+          capsule,
+          plugin,
+          'workspace-execution.v1.json',
+        ))!,
+      );
+      expect(sealed['package_id'], upgraded['package_id']);
+      expect(sealed['expires_at_ms'], 0);
+      // Interrupted setup may publish package/grant before its final binding.
+      await File(
+        '${root.path}/runner.json',
+      ).writeAsString(jsonEncode(installed));
+      expect(await WorkspaceRunner.setup(root, replacement), upgraded);
+      expect(await WorkspaceRunner.setup(root, replacement), upgraded);
       final lock = File('${root.path}/runner.lock');
       await lock.delete();
       final foreign = File('${root.path}/foreign')..writeAsStringSync('keep');
@@ -873,14 +1288,19 @@ void main() {
         secretVault: _Vault(),
         readActiveCapsuleRootHex: () => owner,
       );
-      await module.removePlugin(record);
+      await expectLater(module.removePlugin(record), throwsStateError);
+      expect(
+        registry.installed,
+        true,
+        reason: 'An unreachable assigned VPS must be stopped before uninstall',
+      );
       expect(
         await localFiles.readPluginState(
           directory,
           record.pluginId!,
           'workspace.v1.json',
         ),
-        isNull,
+        isNotNull,
       );
       expect(
         jsonDecode(
@@ -903,6 +1323,83 @@ void main() {
         remote.adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint),
         throwsStateError,
       );
+      expect(
+        await remoteFiles.readPluginState(
+          destination,
+          record.pluginId!,
+          'workspace.v1.json',
+        ),
+        progressed,
+      );
+      digest = 'b' * 64;
+      final returned = await remote.returnWorkspaceToLocal(record);
+      expect(returned['workspace'], progressed);
+      expect(returned['execution']['expires_at_ms'], 0);
+      expect(returned['execution']['allow_new_entries'], false);
+      await expectLater(
+        remote.runScheduledWorkspaceCycle(record),
+        throwsStateError,
+      );
+      await expectLater(
+        remote.setWorkspaceExecution(
+          record: record,
+          enabled: true,
+          approvedScope: scope,
+        ),
+        throwsStateError,
+      );
+      await expectLater(
+        remote.adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint),
+        throwsStateError,
+      );
+      await expectLater(
+        local.restoreWorkspaceFromVps(
+          record: record,
+          executorId: 'e' * 64,
+          checkpoint: returned,
+        ),
+        throwsStateError,
+      );
+      await local.restoreWorkspaceFromVps(
+        record: record,
+        executorId: 'f' * 64,
+        checkpoint: returned,
+      );
+      expect(
+        (await local.readWorkspaceExecution(record))!['allow_new_entries'],
+        false,
+      );
+      expect(
+        await localFiles.readPluginState(
+          directory,
+          record.pluginId!,
+          'workspace.v1.json',
+        ),
+        progressed,
+      );
+      expect(
+        await localFiles.readPluginState(
+          directory,
+          record.pluginId!,
+          'external_effects.v1.json',
+        ),
+        returned['effects'],
+      );
+      await local.setWorkspaceExecution(
+        record: record,
+        enabled: true,
+        approvedScope: scope,
+        releaseToExecutorId: 'f' * 64,
+      );
+      final next = await local.releaseWorkspaceToVps(
+        record,
+        executorId: 'f' * 64,
+      );
+      expect(
+        next['execution']['handoff_id'],
+        isNot(checkpoint['execution']['handoff_id']),
+      );
+      await remote.adoptWorkspaceFromLocal(record: record, checkpoint: next);
       expect(
         await remoteFiles.readPluginState(
           destination,
@@ -1226,6 +1723,103 @@ void main() {
           provider.deletes == 0 ? null : '2103610529511862272',
         );
       }
+    },
+  );
+
+  testWidgets(
+    'VPS connection failure stays visible and Start confirms its target',
+    (tester) async {
+      var remote = false;
+      var reads = 0;
+      var grants = 0;
+      Map<String, dynamic> shown() => {
+        ...view(),
+        'fields': <dynamic>[],
+        'host_connection': {
+          'target': remote ? 'vps' : 'local',
+          'host': 'example.invalid',
+          'health': 'not_started',
+        },
+        'schedule': {
+          'action': 'package_cycle',
+          'interval_seconds': 60,
+          'account_id': 'a' * 64,
+          'symbol': 'BTC-USDT',
+          'max_margin': 1,
+          'max_stop_percent': 10,
+        },
+        'actions': [
+          {'id': 'start', 'label': 'Start cycles', 'host': 'workspace.start'},
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            runWorkspaceAction: (
+              action,
+              settings, {
+              credentials,
+              approvedOrder,
+            }) async {
+              reads++;
+              return shown();
+            },
+            configureExecution: ({
+              required enabled,
+              approvedScope,
+              settings = const {},
+            }) async {
+              expect(enabled, isTrue);
+              expect(approvedScope, shown()['schedule']);
+              grants++;
+              return shown();
+            },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+            }) async {
+              expect(host, 'example.invalid');
+              expect(port, 22);
+              expect(password, 'synthetic-password');
+              throw StateError('Synthetic installation failure');
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect VPS'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Root password (installation only)'),
+        'synthetic-password',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Connect securely'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('VPS connection was not completed'),
+        findsOneWidget,
+      );
+      expect(reads, 1);
+      expect(grants, 0);
+      // Confirmation uses the fresh host target, not the previous screen snapshot.
+      remote = true;
+      await tester.tap(find.text('Start cycles'));
+      await tester.pumpAndSettle();
+      expect(find.text('Start VPS LIVE cycles for 24 hours?'), findsOneWidget);
+      expect(
+        find.textContaining('The VPS will continue while Capsule is closed'),
+        findsOneWidget,
+      );
+      expect(find.text('Start local cycles'), findsNothing);
+      expect(grants, 0);
+      await tester.tap(find.text('Start VPS cycles'));
+      await tester.pumpAndSettle();
+      expect(grants, 1);
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
     },
   );
 
@@ -3753,7 +4347,9 @@ void main() {
       );
       await readStarted.future;
       final removed = module().removePlugin(registry.record);
-      await Future<void>.delayed(Duration.zero);
+      for (var i = 0; i < 100 && registry.installed; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
       expect(registry.installed, isFalse);
       readPause.complete();
       await interrupted;
@@ -4681,7 +5277,12 @@ Map<String, dynamic> view() => {
 class _Registry extends WasmPluginRegistryService {
   PluginRuntimeBinding Function()? executionBinding;
   bool installed = true;
-  final record = const WasmPluginRecord(
+  _Registry({String id = 'workspace-package'}) {
+    if (id != record.id) {
+      record = WasmPluginRecord.fromJson({...record.toJson(), 'id': id});
+    }
+  }
+  var record = const WasmPluginRecord(
     id: 'workspace-package',
     displayName: 'Workspace',
     originalFileName: 'workspace.zip',

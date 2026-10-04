@@ -578,6 +578,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           MaterialPageRoute<void>(
             builder:
                 (_) => PluginWorkspaceScreen(
+                  connectVps:
+                      ({
+                        required host,
+                        required port,
+                        required password,
+                        required trustPeer,
+                      }) => _pluginRuntime.connectWorkspaceVps(
+                        record: record,
+                        host: host,
+                        port: port,
+                        password: password,
+                        trustPeer: trustPeer,
+                      ),
+                  useOnline: () => _pluginRuntime.useWorkspaceOnline(record),
                   configureExecution:
                       ({
                         required enabled,

@@ -123,7 +123,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final safeName = _safePluginImportFileName(file.name, file.path);
       final source = File('${tempDir.path}/$safeName');
       await source.writeAsBytes(await file.readAsBytes(), flush: true);
-      final record = await _module.registry.installPluginFromFile(source);
+      final record = await _module.installPluginFromFile(source);
       await _module.uiLog.log(
         'plugin.install.success',
         'id=${record.id} plugin=${record.pluginId ?? "-"} '
@@ -218,7 +218,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     });
 
     try {
-      final record = await _module.sourceCatalog.installFromSourceEntry(entry);
+      final record = await _module.installPluginFromSource(entry);
       await _module.uiLog.log(
         'plugin.source.install.success',
         'id=${entry.id} plugin=${record.pluginId ?? "-"} '

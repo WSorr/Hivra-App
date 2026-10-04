@@ -21,12 +21,22 @@ class PluginWorkspaceScreen extends StatefulWidget {
     Map<String, dynamic> settings,
   })?
   configureExecution;
+  final Future<void> Function({
+    required String host,
+    required int port,
+    required String password,
+    required Future<bool> Function(String) trustPeer,
+  })?
+  connectVps;
+  final Future<void> Function()? useOnline;
 
   const PluginWorkspaceScreen({
     super.key,
     required this.runWorkspaceAction,
     this.readFieldOptions,
     this.configureExecution,
+    this.connectVps,
+    this.useOnline,
   });
 
   @override
@@ -187,6 +197,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
           throw StateError('Scheduled execution is not available in this host');
         }
         final scope = Map<String, dynamic>.from(view['schedule'] as Map);
+        final onVps = view['host_connection']?['target'] == 'vps';
         setState(() {
           _choosing = true;
           _busy = false;
@@ -196,14 +207,19 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
               context: context,
               builder:
                   (context) => AlertDialog(
-                    title: const Text('Start local LIVE cycles for 24 hours?'),
+                    title: Text(
+                      onVps
+                          ? 'Start VPS LIVE cycles for 24 hours?'
+                          : 'Start local LIVE cycles for 24 hours?',
+                    ),
                     content: Text(
                       '${scope["symbol"]} / account ${scope["account_id"]}\n'
                       'Up to ${scope["max_margin"]} USDT margin per entry; requested stop '
                       '${scope["max_stop_percent"]}% of entry margin.\n\n'
                       'Authorize cancellation of invalidated, unfilled managed entries and '
                       'repeated entries after confirmed closure. No daily loss limit: '
-                      'successive losses can exhaust the account. App must remain open and online. '
+                      'successive losses can exhaust the account. '
+                      '${onVps ? "The VPS will continue while Capsule is closed; exchange credentials are sent over pinned SSH into the server host store, not WASM." : "App must remain open and online."} '
                       'Authorize reducing limit exits selected by the package for managed fills. '
                       'Stop protection remains unverified. '
                       'Stop disables automatic entries and cancellations; reducing exits remain authorized until expiry. It does not '
@@ -217,7 +233,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
                       FilledButton(
                         key: const ValueKey('plugin-confirm-start'),
                         onPressed: () => Navigator.of(context).pop(true),
-                        child: const Text('Start local cycles'),
+                        child: Text(
+                          onVps ? 'Start VPS cycles' : 'Start local cycles',
+                        ),
                       ),
                     ],
                   ),
@@ -282,6 +300,187 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
         });
       }
     }
+  }
+
+  Future<void> _connectVps() async {
+    if (_busy || _choosing || widget.connectVps == null) return;
+    var host = _view?['host_connection']?['host']?.toString() ?? '';
+    var port = '22';
+    var password = '';
+    var connected = false;
+    setState(() => _choosing = true);
+    try {
+      final accepted =
+          await showDialog<bool>(
+            context: context,
+            builder:
+                (context) => StatefulBuilder(
+                  builder:
+                      (context, update) => AlertDialog(
+                        title: const Text('Connect your VPS'),
+                        content: SizedBox(
+                          width: 420,
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. Root password is used only for installation, never saved. Trading starts only after your separate Start confirmation.',
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  initialValue: host,
+                                  decoration: const InputDecoration(
+                                    labelText: 'VPS IP or hostname',
+                                  ),
+                                  autocorrect: false,
+                                  onChanged:
+                                      (s) => update(() => host = s.trim()),
+                                ),
+                                TextFormField(
+                                  initialValue: port,
+                                  decoration: const InputDecoration(
+                                    labelText: 'SSH port',
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  onChanged:
+                                      (s) => update(() => port = s.trim()),
+                                ),
+                                TextField(
+                                  obscureText: true,
+                                  enableSuggestions: false,
+                                  autocorrect: false,
+                                  decoration: const InputDecoration(
+                                    labelText:
+                                        'Root password (installation only)',
+                                  ),
+                                  onChanged: (s) => update(() => password = s),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel'),
+                          ),
+                          FilledButton(
+                            onPressed:
+                                host.isEmpty ||
+                                        password.isEmpty ||
+                                        int.tryParse(port) == null
+                                    ? null
+                                    : () => Navigator.pop(context, true),
+                            child: const Text('Connect securely'),
+                          ),
+                        ],
+                      ),
+                ),
+          ) ??
+          false;
+      if (!accepted || !mounted) return;
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
+      await widget.connectVps!(
+        host: host,
+        port: int.parse(port),
+        password: password,
+        trustPeer: (fingerprint) async {
+          if (!mounted) return false;
+          return await showDialog<bool>(
+                context: context,
+                builder:
+                    (context) => AlertDialog(
+                      title: const Text('Confirm server identity'),
+                      content: SelectableText(
+                        '$host:$port\n$fingerprint\n\nCompare this fingerprint with your VPS provider or a trusted SSH connection. A different fingerprint will be refused on future connections.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Trust this server'),
+                        ),
+                      ],
+                    ),
+              ) ??
+              false;
+        },
+      );
+      connected = true;
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () =>
+              _error =
+                  'VPS connection was not completed. Check installer availability, login and server identity. No trading Start was granted.',
+        );
+      }
+    } finally {
+      password = '';
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _choosing = false;
+        });
+      }
+    }
+    if (mounted && connected) await _run('open');
+  }
+
+  Future<void> _useOnline() async {
+    if (_busy || _choosing || widget.useOnline == null) return;
+    final remote = _view?['execution']?['mode'] == 'vps';
+    if (remote) {
+      final accepted =
+          await showDialog<bool>(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: const Text('Return trading control to this app?'),
+                  content: const Text(
+                    'End all VPS trading authority and retrieve its latest workspace and order journal. This does not cancel exchange orders or close positions. Local cycles require a new Start; the app must remain open.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Return to online'),
+                    ),
+                  ],
+                ),
+          ) ??
+          false;
+      if (!accepted || !mounted) return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.useOnline!();
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () =>
+              _error =
+                  'VPS return was not acknowledged. Control remains assigned there; there is no local fallback.',
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (mounted) await _run('open');
   }
 
   Future<Map<String, String>?> _accountCredentials() async {
@@ -491,11 +690,41 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
   @override
   Widget build(BuildContext context) {
     final view = _view;
+    final health =
+        _error != null
+            ? 'observation unavailable'
+            : switch (view?['host_connection']?['health']) {
+              'not_started' => 'connected; press Start to begin',
+              'running' => 'runner is running',
+              'detached' => 'trading authority ended',
+              _ => 'checking runner',
+            };
     return Scaffold(
       appBar: AppBar(title: Text(view?['title']?.toString() ?? 'Plugin')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (widget.connectVps != null) ...[
+            Text(
+              _view?['host_connection']?['target'] == 'vps'
+                  ? 'VPS ${_view?["host_connection"]?["host"] ?? ""}: $health'
+                  : 'Trade online: this app must remain open.',
+            ),
+            Wrap(
+              spacing: 12,
+              children: [
+                OutlinedButton(
+                  onPressed: _busy || _choosing ? null : _connectVps,
+                  child: const Text('Connect VPS'),
+                ),
+                TextButton(
+                  onPressed: _busy || _choosing ? null : _useOnline,
+                  child: const Text('Trade online'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
           if (_busy) const LinearProgressIndicator(),
           if (_error != null)
             Padding(
@@ -515,7 +744,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
-                  '${view["execution"]["allow_new_entries"] == true ? "Local entries enabled" : "New entries stopped or expired"}. '
+                  '${view["execution"]["allow_new_entries"] == true ? (view["execution"]["mode"] == "vps" ? "VPS entries enabled" : "Local entries enabled") : "New entries stopped or expired"}. '
                   'Until ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["expires_at_ms"]).toLocal()}. '
                   '${view["execution"]["last_checked_at_ms"] == null ? "No cycle observed in this process yet." : "Last successful cycle: ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["last_checked_at_ms"]).toLocal()}"}'
                   '${view["execution"]["last_error"] == null ? "" : "\n${view["execution"]["last_error"]}"}',
@@ -554,7 +783,12 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen> {
                                 (_edited && raw['host'] == 'bingx.order.submit')
                             ? null
                             : () => _run(raw['id'] as String),
-                    child: Text(raw['label'] as String),
+                    child: Text(
+                      raw['host'] == 'workspace.start' &&
+                              view['host_connection']?['target'] == 'vps'
+                          ? 'Start VPS cycles'
+                          : raw['label'] as String,
+                    ),
                   ),
               ],
             ),

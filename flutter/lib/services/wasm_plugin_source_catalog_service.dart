@@ -124,8 +124,9 @@ class WasmPluginSourceCatalogService {
   }
 
   Future<WasmPluginRecord> installFromSourceEntry(
-    WasmPluginSourceCatalogEntry entry,
-  ) async {
+    WasmPluginSourceCatalogEntry entry, {
+    Future<void> Function(String? pluginId)? beforeInstall,
+  }) async {
     final uri = Uri.tryParse(entry.downloadUrl);
     if (uri == null) {
       throw const FormatException(
@@ -143,6 +144,7 @@ class WasmPluginSourceCatalogService {
         expectedSha256Hex: entry.sha256Hex,
         file: sourceFile,
       );
+      await beforeInstall?.call(entry.pluginId);
       return _registry.installPluginFromFile(
         sourceFile,
         validateRecord:
@@ -187,6 +189,7 @@ class WasmPluginSourceCatalogService {
         expectedSha256Hex: entry.sha256Hex,
         file: tempFile,
       );
+      await beforeInstall?.call(entry.pluginId);
       return await _registry.installPluginFromFile(
         tempFile,
         validateRecord:

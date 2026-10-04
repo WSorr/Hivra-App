@@ -51,7 +51,7 @@ quality is measured separately from actual closed-trade outcomes.
    silently. Waiting for a person to confirm must not impose a one-minute
    button deadline. Recheck current leverage and complete market evidence
    covering the waiting period before sending, without silently changing the
-   confirmed price, quantity or stop. If the line was touched or the evidence
+   confirmed price, quantity or stop. If price entered the zone or the evidence
    no longer covers that period, explain why a fresh plan is needed.
 4. See the currently formed lines, their side and timeframe, the exact entry
    price and the reason an entry is or is not eligible. No unexplained
@@ -131,24 +131,44 @@ quality is measured separately from actual closed-trade outcomes.
   Past pivots used
   to form the line are not entry events. If price passed the intended entry
   after the level first became knowable but before placement, do not chase or
-  backfill that entry.
+  backfill that entry. Entry eligibility belongs to the whole formed zone,
+  not just its line: buyside is captured when a subsequent high reaches its
+  lower boundary; sellside is captured when a subsequent low reaches its upper
+  boundary. Boundary equality counts. Closed history, the live candle and
+  the final delivery check use the same criterion; a close, reversal marker
+  or retest is not required. Capture is retained after price leaves the zone
+  and across restart; a later redraw must not rearm a captured zone.
 - Buyside corresponds to a short opportunity and sellside to a long only
   under the selected entry policy. Run the same current-chart algorithm
   independently on `1D`, `4H`, `1H`, `30M`, `15M`, and `5M`; JackV itself does
   not choose between timeframes. Evaluate only the instrument explicitly
   selected by the user: no whitelist, market-wide candidate search, automatic
   symbol switching, or ranking across instruments. When there is no active
-  managed entry, select the nearest eligible unswept line on the appropriate
-  side of current price. A line already touched since it became knowable is
-  ineligible. Break ties by higher timeframe, then earlier first-known time,
+  managed entry, inspect fresh, complete evidence for all six timeframes and
+  select the nearest line in a zone that price has not entered since it became
+  knowable. The entire zone must remain ahead of current price on the appropriate
+  side. A captured zone is excluded; continue choosing among the other
+  timeframes. Break ties by higher timeframe, then earlier first-known time,
   then stable zone identity. Do not switch away from a valid pending entry or
   an open position. An invalidated unfilled entry may be replaced through the
   reconciled cancellation flow above; no higher-timeframe veto is added.
+  Saved line-only evidence is not proof that its surrounding zone is untouched:
+  reinspection must cover its first-known time before it becomes eligible.
+  If the bounded provider history cannot prove that period, show the zone as
+  unverified rather than inventing freshness. This recovery concerns only
+  historical plugin state; it does not change a managed order's fixed plan.
+  Reinspection or replacement of that saved zone ends its line-only state;
+  there is no legacy eligibility fallback.
+  Each refresh reconstructs all six frames from the existing bounded provider
+  window, so corrected historical candles cannot trap calculation behind a
+  saved candle cache. Retained capture/consumption marks survive reconstruction
+  and interruption; its temporary checkpoint ends when that frame is complete.
+  Partial reads cannot make a zone current or change a managed order's plan.
 - After an entry fills, the profit-taking exit targets a confirmed opposite
   JackV liquidity line on the profitable side of entry and closes only the
   filled position quantity. Choose the nearest eligible opposite line already
-  known at fill, still ahead of current price and untouched since first-known
-  time, and keep that target price fixed once placed. If none exists, keep the
+  known at fill, with its zone still ahead of current price and uncaptured
+  since first-known time, and keep that target price fixed once placed. If none exists, keep the
   position protected and visibly show `No profit target yet`; place the exit
   at the first later opposite line that is still ahead of price and untouched.
   No independent TP-zone calculator or abstract R-multiple target is part of
