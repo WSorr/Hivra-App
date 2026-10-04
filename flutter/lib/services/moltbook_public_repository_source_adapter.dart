@@ -33,18 +33,8 @@ class MoltbookPublicRepositorySourceAdapter {
     if (latest is! List || latest.length != 1 || latest.single is! Map) {
       throw const FormatException('GitHub latest commit response is invalid');
     }
-    final summary = Map<String, dynamic>.from(latest.single as Map);
-    final sha = _commitSha(summary['sha']);
-    final details = await _readJson(
-      Uri.https('api.github.com', '/repos/$owner/$name/commits/$sha'),
-    );
-    if (details is! Map) {
-      throw const FormatException('GitHub commit response is invalid');
-    }
-    final commit = Map<String, dynamic>.from(details);
-    if (_commitSha(commit['sha']) != sha) {
-      throw const FormatException('GitHub commit identity changed');
-    }
+    final commit = Map<String, dynamic>.from(latest.single as Map);
+    final sha = _commitSha(commit['sha']);
     final metadata = commit['commit'];
     if (metadata is! Map) {
       throw const FormatException('GitHub commit metadata is invalid');
@@ -61,12 +51,11 @@ class MoltbookPublicRepositorySourceAdapter {
         null) {
       throw const FormatException('GitHub commit date is invalid');
     }
-    final files = _changedFiles(commit['files']);
     final detailsText = _commitDetails(metadataJson['message']);
     final facts = <String>[
       'Commit summary: $subject',
       if (detailsText != null) 'Commit detail: $detailsText',
-      'Changed areas: ${files.take(3).map((file) => _abbreviate(file, 60)).join(', ')}${files.length > 3 ? ', and ${files.length - 3} other files' : ''}.',
+      'A new public repository commit was observed at ${sha.substring(0, 12)}.',
     ];
     return (sourceId: 'github-news-v2-$sha', facts: facts);
   }
@@ -105,32 +94,6 @@ class MoltbookPublicRepositorySourceAdapter {
     }
     return null;
   }
-
-  static List<String> _changedFiles(Object? value) {
-    if (value is! List || value.isEmpty || value.length > 300) {
-      throw const FormatException('GitHub changed files are invalid');
-    }
-    final files = <String>[];
-    for (final raw in value) {
-      if (raw is! Map) {
-        throw const FormatException('GitHub changed file is invalid');
-      }
-      final filename = Map<String, dynamic>.from(raw)['filename'];
-      if (filename is! String ||
-          filename.isEmpty ||
-          filename.length > 180 ||
-          _unsafeText.hasMatch(filename)) {
-        throw const FormatException('GitHub changed filename is invalid');
-      }
-      files.add(filename);
-    }
-    return List<String>.unmodifiable(files);
-  }
-
-  static String _abbreviate(String value, int maxCharacters) =>
-      value.length <= maxCharacters
-          ? value
-          : '...${value.substring(value.length - maxCharacters + 3)}';
 
   static final RegExp _unsafeText = RegExp(
     r'[\x00-\x1F\x7F\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]',

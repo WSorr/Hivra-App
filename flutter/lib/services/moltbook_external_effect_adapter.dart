@@ -19,6 +19,8 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   final MoltbookProviderAdapter _provider;
   final DateTime Function() _clock;
   final Future<void> Function(Duration) _verificationReceiptDelay;
+  final Future<Future<void> Function()> Function(ExternalEffectAdapterRequest)
+  _authorize;
 
   static const List<Duration> _verificationReceiptRetryDelays = <Duration>[
     Duration(seconds: 5),
@@ -30,11 +32,16 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   MoltbookExternalEffectAdapter({
     required CapsuleScopedSecretVault secretVault,
     required MoltbookProviderAdapter provider,
+    required Future<Future<void> Function()> Function(
+      ExternalEffectAdapterRequest,
+    )
+    authorize,
     DateTime Function() clock = DateTime.now,
     Future<void> Function(Duration) verificationReceiptDelay =
         Future<void>.delayed,
   }) : _secretVault = secretVault,
        _provider = provider,
+       _authorize = authorize,
        _clock = clock,
        _verificationReceiptDelay = verificationReceiptDelay;
 
@@ -44,7 +51,9 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   ) async {
     try {
       final payload = _validateRequest(request);
+      final ensureAuthorized = await _captureAuthorization(request);
       final apiKey = await _loadCredential(request);
+      await _ensureBeforeProvider(ensureAuthorized);
       if (payload case final _MoltbookSubmoltPayload submolt) {
         return await _deliverSubmolt(request, apiKey, submolt);
       }
@@ -103,6 +112,12 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       return _success(request, contentId);
     } on MoltbookProviderException catch (error) {
       return _providerFailure(error);
+    } on _MoltbookAuthorizationRevoked {
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        errorCode: 'authorization_revoked',
+        errorMessage: 'Moltbook authorization changed before provider request',
+      );
     } on FormatException catch (error) {
       return ExternalEffectAdapterResult(
         status: ExternalEffectAdapterStatus.terminalFailure,
@@ -124,7 +139,9 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   ) async {
     try {
       final payload = _validateRequest(request);
+      final ensureAuthorized = await _captureAuthorization(request);
       final apiKey = await _loadCredential(request);
+      await _ensureBeforeProvider(ensureAuthorized);
       return switch (payload) {
         _MoltbookPostPayload post => await _reconcilePost(
           request,
@@ -181,7 +198,17 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         );
       }
       final answer = _normalizeNumericAnswer(response);
+      final ensureAuthorized = await _captureAuthorization(request);
       final apiKey = await _loadCredential(request);
+      await _ensureBeforeProvider(ensureAuthorized);
+      if (!_clock().toUtc().isBefore(expiry)) {
+        return const ExternalEffectAdapterResult(
+          status: ExternalEffectAdapterStatus.terminalFailure,
+          errorCode: 'verification_expired',
+          errorMessage:
+              'Moltbook verification expired while awaiting credentials',
+        );
+      }
       final verification = await _provider.verifyContent(
         apiKey: apiKey,
         verificationCode: action.actionToken,
@@ -229,6 +256,13 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         );
       }
       return _providerFailure(error);
+    } on _MoltbookAuthorizationRevoked {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.unresolved,
+        errorCode: 'authorization_revoked',
+        errorMessage: 'Moltbook authorization changed before verification',
+        requiredAction: action,
+      );
     } on FormatException catch (error) {
       return ExternalEffectAdapterResult(
         status: ExternalEffectAdapterStatus.unresolved,
@@ -320,6 +354,16 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     };
   }
 
+  Future<Future<void> Function()> _captureAuthorization(
+    ExternalEffectAdapterRequest request,
+  ) async {
+    try {
+      return await _authorize(request);
+    } on StateError {
+      throw const _MoltbookAuthorizationRevoked();
+    }
+  }
+
   Future<ExternalEffectAdapterResult> _deliverSubmolt(
     ExternalEffectAdapterRequest request,
     String apiKey,
@@ -337,6 +381,16 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       if (error.code != 'http_400' && error.code != 'http_409') rethrow;
     }
     return _reconcileSubmolt(request, apiKey, payload);
+  }
+
+  Future<void> _ensureBeforeProvider(
+    Future<void> Function() ensureAuthorization,
+  ) async {
+    try {
+      await ensureAuthorization();
+    } on StateError {
+      throw const _MoltbookAuthorizationRevoked();
+    }
   }
 
   Future<ExternalEffectAdapterResult> _reconcilePost(
@@ -659,6 +713,10 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     final normalized = value?.toString().trim() ?? '';
     return normalized.isEmpty || normalized.length > 256 ? null : normalized;
   }
+}
+
+class _MoltbookAuthorizationRevoked implements Exception {
+  const _MoltbookAuthorizationRevoked();
 }
 
 sealed class _MoltbookPayload {

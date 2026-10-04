@@ -130,6 +130,13 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
        );
 
   Future<void> removePlugin(WasmPluginRecord record) async {
+    if (record.pluginId == moltbookAmbassadorPluginId) {
+      return moltbook.changeInstalledPackage(() => _removePlugin(record));
+    }
+    return _removePlugin(record);
+  }
+
+  Future<void> _removePlugin(WasmPluginRecord record) async {
     await _retireWorkspacePackage(record.pluginId, uninstall: true);
     // Stop admission first, then let in-flight continuations fail before
     // deleting state; otherwise a late write can recreate an uninstalled plugin.
@@ -153,23 +160,34 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     final inspected = await const WasmPluginPackagePreflightService().inspect(
       file,
     );
-    await _retireWorkspacePackage(inspected.pluginId);
-    return registry.installPluginFromFile(
-      file,
-      validateRecord: (record) {
-        if (record.pluginId != inspected.pluginId) {
-          throw StateError('Installation input changed');
-        }
-      },
-    );
+    Future<WasmPluginRecord> install() async {
+      await _retireWorkspacePackage(inspected.pluginId);
+      return registry.installPluginFromFile(
+        file,
+        validateRecord: (record) {
+          if (record.pluginId != inspected.pluginId) {
+            throw StateError('Installation input changed');
+          }
+        },
+      );
+    }
+
+    return inspected.pluginId == moltbookAmbassadorPluginId
+        ? moltbook.changeInstalledPackage(install)
+        : install();
   }
 
   Future<WasmPluginRecord> installPluginFromSource(
     WasmPluginSourceCatalogEntry entry,
-  ) => sourceCatalog.installFromSourceEntry(
-    entry,
-    beforeInstall: _retireWorkspacePackage,
-  );
+  ) {
+    Future<WasmPluginRecord> install() => sourceCatalog.installFromSourceEntry(
+      entry,
+      beforeInstall: _retireWorkspacePackage,
+    );
+    return entry.pluginId == moltbookAmbassadorPluginId
+        ? moltbook.changeInstalledPackage(install)
+        : install();
+  }
 
   Future<void> _retireWorkspacePackage(
     String? pluginId, {
@@ -519,10 +537,19 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         final envelopeHash =
             response.result?['envelope_hash_hex']?.toString().toLowerCase() ??
             '';
-        final canonicalMessageText =
-            response.result?['message_text']?.toString() ?? normalizedMessage;
-        final canonicalCreatedAtUtc =
-            response.result?['created_at_utc']?.toString() ?? createdAtUtc;
+        final canonicalMessageText = response.result?['message_text'];
+        final canonicalCreatedAtUtc = response.result?['created_at_utc'];
+        if (canonicalMessageText is! String ||
+            canonicalCreatedAtUtc is! String) {
+          await uiLog.log(
+            'chat.send.semantic.error',
+            'owner=$operationCapsuleHex phase=prepare reason=missing_wasm_fields',
+          );
+          return const PluginChatSendResult(
+            status: PluginChatSendStatus.failed,
+            message: 'Chat package returned an incomplete message envelope',
+          );
+        }
         final CapsuleChatDeliverySendResult delivery;
         try {
           delivery = await chatDelivery.sendCanonicalEnvelopeWithTimeline(
@@ -655,9 +682,11 @@ class PluginRuntimeModuleService {
       observer: provider,
       readActiveCapsuleRootHex: activeCapsuleRootHex,
     );
+    late final MoltbookRuntimeModule moltbook;
     final moltbookAdapter = MoltbookExternalEffectAdapter(
       secretVault: secretVault,
       provider: provider,
+      authorize: (request) => moltbook.authorizeMoltbookEffect(request),
     );
     final effects = ExternalEffectService(
       readActiveCapsuleRootHex: activeCapsuleRootHex,
@@ -675,7 +704,7 @@ class PluginRuntimeModuleService {
     );
     final uiLog = const UiEventLogService();
     final pluginHostApi = runtime.buildPluginHostApiService();
-    final moltbook = MoltbookRuntimeModule(
+    moltbook = MoltbookRuntimeModule(
       pluginHostApi: pluginHostApi,
       uiLog: uiLog,
       moltbookConnection: connection,

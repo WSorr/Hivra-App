@@ -23,16 +23,12 @@ class MoltbookFeedCheckpointStore {
     return _loadForOwner(ownerHex);
   }
 
-  Future<MoltbookFeedCheckpoint> commit(
-    MoltbookFeedObservation observation, {
-    required DateTime observedAt,
-  }) {
+  Future<MoltbookFeedCheckpoint> save(MoltbookFeedCheckpoint checkpoint) {
     return _serialized(() async {
       final ownerHex = _requireOwnerHex();
-      final current = await _loadForOwner(ownerHex);
-      final updated = current.advance(observation, observedAt: observedAt);
-      await _writeForOwner(ownerHex, updated);
-      return updated;
+      checkpoint.validate();
+      await _writeForOwner(ownerHex, checkpoint);
+      return checkpoint;
     });
   }
 

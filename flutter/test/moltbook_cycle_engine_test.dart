@@ -295,6 +295,161 @@ void main() {
   );
 
   test(
+    'stopped ambassador prepares a local proposal and retained WASM draft',
+    () async {
+      await module.stopMoltbookCyclesAndDisable();
+      final change = await publicChanges.record(
+        sourceId: 'stopped-local-change',
+        category: 'hivra',
+        facts: const <String>[
+          'Capsule Chat retains its history after restart.',
+        ],
+      );
+
+      final proposal = await module.proposeNextMoltbookPublicChange();
+      expect(proposal, isNotNull);
+      expect(proposal!.facts, change.facts);
+      final draft = await module.prepareMoltbookDraft(
+        bulletinId: change.sourceId,
+        releaseTag: 'development',
+        category: change.category,
+        facts: proposal.facts,
+        titleHint: proposal.title,
+        reviewedBody: proposal.body,
+        audience: 'Public Capsule users',
+        publicChangeCommitmentHashHex: change.commitmentHashHex,
+      );
+      final reopened = buildModule(MoltbookCycleTriggerService());
+
+      expect(
+        (await reopened.loadMoltbookDrafts()).single.preview.draftHashHex,
+        draft.draftHashHex,
+      );
+      expect(await reopened.proposeNextMoltbookPublicChange(), isNull);
+      expect(await reopened.startConfiguredMoltbookCycles(), isNull);
+      await expectLater(
+        reopened.runMoltbookCycle(),
+        throwsA(isA<StateError>()),
+      );
+      await expectLater(
+        reopened.authorizeMoltbookEffect(
+          ExternalEffectAdapterRequest(
+            ownerCapsuleHex: _rootA,
+            operationId: 'stopped-write',
+            pluginId: moltbookAmbassadorPluginId,
+            providerId: MoltbookConnectionService.providerId,
+            accountBindingId: connection.accountId,
+            effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+            canonicalPayloadJson: '{}',
+            payloadHashHex: 'a' * 64,
+          ),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(configuration.enabled, isFalse);
+      expect(configuration.saveCount, 1);
+      expect(ai.bulletinProposalCount, 1);
+      expect(connection.observeCount, 0);
+      expect(checkpoint.commitCount, 0);
+      expect(publications.operations, isEmpty);
+      expect(publications.processedIds, isEmpty);
+    },
+  );
+
+  test(
+    'stopped manual proposal preserves category and AI failure boundaries',
+    () async {
+      configuration.enabled = false;
+      await expectLater(
+        module.proposeMoltbookPublicBulletin(
+          'Public fact',
+          category: 'forbidden',
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(ai.bulletinProposalCount, 0);
+      ai.error = StateError('AI session locked');
+      await expectLater(
+        module.proposeMoltbookPublicBulletin('Public fact', category: 'hivra'),
+        throwsA(isA<StateError>()),
+      );
+      expect(drafts.stored, isEmpty);
+      expect(publications.operations, isEmpty);
+    },
+  );
+
+  for (final mutation in ['capsule', 'account', 'package', 'removal', 'stop']) {
+    test(
+      'stopped queued proposal rejects $mutation during inference',
+      () async {
+        configuration.enabled = false;
+        await publicChanges.record(
+          sourceId: 'queued-mutation-$mutation',
+          category: 'hivra',
+          facts: const <String>['A confirmed public change.'],
+        );
+        ai.afterProposal = () {
+          switch (mutation) {
+            case 'capsule':
+              activeRoot = _rootB;
+            case 'account':
+              connection.accountId = 'other-account';
+            case 'package':
+              heartbeatHost.packageDigest = 'replacement';
+            case 'removal':
+              heartbeatHost.installed = false;
+            case 'stop':
+              module.stopMoltbookCycles();
+          }
+        };
+
+        await expectLater(
+          module.proposeNextMoltbookPublicChange(),
+          throwsA(isA<StateError>()),
+        );
+
+        activeRoot = _rootA;
+        expect((await publicChanges.load()).single.isPending, isTrue);
+        expect(drafts.stored, isEmpty);
+        expect(publications.operations, isEmpty);
+      },
+    );
+  }
+
+  for (final mutation in ['package', 'removal', 'stop']) {
+    test('stopped WASM draft rejects $mutation before persistence', () async {
+      configuration.enabled = false;
+      heartbeatHost.beforeExecute = (request) {
+        if (request.method != prepareMoltbookDraftMethod) return;
+        switch (mutation) {
+          case 'package':
+            heartbeatHost.packageDigest = 'replacement';
+          case 'removal':
+            heartbeatHost.installed = false;
+          case 'stop':
+            module.stopMoltbookCycles();
+        }
+      };
+
+      await expectLater(
+        module.prepareMoltbookDraft(
+          bulletinId: 'stopped-draft',
+          releaseTag: 'development',
+          category: 'hivra',
+          facts: const <String>['A confirmed public change.'],
+          titleHint: 'Public change',
+          reviewedBody: 'A confirmed public change.',
+          audience: 'Public Capsule users',
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(drafts.stored, isEmpty);
+      expect(publications.operations, isEmpty);
+    });
+  }
+
+  test(
     'assisted review seals a public-change draft to the PFR community',
     () async {
       await publicChanges.record(
@@ -1586,12 +1741,9 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
   Future<MoltbookFeedCheckpoint> load() async => value;
 
   @override
-  Future<MoltbookFeedCheckpoint> commit(
-    MoltbookFeedObservation observation, {
-    required DateTime observedAt,
-  }) async {
+  Future<MoltbookFeedCheckpoint> save(MoltbookFeedCheckpoint checkpoint) async {
     commitCount++;
-    value = value.advance(observation, observedAt: observedAt);
+    value = checkpoint;
     return value;
   }
 
@@ -1607,12 +1759,30 @@ class _HeartbeatHost implements PluginHostApiService {
   final Map<String, String> engagementActionsByPostId = <String, String>{};
   String engagementAction = 'no_action';
   void Function()? afterAuthorization;
+  void Function(PluginHostApiRequest)? beforeExecute;
+  String packageDigest = 'installed-package';
+  bool installed = true;
+
+  @override
+  Future<Future<void> Function()> captureRuntimeAuthorization({
+    required String pluginId,
+    required String method,
+  }) async {
+    if (!installed) throw StateError('Installed package is unavailable');
+    final capturedDigest = packageDigest;
+    return () async {
+      if (!installed || capturedDigest != packageDigest) {
+        throw StateError('Installed package changed during the action');
+      }
+    };
+  }
 
   @override
   Future<PluginHostApiResponse> executeWithRuntimeHook(
     PluginHostApiRequest request,
   ) async {
     executeCount++;
+    beforeExecute?.call(request);
     if (request.method == planMoltbookEngagementMethod) {
       return _engagementResponse(request);
     }
@@ -1641,13 +1811,125 @@ class _HeartbeatHost implements PluginHostApiService {
       afterAuthorization?.call();
       return response;
     }
+    if (request.args['planning_scope'] == 'public_change') {
+      final changes = request.args['public_changes'] as List<dynamic>;
+      final resumePrepared = request.args['resume_prepared'] as bool;
+      String? selectedSourceId;
+      String? lastPreparedSourceId;
+      for (final rawChange in changes) {
+        final change = rawChange as Map<String, dynamic>;
+        final sourceId = change['source_id'] as String;
+        final selectable =
+            !sourceId.startsWith('github-') ||
+            sourceId.startsWith('github-news-v2-');
+        if (selectable &&
+            change['draft_hash_hex'] == null &&
+            selectedSourceId == null) {
+          selectedSourceId = sourceId;
+        }
+        if (selectable && change['draft_hash_hex'] != null) {
+          lastPreparedSourceId = sourceId;
+        }
+      }
+      if (selectedSourceId == null && resumePrepared) {
+        selectedSourceId = lastPreparedSourceId;
+      }
+      final observedAt = request.args['observed_at_utc'] as String;
+      final canonicalMap = <String, dynamic>{
+        'schema_version': 1,
+        'plugin_id': moltbookAmbassadorPluginId,
+        'contract_kind': 'moltbook_ambassador_heartbeat_plan',
+        'observed_at_utc': observedAt,
+        'priority': 'public_change',
+        'reason':
+            selectedSourceId == null
+                ? 'No eligible public change is available.'
+                : 'WASM selected one Capsule-scoped public change.',
+        'candidate_post_ids':
+            selectedSourceId == null ? <String>[] : <String>[selectedSourceId],
+        'publish_allowed': false,
+        'human_review_required': true,
+        'safety_flags': <String>[
+          'remote_content_untrusted',
+          'no_external_effect',
+          'public_change_selection_only',
+        ],
+        'checkpoint': <String, dynamic>{
+          'schema_version': 1,
+          'newest_post_id': null,
+          'processed_post_ids': <String>[],
+          'last_observed_at_utc': observedAt,
+          'continuation_cursor': null,
+        },
+      };
+      final canonical = jsonEncode(canonicalMap);
+      final result = <String, dynamic>{
+        ...canonicalMap,
+        'canonical_plan_json': canonical,
+        'plan_hash_hex': sha256.convert(utf8.encode(canonical)).toString(),
+      };
+      return PluginHostApiResponse(
+        status: PluginHostApiStatus.executed,
+        pluginId: moltbookAmbassadorPluginId,
+        method: request.method,
+        executionSource: 'test',
+        executionPackageId: null,
+        executionPackageVersion: null,
+        executionPackageKind: null,
+        executionPackageDigestHex: null,
+        executionContractKind: null,
+        executionRuntimeMode: null,
+        executionRuntimeAbi: null,
+        executionRuntimeEntryExport: null,
+        executionRuntimeModulePath: null,
+        executionRuntimeModuleSelection: null,
+        executionRuntimeModuleDigestHex: null,
+        executionRuntimeInvokeDigestHex: null,
+        executionCapabilities: const <String>[],
+        errorCode: null,
+        errorMessage: null,
+        blockingFacts: const <ConsensusBlockingFact>[],
+        result: result,
+        canonicalJson: canonical,
+        responseHashHex: sha256.convert(utf8.encode(canonical)).toString(),
+      );
+    }
     final observedAt = request.args['observed_at_utc'] as String;
     final feed = request.args['feed'] as List<dynamic>;
+    final processedPostIds =
+        (request.args['processed_post_ids'] as List<dynamic>)
+            .cast<String>()
+            .toSet();
     final candidates = feed
         .map((value) => (value as Map<String, dynamic>)['post_id'] as String)
+        .where((postId) => !processedPostIds.contains(postId))
         .take(5)
         .toList(growable: false);
-    final canonical = jsonEncode(<String, dynamic>{
+    final excluded =
+        (request.args['checkpoint_exclude_post_ids'] as List<dynamic>)
+            .cast<String>()
+            .toSet();
+    final observedPostIds = (request.args['observed_post_ids'] as List<dynamic>)
+        .cast<String>()
+        .where((postId) => !excluded.contains(postId))
+        .toList(growable: false);
+    final checkpoint = <String, dynamic>{
+      'schema_version': 1,
+      'newest_post_id':
+          observedPostIds.isEmpty
+              ? request.args['current_newest_post_id']
+              : observedPostIds.first,
+      'processed_post_ids': <dynamic>[
+            ...observedPostIds,
+            ...(request.args['processed_post_ids'] as List<dynamic>),
+          ]
+          .where((postId) => !excluded.contains(postId))
+          .toSet()
+          .toList(growable: false),
+      'last_observed_at_utc': observedAt,
+      'continuation_cursor': request.args['continuation_cursor'],
+    };
+    final canonicalMap = <String, dynamic>{
       'schema_version': 1,
       'plugin_id': moltbookAmbassadorPluginId,
       'contract_kind': 'moltbook_ambassador_heartbeat_plan',
@@ -1661,21 +1943,11 @@ class _HeartbeatHost implements PluginHostApiService {
         'remote_content_untrusted',
         'no_external_effect',
       ],
-    });
+      'checkpoint': checkpoint,
+    };
+    final canonical = jsonEncode(canonicalMap);
     final result = <String, dynamic>{
-      'schema_version': 1,
-      'plugin_id': moltbookAmbassadorPluginId,
-      'contract_kind': 'moltbook_ambassador_heartbeat_plan',
-      'observed_at_utc': observedAt,
-      'priority': candidates.isEmpty ? 'idle' : 'inspect_feed',
-      'reason': candidates.isEmpty ? 'No new feed items' : 'Review new items',
-      'candidate_post_ids': candidates,
-      'publish_allowed': false,
-      'human_review_required': true,
-      'safety_flags': <String>[
-        'remote_content_untrusted',
-        'no_external_effect',
-      ],
+      ...canonicalMap,
       'canonical_plan_json': canonical,
       'plan_hash_hex': sha256.convert(utf8.encode(canonical)).toString(),
     };

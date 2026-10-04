@@ -266,6 +266,24 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
         message: 'WASM chat envelope integrity check failed',
       );
     }
+    final expectedMessageId =
+        request.args['client_message_id']?.toString().trim() ?? '';
+    final expectedCreatedAtUtc =
+        request.args['created_at_utc']?.toString().trim() ?? '';
+    final messageText = envelope['message_text'];
+    if (expectedMessageId.isEmpty ||
+        expectedCreatedAtUtc.isEmpty ||
+        envelope['client_message_id'] != expectedMessageId ||
+        envelope['created_at_utc'] != expectedCreatedAtUtc ||
+        messageText is! String ||
+        messageText != messageText.trim() ||
+        messageText.isEmpty ||
+        utf8.encode(messageText).length > 1024) {
+      return const PluginHostContractResult.rejected(
+        code: 'runtime_result_invalid',
+        message: 'WASM chat envelope request binding failed',
+      );
+    }
     return PluginHostContractResult.executed(<String, dynamic>{
       ...envelope,
       'envelope_hash_hex': envelopeHashHex,
@@ -375,6 +393,20 @@ class MoltbookAmbassadorPluginContractHandler
         return const PluginHostContractResult.rejected(
           code: 'runtime_result_invalid',
           message: 'WASM ambassador heartbeat safety gate failed',
+        );
+      }
+      final planningScope = request.args['planning_scope'];
+      if (planningScope == 'public_change' &&
+          (plan['priority'] != 'public_change' ||
+              plan['candidate_post_ids'] is! List ||
+              (plan['candidate_post_ids'] as List).length > 1 ||
+              plan['safety_flags'] is! List ||
+              !(plan['safety_flags'] as List).contains(
+                'public_change_selection_only',
+              ))) {
+        return const PluginHostContractResult.rejected(
+          code: 'runtime_result_invalid',
+          message: 'WASM public-change selection gate failed',
         );
       }
       return PluginHostContractResult.executed(<String, dynamic>{

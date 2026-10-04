@@ -761,6 +761,7 @@ class MoltbookHeartbeatPlan {
   static const Set<String> priorities = <String>{
     'review_activity',
     'inspect_feed',
+    'public_change',
     'idle',
   };
 

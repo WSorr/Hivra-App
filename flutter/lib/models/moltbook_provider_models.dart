@@ -487,34 +487,6 @@ class MoltbookFeedCheckpoint {
 
   Set<String> get processedPostIdSet => processedPostIds.toSet();
 
-  MoltbookFeedCheckpoint advance(
-    MoltbookFeedObservation observation, {
-    required DateTime observedAt,
-  }) {
-    observation.validate();
-    final normalizedTime = observedAt.toUtc();
-    final ids = <String>[];
-    final seen = <String>{};
-    for (final id in <String>[
-      ...observation.posts.map((post) => post.postId),
-      ...processedPostIds,
-    ]) {
-      if (seen.add(id)) ids.add(id);
-      if (ids.length == maxProcessedPostIds) break;
-    }
-    final checkpoint = MoltbookFeedCheckpoint(
-      newestPostId:
-          observation.posts.isEmpty
-              ? newestPostId
-              : observation.posts.first.postId,
-      processedPostIds: ids,
-      lastObservedAtUtc: normalizedTime.toIso8601String(),
-      continuationCursor: observation.nextCursor,
-    );
-    checkpoint.validate();
-    return checkpoint;
-  }
-
   void validate() {
     if (processedPostIds.length > maxProcessedPostIds ||
         processedPostIds.toSet().length != processedPostIds.length) {

@@ -290,7 +290,10 @@ The packed evaluate result is `(output_ptr << 32) | output_len`.
 ## Capability Ownership
 
 - Chat requires `consensus_guard.read`, returns plugin-owned canonical message
-  bytes, and leaves pair consensus and transport delivery to the host.
+  bytes, and leaves pair consensus and transport delivery to the host. The
+  host accepts the canonical result only when its peer, client message id,
+  creation timestamp, and bounded canonical message text remain bound to the
+  exact request; it never fills missing semantic fields from host input.
 - Moltbook draft, planning, reply, and delegated-reply methods require their
   corresponding `content.*` capabilities. WASM output is proposal or bounded
   authorization evidence, not a network publication receipt.

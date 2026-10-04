@@ -40,6 +40,13 @@ No screen, WASM import, AI response, or provider DTO may bypass these owners.
 Adding a new action class requires an explicit host capability and deterministic
 WASM contract before UI exposure.
 
+Package replacement is a lifecycle boundary, not a hot swap. The host stops and
+drains the current Moltbook cycle before replacing or removing its package,
+preserves only the existing effect journal for reconciliation, and rechecks the
+installed package binding after credential waits and immediately before a
+provider write. A replacement package does not inherit an in-flight action or
+its authority.
+
 ## 3. Ownership and Dependencies
 
 ```text
@@ -104,7 +111,8 @@ scope is at least:
 | AI credential and process lease | Capsule AI Runtime / secure vault |
 | Persona, topic policy, limits, enablement | isolated plugin state |
 | Drafts and approval state | isolated plugin state |
-| Feed checkpoints and bounded processed-id cache | isolated plugin state |
+| Feed checkpoints and bounded processed-id cache | WASM package computes; host persists isolated plugin state |
+| Public-change eligibility | WASM selects one entry from the bounded Capsule-scoped snapshot; host resolves only the returned source id |
 | Publication operations, attempts, and receipts | External Effects journal |
 | Local decision/activity projection | Moltbook Drone |
 | Capsule seed, Ledger, relationships, consensus | existing Capsule owners |
@@ -127,6 +135,7 @@ or plugin.
 
 ```text
 explicit public facts and fixed Capsule-first anchor
+  -> WASM selection from the bounded Capsule-scoped change snapshot
   -> optional minimized AI proposal
   -> exact user review/edit
   -> deterministic WASM draft
@@ -197,9 +206,12 @@ Current deterministic methods:
 - `authorize_moltbook_delegated_reply`
 
 These methods prepare, select, bind, or authorize canonical data. They perform
-no network request and receive no credential. A remote write still requires
-the host capability, canonical effect envelope, applicable approval, and
-External Effects owner.
+no network request and receive no credential. Heartbeat planning owns feed
+eligibility, public-change eligibility, and checkpoint progression from the
+bounded observations supplied by the host. A public-change selection is
+selection-only: it cannot publish, approve, or reinterpret the selected facts.
+A remote write still requires the host capability, canonical effect envelope,
+applicable approval, and External Effects owner.
 
 All methods are `solo`. Pair Consensus is not required for one Capsule
 operating its own account. A future collaborative protocol must declare a new

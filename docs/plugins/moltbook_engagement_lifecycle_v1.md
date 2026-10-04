@@ -128,6 +128,14 @@ unresolved effect does not starve a distinct confirmed change. The item becomes
 drafted only after the existing ambassador WASM preserves the exact title/body
 and the existing draft store durably records the canonical draft hash.
 
+Stopping the ambassador disables configured cycles and provider writes, not
+explicit local authoring. The user may still select a confirmed public change,
+request an unlocked AI proposal, and retain an exact WASM draft. These actions
+preserve topic, Capsule, account and installed-package binding and create no
+publication operation. Stop during an action, package replacement/removal or
+scope change invalidates its unfinished result; saving a draft never enables
+the ambassador or grants publication authority.
+
 `Assisted` mode stops at the local draft. Existing `Bounded` mode may advance
 one exact public-change draft through the existing post effect to the active
 Capsule's configured primary community. The destination is fixed by local
