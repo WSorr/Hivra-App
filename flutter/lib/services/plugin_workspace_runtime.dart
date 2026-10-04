@@ -86,6 +86,16 @@ class PluginWorkspaceRuntime {
 
   String? activeCapsuleRootHex() => _readActiveCapsuleRootHex();
 
+  Future<Map<String, dynamic>?> readWorkspaceExecution(
+    WasmPluginRecord record,
+  ) async {
+    final owner = activeCapsuleRootHex()?.trim().toLowerCase();
+    if (owner == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
+      throw StateError('An active Capsule is required');
+    }
+    return _readExecution(record, owner);
+  }
+
   /// Restore only host authority/timing. Provider availability must not be a
   /// prerequisite for bringing up the process that will retry observation.
   Future<void> resumeWorkspaceScheduling(WasmPluginRecord record) async {
@@ -984,15 +994,24 @@ class PluginWorkspaceRuntime {
     required bool enabled,
     Map<String, dynamic>? approvedScope,
     Map<String, dynamic> settings = const {},
+    String? releaseToExecutorId,
   }) async {
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (owner == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
       throw StateError('An active Capsule is required');
     }
+    if (releaseToExecutorId != null &&
+        (!enabled ||
+            executionHost != 'local' ||
+            !RegExp(r'^[0-9a-f]{64}$').hasMatch(releaseToExecutorId))) {
+      throw StateError('Invalid VPS execution target');
+    }
     final previous = await _readExecution(record, owner);
+    Map<String, dynamic>? preparedView;
     final Map<String, dynamic> control;
     if (enabled) {
       final view = await runWorkspaceAction(record: record, action: 'open');
+      preparedView = view;
       final scope = Map<String, dynamic>.from(view['schedule'] as Map);
       _validateSchedule(scope);
       if (approvedScope == null ||
@@ -1017,11 +1036,15 @@ class PluginWorkspaceRuntime {
         'plugin_id': record.pluginId,
         'package_id': record.id,
         'package_digest': binding.packageDigestHex,
-        'executor': executionHost,
+        'executor': releaseToExecutorId != null ? 'vps' : executionHost,
+        if (releaseToExecutorId != null) ...{
+          'executor_id': releaseToExecutorId,
+          'handoff_id': sha256.convert(_handoffNonce()).toString(),
+        },
         if (executionHost == 'vps') 'executor_id': executionIdentity,
-        if (previous?['handoff_id'] != null)
+        if (releaseToExecutorId == null && previous?['handoff_id'] != null)
           'handoff_id': previous!['handoff_id'],
-        if (previous?['handoff_digest'] != null)
+        if (releaseToExecutorId == null && previous?['handoff_digest'] != null)
           'handoff_digest': previous!['handoff_digest'],
         'scope': scope,
         'settings': settings,
@@ -1068,7 +1091,19 @@ class PluginWorkspaceRuntime {
       }, authorityOnly: true),
     );
     _armScheduledExecution(record, owner, control);
+    if (releaseToExecutorId != null) {
+      stopWorkspaceScheduling(pluginId: record.pluginId);
+      // The target has not acknowledged adoption yet. A source-side snapshot
+      // is neither a running-local status nor evidence of a running VPS.
+      preparedView!.remove('execution');
+      return preparedView;
+    }
     return runWorkspaceAction(record: record, action: 'open');
+  }
+
+  static List<int> _handoffNonce() {
+    final random = Random.secure();
+    return List<int>.generate(32, (_) => random.nextInt(256));
   }
 
   /// Both the foreground timer and a headless host enter this same path.
@@ -1257,7 +1292,6 @@ class PluginWorkspaceRuntime {
               record.pluginId!,
               'external_effects.v1.json',
             );
-            final random = Random.secure();
             final released =
                 control['executor'] == 'vps'
                     ? control
@@ -1265,15 +1299,7 @@ class PluginWorkspaceRuntime {
                       ...control,
                       'executor': 'vps',
                       'executor_id': executorId,
-                      'handoff_id':
-                          sha256
-                              .convert(
-                                List<int>.generate(
-                                  32,
-                                  (_) => random.nextInt(256),
-                                ),
-                              )
-                              .toString(),
+                      'handoff_id': sha256.convert(_handoffNonce()).toString(),
                       'revision': (control['revision'] as int) + 1,
                     };
             final checkpoint = {

@@ -290,14 +290,13 @@ replay, singleton and unchanged grant/state/journal checks using isolated
 synthetic data only.
 The process timer exercised read-only `open`, not a live trading cycle;
 no exchange request or order was sent by that process smoke.
-Canonical Ubuntu 24.04 x86_64 CI passed on `f015788` (run `37151925424`),
-including Linux runner compilation and clean checkout. That run retained no
-downloadable runner; the pending workflow change uploads the existing archive
-and its digest only after all checks pass. It is a candidate, not a release.
+Canonical Ubuntu 24.04 x86_64 CI passed on `f9086e0` (run `37155240607`),
+including Linux compilation and clean checkout. Its retained runner archive
+and digest are a candidate, not a release or deployed VPS evidence.
 The target VPS was read-only identified as Debian 13 x86-64; no deployment,
 credentials or orders were changed.
 
-Pending handoff source work uses the existing host grant to bind execution to
+Handoff uses the existing host grant to bind execution to
 local or one explicit VPS identity, without renewing its expiry or copying
 credentials into package state. The source drains actions and remains detached
 after restart or local package removal. The destination atomically adopts
@@ -309,6 +308,16 @@ Pre-field local grants are read as local only for existing 24-hour grants;
 remove this default when those stored grants are no longer supported.
 Executor identity must be established independently by authenticated host
 transport, not trusted from the incoming checkpoint alone.
+
+Source adds native package setup through the existing
+Registry, without creating execution authority. Exact reinstallation preserves
+the package binding, opaque state, grant and effect journal; setup refuses a
+running installation or silent package replacement. Before adoption, status
+reports process health without initializing WASM state. Direct VPS admission
+does not briefly arm a local timer or claim remote running status. Focused
+tests and the actual compiled macOS process with Jack `0.1.9` passed these
+isolated setup/reinstall/handoff/restart checks; no live provider effect occurred.
+The retained Ubuntu candidate predates setup and must not provision this path.
 
 Capsule SSH provisioning, authenticated artifact delivery and peer identity
 discovery/pinning remain incomplete, as do remote UI routing, return to local

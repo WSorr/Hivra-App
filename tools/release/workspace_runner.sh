@@ -68,8 +68,8 @@ EOF
   echo 'Source changed during runner packaging; candidate rejected.' >&2
   exit 1
 }
-printf 'source_commit=%s\nsource_dirty=0\nplatform=linux-x64\nrust=%s\ndart=%s\n' \
-  "$SOURCE" "$RUST_VERSION" "$DART_VERSION" > "$STAGE/BUILD-METADATA.txt"
+printf 'source_commit=%s\nsource_tree=%s\nsource_dirty=0\nplatform=linux-x64\nworkspace_protocol=1\nrust=%s\ndart=%s\n' \
+  "$SOURCE" "$(git -C "$ROOT" rev-parse 'HEAD^{tree}')" "$RUST_VERSION" "$DART_VERSION" > "$STAGE/BUILD-METADATA.txt"
 ARCHIVE="hivra-workspace-runner-linux-x64.tar.gz"
 tar --sort=name --mtime="@$EPOCH" --owner=0 --group=0 --numeric-owner \
   -C "$STAGE" -cf - . | gzip -n > "$OUTPUT/$ARCHIVE"

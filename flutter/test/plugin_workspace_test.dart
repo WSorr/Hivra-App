@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +32,321 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  test(
+    'VPS Start admits the target directly without a local execution window',
+    () async {
+      final root = await Directory('/tmp').createTemp('hivra_direct_start_');
+      addTearDown(() => root.delete(recursive: true));
+      const owner =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final files = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
+      );
+      final registry = _Registry();
+      final scope = {
+        'account_id': 'c' * 64,
+        'symbol': 'DASH-USDT',
+        'action': 'independent_cycle',
+        'interval_seconds': 30,
+        'max_margin': 1.0,
+        'max_stop_percent': 20.0,
+      };
+      registry.executionBinding =
+          () => PluginRuntimeBinding.externalPackage(
+            packageId: registry.record.id,
+            packageVersion: registry.record.pluginVersion,
+            packageKind: 'zip',
+            packageDigestHex: 'b' * 64,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: const [
+              'workspace.render',
+              'workspace.continue',
+              'state.plugin.read_write',
+              'workspace.schedule',
+            ],
+          );
+      var invoked = 0;
+      final runtime = PluginWorkspaceRuntime(
+        registry: registry,
+        fileStore: files,
+        readActiveCapsuleRootHex: () => owner,
+        pluginHostApi: PluginHostApiService(
+          handlers: [],
+          resolveRuntimeBinding: registry.resolveRuntimeBinding,
+          resolveRuntimeInvoke: (request, _) async {
+            invoked++;
+            return PluginRuntimeInvokeEvidence(
+              mode: 'wasmi_v1',
+              modulePath: 'plugin/module.wasm',
+              moduleSelection: 'zip_manifest',
+              moduleDigestHex: 'd' * 64,
+              invokeDigestHex: 'e' * 64,
+              semanticStatus: PluginHostApiStatus.executed,
+              semanticErrorCode: null,
+              semanticErrorMessage: null,
+              semanticResult: {
+                'state': {
+                  'unrelated': [1, 2],
+                },
+                'requests': <Object>[],
+                'view': {...view(), 'schedule': scope},
+              },
+            );
+          },
+        ),
+        readCredentials:
+            ({required owner, required pluginId}) async =>
+                throw StateError('No credentials'),
+        writeCredentials:
+            ({required owner, required pluginId, required value}) async =>
+                throw StateError('No credential writes'),
+      );
+      addTearDown(runtime.stopWorkspaceScheduling);
+      for (final invalid in [
+        (enabled: false, target: 'f' * 64),
+        (enabled: true, target: 'bad-target'),
+      ]) {
+        await expectLater(
+          runtime.setWorkspaceExecution(
+            record: registry.record,
+            enabled: invalid.enabled,
+            approvedScope: scope,
+            releaseToExecutorId: invalid.target,
+          ),
+          throwsStateError,
+        );
+        expect(invoked, 0);
+      }
+      final prepared = await runtime.setWorkspaceExecution(
+        record: registry.record,
+        enabled: true,
+        approvedScope: scope,
+        releaseToExecutorId: 'f' * 64,
+      );
+      expect(
+        prepared['execution'],
+        isNull,
+        reason: 'Source preparation cannot claim a running executor',
+      );
+      final capsule = await files.capsuleDirForHex(owner);
+      final raw =
+          (await files.readPluginState(
+            capsule,
+            registry.record.pluginId!,
+            'workspace-execution.v1.json',
+          ))!;
+      final grant = jsonDecode(raw) as Map;
+      expect(grant['executor'], 'vps');
+      expect(grant['executor_id'], 'f' * 64);
+      expect(grant['handoff_id'], matches(RegExp(r'^[0-9a-f]{64}$')));
+      final afterStart = invoked;
+      await expectLater(
+        runtime.runScheduledWorkspaceCycle(registry.record),
+        throwsStateError,
+      );
+      await expectLater(
+        runtime.runWorkspaceAction(record: registry.record, action: 'open'),
+        throwsStateError,
+      );
+      await expectLater(
+        runtime.setWorkspaceExecution(
+          record: registry.record,
+          enabled: true,
+          approvedScope: scope,
+        ),
+        throwsStateError,
+      );
+      expect(
+        invoked,
+        afterStart,
+        reason: 'No local fallback after the target is assigned',
+      );
+      final checkpoint = await runtime.releaseWorkspaceToVps(
+        registry.record,
+        executorId: 'f' * 64,
+      );
+      expect(checkpoint['execution'], grant);
+      expect(
+        await files.readPluginState(
+          capsule,
+          registry.record.pluginId!,
+          'workspace-execution.v1.json',
+        ),
+        raw,
+        reason: 'Export neither renews nor rewrites the prepared grant',
+      );
+    },
+  );
+  test(
+    'native setup is bound, repeatable and never creates trading authority',
+    () async {
+      final root = await Directory('/tmp').createTemp('hivra_setup_');
+      addTearDown(() => root.delete(recursive: true));
+      const owner =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const plugin = 'hivra.contract.independent-workspace.v1';
+      List<int> package({
+        String id = plugin,
+        bool scheduled = true,
+        String version = '1.0.0',
+      }) {
+        final manifest = utf8.encode(
+          jsonEncode({
+            'schema': 'hivra.plugin.manifest',
+            'version': 1,
+            'release_version': version,
+            'plugin_id': id,
+            'contract': {'kind': pluginWorkspaceContractKind},
+            'runtime': {
+              'abi': 'hivra_host_abi_v2',
+              'entry_export': 'hivra_evaluate_v1',
+            },
+            'capabilities': [
+              'workspace.render',
+              'workspace.continue',
+              'state.plugin.read_write',
+              if (scheduled) 'workspace.schedule',
+            ],
+          }),
+        );
+        final archive =
+            Archive()
+              ..addFile(
+                ArchiveFile('plugin/manifest.json', manifest.length, manifest),
+              )
+              ..addFile(
+                ArchiveFile('plugin/module.wasm', 8, [
+                  0,
+                  97,
+                  115,
+                  109,
+                  1,
+                  0,
+                  0,
+                  0,
+                ]),
+              );
+        return ZipEncoder().encode(archive)!;
+      }
+
+      Map<String, dynamic> input(List<int> bytes) => {
+        'owner': owner,
+        'plugin_id': plugin,
+        'package_digest': sha256.convert(bytes).toString(),
+        'executor_id': 'f' * 64,
+        'package': base64Encode(bytes),
+        'credentials': null,
+      };
+      final request = input(package());
+      for (final invalid in [
+        {...request, 'package_digest': 'e' * 64},
+        {
+          ...request,
+          'credentials': {'api_key': 'x'},
+        },
+        {...request, 'executor_id': 'not-a-host'},
+        {...request, 'scope': {}},
+        input(package(scheduled: false)),
+        input(package(id: 'hivra.contract.other.v1')),
+      ]) {
+        await expectLater(
+          WorkspaceRunner.setup(root, invalid),
+          throwsA(anyOf(isA<FormatException>(), isA<StateError>())),
+        );
+        expect(await File('${root.path}/runner.json').exists(), false);
+      }
+      final installed = await WorkspaceRunner.setup(root, request);
+      final dirs = UserVisibleDataDirectoryService(
+        runtimeRootOverride: root.path,
+      );
+      final registry = WasmPluginRegistryService(dataDirs: dirs);
+      final files = CapsuleFileStore(dirs: dirs);
+      final record = (await registry.loadPlugins()).single;
+      final capsule = await files.capsuleDirForHex(owner, create: true);
+      expect(installed['package_id'], record.id);
+      expect(
+        await files.readPluginState(
+          capsule,
+          plugin,
+          'workspace-execution.v1.json',
+        ),
+        isNull,
+      );
+      const opaque = '{"another_package_shape":[1,"not trading fields"]}';
+      const journal = '{"retained":"provider evidence"}';
+      await files.writePluginState(
+        capsule,
+        plugin,
+        'workspace.v1.json',
+        opaque,
+      );
+      await files.writePluginState(
+        capsule,
+        plugin,
+        'external_effects.v1.json',
+        journal,
+      );
+      await files.writePluginState(
+        capsule,
+        plugin,
+        'workspace-execution.v1.json',
+        '{"retained":"opaque to installer"}',
+      );
+      final secrets = {
+        ...request,
+        'credentials': {'api_key': 'test-key', 'secret_key': 'test-secret'},
+      };
+      expect(await WorkspaceRunner.setup(root, secrets), installed);
+      final credentialFile = File('${root.path}/credentials.json');
+      final credentials = await credentialFile.readAsString();
+      expect((await credentialFile.stat()).mode & 0x3f, 0);
+      expect((await File('${root.path}/runner.json').stat()).mode & 0x3f, 0);
+      expect(await WorkspaceRunner.setup(root, request), installed);
+      expect(await credentialFile.readAsString(), credentials);
+      expect(
+        await files.readPluginState(capsule, plugin, 'workspace.v1.json'),
+        opaque,
+      );
+      expect(
+        await files.readPluginState(
+          capsule,
+          plugin,
+          'external_effects.v1.json',
+        ),
+        journal,
+      );
+      expect(
+        await files.readPluginState(
+          capsule,
+          plugin,
+          'workspace-execution.v1.json',
+        ),
+        '{"retained":"opaque to installer"}',
+      );
+      for (final changed in [
+        {...request, 'owner': 'e' * 64},
+        {...request, 'executor_id': 'e' * 64},
+        input(package(version: '2.0.0')),
+      ]) {
+        await expectLater(
+          WorkspaceRunner.setup(root, changed),
+          throwsStateError,
+        );
+        expect(await credentialFile.readAsString(), credentials);
+        expect((await registry.loadPlugins()).single.id, record.id);
+        expect(
+          await files.readPluginState(capsule, plugin, 'workspace.v1.json'),
+          opaque,
+        );
+      }
+      final lock = File('${root.path}/runner.lock');
+      await lock.delete();
+      final foreign = File('${root.path}/foreign')..writeAsStringSync('keep');
+      await Link(lock.path).create(foreign.path);
+      await expectLater(WorkspaceRunner.setup(root, request), throwsStateError);
+      expect(await foreign.readAsString(), 'keep');
+    },
+  );
   test(
     'handoff freezes local execution and exact replay never rolls back VPS',
     () async {
@@ -543,18 +859,20 @@ void main() {
       final initial = await command('status');
       expect(initial['ok'], true);
       expect(initial['result']['runner']['state'], 'running');
-      expect(initial['result']['view']['execution'], isNull);
-      providerDown = true;
-      final unavailable = await command('status');
-      expect(unavailable['ok'], true);
-      expect(unavailable['result']['runner']['state'], 'running');
-      expect(unavailable['result']['view'], isNull);
+      expect(initial['result']['view'], isNull);
       expect(
-        unavailable['result']['observation_error'],
-        contains('unavailable'),
+        observed,
+        0,
+        reason: 'An unassigned status must not fork private package state',
       );
-      expect(jsonEncode(unavailable), isNot(contains('secret-key')));
-      providerDown = false;
+      expect(
+        await files.readPluginState(
+          await files.capsuleDirForHex(owner),
+          registry.record.pluginId!,
+          'workspace.v1.json',
+        ),
+        isNull,
+      );
       await expectLater(runner().start(), throwsStateError);
       expect((await command('status'))['ok'], true);
       final mismatched = await command('status', {'owner': 'f' * 64});
@@ -570,6 +888,17 @@ void main() {
       expect(started['ok'], true);
       expect(started['result']['view']['execution']['mode'], 'vps');
       expect(started['result']['view']['execution']['allow_new_entries'], true);
+      providerDown = true;
+      final unavailable = await command('status');
+      expect(unavailable['ok'], true);
+      expect(unavailable['result']['runner']['state'], 'running');
+      expect(unavailable['result']['view'], isNull);
+      expect(
+        unavailable['result']['observation_error'],
+        contains('unavailable'),
+      );
+      expect(jsonEncode(unavailable), isNot(contains('secret-key')));
+      providerDown = false;
       final capsule = await files.capsuleDirForHex(owner);
       final grant = await files.readPluginState(
         capsule,

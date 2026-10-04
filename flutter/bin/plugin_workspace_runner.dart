@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 import 'package:hivra_app/ffi/hivra_bindings.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/plugin_workspace_runtime.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
@@ -15,8 +18,10 @@ import 'package:hivra_app/services/wasm_plugin_runtime_service.dart';
 // This is host composition, not a second strategy or trading lifecycle.
 // SSH transports requests to the private socket; no public listener is opened.
 Future<void> main(List<String> args) async {
-  if (args.length != 2 || !['serve', 'request'].contains(args[0])) {
-    stderr.writeln('Usage: hivra-workspace-runner <serve|request> <data-root>');
+  if (args.length != 2 || !['serve', 'request', 'setup'].contains(args[0])) {
+    stderr.writeln(
+      'Usage: hivra-workspace-runner <serve|request|setup> <data-root>',
+    );
     exitCode = 64;
     return;
   }
@@ -27,6 +32,14 @@ Future<void> main(List<String> args) async {
     if (args[0] == 'request') {
       final input = await _readMessage(stdin);
       final result = await WorkspaceRunner.request(root, input);
+      stdout.writeln(jsonEncode(result));
+      return;
+    }
+    if (args[0] == 'setup') {
+      final result = await WorkspaceRunner.setup(
+        root,
+        await _readMessage(stdin),
+      );
       stdout.writeln(jsonEncode(result));
       return;
     }
@@ -145,6 +158,149 @@ class WorkspaceRunner {
     required this.registry,
     required this.binding,
   });
+
+  /// Installation enters the existing Registry; transport cannot manufacture
+  /// capabilities or write a competing package registry. No grant is created.
+  static Future<Map<String, dynamic>> setup(
+    Directory root,
+    Map<String, dynamic> input,
+  ) async {
+    if (!root.isAbsolute ||
+        input.length != 6 ||
+        !input.keys.toSet().containsAll(const {
+          'owner',
+          'plugin_id',
+          'package_digest',
+          'executor_id',
+          'package',
+          'credentials',
+        }) ||
+        !['owner', 'package_digest', 'executor_id'].every(
+          (key) =>
+              input[key] is String &&
+              RegExp(r'^[0-9a-f]{64}$').hasMatch(input[key]),
+        ) ||
+        input['plugin_id'] is! String ||
+        !RegExp(r'^[a-z][a-z0-9.-]{0,127}$').hasMatch(input['plugin_id']) ||
+        input['package'] is! String ||
+        (input['package'] as String).length > 5592408 ||
+        (input['credentials'] != null && input['credentials'] is! Map) ||
+        await FileSystemEntity.type(root.path, followLinks: false) !=
+            FileSystemEntityType.directory ||
+        (await root.stat()).mode & 0x3f != 0) {
+      throw const FormatException('Invalid private installation');
+    }
+    final package = base64Decode(input['package'] as String);
+    if (package.isEmpty ||
+        package.length > 4 * 1024 * 1024 ||
+        sha256.convert(package).toString() != input['package_digest']) {
+      throw const FormatException('Package digest mismatch');
+    }
+    final credentials = input['credentials'];
+    if (credentials != null &&
+        (credentials.length != 2 ||
+            !['api_key', 'secret_key'].every(
+              (key) =>
+                  credentials[key] is String &&
+                  (credentials[key] as String).trim().isNotEmpty,
+            ) ||
+            utf8.encode(jsonEncode(credentials)).length > 4096)) {
+      throw const FormatException('Invalid host credentials');
+    }
+    final ownedRoot = await root.resolveSymbolicLinks();
+    if (!_ownedRoots.add(ownedRoot)) {
+      throw StateError('Runner already owns this data directory');
+    }
+    RandomAccessFile? lease;
+    File? incoming;
+    try {
+      final lockPath = '${root.path}/runner.lock';
+      if (![
+        FileSystemEntityType.file,
+        FileSystemEntityType.notFound,
+      ].contains(await FileSystemEntity.type(lockPath, followLinks: false))) {
+        throw StateError('Regular runner lease required');
+      }
+      lease = await File(lockPath).open(mode: FileMode.append);
+      await lease.lock(FileLock.exclusive);
+      final configFile = File('${root.path}/runner.json');
+      Map<String, dynamic>? previous;
+      if (await FileSystemEntity.type(configFile.path, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        previous = await _readPrivateJson(configFile);
+        if (previous.length != 5 ||
+            previous['package_id'] is! String ||
+            previous['owner'] != input['owner'] ||
+            previous['plugin_id'] != input['plugin_id'] ||
+            previous['executor_id'] != input['executor_id'] ||
+            previous['package_digest'] != input['package_digest']) {
+          throw StateError('Installation already belongs to another binding');
+        }
+      }
+      final registry = WasmPluginRegistryService(
+        dataDirs: UserVisibleDataDirectoryService(
+          runtimeRootOverride: root.path,
+        ),
+      );
+      final records = await registry.loadPlugins();
+      if (records.any((r) => r.pluginId != input['plugin_id'])) {
+        throw StateError('One workspace per installation');
+      }
+      WasmPluginRecord? record;
+      if (records.length == 1) {
+        final binding = await registry.resolveRuntimeBinding(
+          input['plugin_id'] as String,
+        );
+        if (binding.packageDigestHex != input['package_digest']) {
+          throw StateError('Installed package differs; no silent replacement');
+        }
+        record = records.single;
+      } else {
+        incoming = File('${root.path}/incoming-package.zip');
+        await const AtomicFileWriteService().writeBytes(incoming, package);
+        record = await registry.installPluginFromFile(
+          incoming,
+          validateRecord: (candidate) {
+            if (candidate.pluginId != input['plugin_id'] ||
+                candidate.contractKind != pluginWorkspaceContractKind ||
+                !candidate.capabilities.contains('workspace.schedule')) {
+              throw StateError('Package is not an executable workspace');
+            }
+          },
+        );
+      }
+      final binding = {
+        'owner': input['owner'],
+        'plugin_id': input['plugin_id'],
+        'package_id': record.id,
+        'package_digest': input['package_digest'],
+        'executor_id': input['executor_id'],
+      };
+      if (record.contractKind != pluginWorkspaceContractKind ||
+          !record.capabilities.contains('workspace.schedule') ||
+          (previous != null && previous['package_id'] != record.id)) {
+        throw StateError('Installed workspace binding changed');
+      }
+      if (credentials != null) {
+        await _writePrivateJson(File('${root.path}/credentials.json'), {
+          'owner': input['owner'],
+          'plugin_id': input['plugin_id'],
+          'credentials': credentials,
+        });
+      }
+      await _writePrivateJson(configFile, binding);
+      return binding;
+    } finally {
+      try {
+        if (incoming != null && await incoming.exists()) {
+          await incoming.delete();
+        }
+      } finally {
+        await lease?.close();
+        _ownedRoots.remove(ownedRoot);
+      }
+    }
+  }
 
   Future<WasmPluginRecord> _record() async {
     if (runtime.activeCapsuleRootHex() != binding['owner']) {
@@ -281,10 +437,14 @@ class WorkspaceRunner {
       case 'status':
         if (request.length != 6) throw const FormatException();
         try {
-          view = await runtime.runWorkspaceAction(
-            record: record,
-            action: 'open',
-          );
+          // A fresh installation is not a second workspace. Until adoption,
+          // health checks must not initialize package state and obstruct import.
+          if (await runtime.readWorkspaceExecution(record) != null) {
+            view = await runtime.runWorkspaceAction(
+              record: record,
+              action: 'open',
+            );
+          }
         } catch (_) {
           observationError =
               'Exchange/workspace observation unavailable; '
@@ -392,4 +552,12 @@ Future<Map<String, dynamic>> _readPrivateJson(File file) async {
   final decoded = jsonDecode(await file.readAsString());
   if (decoded is! Map) throw const FormatException();
   return Map<String, dynamic>.from(decoded);
+}
+
+Future<void> _writePrivateJson(File file, Map<String, dynamic> value) async {
+  await const AtomicFileWriteService().writeString(file, jsonEncode(value));
+  final result = await Process.run('chmod', ['600', file.path]);
+  if (result.exitCode != 0) {
+    throw StateError('Private file permissions unavailable');
+  }
 }

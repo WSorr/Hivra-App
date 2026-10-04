@@ -515,26 +515,60 @@ Future<void> _checkProductionProcess(
     final fixtureBinding = await fixtureRegistry.resolveRuntimeBinding(
       fixtureRecord.pluginId!,
     );
-    final record = await registry.installPluginFromFile(
-      File(fixtureBinding.packageFilePath!),
-    );
+    if ((await Process.run('chmod', ['700', root.path])).exitCode != 0) {
+      throw StateError('Cannot prepare private runner fixture');
+    }
+    final packageBytes =
+        await File(fixtureBinding.packageFilePath!).readAsBytes();
+    final installation = {
+      'owner': owner,
+      'plugin_id': fixtureRecord.pluginId,
+      'package_digest': sha256.convert(packageBytes).toString(),
+      'executor_id': 'f' * 64,
+      'package': base64Encode(packageBytes),
+      'credentials': null,
+    };
+    Future<Map<String, dynamic>> setup(Map<String, dynamic> input) async {
+      final installer = await Process.start(executable.path, [
+        'setup',
+        root.path,
+      ]);
+      final output = installer.stdout.transform(utf8.decoder).join();
+      final errors = installer.stderr.transform(utf8.decoder).join();
+      installer.stdin.writeln(jsonEncode(input));
+      await installer.stdin.close();
+      final code = await installer.exitCode.timeout(
+        const Duration(seconds: 30),
+      );
+      final raw = await output;
+      if (code != 0) throw StateError('Runner setup failed: ${await errors}');
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    }
+
+    final config = await setup(installation);
+    final record = (await registry.loadPlugins()).single;
+    final repeated = await setup(installation);
+    if (jsonEncode(config) != jsonEncode(repeated) ||
+        await files.readPluginState(
+              await files.capsuleDirForHex(owner),
+              record.pluginId!,
+              'workspace-execution.v1.json',
+            ) !=
+            null) {
+      throw StateError(
+        'Repeated setup changed the binding or created authority',
+      );
+    }
+    try {
+      await setup({...installation, 'owner': 'e' * 64});
+      throw StateError('Foreign installation was accepted');
+    } on StateError catch (error) {
+      if (!error.message.toString().startsWith('Runner setup failed:')) rethrow;
+    }
     final sourceRecord = await sourceRegistry.installPluginFromFile(
       File(fixtureBinding.packageFilePath!),
     );
     final binding = await registry.resolveRuntimeBinding(record.pluginId!);
-    final config = {
-      'owner': owner,
-      'plugin_id': record.pluginId,
-      'package_id': record.id,
-      'package_digest': binding.packageDigestHex,
-      'executor_id': 'f' * 64,
-    };
-    final configFile = File('${root.path}/runner.json');
-    await configFile.writeAsString(jsonEncode(config), flush: true);
-    if ((await Process.run('chmod', ['700', root.path])).exitCode != 0 ||
-        (await Process.run('chmod', ['600', configFile.path])).exitCode != 0) {
-      throw StateError('Cannot prepare private runner fixture');
-    }
     final capsule = await files.capsuleDirForHex(owner);
     final sourceCapsule = await sourceFiles.capsuleDirForHex(
       owner,
@@ -636,6 +670,13 @@ Future<void> _checkProductionProcess(
     }
 
     process = await start();
+    try {
+      await setup(installation);
+      throw StateError('Setup replaced a live production installation');
+    } on StateError catch (error) {
+      if (!error.message.toString().startsWith('Runner setup failed:')) rethrow;
+    }
+    await status();
     final adopted = await WorkspaceRunner.request(root, {
       ...config,
       'command': 'adopt',
@@ -690,6 +731,29 @@ Future<void> _checkProductionProcess(
     if (await process.exitCode.timeout(const Duration(seconds: 10)) != 0) {
       throw StateError('Production shutdown failed');
     }
+    if (jsonEncode(await setup(installation)) != jsonEncode(config) ||
+        await files.readPluginState(
+              capsule,
+              record.pluginId!,
+              'workspace.v1.json',
+            ) !=
+            stateBefore ||
+        await files.readPluginState(
+              capsule,
+              record.pluginId!,
+              'workspace-execution.v1.json',
+            ) !=
+            importedGrant ||
+        await files.readPluginState(
+              capsule,
+              record.pluginId!,
+              'external_effects.v1.json',
+            ) !=
+            effectsBefore) {
+      throw StateError(
+        'Reinstallation changed the binding, workspace, authority or journal',
+      );
+    }
     process = await start();
     final replay = await WorkspaceRunner.request(root, {
       ...config,
@@ -725,7 +789,7 @@ Future<void> _checkProductionProcess(
       throw StateError('Restart changed effect journal');
     }
     stdout.writeln(
-      'production runner handoff/timer/restart/replay/singleton PASS; real installed WASM; no network',
+      'production runner setup/reinstall/handoff/timer/restart/replay/singleton PASS; real installed WASM; no network',
     );
   } finally {
     process?.kill(ProcessSignal.sigterm);
