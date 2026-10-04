@@ -38,6 +38,11 @@ quality is measured separately from actual closed-trade outcomes.
    remain running and online; it is not presented as 24/7 execution. Switching
    modes does not create a second active trader for the same account and
    instrument.
+   Updating the native VPS runtime is an explicit advanced action through the
+   same installer. It first retrieves current state and ends VPS authority,
+   retains exchange orders and the journal, and requires a separate Start to
+   resume. A failed return acknowledgement prevents installation; ordinary
+   saved-key reconnection does not reinstall the native runtime.
 3. Connect one supported exchange account through a host-owned credential
    handle. The plugin never receives raw API keys. Select one instrument from
    the exchange's current contracts using a searchable list, not a required

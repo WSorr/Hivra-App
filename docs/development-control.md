@@ -348,6 +348,12 @@ binary `81f92dc9` updated the server to the same Jack `0.1.12` digest `6db7399b`
 without replacing the native runner or executor identity. Failed reconnection
 does not select a new target; provider credentials stay in the host store.
 Focused 38/38, full Flutter 810/810, analyze and review gates passed.
+Native runtime update is now exposed separately in advanced settings through
+the same installer. It returns opaque state and ends VPS authority before root
+installation, preserving the managed order and journal. Failed return blocks
+installation; failed installation does not hide acknowledged authority return
+or grant another Start. Success, cancellation and both failure paths passed
+widget tests. Packaged/live update smoke remains pending; no new owner or route.
 The user then authorized DASH VPS cycles on `0.1.12` until
 2026-10-05T11:40:28.312Z. The first completed cycle at
 2026-10-04T11:42:16.219Z reread order `2106703408299995136` as open with zero

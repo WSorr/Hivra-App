@@ -325,13 +325,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
   }
 
-  Future<void> _connectVps() async {
+  Future<void> _connectVps({bool reinstall = false}) async {
     if (_busy || _choosing || widget.connectVps == null) return;
     var host = _view?['host_connection']?['host']?.toString() ?? '';
     var port = _view?['host_connection']?['port']?.toString() ?? '22';
     var password = '';
     var connected = false;
-    if (_view?['host_connection']?['installed'] == true) {
+    var returnedOnline = false;
+    if (!reinstall && _view?['host_connection']?['installed'] == true) {
       setState(() => _busy = true);
       try {
         await widget.connectVps!(
@@ -364,19 +365,24 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                 (context) => StatefulBuilder(
                   builder:
                       (context, update) => AlertDialog(
-                        title: const Text('Connect your VPS'),
+                        title: Text(
+                          reinstall ? 'Update VPS runtime' : 'Connect your VPS',
+                        ),
                         content: SizedBox(
                           width: 420,
                           child: SingleChildScrollView(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Text(
-                                  'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. Root password is used only for installation, never saved. Trading starts only after your separate Start confirmation.',
+                                Text(
+                                  reinstall
+                                      ? 'End VPS trading authority and install the runtime bundled with this Capsule. Existing exchange orders and plugin state are retained. Website and VPN are not changed. Root password is never saved. Resume trading only after a separate Start confirmation.'
+                                      : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. Root password is used only for installation, never saved. Trading starts only after your separate Start confirmation.',
                                 ),
                                 const SizedBox(height: 16),
                                 TextFormField(
                                   initialValue: host,
+                                  readOnly: reinstall,
                                   decoration: const InputDecoration(
                                     labelText: 'VPS IP or hostname',
                                   ),
@@ -386,6 +392,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 ),
                                 TextFormField(
                                   initialValue: port,
+                                  readOnly: reinstall,
                                   decoration: const InputDecoration(
                                     labelText: 'SSH port',
                                   ),
@@ -419,7 +426,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                         int.tryParse(port) == null
                                     ? null
                                     : () => Navigator.pop(context, true),
-                            child: const Text('Connect securely'),
+                            child: Text(
+                              reinstall
+                                  ? 'Update securely'
+                                  : 'Connect securely',
+                            ),
                           ),
                         ],
                       ),
@@ -431,6 +442,17 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         _busy = true;
         _error = null;
       });
+      if (reinstall) {
+        final returnOnline = widget.useOnline;
+        if (returnOnline == null) {
+          throw StateError(
+            'VPS authority must end before updating its runtime',
+          );
+        }
+        await returnOnline();
+        returnedOnline = true;
+        if (!mounted) return;
+      }
       await widget.connectVps!(
         host: host,
         port: int.parse(port),
@@ -478,7 +500,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         });
       }
     }
-    if (mounted && connected) await _run('open');
+    if (mounted && (connected || returnedOnline)) {
+      final connectionError = _error;
+      await _run('open');
+      if (mounted && connectionError != null) {
+        setState(() => _error = connectionError);
+      }
+    }
   }
 
   Future<void> _useOnline() async {
@@ -806,13 +834,26 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             for (final raw in view['fields'] as List)
               if ((raw as Map)['advanced'] != true) _field(raw),
             if ((view['fields'] as List).any(
-              (raw) => (raw as Map)['advanced'] == true,
-            ))
+                  (raw) => (raw as Map)['advanced'] == true,
+                ) ||
+                (widget.connectVps != null &&
+                    widget.useOnline != null &&
+                    view['host_connection']?['installed'] == true))
               ExpansionTile(
                 title: const Text('Advanced settings'),
                 children: [
                   for (final raw in view['fields'] as List)
                     if ((raw as Map)['advanced'] == true) _field(raw),
+                  if (widget.connectVps != null &&
+                      widget.useOnline != null &&
+                      view['host_connection']?['installed'] == true)
+                    TextButton(
+                      onPressed:
+                          _busy || _choosing
+                              ? null
+                              : () => _connectVps(reinstall: true),
+                      child: const Text('Update VPS runtime'),
+                    ),
                 ],
               ),
             Wrap(

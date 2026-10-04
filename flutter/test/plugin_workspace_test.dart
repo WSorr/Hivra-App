@@ -2010,6 +2010,108 @@ void main() {
     },
   );
 
+  for (final failure in ['none', 'return', 'install']) {
+    testWidgets(
+      'VPS runtime update retains the order and ends authority before install: $failure',
+      (tester) async {
+        final calls = <String>[];
+        var returnedOnline = false;
+        var starts = 0;
+        Map<String, dynamic> shown() => {
+          ...view(),
+          'fields': <dynamic>[],
+          'summary': 'Managed order 2106703408299995136',
+          'host_connection': {
+            'target': returnedOnline ? 'local' : 'vps',
+            'host': 'test.invalid',
+            'port': 2222,
+            'installed': true,
+            'health': 'not_started',
+          },
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              runWorkspaceAction:
+                  (action, settings, {credentials, approvedOrder}) async =>
+                      shown(),
+              configureExecution: ({
+                required enabled,
+                approvedScope,
+                settings = const {},
+              }) async {
+                starts++;
+                return shown();
+              },
+              useOnline: () async {
+                calls.add('return');
+                if (failure == 'return') throw StateError('Lost return ack');
+                returnedOnline = true;
+              },
+              connectVps: ({
+                required host,
+                required port,
+                required password,
+                required trustPeer,
+              }) async {
+                calls.add('install');
+                if (!returnedOnline ||
+                    host != 'test.invalid' ||
+                    port != 2222 ||
+                    password != 'fixture-password') {
+                  throw StateError('Unexpected installation input');
+                }
+                if (failure == 'install') throw StateError('Install failed');
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Advanced settings'));
+        await tester.pumpAndSettle();
+        final update = find.widgetWithText(TextButton, 'Update VPS runtime');
+        await tester.ensureVisible(update);
+        await tester.tap(update);
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('End VPS trading authority'),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(calls, isEmpty);
+        await tester.tap(update);
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField).last, 'fixture-password');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Update securely'));
+        await tester.pumpAndSettle();
+        expect(calls, failure == 'return' ? ['return'] : ['return', 'install']);
+        expect(starts, 0);
+        expect(find.text('Managed order 2106703408299995136'), findsOneWidget);
+        if (failure == 'none') {
+          expect(
+            find.textContaining('VPS connection was not completed'),
+            findsNothing,
+          );
+        } else {
+          expect(
+            find.textContaining('VPS connection was not completed'),
+            findsOneWidget,
+          );
+        }
+        if (failure != 'return') {
+          expect(
+            find.text('Trade online: this app must remain open.'),
+            findsOneWidget,
+          );
+        }
+        await tester.pumpWidget(const SizedBox());
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('Start requires consent and Stop stays available during reads', (
     tester,
   ) async {
