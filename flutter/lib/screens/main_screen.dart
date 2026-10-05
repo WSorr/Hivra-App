@@ -132,7 +132,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _stateManager = _runtime.stateManager;
     _invitationIntents = _runtime.invitationIntents;
     _passiveReceive = _module.passiveReceive;
-    _passiveReceive.setResultListener(_handlePassiveReceiveResult);
+    _passiveReceive.addResultListener(_handlePassiveReceiveResult);
     _listenConnectivityChanges();
     Future.microtask(_bootstrapActiveRuntime);
   }
@@ -145,7 +145,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void dispose() {
     _pluginRuntimeModule?.moltbook.deactivateForegroundSession();
     _connectivitySubscription?.cancel();
-    _passiveReceive.setResultListener(null);
+    _passiveReceive.removeResultListener(_handlePassiveReceiveResult);
     _passiveReceive.pauseForeground();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();

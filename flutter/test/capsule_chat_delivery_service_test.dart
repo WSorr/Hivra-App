@@ -49,6 +49,38 @@ void main() {
     });
 
     test(
+      'passive chat projection merges durable and drained messages once',
+      () {
+        const existing = CapsuleChatInboxMessage(
+          id: 'existing',
+          fromHex: peerHex,
+          toHex: capsuleHex,
+          messageText: 'existing',
+          createdAtUtc: '2026-08-13T08:00:00.000Z',
+          envelopeHashHex: '',
+          timestampMs: 1,
+        );
+        const passive = CapsuleChatInboxMessage(
+          id: 'passive',
+          fromHex: peerHex,
+          toHex: capsuleHex,
+          messageText: 'passive',
+          createdAtUtc: '2026-08-13T08:00:01.000Z',
+          envelopeHashHex: '',
+          timestampMs: 2,
+        );
+
+        final projected = mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
+          const <CapsuleChatInboxMessage>[existing],
+          const <CapsuleChatInboxMessage>[existing, passive],
+          const <CapsuleChatInboxMessage>[passive],
+        ]);
+
+        expect(projected, <CapsuleChatInboxMessage>[existing, passive]);
+      },
+    );
+
+    test(
       'peer projection includes both directions without cross-peer leak',
       () {
         const otherPeerHex =

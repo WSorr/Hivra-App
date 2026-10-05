@@ -112,6 +112,45 @@ void main() {
     expect(order, <String>['poll', 'attestations', 'chat']);
   });
 
+  test('notifies multiple live projections from one chat drain', () async {
+    final received = CapsuleChatInboxMessage(
+      id: 'message-1',
+      fromHex: _capsuleB,
+      toHex: _capsuleA,
+      messageText: 'hello',
+      createdAtUtc: '2026-10-05T12:00:00Z',
+      envelopeHashHex: 'aa',
+      timestampMs: 1,
+    );
+    final coordinator = _coordinator(
+      drainChat:
+          () async => CapsuleChatDeliveryReceiveResult(
+            code: 0,
+            errorMessage: null,
+            droppedByConsensus: 0,
+            deferredByConsensus: 0,
+            messages: <CapsuleChatInboxMessage>[received],
+          ),
+    );
+    final mainProjection = <CapsuleChatInboxMessage>[];
+    final chatProjection = <CapsuleChatInboxMessage>[];
+    coordinator.addResultListener((result) {
+      mainProjection.addAll(result.chat.messages);
+    });
+    coordinator.addResultListener((result) {
+      chatProjection.addAll(result.chat.messages);
+    });
+
+    await coordinator.trigger(
+      capsuleHex: _capsuleA,
+      reason: CapsulePassiveReceiveReason.periodic,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(mainProjection, <CapsuleChatInboxMessage>[received]);
+    expect(chatProjection, <CapsuleChatInboxMessage>[received]);
+  });
+
   test('one capability drain failure does not skip the next drain', () async {
     var chatDrains = 0;
     final coordinator = _coordinator(
