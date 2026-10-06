@@ -149,6 +149,7 @@ class MoltbookRuntimeModule {
     required String category,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
+    _requireMoltbookEnabled(configuration);
     final normalizedCategory = category.trim();
     if (!configuration.allowedTopics.contains(normalizedCategory)) {
       throw StateError(
@@ -231,6 +232,8 @@ class MoltbookRuntimeModule {
 
   Future<MoltbookPublicBulletinProposal?>
   proposeNextMoltbookPublicChange() async {
+    final configuration = await _ambassadorConfiguration.load();
+    _requireMoltbookEnabled(configuration);
     final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
     if (ownerHex == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(ownerHex)) {
       throw StateError('Active capsule identity is unavailable');
@@ -953,7 +956,7 @@ class MoltbookRuntimeModule {
           'observed_at_utc': observedAtUtc,
           'allowed_topics': configuration.allowedTopics,
           'current_newest_post_id': checkpoint.newestPostId,
-          'processed_post_ids': checkpoint.processedPostIds,
+          'processed_post_ids': checkpoint.runtimeProcessedPostIds,
           'observed_post_ids': observation.feed.posts
               .map((post) => post.postId)
               .toList(growable: false),
@@ -1697,6 +1700,7 @@ class MoltbookRuntimeModule {
     required String description,
     required bool allowCrypto,
   }) async {
+    _requireMoltbookEnabled(await _ambassadorConfiguration.load());
     final operation = await moltbookPublications.prepareCommunity(
       name: name,
       displayName: displayName,
@@ -1715,6 +1719,7 @@ class MoltbookRuntimeModule {
     required String submoltName,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
+    _requireMoltbookEnabled(configuration);
     if (!const <String>{
       MoltbookAmbassadorConfiguration.approvalAssisted,
       MoltbookAmbassadorConfiguration.approvalBounded,
@@ -1860,6 +1865,7 @@ class MoltbookRuntimeModule {
   Future<ExternalEffectOperation> approveMoltbookPublication(
     ExternalEffectOperation operation,
   ) async {
+    _requireMoltbookEnabled(await _ambassadorConfiguration.load());
     final queued = await moltbookPublications.approveAndQueue(operation);
     await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[queued]);
     await uiLog.log(
@@ -2087,6 +2093,17 @@ class MoltbookRuntimeModule {
     String operationId,
   ) => moltbookPublications.cancel(operationId);
 
+  Future<ExternalEffectOperation> closeMoltbookPublicationWithoutReceipt(
+    String operationId,
+  ) async {
+    final result = await moltbookPublications.closeWithoutReceipt(operationId);
+    await uiLog.log(
+      'moltbook.publication.close_without_receipt',
+      'operation=$operationId state=${result.state.wireName}',
+    );
+    return result;
+  }
+
   Future<void> deleteMoltbookDraft(String draftHashHex) async {
     final normalizedHash = draftHashHex.trim().toLowerCase();
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedHash)) {
@@ -2131,6 +2148,7 @@ class MoltbookRuntimeModule {
     String? publicChangeCommitmentHashHex,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
+    _requireMoltbookEnabled(configuration);
     final normalizedCategory = category.trim();
     if (!configuration.allowedTopics.contains(normalizedCategory)) {
       throw StateError('Draft category must match one of the allowed topics');
@@ -2286,6 +2304,12 @@ class MoltbookRuntimeModule {
   String _safeLogValue(String value) {
     final compact = value.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
     return compact.length <= 80 ? compact : compact.substring(0, 80);
+  }
+
+  void _requireMoltbookEnabled(MoltbookAmbassadorConfiguration configuration) {
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
   }
 }
 

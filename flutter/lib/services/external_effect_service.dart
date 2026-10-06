@@ -239,6 +239,52 @@ class ExternalEffectService {
     );
   }
 
+  /// Archives an unconfirmed attempt without clearing its deduplication identity.
+  /// This never calls the provider or proves that delivery did not occur.
+  Future<ExternalEffectOperation> retireWithoutReceipt({
+    required String pluginId,
+    required String operationId,
+    required Set<String> allowedErrorCodes,
+    required String closureCode,
+    required String closureMessage,
+  }) {
+    final ownerHex = _requireActiveOwner();
+    return _transition(
+      ownerHex: ownerHex,
+      pluginId: pluginId,
+      operationId: operationId,
+      allowedStates: const <ExternalEffectState>{
+        ExternalEffectState.unresolved,
+        ExternalEffectState.terminalFailure,
+      },
+      idempotentStates: const <ExternalEffectState>{},
+      update: (current) {
+        if (!allowedErrorCodes.contains(current.lastErrorCode)) {
+          throw StateError(
+            'External effect is not eligible for local retirement',
+          );
+        }
+        if (current.receipt != null || current.requiredAction != null) {
+          throw StateError(
+            'An effect with a receipt or required provider action cannot be retired',
+          );
+        }
+        if (current.attemptCount < 1) {
+          throw StateError(
+            'An effect without a provider attempt cannot be retired',
+          );
+        }
+        return _copy(
+          current,
+          state: ExternalEffectState.terminalFailure,
+          lastErrorCode: closureCode,
+          lastErrorMessage: closureMessage,
+          clearRequiredAction: true,
+        );
+      },
+    );
+  }
+
   Future<ExternalEffectOperation> process({
     required String pluginId,
     required String operationId,

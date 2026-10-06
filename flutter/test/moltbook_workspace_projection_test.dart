@@ -35,6 +35,7 @@ void main() {
                 onOpenPost: (_) async {},
                 onRecheck: (_) async {},
                 onCheckCurrentPost: (_) async => statusChecks += 1,
+                onCloseWithoutReceipt: (_) async {},
               ),
             ),
           ),
@@ -199,6 +200,29 @@ void main() {
 
       expect(projection.nextAction, MoltbookWorkspaceNextAction.reconcile);
       expect(projection.canCancelQueuedEffect, isFalse);
+    });
+
+    test('older unresolved history does not hide a new local draft', () {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.waiting,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: true,
+        hasQueuedEffect: false,
+        hasReplyDraft: false,
+        hasLocalDraft: true,
+        proposedCount: 1,
+        publishedCount: 1,
+        challengedCount: 0,
+        blockedCount: 1,
+      );
+
+      expect(projection.nextAction, MoltbookWorkspaceNextAction.reviewDraft);
     });
 
     testWidgets('queued publication exposes independent cancel action', (

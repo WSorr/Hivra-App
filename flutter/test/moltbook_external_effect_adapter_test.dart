@@ -101,6 +101,25 @@ void main() {
     },
   );
 
+  test('reconciliation reports revoked package authority explicitly', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send: (request) async => _postResponse('post-must-not-be-read'),
+      ),
+      authorize: (_) async {
+        return () async {
+          throw StateError('package was replaced');
+        };
+      },
+    );
+
+    final result = await adapter.reconcile(_request());
+
+    expect(result.status, ExternalEffectAdapterStatus.unresolved);
+    expect(result.errorCode, 'authorization_revoked');
+  });
+
   test('publishes a v3 post without the automatic repository link', () async {
     final requests = <MoltbookHttpRequest>[];
     final adapter = MoltbookExternalEffectAdapter(

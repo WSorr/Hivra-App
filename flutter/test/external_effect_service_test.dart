@@ -450,6 +450,69 @@ void main() {
   );
 
   test(
+    'retirement closes an absent delivery without contacting the provider',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'receipt_not_observed',
+            errorMessage: 'No matching post',
+          ),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+
+      final failed = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      final closed = await service.retireWithoutReceipt(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+        allowedErrorCodes: {'receipt_not_observed'},
+        closureCode: 'publication_closed_without_receipt',
+        closureMessage: 'Closed locally',
+      );
+
+      expect(failed.state, ExternalEffectState.terminalFailure);
+      expect(closed.state, ExternalEffectState.terminalFailure);
+      expect(closed.lastErrorCode, 'publication_closed_without_receipt');
+      expect(closed.receipt, isNull);
+      expect(adapter.deliverCount, 1);
+    },
+  );
+
+  test(
+    'retirement refuses a receipt or an unresolved provider action',
+    () async {
+      final service = build(
+        _FakeExternalEffectAdapter(
+          deliverResults: <Object>[_success('post-1')],
+        ),
+      );
+      await prepareApprovedQueued(service);
+      final succeeded = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      await expectLater(
+        service.retireWithoutReceipt(
+          pluginId: moltbookAmbassadorPluginId,
+          operationId: 'post-1',
+          allowedErrorCodes: {'receipt_not_observed'},
+          closureCode: 'publication_closed_without_receipt',
+          closureMessage: 'Closed locally',
+        ),
+        throwsStateError,
+      );
+      expect(succeeded.state, ExternalEffectState.succeeded);
+    },
+  );
+
+  test(
     'reconcile-only recovers interrupted delivery without redelivery',
     () async {
       final adapter = _FakeExternalEffectAdapter(

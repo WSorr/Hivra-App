@@ -294,67 +294,65 @@ void main() {
     },
   );
 
-  test(
-    'stopped ambassador prepares a local proposal and retained WASM draft',
-    () async {
-      await module.stopMoltbookCyclesAndDisable();
-      final change = await publicChanges.record(
-        sourceId: 'stopped-local-change',
-        category: 'hivra',
-        facts: const <String>[
-          'Capsule Chat retains its history after restart.',
-        ],
-      );
+  test('disabled ambassador blocks new proposal and draft creation', () async {
+    await module.stopMoltbookCyclesAndDisable();
+    final change = await publicChanges.record(
+      sourceId: 'stopped-local-change',
+      category: 'hivra',
+      facts: const <String>['Capsule Chat retains its history after restart.'],
+    );
 
-      final proposal = await module.proposeNextMoltbookPublicChange();
-      expect(proposal, isNotNull);
-      expect(proposal!.facts, change.facts);
-      final draft = await module.prepareMoltbookDraft(
+    await expectLater(
+      module.proposeNextMoltbookPublicChange(),
+      throwsA(isA<StateError>()),
+    );
+    await expectLater(
+      module.prepareMoltbookDraft(
         bulletinId: change.sourceId,
         releaseTag: 'development',
         category: change.category,
-        facts: proposal.facts,
-        titleHint: proposal.title,
-        reviewedBody: proposal.body,
+        facts: change.facts,
+        titleHint: 'Public change',
+        reviewedBody: 'A confirmed public change.',
         audience: 'Public Capsule users',
         publicChangeCommitmentHashHex: change.commitmentHashHex,
-      );
-      final reopened = buildModule(MoltbookCycleTriggerService());
-
-      expect(
-        (await reopened.loadMoltbookDrafts()).single.preview.draftHashHex,
-        draft.draftHashHex,
-      );
-      expect(await reopened.proposeNextMoltbookPublicChange(), isNull);
-      expect(await reopened.startConfiguredMoltbookCycles(), isNull);
-      await expectLater(
-        reopened.runMoltbookCycle(),
-        throwsA(isA<StateError>()),
-      );
-      await expectLater(
-        reopened.authorizeMoltbookEffect(
-          ExternalEffectAdapterRequest(
-            ownerCapsuleHex: _rootA,
-            operationId: 'stopped-write',
-            pluginId: moltbookAmbassadorPluginId,
-            providerId: MoltbookConnectionService.providerId,
-            accountBindingId: connection.accountId,
-            effectKind: MoltbookExternalEffectAdapter.postEffectKind,
-            canonicalPayloadJson: '{}',
-            payloadHashHex: 'a' * 64,
-          ),
+      ),
+      throwsA(isA<StateError>()),
+    );
+    await expectLater(
+      module.prepareMoltbookCommunity(
+        name: 'disabled-community',
+        displayName: 'Disabled Community',
+        description: 'Not created while the Ambassador is disabled.',
+        allowCrypto: false,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(await module.startConfiguredMoltbookCycles(), isNull);
+    await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
+    await expectLater(
+      module.authorizeMoltbookEffect(
+        ExternalEffectAdapterRequest(
+          ownerCapsuleHex: _rootA,
+          operationId: 'stopped-write',
+          pluginId: moltbookAmbassadorPluginId,
+          providerId: MoltbookConnectionService.providerId,
+          accountBindingId: connection.accountId,
+          effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+          canonicalPayloadJson: '{}',
+          payloadHashHex: 'a' * 64,
         ),
-        throwsA(isA<StateError>()),
-      );
-      expect(configuration.enabled, isFalse);
-      expect(configuration.saveCount, 1);
-      expect(ai.bulletinProposalCount, 1);
-      expect(connection.observeCount, 0);
-      expect(checkpoint.commitCount, 0);
-      expect(publications.operations, isEmpty);
-      expect(publications.processedIds, isEmpty);
-    },
-  );
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(configuration.enabled, isFalse);
+    expect(configuration.saveCount, 1);
+    expect(ai.bulletinProposalCount, 0);
+    expect(connection.observeCount, 0);
+    expect(checkpoint.commitCount, 0);
+    expect(publications.operations, isEmpty);
+    expect(publications.processedIds, isEmpty);
+  });
 
   test(
     'stopped manual proposal preserves category and AI failure boundaries',
@@ -483,19 +481,38 @@ void main() {
     ]);
   });
 
-  test('stopping cycles does not block review of a retained draft', () async {
+  test(
+    'disabled ambassador blocks preparing a new publication effect',
+    () async {
+      configuration.enabled = false;
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+
+      await expectLater(
+        module.prepareMoltbookPublication(
+          draft: _draftPreview('8' * 64),
+          submoltName: MoltbookPublicationService.defaultSubmolt,
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(publications.preparedPostDestinations, isEmpty);
+    },
+  );
+
+  test('disabled ambassador blocks queueing a prepared publication', () async {
     configuration.enabled = false;
-    configuration.approvalMode =
-        MoltbookAmbassadorConfiguration.approvalBounded;
+    final operation = _operation();
+    publications.operations = <ExternalEffectOperation>[operation];
 
-    await module.prepareMoltbookPublication(
-      draft: _draftPreview('8' * 64),
-      submoltName: MoltbookPublicationService.defaultSubmolt,
+    await expectLater(
+      module.approveMoltbookPublication(operation),
+      throwsA(isA<StateError>()),
     );
-
-    expect(publications.preparedPostDestinations, <String>[
-      MoltbookPublicationService.defaultSubmolt,
-    ]);
+    expect(publications.postApprovalCount, 0);
+    expect(
+      publications.operations.single.state,
+      ExternalEffectState.unresolved,
+    );
   });
 
   test('draft-only policy cannot prepare a publication for review', () async {
@@ -1549,6 +1566,31 @@ void main() {
     expect(connection.observeCount, 0);
   });
 
+  test(
+    'heartbeat keeps durable checkpoint but bounds the WASM payload',
+    () async {
+      final processedPostIds = List<String>.generate(
+        MoltbookFeedCheckpoint.maxProcessedPostIds,
+        (index) => 'processed-$index',
+      );
+      checkpoint.value = MoltbookFeedCheckpoint(
+        newestPostId: processedPostIds.first,
+        processedPostIds: processedPostIds,
+        lastObservedAtUtc: '2026-08-01T00:00:00.000Z',
+        continuationCursor: null,
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(connection.processedSnapshots.single.length, 500);
+      expect(
+        heartbeatHost.runtimeProcessedPostIdCount,
+        MoltbookFeedCheckpoint.maxRuntimeProcessedPostIds,
+      );
+      expect(checkpoint.value.processedPostIds.length, lessThanOrEqualTo(130));
+    },
+  );
+
   test('configured session policy starts once for the runtime scope', () async {
     configuration.triggerPolicy =
         MoltbookAmbassadorConfiguration.triggerSession;
@@ -1754,6 +1796,7 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
 class _HeartbeatHost implements PluginHostApiService {
   int executeCount = 0;
   int authorizationCount = 0;
+  int? runtimeProcessedPostIdCount;
   final List<List<String>> preparedBulletinFacts = <List<String>>[];
   final List<String> authorizedTargetCommentIds = <String>[];
   final Map<String, String> engagementActionsByPostId = <String, String>{};
@@ -1895,6 +1938,8 @@ class _HeartbeatHost implements PluginHostApiService {
       );
     }
     final observedAt = request.args['observed_at_utc'] as String;
+    runtimeProcessedPostIdCount =
+        (request.args['processed_post_ids'] as List<dynamic>).length;
     final feed = request.args['feed'] as List<dynamic>;
     final processedPostIds =
         (request.args['processed_post_ids'] as List<dynamic>)

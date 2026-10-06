@@ -144,7 +144,10 @@ An earlier uncertain effect never resubmits its source-bound draft. It does
 not indefinitely block a distinct confirmed change after the bounded write
 interval and daily budget permit another attempt. Queued and delivering
 effects still block new publication; prepared operations do not. Automatic
-rechecks of unresolved effects are reconciliation-only.
+rechecks of unresolved effects are reconciliation-only. The user may close an
+eligible unconfirmed attempt locally after a recheck, without a provider write.
+This does not prove absence: the exact publication identity remains retained
+and cannot receive a fresh retry. Independent new posts can continue.
 Publishing to an existing community does not require ownership evidence.
 Provider permissions and community rules still fail closed at delivery. The
 same operation id, exact destination binding, receipt, unresolved state, and
@@ -176,10 +179,12 @@ external-effect journal contains a validated `succeeded` post operation bound
 to that draft's `source_draft_hash_hex`, the application composition owner
 must archive the matching draft. Loading the workspace performs the same
 reconciliation for pre-existing data. Failed, cancelled, unresolved, queued,
-reply, or malformed operations must not archive post drafts.
+reply, malformed, or locally closed-without-receipt operations must not archive
+post drafts.
 Deleting a local draft may cancel only its single matching unapproved
 `prepared` post operation. Approved, queued, delivering, or unresolved work
-requires explicit cancellation or reconciliation. Workspace loading repairs a
+requires explicit cancellation, reconciliation, or an eligible local close
+that retains deduplication evidence. Workspace loading repairs a
 legacy missing-draft orphan only when the retained operation is still
 `prepared`; this repair makes no provider request.
 
@@ -248,6 +253,9 @@ Transition rules:
 11. An exact provider-referenced post marked as spam is a terminal provider
     rejection, not ambiguous delivery. It blocks publication retry but not the
     next independent effect.
+12. A local closure never claims provider absence or permits exact retry.
+    Missing profile history, expired verification, and HTTP errors are not
+    proof of non-delivery. Closure retains the original publication identity.
 
 ## 6. Operating and trigger modes
 
@@ -308,7 +316,8 @@ One cycle executes in this order:
     human review. Under explicitly enabled Bounded policy, apply the current
     WASM authorization and host-owned durable budget to that same effect path.
     A non-terminal publication blocks any new external post effect, not local
-    drafting of a different confirmed change.
+    drafting of a different confirmed change. Local closure does not release
+    the same draft for a fresh publication attempt.
 12. Process authorized effects through the common adapter and record receipts.
 13. Commit the checkpoint only through the newest safely observed boundary.
 14. Publish a local cycle summary and stop.
@@ -328,6 +337,8 @@ Every cycle has explicit limits. Initial v1 defaults are:
 - at least 30 minutes between committed bounded writes across posts and
   replies;
 - no automatic reply to a target older than the configured maximum age;
+- the durable processed-id checkpoint may retain up to 500 ids, while each WASM
+  heartbeat receives only the most recent 128 ids;
 - no more than one cycle in flight per Capsule/plugin/account;
 - no concurrent effect processing for the same `engagement_id`.
 
@@ -351,6 +362,8 @@ until resolved, cancelled safely, or expired according to provider evidence.
 - Failure or expiry of one challenge does not stop observation or reconciliation
   of other targets.
 - Network timeout remains unresolved and reconciles before any retry.
+- An eligible `receipt_not_observed` attempt may be closed locally without
+  claiming provider absence or success; its exact retry remains blocked.
 - Revoked credentials stop remote reads/writes and preserve local evidence.
 - Rate limits pause cycles until the provider reset time.
 - Capsule switching cancels in-memory work; late completion cannot mutate the
@@ -370,7 +383,12 @@ Required projections:
 - current cycle: idle, observing, planning, proposing, delivering, or stopped;
 - summary: read, eligible, proposed, published, challenged, blocked;
 - engagement card: target, reason, exact draft, mode, effect state, receipt;
+- for an eligible unconfirmed post, offer `Close unconfirmed attempt`; it
+  rechecks first, performs no provider write, and retains deduplication identity;
 - stop: immediately prevents new proposals/effects while preserving journals;
+- while stopped, retained drafts and prepared effects require an explicit
+  re-enable before review approval or queueing; inspection, cancellation, and
+  reconciliation of existing journal entries remain available;
 - diagnostics: hashes, provider ids, attempts, and raw state remain secondary.
 
 If a target already has an active operation, the only primary action is to

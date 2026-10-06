@@ -161,6 +161,12 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       };
     } on MoltbookProviderException catch (error) {
       return _providerFailure(error);
+    } on _MoltbookAuthorizationRevoked {
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.unresolved,
+        errorCode: 'authorization_revoked',
+        errorMessage: 'Moltbook authorization changed before reconciliation',
+      );
     } on FormatException catch (error) {
       return ExternalEffectAdapterResult(
         status: ExternalEffectAdapterStatus.terminalFailure,

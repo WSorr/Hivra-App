@@ -419,6 +419,7 @@ class MoltbookHeartbeatObservation {
 class MoltbookFeedCheckpoint {
   static const int schemaVersion = 1;
   static const int maxProcessedPostIds = 500;
+  static const int maxRuntimeProcessedPostIds = 128;
 
   final String? newestPostId;
   final List<String> processedPostIds;
@@ -486,6 +487,9 @@ class MoltbookFeedCheckpoint {
   };
 
   Set<String> get processedPostIdSet => processedPostIds.toSet();
+
+  List<String> get runtimeProcessedPostIds =>
+      processedPostIds.take(maxRuntimeProcessedPostIds).toList(growable: false);
 
   void validate() {
     if (processedPostIds.length > maxProcessedPostIds ||
