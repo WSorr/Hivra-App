@@ -128,6 +128,151 @@ void main() {
     expect(restartedAdapter.reconcileCount, 0);
   });
 
+  Future<void> seedTradingHistory(int count) async {
+    final service = build(_FakeExternalEffectAdapter(), providerId: 'bingx');
+    final base = await service.prepare(
+      operationId: 'entry-0',
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: 'bingx',
+      accountBindingId: 'account-1',
+      effectKind: 'order.entry.place',
+      canonicalPayloadJson: '{}',
+    );
+    final directory = await files.capsuleDirForHex(_rootA);
+    await files.writePluginState(
+      directory,
+      moltbookAmbassadorPluginId,
+      'external_effects.v1.json',
+      jsonEncode({
+        'schema_version': 1,
+        'owner_capsule_hex': _rootA,
+        'plugin_id': moltbookAmbassadorPluginId,
+        'operations': List.generate(
+          count,
+          (i) => {
+            ...base.toJson(),
+            'operation_id': 'entry-$i',
+            'state': 'succeeded',
+            'receipt': {
+              ..._success('entry-$i').receipt!.toJson(),
+              'provider_id': 'bingx',
+            },
+          },
+        ),
+      }),
+    );
+  }
+
+  test(
+    'retains five closed groups, unexpired replay and unconfirmed orders in one journal',
+    () async {
+      await seedTradingHistory(25);
+      final service = build(_FakeExternalEffectAdapter(), providerId: 'bingx');
+      final unexpired = now.add(const Duration(days: 2));
+      for (var i = 0; i < 8; i++) {
+        await service.completeGroup(
+          pluginId: moltbookAmbassadorPluginId,
+          groupId: 'trade-$i',
+          operationIds: {for (var j = i * 3; j < i * 3 + 3; j++) 'entry-$j'},
+          retainUntil:
+              i == 0 ? unexpired : now.subtract(const Duration(days: 1)),
+        );
+      }
+      var journal = await service.list(pluginId: moltbookAmbassadorPluginId);
+      expect(journal.map((o) => o.operationId).toSet(), {
+        for (var j = 0; j < 3; j++) 'entry-$j',
+        for (var j = 9; j < 25; j++) 'entry-$j',
+      });
+      expect(journal.every((o) => o.receipt != null), isTrue);
+      expect(
+        journal.last.completedGroup,
+        isNull,
+        reason:
+            'Exchange acceptance alone never proves that an order is closed',
+      );
+      now = unexpired.add(const Duration(seconds: 1));
+      final restarted = build(
+        _FakeExternalEffectAdapter(),
+        providerId: 'bingx',
+      );
+      journal = await restarted.list(pluginId: moltbookAmbassadorPluginId);
+      expect(journal.map((o) => o.operationId), [
+        for (var j = 9; j < 25; j++) 'entry-$j',
+      ]);
+      final revision = journal.first.revision;
+      await restarted.completeGroup(
+        pluginId: moltbookAmbassadorPluginId,
+        groupId: 'trade-3',
+        operationIds: {'entry-9', 'entry-10', 'entry-11'},
+        retainUntil: unexpired,
+      );
+      expect(
+        (await restarted.list(
+          pluginId: moltbookAmbassadorPluginId,
+        )).first.revision,
+        revision,
+      );
+      final journals =
+          await home
+              .list(recursive: true)
+              .where((f) => f.path.endsWith('external_effects.v1.json'))
+              .toList();
+      expect(journals, hasLength(1));
+    },
+  );
+
+  test('missing and nonterminal records cannot be declared closed', () async {
+    final service = build(_FakeExternalEffectAdapter(), providerId: 'bingx');
+    await service.prepare(
+      operationId: 'pending',
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: 'bingx',
+      accountBindingId: 'account-1',
+      effectKind: 'order.entry.place',
+      canonicalPayloadJson: '{}',
+    );
+    for (final id in ['pending', 'missing']) {
+      await expectLater(
+        service.completeGroup(
+          pluginId: moltbookAmbassadorPluginId,
+          groupId: 'trade-1',
+          operationIds: {id},
+          retainUntil: now,
+        ),
+        throwsStateError,
+      );
+    }
+    expect(
+      (await service.list(
+        pluginId: moltbookAmbassadorPluginId,
+      )).single.completedGroup,
+      isNull,
+    );
+  });
+
+  test(
+    'full journal never evicts accepted BingX orders as terminal history',
+    () async {
+      await seedTradingHistory(1000);
+      final service = build(_FakeExternalEffectAdapter(), providerId: 'bingx');
+      await expectLater(
+        service.prepare(
+          operationId: 'new-entry',
+          pluginId: moltbookAmbassadorPluginId,
+          providerId: 'bingx',
+          accountBindingId: 'account-1',
+          effectKind: 'order.entry.place',
+          canonicalPayloadJson: '{}',
+        ),
+        throwsStateError,
+      );
+      expect(
+        await service.list(pluginId: moltbookAmbassadorPluginId),
+        hasLength(1000),
+      );
+    },
+  );
+
   test(
     'legacy approved operation backfills one stable approval time',
     () async {
@@ -301,6 +446,69 @@ void main() {
       expect(unchanged.state, ExternalEffectState.terminalFailure);
       expect(adapter.deliverCount, 1);
       expect(adapter.reconcileCount, 1);
+    },
+  );
+
+  test(
+    'retirement closes an absent delivery without contacting the provider',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'receipt_not_observed',
+            errorMessage: 'No matching post',
+          ),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+
+      final failed = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      final closed = await service.retireWithoutReceipt(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+        allowedErrorCodes: {'receipt_not_observed'},
+        closureCode: 'publication_closed_without_receipt',
+        closureMessage: 'Closed locally',
+      );
+
+      expect(failed.state, ExternalEffectState.terminalFailure);
+      expect(closed.state, ExternalEffectState.terminalFailure);
+      expect(closed.lastErrorCode, 'publication_closed_without_receipt');
+      expect(closed.receipt, isNull);
+      expect(adapter.deliverCount, 1);
+    },
+  );
+
+  test(
+    'retirement refuses a receipt or an unresolved provider action',
+    () async {
+      final service = build(
+        _FakeExternalEffectAdapter(
+          deliverResults: <Object>[_success('post-1')],
+        ),
+      );
+      await prepareApprovedQueued(service);
+      final succeeded = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      await expectLater(
+        service.retireWithoutReceipt(
+          pluginId: moltbookAmbassadorPluginId,
+          operationId: 'post-1',
+          allowedErrorCodes: {'receipt_not_observed'},
+          closureCode: 'publication_closed_without_receipt',
+          closureMessage: 'Closed locally',
+        ),
+        throwsStateError,
+      );
+      expect(succeeded.state, ExternalEffectState.succeeded);
     },
   );
 

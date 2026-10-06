@@ -49,39 +49,12 @@ class WasmPluginPackagePreflightService {
     }
     final fileName = _fileNameOnly(sourceFile.path);
     final extension = _fileExtension(fileName).toLowerCase();
-    if (extension == '.wasm') {
-      await _validateWasmBinary(sourceFile);
-      return const WasmPluginPackagePreflight(
-        packageKind: 'wasm',
-        capabilities: <String>[],
-      );
-    }
     if (extension == '.zip') {
       return _validateZipPackage(sourceFile);
     }
     throw const FormatException(
-      'Only .wasm or .zip plugin packages are supported',
+      'Install a .zip plugin package containing manifest.json and a WASM module',
     );
-  }
-
-  Future<void> _validateWasmBinary(File sourceFile) async {
-    final bytes = await sourceFile.readAsBytes();
-    if (bytes.length > _maxModuleBytes) {
-      throw const FormatException('WASM module exceeds the size limit');
-    }
-    if (bytes.length < 8) {
-      throw const FormatException('WASM package is too small');
-    }
-    const magic = <int>[0x00, 0x61, 0x73, 0x6d];
-    const version = <int>[0x01, 0x00, 0x00, 0x00];
-    for (var i = 0; i < 4; i += 1) {
-      if (bytes[i] != magic[i]) {
-        throw const FormatException('Invalid WASM header magic');
-      }
-      if (bytes[i + 4] != version[i]) {
-        throw const FormatException('Unsupported WASM binary version');
-      }
-    }
   }
 
   Future<WasmPluginPackagePreflight> _validateZipPackage(
@@ -106,9 +79,11 @@ class WasmPluginPackagePreflightService {
 
     final manifestFile = archive.files.firstWhere(
       (file) => file.isFile && file.name.split('/').last == 'manifest.json',
-      orElse: () => throw const FormatException(
-        'Zip plugin package must include manifest.json',
-      ),
+      orElse:
+          () =>
+              throw const FormatException(
+                'Zip plugin package must include manifest.json',
+              ),
     );
     final manifestText = utf8.decode(_archiveFileBytes(manifestFile));
     final decoded = jsonDecode(manifestText);
@@ -144,9 +119,7 @@ class WasmPluginPackagePreflightService {
     }
     final runtime = manifest['runtime'];
     if (runtime is! Map) {
-      throw const FormatException(
-        'Plugin manifest is missing runtime section',
-      );
+      throw const FormatException('Plugin manifest is missing runtime section');
     }
     final runtimeMap = Map<String, dynamic>.from(runtime);
     final runtimeAbi = runtimeMap['abi']?.toString().trim() ?? '';
@@ -156,14 +129,10 @@ class WasmPluginPackagePreflightService {
       runtimeMap['module_path'],
     );
     if (runtimeAbi != requiredRuntimeAbi) {
-      throw const FormatException(
-        'Unsupported plugin runtime ABI',
-      );
+      throw const FormatException('Unsupported plugin runtime ABI');
     }
     if (runtimeEntryExport != requiredRuntimeEntryExport) {
-      throw const FormatException(
-        'Unsupported plugin runtime entry export',
-      );
+      throw const FormatException('Unsupported plugin runtime entry export');
     }
     final wasmModulePaths = <String>{};
     for (final file in archive.files) {
@@ -182,12 +151,14 @@ class WasmPluginPackagePreflightService {
       );
     }
     if (runtimeModulePath != null) {
-      final normalizedRuntimeModulePath = _normalizeArchivePath(
-        runtimeModulePath,
-        rejectParentTraversal: true,
-      )!;
-      final hasDeclaredModule =
-          wasmModulePaths.contains(normalizedRuntimeModulePath);
+      final normalizedRuntimeModulePath =
+          _normalizeArchivePath(
+            runtimeModulePath,
+            rejectParentTraversal: true,
+          )!;
+      final hasDeclaredModule = wasmModulePaths.contains(
+        normalizedRuntimeModulePath,
+      );
       if (!hasDeclaredModule) {
         throw const FormatException(
           'Plugin runtime module_path not found in package',
@@ -221,10 +192,8 @@ class WasmPluginPackagePreflightService {
         'Plugin runtime module_path must be a non-empty string',
       );
     }
-    final normalized = _normalizeArchivePath(
-      value,
-      rejectParentTraversal: true,
-    )!;
+    final normalized =
+        _normalizeArchivePath(value, rejectParentTraversal: true)!;
     if (!normalized.toLowerCase().endsWith('.wasm')) {
       throw const FormatException(
         'Plugin runtime module_path must point to a .wasm file',
@@ -248,8 +217,9 @@ class WasmPluginPackagePreflightService {
       normalized = normalized.substring(1);
     }
     final segments = normalized.split('/');
-    final hasParentTraversal =
-        segments.any((segment) => segment.trim() == '..');
+    final hasParentTraversal = segments.any(
+      (segment) => segment.trim() == '..',
+    );
     if (hasParentTraversal) {
       if (rejectParentTraversal) {
         throw const FormatException(
@@ -271,7 +241,8 @@ class WasmPluginPackagePreflightService {
     if (raw == null) return const <String>[];
     if (raw is! List) {
       throw const FormatException(
-          'Plugin manifest capabilities must be a list');
+        'Plugin manifest capabilities must be a list',
+      );
     }
     final unique = <String>{};
     for (final entry in raw) {
@@ -293,7 +264,8 @@ class WasmPluginPackagePreflightService {
     if (content is List<int>) return content;
     if (content is String) return utf8.encode(content);
     throw const FormatException(
-        'Unable to read file content from plugin archive');
+      'Unable to read file content from plugin archive',
+    );
   }
 
   String _fileNameOnly(String path) {

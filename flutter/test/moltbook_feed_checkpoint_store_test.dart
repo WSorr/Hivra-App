@@ -31,13 +31,13 @@ void main() {
   });
 
   test('persists only bounded feed identity metadata', () async {
-    final checkpoint = await store.commit(
-      _feed(
-        const <String>['post-2', 'post-1'],
-        hasMore: true,
-        nextCursor: 'older-page',
+    final checkpoint = await store.save(
+      const MoltbookFeedCheckpoint(
+        newestPostId: 'post-2',
+        processedPostIds: <String>['post-2', 'post-1'],
+        lastObservedAtUtc: '2026-07-29T12:00:00.000Z',
+        continuationCursor: 'older-page',
       ),
-      observedAt: DateTime.utc(2026, 7, 29, 12),
     );
 
     expect(checkpoint.newestPostId, 'post-2');
@@ -56,14 +56,22 @@ void main() {
   });
 
   test('deduplicates ids and preserves newest-first bounded history', () async {
-    await store.commit(
-      _feed(const <String>['post-2', 'post-1']),
-      observedAt: DateTime.utc(2026, 7, 29, 12),
+    await store.save(
+      const MoltbookFeedCheckpoint(
+        newestPostId: 'post-2',
+        processedPostIds: <String>['post-2', 'post-1'],
+        lastObservedAtUtc: '2026-07-29T12:00:00.000Z',
+        continuationCursor: null,
+      ),
     );
 
-    final checkpoint = await store.commit(
-      _feed(const <String>['post-3', 'post-2']),
-      observedAt: DateTime.utc(2026, 7, 29, 12, 30),
+    final checkpoint = await store.save(
+      const MoltbookFeedCheckpoint(
+        newestPostId: 'post-3',
+        processedPostIds: <String>['post-3', 'post-2', 'post-1'],
+        lastObservedAtUtc: '2026-07-29T12:30:00.000Z',
+        continuationCursor: null,
+      ),
     );
 
     expect(checkpoint.processedPostIds, <String>['post-3', 'post-2', 'post-1']);
@@ -81,9 +89,13 @@ void main() {
       readActiveCapsuleRootHex: () => activeRoot,
     );
 
-    final future = store.commit(
-      _feed(const <String>['post-1']),
-      observedAt: DateTime.utc(2026, 7, 29, 12),
+    final future = store.save(
+      const MoltbookFeedCheckpoint(
+        newestPostId: 'post-1',
+        processedPostIds: <String>['post-1'],
+        lastObservedAtUtc: '2026-07-29T12:00:00.000Z',
+        continuationCursor: null,
+      ),
     );
 
     await expectLater(future, throwsA(isA<StateError>()));
@@ -109,41 +121,6 @@ class _HookFileStore extends CapsuleFileStore {
     await super.writePluginState(capsuleDir, pluginId, fileName, rawJson);
     onWrite();
   }
-}
-
-MoltbookFeedObservation _feed(
-  List<String> ids, {
-  bool hasMore = false,
-  String? nextCursor,
-}) {
-  return MoltbookFeedObservation(
-    posts:
-        ids
-            .map(
-              (id) => MoltbookFeedPost(
-                postId: id,
-                title: 'Remote title',
-                content: 'Remote body',
-                authorId: 'author-1',
-                authorName: 'Agent',
-                submoltName: 'general',
-                score: 1,
-                commentCount: 0,
-                isVerified: true,
-                isSpam: false,
-                createdAtUtc: '2026-07-29T10:00:00.000Z',
-              ),
-            )
-            .toList(),
-    hasMore: hasMore,
-    nextCursor: nextCursor,
-    rateLimit: const MoltbookRateLimitSnapshot(
-      limit: 60,
-      remaining: 50,
-      resetEpochSeconds: 1,
-      retryAfterSeconds: null,
-    ),
-  );
 }
 
 const String _rootA =

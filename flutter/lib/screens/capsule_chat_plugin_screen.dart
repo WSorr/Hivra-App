@@ -11,6 +11,22 @@ import '../utils/peer_identity_format.dart';
 import '../widgets/capsule_chat_conversation_workspace.dart';
 
 @visibleForTesting
+List<CapsuleChatInboxMessage> mergeChatMessages(
+  Iterable<Iterable<CapsuleChatInboxMessage>> sources,
+) {
+  final byId = <String, CapsuleChatInboxMessage>{};
+  for (final source in sources) {
+    for (final message in source) {
+      byId[message.id] = message;
+    }
+  }
+  final merged =
+      byId.values.toList()
+        ..sort((left, right) => left.timestampMs.compareTo(right.timestampMs));
+  return List<CapsuleChatInboxMessage>.unmodifiable(merged);
+}
+
+@visibleForTesting
 Future<CapsuleChatDeliveryReceiveResult>
 projectCachedMessagesBeforeChatRefresh({
   required List<CapsuleChatInboxMessage> currentMessages,
@@ -20,14 +36,12 @@ projectCachedMessagesBeforeChatRefresh({
   projectMessages,
 }) async {
   Future<void> projectCachedMessages() async {
-    final byId = <String, CapsuleChatInboxMessage>{
-      for (final message in currentMessages) message.id: message,
-      for (final message in await loadCachedMessages()) message.id: message,
-    };
-    final merged =
-        byId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    projectMessages(List<CapsuleChatInboxMessage>.unmodifiable(merged));
+    projectMessages(
+      mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
+        currentMessages,
+        await loadCachedMessages(),
+      ]),
+    );
   }
 
   await projectCachedMessages();
@@ -156,14 +170,50 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   @override
   void initState() {
     super.initState();
+    _module.passiveReceive.addResultListener(_handlePassiveReceiveResult);
     WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
   }
 
   @override
   void dispose() {
+    _module.passiveReceive.removeResultListener(_handlePassiveReceiveResult);
     _peerController.dispose();
     _messageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handlePassiveReceiveResult(
+    CapsulePassiveReceiveResult result,
+  ) async {
+    final activeCapsule = _module.activeCapsuleRootHex()?.trim().toLowerCase();
+    if (!mounted ||
+        activeCapsule == null ||
+        activeCapsule != result.capsuleHex) {
+      return;
+    }
+    if (result.chat.messages.isEmpty) return;
+
+    try {
+      final cachedMessages =
+          await _module.chatDelivery.loadCachedMessagesDurably();
+      final currentCapsule =
+          _module.activeCapsuleRootHex()?.trim().toLowerCase();
+      if (!mounted || currentCapsule != result.capsuleHex) return;
+      final merged = mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
+        _messages,
+        cachedMessages,
+        result.chat.messages,
+      ]);
+      setState(() {
+        _messages = merged;
+        _droppedByConsensus = result.chat.droppedByConsensus;
+        _deferredByConsensus = result.chat.deferredByConsensus;
+      });
+      unawaited(_markMessagesRead(_messagesForSelectedPeer(merged)));
+      await _refreshContacts();
+    } catch (_) {
+      return;
+    }
   }
 
   Future<void> _initialize() async {
@@ -426,14 +476,11 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       final cachedMessages =
           await _module.chatDelivery.loadCachedMessagesDurably();
       if (!mounted) return;
-      final byId = <String, CapsuleChatInboxMessage>{
-        for (final message in _messages) message.id: message,
-        for (final message in cachedMessages) message.id: message,
-        for (final message in result.messages) message.id: message,
-      };
-      final merged =
-          byId.values.toList()
-            ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+      final merged = mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
+        _messages,
+        cachedMessages,
+        result.messages,
+      ]);
       setState(() {
         _droppedByConsensus = result.droppedByConsensus;
         _deferredByConsensus = result.deferredByConsensus;

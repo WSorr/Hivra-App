@@ -31,6 +31,7 @@ void main() {
     final requests = <MoltbookHttpRequest>[];
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send: (request) async {
           requests.add(request);
@@ -66,10 +67,64 @@ void main() {
     expect(requests.last.uri.path, '/api/v1/posts/post-123');
   });
 
+  test(
+    'revoked package authority blocks delivery after credential read',
+    () async {
+      var providerRequests = 0;
+      var authorizationChecks = 0;
+      var revoked = false;
+      final revokingVault = _RevokingVault(() => revoked = true);
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: revokingVault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            providerRequests++;
+            return _postResponse('post-should-not-exist');
+          },
+        ),
+        authorize: (_) async {
+          authorizationChecks++;
+          return () async {
+            if (revoked) {
+              throw StateError('package was replaced');
+            }
+          };
+        },
+      );
+
+      final result = await adapter.deliver(_request());
+
+      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+      expect(result.errorCode, 'authorization_revoked');
+      expect(authorizationChecks, 1);
+      expect(providerRequests, 0);
+    },
+  );
+
+  test('reconciliation reports revoked package authority explicitly', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send: (request) async => _postResponse('post-must-not-be-read'),
+      ),
+      authorize: (_) async {
+        return () async {
+          throw StateError('package was replaced');
+        };
+      },
+    );
+
+    final result = await adapter.reconcile(_request());
+
+    expect(result.status, ExternalEffectAdapterStatus.unresolved);
+    expect(result.errorCode, 'authorization_revoked');
+  });
+
   test('publishes a v3 post without the automatic repository link', () async {
     final requests = <MoltbookHttpRequest>[];
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send: (request) async {
           requests.add(request);
@@ -113,6 +168,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -158,6 +214,7 @@ void main() {
     late MoltbookHttpRequest captured;
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send: (request) async {
           captured = request;
@@ -186,6 +243,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -225,6 +283,7 @@ void main() {
       var requests = 0;
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (_) async {
             requests++;
@@ -252,6 +311,7 @@ void main() {
       var created = false;
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           requestTimeout: const Duration(milliseconds: 1),
           send: (request) async {
@@ -294,6 +354,7 @@ void main() {
       ]) {
         final adapter = MoltbookExternalEffectAdapter(
           secretVault: vault,
+          authorize: _allowRequest,
           provider: MoltbookProviderAdapter(
             send: (_) async => _jsonResponse(response),
           ),
@@ -314,6 +375,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -346,6 +408,7 @@ void main() {
   test('custom community rejects crypto-policy drift', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(
@@ -369,6 +432,7 @@ void main() {
   test('accepts a target-bound v2 reply payload', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(<String, dynamic>{
@@ -390,6 +454,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -421,6 +486,7 @@ void main() {
   test('verification challenge never becomes a successful receipt', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(<String, dynamic>{
@@ -442,6 +508,7 @@ void main() {
   test('nested post verification challenge never becomes success', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(<String, dynamic>{
@@ -474,6 +541,7 @@ void main() {
     final requests = <MoltbookHttpRequest>[];
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send: (request) async {
           requests.add(request);
@@ -515,6 +583,7 @@ void main() {
   test('verification for another post remains unresolved', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(<String, dynamic>{
@@ -548,6 +617,7 @@ void main() {
       var verifyRequests = 0;
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             verifyRequests++;
@@ -591,6 +661,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -653,6 +724,7 @@ void main() {
       var postReads = 0;
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -715,6 +787,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -766,6 +839,7 @@ void main() {
   test('missing reconciliation marker blocks blind resubmission', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(<String, dynamic>{
@@ -793,6 +867,7 @@ void main() {
     () async {
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send:
               (_) async => _jsonResponse(<String, dynamic>{
@@ -826,6 +901,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -850,6 +926,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -897,6 +974,7 @@ void main() {
     () async {
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send:
               (_) async =>
@@ -920,6 +998,7 @@ void main() {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (request) async {
             requests.add(request);
@@ -944,6 +1023,7 @@ void main() {
   test('keeps v1 marker reconciliation for existing queued effects', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(<String, dynamic>{
@@ -975,6 +1055,7 @@ void main() {
   test('does not reconcile hidden or spam-moderated posts', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
             (_) async => _jsonResponse(<String, dynamic>{
@@ -1014,6 +1095,7 @@ void main() {
   test('reconciles reply only by exact target, author, and content', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send: (request) async {
           if (request.uri.path.endsWith('/comments')) {
@@ -1068,6 +1150,7 @@ void main() {
     var networkCalls = 0;
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
+      authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send: (_) async {
           networkCalls += 1;
@@ -1089,6 +1172,7 @@ void main() {
       var networkCalls = 0;
       final adapter = MoltbookExternalEffectAdapter(
         secretVault: vault,
+        authorize: _allowRequest,
         provider: MoltbookProviderAdapter(
           send: (_) async {
             networkCalls += 1;
@@ -1323,6 +1407,7 @@ MoltbookHttpResponse _postResponse(
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
+  void Function()? afterRead;
 
   @override
   Future<void> write({
@@ -1351,7 +1436,10 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     WebOptions? webOptions,
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async => values[key];
+  }) async {
+    afterRead?.call();
+    return values[key];
+  }
 
   @override
   Future<void> delete({
@@ -1367,7 +1455,29 @@ class _FakeSecureStorage extends FlutterSecureStorage {
   }
 }
 
+class _RevokingVault extends CapsuleScopedSecretVault {
+  final void Function() onRead;
+
+  _RevokingVault(this.onRead);
+
+  @override
+  Future<String?> loadSecret({
+    required String capsuleHex,
+    required String pluginId,
+    required String providerId,
+    required String accountId,
+    required String secretName,
+  }) async {
+    onRead();
+    return 'secret-1';
+  }
+}
+
 const String _owner =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const String _otherOwner =
     'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+
+Future<Future<void> Function()> _allowRequest(
+  ExternalEffectAdapterRequest request,
+) async => () async {};

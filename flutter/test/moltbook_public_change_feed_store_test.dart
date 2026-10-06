@@ -43,22 +43,17 @@ void main() {
         requested.add(uri);
         if (requested.length == 1) {
           return <Object?>[
-            <String, Object?>{'sha': 'a' * 40},
+            <String, Object?>{
+              'sha': 'a' * 40,
+              'commit': <String, Object?>{
+                'message':
+                    'Seal duplicate Moltbook drafts\n\nA retained draft is reused after restart rather than prepared twice.',
+                'author': <String, Object?>{'date': '2026-09-13T12:00:00Z'},
+              },
+            },
           ];
         }
-        return <String, Object?>{
-          'sha': 'a' * 40,
-          'commit': <String, Object?>{
-            'message':
-                'Seal duplicate Moltbook drafts\n\nA retained draft is reused after restart rather than prepared twice.',
-            'author': <String, Object?>{'date': '2026-09-13T12:00:00Z'},
-          },
-          'stats': <String, Object?>{'additions': 24, 'deletions': 12},
-          'files': <Object?>[
-            <String, Object?>{'filename': 'flutter/lib/example.dart'},
-            <String, Object?>{'filename': 'flutter/test/example_test.dart'},
-          ],
-        };
+        throw StateError('unexpected second request');
       },
     );
 
@@ -69,11 +64,10 @@ void main() {
     expect(observation?.facts, <String>[
       'Commit summary: Seal duplicate Moltbook drafts',
       'Commit detail: A retained draft is reused after restart rather than prepared twice.',
-      'Changed areas: flutter/lib/example.dart, flutter/test/example_test.dart.',
+      'A new public repository commit was observed at ${'a' * 12}.',
     ]);
     expect(requested.map((uri) => uri.toString()), <String>[
       'https://api.github.com/repos/WSorr/Hivra-App/commits?per_page=1',
-      'https://api.github.com/repos/WSorr/Hivra-App/commits/${'a' * 40}',
     ]);
 
     final retained = await store.record(
@@ -169,7 +163,7 @@ void main() {
   );
 
   test(
-    'public repository source rejects redirects and identity mutation',
+    'public repository source rejects redirects and malformed bounded summary',
     () async {
       for (final value in <String>[
         'http://github.com/WSorr/Hivra-App',
@@ -187,28 +181,16 @@ void main() {
       final source = MoltbookPublicRepositorySourceAdapter(
         readJson: (uri) async {
           requestCount++;
-          return requestCount == 1
-              ? <Object?>[
-                <String, Object?>{'sha': 'a' * 40},
-              ]
-              : <String, Object?>{
-                'sha': 'b' * 40,
-                'commit': <String, Object?>{
-                  'message': 'Mutated identity',
-                  'author': <String, Object?>{'date': '2026-09-13T12:00:00Z'},
-                },
-                'stats': <String, Object?>{'additions': 1, 'deletions': 0},
-                'files': <Object?>[
-                  <String, Object?>{'filename': 'README.md'},
-                ],
-              };
+          return <Object?>[
+            <String, Object?>{'sha': 'a' * 40},
+          ];
         },
       );
       await expectLater(
         source.observeLatestCommit(MoltbookPublicationContract.repositoryUrl),
         throwsFormatException,
       );
-      expect(requestCount, 2);
+      expect(requestCount, 1);
     },
   );
 

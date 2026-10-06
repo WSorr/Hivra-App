@@ -44,7 +44,10 @@ class WasmPluginRuntimeService {
     }
     final packagePath = binding.packageFilePath?.trim() ?? '';
     final packageKind = binding.packageKind?.trim().toLowerCase() ?? '';
-    if (packagePath.isEmpty || packageKind.isEmpty) {
+    if (packageKind != 'zip') {
+      throw const FormatException('Installed plugins require a ZIP package');
+    }
+    if (packagePath.isEmpty) {
       throw const FormatException('Plugin package binding is incomplete');
     }
     final packageFile = File(packagePath);
@@ -61,7 +64,6 @@ class WasmPluginRuntimeService {
 
     final module = await _extractModule(
       packageFile: packageFile,
-      packageKind: packageKind,
       runtimeModulePath: binding.runtimeModulePath,
     );
     _validateWasmHeader(module.bytes);
@@ -116,26 +118,8 @@ class WasmPluginRuntimeService {
 
   Future<_ResolvedModule> _extractModule({
     required File packageFile,
-    required String packageKind,
     required String? runtimeModulePath,
   }) async {
-    if (packageKind == 'wasm') {
-      final bytes = await packageFile.readAsBytes();
-      if (bytes.length > _maxModuleBytes) {
-        throw const FormatException(
-          'Plugin WASM module exceeds the size limit',
-        );
-      }
-      return _ResolvedModule(
-        path: 'package/module.wasm',
-        selection: 'package_wasm',
-        bytes: bytes,
-      );
-    }
-    if (packageKind != 'zip') {
-      throw const FormatException('Unsupported plugin package kind');
-    }
-
     final archive = ZipDecoder().decodeBytes(
       await packageFile.readAsBytes(),
       verify: true,

@@ -1,4 +1,6 @@
 const String capsuleChatPluginId = 'hivra.contract.capsule-chat.v1';
+const String pluginWorkspaceContractKind = 'plugin_workspace_v1';
+const String pluginWorkspaceMethod = 'workspace';
 const String capsuleChatContractKind = 'capsule_chat';
 const String postCapsuleChatMethod = 'post_capsule_chat_message';
 const String moltbookAmbassadorPluginId =

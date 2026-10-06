@@ -761,6 +761,7 @@ class MoltbookHeartbeatPlan {
   static const Set<String> priorities = <String>{
     'review_activity',
     'inspect_feed',
+    'public_change',
     'idle',
   };
 
@@ -1021,6 +1022,14 @@ class MoltbookWorkspaceProjection {
     )) {
       (false, _, _, _, _, _, _) => MoltbookWorkspaceNextAction.connect,
       (_, true, _, _, _, _, _) => MoltbookWorkspaceNextAction.verify,
+      // A queued effect is still active and must be reconciled before any
+      // newer proposal path. An older unresolved record without a queued
+      // effect remains history when a new local draft is ready.
+      (_, _, true, true, _, _, _) => MoltbookWorkspaceNextAction.reconcile,
+      (_, _, true, false, true, _, true) =>
+        MoltbookWorkspaceNextAction.reviewReply,
+      (_, _, true, false, false, true, true) =>
+        MoltbookWorkspaceNextAction.reviewDraft,
       (_, _, true, _, _, _, _) => MoltbookWorkspaceNextAction.reconcile,
       (_, _, _, _, _, _, false) => MoltbookWorkspaceNextAction.none,
       (_, _, _, true, _, _, _) => MoltbookWorkspaceNextAction.publish,

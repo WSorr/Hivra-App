@@ -8,26 +8,32 @@ description = "C FFI bindings for Hivra"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-hivra-keystore = { path = "../hivra-keystore" }
+hivra-keystore = { path = "../hivra-keystore", optional = true }
 hivra-wasm-runtime = { path = "../hivra-wasm-runtime" }
-hivra-core = { path = "../../core/hivra-core" }
-hivra-engine = { path = "../../engine/hivra-engine" }
-hivra-ed25519-crypto = { path = "../../adapters/hivra-ed25519-crypto" }
-hivra-nostr-crypto = { path = "../../adapters/hivra-nostr-crypto" }
-hivra-transport = { path = "../../adapters/hivra-transport" }
-nostr-sdk = "0.36"
-futures = "0.3"
-rand = "0.8"
-bincode = "1.3"
-serde = { version = "1.0", features = ["derive"] }
-bip39 = { version = "2.0", default-features = false, features = ["std"] }
-zeroize = "1.7"
-sha2 = "0.10"
+hivra-core = { path = "../../core/hivra-core", optional = true }
+hivra-engine = { path = "../../engine/hivra-engine", optional = true }
+hivra-ed25519-crypto = { path = "../../adapters/hivra-ed25519-crypto", optional = true }
+hivra-nostr-crypto = { path = "../../adapters/hivra-nostr-crypto", optional = true }
+hivra-transport = { path = "../../adapters/hivra-transport", optional = true }
+nostr-sdk = { version = "0.36", optional = true }
+futures = { version = "0.3", optional = true }
+rand = { version = "0.8", optional = true }
+bincode = { version = "1.3", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+bip39 = { version = "2.0", default-features = false, features = ["std"], optional = true }
+zeroize = { version = "1.7", optional = true }
+sha2 = { version = "0.10", optional = true }
 once_cell = "1.21"
-serde_json = "1.0"
+serde_json = { version = "1.0", optional = true }
 
 [dev-dependencies]
 tempfile = "3.8"
 
 [features]
-default = []
+default = ["capsule-host"]
+capsule-host = [
+    "dep:hivra-keystore", "dep:hivra-core", "dep:hivra-engine",
+    "dep:hivra-ed25519-crypto", "dep:hivra-nostr-crypto", "dep:hivra-transport",
+    "dep:nostr-sdk", "dep:futures", "dep:rand", "dep:bincode", "dep:serde",
+    "dep:bip39", "dep:zeroize", "dep:sha2", "dep:serde_json",
+]

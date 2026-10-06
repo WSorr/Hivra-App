@@ -162,6 +162,8 @@ class ExternalEffectOperation {
   final String? providerReferenceId;
   final ExternalEffectRequiredAction? requiredAction;
   final ExternalEffectReceipt? receipt;
+  final String? completedGroup;
+  final String? retainUntilUtc;
 
   const ExternalEffectOperation({
     required this.ownerCapsuleHex,
@@ -184,6 +186,8 @@ class ExternalEffectOperation {
     this.providerReferenceId,
     required this.requiredAction,
     required this.receipt,
+    this.completedGroup,
+    this.retainUntilUtc,
   });
 
   factory ExternalEffectOperation.fromJson(Map<String, dynamic> json) {
@@ -218,6 +222,8 @@ class ExternalEffectOperation {
       lastErrorCode: json['last_error_code']?.toString(),
       lastErrorMessage: json['last_error_message']?.toString(),
       providerReferenceId: json['provider_reference_id']?.toString(),
+      completedGroup: json['completed_group']?.toString(),
+      retainUntilUtc: json['retain_until_utc']?.toString(),
       requiredAction:
           rawRequiredAction is Map
               ? ExternalEffectRequiredAction.fromJson(
@@ -257,6 +263,8 @@ class ExternalEffectOperation {
     'provider_reference_id': providerReferenceId,
     'required_action': requiredAction?.toJson(),
     'receipt': receipt?.toJson(),
+    if (completedGroup != null) 'completed_group': completedGroup,
+    if (retainUntilUtc != null) 'retain_until_utc': retainUntilUtc,
   };
 
   void validate() {
@@ -273,6 +281,15 @@ class ExternalEffectOperation {
     }
     _validateUtc('created_at_utc', createdAtUtc);
     _validateUtc('updated_at_utc', updatedAtUtc);
+    if (completedGroup != null || retainUntilUtc != null) {
+      if (completedGroup == null ||
+          retainUntilUtc == null ||
+          !state.isTerminal) {
+        throw const FormatException('Only completed effects may be compacted');
+      }
+      _validateIdentifier('completed_group', completedGroup!);
+      _validateUtc('retain_until_utc', retainUntilUtc!);
+    }
     if (approvedAtUtc != null) {
       _validateUtc('approved_at_utc', approvedAtUtc!);
       if (approvalEvidenceHashHex == null) {

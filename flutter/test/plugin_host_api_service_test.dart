@@ -12,6 +12,44 @@ import 'package:hivra_app/services/plugin_host_contract_handler.dart';
 
 void main() {
   group('PluginHostApiService', () {
+    test(
+      'raw binding cannot authorize or invoke an external package',
+      () async {
+        var calls = 0;
+        final host = PluginHostApiService(
+          handlers: const [MoltbookAmbassadorPluginContractHandler()],
+          resolveRuntimeBinding:
+              (_) async => const PluginRuntimeBinding.externalPackage(
+                packageId: 'raw',
+                packageVersion: '1',
+                packageKind: 'wasm',
+                contractKind: 'moltbook_ambassador_draft',
+                capabilities: ['content.draft.prepare', 'consensus_guard.read'],
+              ),
+          resolveRuntimeInvoke: (_, _) async {
+            calls++;
+            return null;
+          },
+        );
+        final response = await host.executeWithRuntimeHook(
+          const PluginHostApiRequest(
+            schemaVersion: 1,
+            pluginId: moltbookAmbassadorPluginId,
+            method: prepareMoltbookDraftMethod,
+            args: {},
+          ),
+        );
+        expect(response.errorCode, 'runtime_binding_invalid');
+        await expectLater(
+          host.captureRuntimeAuthorization(
+            pluginId: moltbookAmbassadorPluginId,
+            method: prepareMoltbookDraftMethod,
+          ),
+          throwsStateError,
+        );
+        expect(calls, 0);
+      },
+    );
     test('rejects unsupported plugin id', () {
       final response = _service().execute(
         const PluginHostApiRequest(
@@ -38,6 +76,40 @@ void main() {
 
       expect(response.status, PluginHostApiStatus.executed);
       expect(response.result?['message_text'], 'hello');
+    });
+
+    test('rejects chat envelope with a different request identity', () async {
+      final canonical = _canonicalChat.replaceFirst('"msg-1"', '"msg-2"');
+      final response = await _service(
+        runtimeInvoke: _chatRuntimeEvidence(canonical: canonical),
+      ).executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: capsuleChatPluginId,
+          method: postCapsuleChatMethod,
+          args: _validChatArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_result_invalid');
+    });
+
+    test('rejects chat envelope with missing semantic content', () async {
+      final canonical = _canonicalChat.replaceFirst('"hello"', '""');
+      final response = await _service(
+        runtimeInvoke: _chatRuntimeEvidence(canonical: canonical),
+      ).executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: capsuleChatPluginId,
+          method: postCapsuleChatMethod,
+          args: _validChatArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_result_invalid');
     });
 
     test('executes plugin-owned Moltbook draft with approval gate', () async {
@@ -246,8 +318,9 @@ PluginRuntimeInvokeEvidence _moltbookDelegatedReplyRuntimeEvidence() {
   );
 }
 
-PluginRuntimeInvokeEvidence _chatRuntimeEvidence() {
-  final hash = sha256.convert(utf8.encode(_canonicalChat)).toString();
+PluginRuntimeInvokeEvidence _chatRuntimeEvidence({String? canonical}) {
+  final canonicalJson = canonical ?? _canonicalChat;
+  final hash = sha256.convert(utf8.encode(canonicalJson)).toString();
   return PluginRuntimeInvokeEvidence(
     mode: 'wasmi_v1',
     modulePath: 'plugin/module.wasm',
@@ -256,7 +329,7 @@ PluginRuntimeInvokeEvidence _chatRuntimeEvidence() {
     invokeDigestHex: _hex('f'),
     semanticStatus: PluginHostApiStatus.executed,
     semanticResult: <String, dynamic>{
-      'canonical_json': _canonicalChat,
+      'canonical_json': canonicalJson,
       'envelope_hash_hex': hash,
     },
     semanticErrorCode: null,

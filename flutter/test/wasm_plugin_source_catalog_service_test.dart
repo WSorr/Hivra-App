@@ -163,6 +163,68 @@ void main() {
     expect(catalogPragma, contains('no-cache'));
   });
 
+  test('raw source entries never download or enter installation', () async {
+    var downloads = 0;
+    var installs = 0;
+    final bounded = WasmPluginSourceCatalogService(
+      registry: registry,
+      dataDirs: dataDirs,
+      httpClientFactory: () {
+        downloads++;
+        throw StateError('Unexpected download');
+      },
+    );
+    for (final url in [
+      'https://example.com/module.wasm',
+      File('${tempDocsDir.path}/module.wasm').uri.toString(),
+    ]) {
+      await expectLater(
+        bounded.installFromSourceEntry(
+          WasmPluginSourceCatalogEntry(
+            id: 'raw',
+            pluginId: 'hivra.contract.raw.v1',
+            displayName: 'Raw',
+            version: '0.1.0',
+            downloadUrl: url,
+            packageKind: 'wasm',
+            sha256Hex: null,
+          ),
+          beforeInstall: (_) async {
+            installs++;
+          },
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    }
+    expect(downloads, 0);
+    expect(installs, 0);
+    expect(await registry.loadPlugins(), isEmpty);
+  });
+
+  test('catalog omits raw modules while retaining ZIP packages', () async {
+    final path = '${tempDocsDir.path}/mixed-catalog.json';
+    await File(path).writeAsString(
+      _catalogJson(
+        sourceId: 'local.plugins',
+        sourceName: 'Local plugins',
+        entries: [
+          for (final kind in ['zip', 'wasm'])
+            {
+              'id': kind,
+              'plugin_id': 'hivra.contract.$kind.v1',
+              'display_name': kind,
+              'version': '0.1.0',
+              'download_url': 'https://example.com/plugin.$kind',
+              'package_kind': kind,
+              'sha256_hex': packageSha256Hex,
+            },
+        ],
+      ),
+    );
+    final catalog = await service.fetchCatalog(catalogUrl: path);
+    expect(catalog.entries.map((entry) => entry.packageKind), ['zip']);
+  });
+
   test(
     'fetchCatalog rejects remote catalog when digest is not pinned',
     () async {

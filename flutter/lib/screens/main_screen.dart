@@ -25,6 +25,7 @@ import 'moltbook_ambassador_screen.dart';
 import 'relationships_screen.dart';
 import 'settings_screen.dart';
 import 'wasm_plugins_screen.dart';
+import 'plugin_workspace_screen.dart';
 
 @visibleForTesting
 String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
@@ -39,6 +40,14 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
 
   final pluginId = record.pluginId?.trim();
   final contractKind = record.contractKind?.trim();
+  if (pluginId != null &&
+      pluginId.isNotEmpty &&
+      contractKind == pluginWorkspaceContractKind &&
+      record.capabilities.contains('workspace.render') &&
+      record.capabilities.contains('workspace.continue') &&
+      record.capabilities.contains('state.plugin.read_write')) {
+    return pluginWorkspaceContractKind;
+  }
   return switch ((pluginId, contractKind)) {
     (capsuleChatPluginId, capsuleChatContractKind) => capsuleChatContractKind,
     (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind) =>
@@ -123,7 +132,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _stateManager = _runtime.stateManager;
     _invitationIntents = _runtime.invitationIntents;
     _passiveReceive = _module.passiveReceive;
-    _passiveReceive.setResultListener(_handlePassiveReceiveResult);
+    _passiveReceive.addResultListener(_handlePassiveReceiveResult);
     _listenConnectivityChanges();
     Future.microtask(_bootstrapActiveRuntime);
   }
@@ -136,7 +145,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void dispose() {
     _pluginRuntimeModule?.moltbook.deactivateForegroundSession();
     _connectivitySubscription?.cancel();
-    _passiveReceive.setResultListener(null);
+    _passiveReceive.removeResultListener(_handlePassiveReceiveResult);
     _passiveReceive.pauseForeground();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -564,6 +573,56 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   VoidCallback? _installedPluginWorkspaceAction(WasmPluginRecord record) {
     switch (installedPluginWorkspaceContractKind(record)) {
+      case pluginWorkspaceContractKind:
+        return () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder:
+                (_) => PluginWorkspaceScreen(
+                  connectVps:
+                      ({
+                        required host,
+                        required port,
+                        required password,
+                        required trustPeer,
+                      }) => _pluginRuntime.connectWorkspaceVps(
+                        record: record,
+                        host: host,
+                        port: port,
+                        password: password,
+                        trustPeer: trustPeer,
+                      ),
+                  useOnline: () => _pluginRuntime.useWorkspaceOnline(record),
+                  configureExecution:
+                      ({
+                        required enabled,
+                        approvedScope,
+                        settings = const {},
+                      }) => _pluginRuntime.setWorkspaceExecution(
+                        record: record,
+                        enabled: enabled,
+                        approvedScope: approvedScope,
+                        settings: settings,
+                      ),
+                  readFieldOptions: (fieldId) async {
+                    final result = await _pluginRuntime.runWorkspaceAction(
+                      record: record,
+                      action: 'open',
+                      optionsForField: fieldId,
+                    );
+                    return List<String>.from(result['options'] as List);
+                  },
+                  runWorkspaceAction:
+                      (action, settings, {credentials, approvedOrder}) =>
+                          _pluginRuntime.runWorkspaceAction(
+                            record: record,
+                            action: action,
+                            settings: settings,
+                            credentials: credentials,
+                            approvedOrder: approvedOrder,
+                          ),
+                ),
+          ),
+        );
       case capsuleChatContractKind:
         return () => Navigator.of(context).push(
           MaterialPageRoute<void>(

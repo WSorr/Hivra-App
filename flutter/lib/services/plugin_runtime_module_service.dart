@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
@@ -27,7 +28,9 @@ import 'moltbook_public_repository_source_adapter.dart';
 import 'moltbook_publication_service.dart';
 import 'moltbook_provider_adapter.dart';
 import 'moltbook_runtime_module.dart';
-import 'plugin_host_api_service.dart';
+import 'plugin_workspace_runtime.dart';
+import 'plugin_workspace_remote_service.dart';
+import 'wasm_plugin_package_preflight_service.dart';
 import 'ui_event_log_service.dart';
 import 'wasm_plugin_registry_service.dart';
 import 'wasm_plugin_source_catalog_service.dart';
@@ -57,11 +60,9 @@ class PluginChatSendResult {
   bool get isSuccess => status == PluginChatSendStatus.sent;
 }
 
-class PluginRuntimeModule {
-  final WasmPluginRegistryService registry;
+class PluginRuntimeModule extends PluginWorkspaceRuntime {
   final WasmPluginSourceCatalogService sourceCatalog;
   final ManualConsensusCheckService manualChecks;
-  final PluginHostApiService pluginHostApi;
   final ConsensusAttestationExchangeService attestationExchange;
   final CapsuleChatDeliveryService chatDelivery;
   final CapsulePassiveReceivePort passiveReceive;
@@ -71,34 +72,388 @@ class PluginRuntimeModule {
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
   final String? Function() _readActiveCapsuleRootHex;
+  final PluginWorkspaceRemoteService? _providedRemote;
+  late final PluginWorkspaceRemoteService _remote =
+      _providedRemote ??
+      PluginWorkspaceRemoteService(
+        files: _fileStore,
+        vault: _secretVault,
+        registry: registry,
+      );
 
   PluginRuntimeModule({
-    required this.registry,
+    required super.registry,
     required this.sourceCatalog,
     required this.manualChecks,
-    required this.pluginHostApi,
+    required super.pluginHostApi,
     required this.attestationExchange,
     required this.chatDelivery,
     required this.passiveReceive,
     required this.contactLabels,
     required this.uiLog,
     required this.moltbook,
-    required CapsuleFileStore fileStore,
+    required super.fileStore,
     required CapsuleScopedSecretVault secretVault,
-    required String? Function() readActiveCapsuleRootHex,
+    required super.readActiveCapsuleRootHex,
+    super.market,
+    PluginWorkspaceRemoteService? workspaceRemote,
   }) : _fileStore = fileStore,
+       _providedRemote = workspaceRemote,
        _secretVault = secretVault,
-       _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
-
-  String? activeCapsuleRootHex() => _readActiveCapsuleRootHex();
+       _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
+       super(
+         readCredentials:
+             ({required owner, required pluginId}) => secretVault.loadSecret(
+               capsuleHex: owner,
+               pluginId: pluginId,
+               providerId: 'bingx',
+               accountId: 'primary',
+               secretName: 'credentials',
+             ),
+         writeCredentials:
+             ({required owner, required pluginId, required value}) =>
+                 value == null
+                     ? secretVault.deleteAccount(
+                       capsuleHex: owner,
+                       pluginId: pluginId,
+                       providerId: 'bingx',
+                       accountId: 'primary',
+                     )
+                     : secretVault.saveSecret(
+                       capsuleHex: owner,
+                       pluginId: pluginId,
+                       providerId: 'bingx',
+                       accountId: 'primary',
+                       secretName: 'credentials',
+                       secretValue: value,
+                     ),
+       );
 
   Future<void> removePlugin(WasmPluginRecord record) async {
+    if (record.pluginId == moltbookAmbassadorPluginId) {
+      return moltbook.changeInstalledPackage(() => _removePlugin(record));
+    }
+    return _removePlugin(record);
+  }
+
+  Future<void> _removePlugin(WasmPluginRecord record) async {
+    await _retireWorkspacePackage(record.pluginId, uninstall: true);
+    // Stop admission first, then let in-flight continuations fail before
+    // deleting state; otherwise a late write can recreate an uninstalled plugin.
+    await registry.removePlugin(record.id);
     final pluginId = record.pluginId?.trim();
     if (pluginId != null && pluginId.isNotEmpty) {
+      stopWorkspaceScheduling(pluginId: pluginId);
+      await drainWorkspaceActions(pluginId);
       await _secretVault.deletePlugin(pluginId);
-      await _fileStore.deletePluginStateFromAllCapsules(pluginId);
+      await _fileStore.deletePluginStateFromAllCapsules(
+        pluginId,
+        preserveFileNames: const {
+          'external_effects.v1.json',
+          'workspace-execution.v1.json',
+        },
+      );
     }
-    await registry.removePlugin(record.id);
+  }
+
+  Future<WasmPluginRecord> installPluginFromFile(File file) async {
+    final inspected = await const WasmPluginPackagePreflightService().inspect(
+      file,
+    );
+    Future<WasmPluginRecord> install() async {
+      await _retireWorkspacePackage(inspected.pluginId);
+      return registry.installPluginFromFile(
+        file,
+        validateRecord: (record) {
+          if (record.pluginId != inspected.pluginId) {
+            throw StateError('Installation input changed');
+          }
+        },
+      );
+    }
+
+    return inspected.pluginId == moltbookAmbassadorPluginId
+        ? moltbook.changeInstalledPackage(install)
+        : install();
+  }
+
+  Future<WasmPluginRecord> installPluginFromSource(
+    WasmPluginSourceCatalogEntry entry,
+  ) {
+    Future<WasmPluginRecord> install() => sourceCatalog.installFromSourceEntry(
+      entry,
+      beforeInstall: _retireWorkspacePackage,
+    );
+    return entry.pluginId == moltbookAmbassadorPluginId
+        ? moltbook.changeInstalledPackage(install)
+        : install();
+  }
+
+  Future<void> _retireWorkspacePackage(
+    String? pluginId, {
+    bool uninstall = false,
+  }) async {
+    final records = (await registry.loadPlugins()).where(
+      (r) =>
+          r.pluginId == pluginId &&
+          r.contractKind == pluginWorkspaceContractKind,
+    );
+    if (records.isEmpty) return;
+    final record = records.single;
+    final root = await _fileStore.capsulesRoot();
+    if (!await root.exists()) return;
+    await for (final entity in root.list(followLinks: false)) {
+      final owner = entity.path.split(Platform.pathSeparator).last;
+      if (entity is! Directory || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
+        continue;
+      }
+      final grant = await super.readWorkspaceExecution(
+        record,
+        enforceHost: false,
+        ownerCapsuleHex: owner,
+      );
+      if (grant?['executor'] == 'vps') {
+        final c = await _remote.connection(owner, record.pluginId!);
+        if (c == null || c['executor_id'] != grant!['executor_id']) {
+          throw StateError(
+            'Reconnect the assigned VPS before updating/removing this package',
+          );
+        }
+        final result = await _remote.request(c, 'return');
+        await restoreWorkspaceFromVps(
+          record: record,
+          executorId: c['executor_id'] as String,
+          checkpoint: Map<String, dynamic>.from(result['checkpoint'] as Map),
+          ownerCapsuleHex: owner,
+        );
+      }
+      if (uninstall) {
+        final c = await _remote.connection(owner, record.pluginId!);
+        if (c != null && c['package_id'] != null) {
+          await _remote.uninstall(c);
+        }
+      }
+      // Replacement never inherits the old package's execution grant, including
+      // grants in inactive Capsules. The runtime rejects the old binding.
+    }
+    stopWorkspaceScheduling(pluginId: record.pluginId);
+  }
+
+  Future<void> connectWorkspaceVps({
+    required WasmPluginRecord record,
+    required String host,
+    required int port,
+    required String password,
+    required Future<bool> Function(String) trustPeer,
+  }) async {
+    final owner = activeCapsuleRootHex();
+    if (owner == null) throw StateError('Open a Capsule first');
+    final grant = await super.readWorkspaceExecution(
+      record,
+      enforceHost: false,
+    );
+    if (grant?['executor'] == 'vps') {
+      throw StateError('Return to online mode before reinstalling the VPS');
+    }
+    final binding = await registry.resolveRuntimeBinding(record.pluginId!);
+    if (binding.packageId != record.id) throw StateError('Package changed');
+    await _remote.connect(
+      owner: owner,
+      record: record,
+      host: host,
+      port: port,
+      password: password,
+      trustPeer: trustPeer,
+      stillOwned: () => activeCapsuleRootHex() == owner,
+    );
+  }
+
+  Future<void> useWorkspaceOnline(WasmPluginRecord record) async {
+    final owner = activeCapsuleRootHex();
+    if (owner == null) throw StateError('Open a Capsule first');
+    final grant = await super.readWorkspaceExecution(
+      record,
+      enforceHost: false,
+    );
+    if (grant?['executor'] == 'vps') {
+      final c = await _remote.connection(owner, record.pluginId!);
+      if (c == null || c['executor_id'] != grant!['executor_id']) {
+        throw StateError('Assigned VPS connection is unavailable');
+      }
+      final result = await _remote.request(c, 'return');
+      await restoreWorkspaceFromVps(
+        record: record,
+        executorId: c['executor_id'] as String,
+        checkpoint: Map<String, dynamic>.from(result['checkpoint'] as Map),
+      );
+    }
+    await _remote.selectOnline(owner, record.pluginId!);
+  }
+
+  @override
+  Future<Map<String, dynamic>> runWorkspaceAction({
+    required WasmPluginRecord record,
+    required String action,
+    Map<String, dynamic> settings = const {},
+    String? optionsForField,
+    Map<String, String>? credentials,
+    Map<String, dynamic>? approvedOrder,
+    int? executionRevision,
+  }) async {
+    final owner = activeCapsuleRootHex();
+    if (owner == null) throw StateError('Open a Capsule first');
+    final grant = await super.readWorkspaceExecution(
+      record,
+      enforceHost: false,
+    );
+    final c = await _remote.connection(owner, record.pluginId!);
+    if (grant?['executor'] == 'vps') {
+      if (c == null || c['executor_id'] != grant!['executor_id']) {
+        throw StateError('Assigned VPS is unavailable; no local fallback');
+      }
+      if (credentials != null) {
+        throw StateError(
+          'Return to online mode before replacing exchange credentials',
+        );
+      }
+      // Recover a lost adoption acknowledgement with the exact frozen source
+      // checkpoint. Server replay never restores older state or renews authority.
+      await _remote.request(c, 'adopt', {
+        'checkpoint': await releaseWorkspaceToVps(
+          record,
+          executorId: c['executor_id'] as String,
+        ),
+      });
+      final result = await _remote.request(
+        c,
+        action == 'open' && optionsForField == null ? 'status' : 'action',
+        action == 'open' && optionsForField == null
+            ? const {}
+            : {
+              'action': action,
+              'settings': settings,
+              'options_field': optionsForField,
+              'approved_order': approvedOrder,
+            },
+      );
+      if (result['view'] is! Map) {
+        throw StateError(
+          'VPS observation unavailable; its lifecycle is not verified',
+        );
+      }
+      if (activeCapsuleRootHex() != owner ||
+          (await registry.resolveRuntimeBinding(record.pluginId!)).packageId !=
+              record.id) {
+        throw StateError('Capsule or package changed');
+      }
+      if (optionsForField != null) {
+        return Map<String, dynamic>.from(result['view'] as Map);
+      }
+      return {
+        ...Map<String, dynamic>.from(result['view'] as Map),
+        'host_connection': {
+          'target': 'vps',
+          'host': c['host'],
+          'port': c['port'],
+          'installed': c['package_id'] != null,
+          'health': result['runner']['state'],
+          'observation_error': result['observation_error'],
+        },
+      };
+    }
+    final view = await super.runWorkspaceAction(
+      record: record,
+      action: action,
+      settings: settings,
+      optionsForField: optionsForField,
+      credentials: credentials,
+      approvedOrder: approvedOrder,
+      executionRevision: executionRevision,
+    );
+    if (optionsForField != null) return view;
+    return {
+      ...view,
+      'host_connection': {
+        'target': c?['selected'] == true ? 'vps' : 'local',
+        'host': c?['host'],
+        'port': c?['port'],
+        'installed': c?['package_id'] != null,
+        'health': 'not_started',
+      },
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> setWorkspaceExecution({
+    required WasmPluginRecord record,
+    required bool enabled,
+    Map<String, dynamic>? approvedScope,
+    Map<String, dynamic> settings = const {},
+    String? releaseToExecutorId,
+  }) async {
+    final owner = activeCapsuleRootHex();
+    if (owner == null) throw StateError('Open a Capsule first');
+    final grant = await super.readWorkspaceExecution(
+      record,
+      enforceHost: false,
+    );
+    var c = await _remote.connection(owner, record.pluginId!);
+    if (grant?['executor'] == 'vps') {
+      if (c == null || c['executor_id'] != grant!['executor_id']) {
+        throw StateError('Reconnect the assigned VPS');
+      }
+      if (!enabled) {
+        await setReleasedWorkspaceEntries(
+          record,
+          executorId: c['executor_id'] as String,
+          enabled: false,
+        );
+        await _remote.request(c, 'adopt', {
+          'checkpoint': await releaseWorkspaceToVps(
+            record,
+            executorId: c['executor_id'] as String,
+          ),
+        });
+      }
+      await _remote.request(c, 'execution', {
+        'enabled': enabled,
+        'settings': settings,
+        'scope': approvedScope,
+      });
+      if (enabled) {
+        await setReleasedWorkspaceEntries(
+          record,
+          executorId: c['executor_id'] as String,
+          enabled: true,
+          expectedRevision: grant['revision'] as int,
+        );
+      }
+      return runWorkspaceAction(record: record, action: 'open');
+    }
+    if (enabled && c?['selected'] == true) {
+      c = await _remote.ensurePackage(owner, record);
+      if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
+      await super.setWorkspaceExecution(
+        record: record,
+        enabled: true,
+        approvedScope: approvedScope,
+        settings: settings,
+        releaseToExecutorId: c['executor_id'] as String,
+      );
+      final checkpoint = await releaseWorkspaceToVps(
+        record,
+        executorId: c['executor_id'] as String,
+      );
+      await _remote.request(c, 'adopt', {'checkpoint': checkpoint});
+      return runWorkspaceAction(record: record, action: 'open');
+    }
+    return super.setWorkspaceExecution(
+      record: record,
+      enabled: enabled,
+      approvedScope: approvedScope,
+      settings: settings,
+      releaseToExecutorId: releaseToExecutorId,
+    );
   }
 
   Future<PluginChatSendResult> sendChatMessage({
@@ -182,10 +537,19 @@ class PluginRuntimeModule {
         final envelopeHash =
             response.result?['envelope_hash_hex']?.toString().toLowerCase() ??
             '';
-        final canonicalMessageText =
-            response.result?['message_text']?.toString() ?? normalizedMessage;
-        final canonicalCreatedAtUtc =
-            response.result?['created_at_utc']?.toString() ?? createdAtUtc;
+        final canonicalMessageText = response.result?['message_text'];
+        final canonicalCreatedAtUtc = response.result?['created_at_utc'];
+        if (canonicalMessageText is! String ||
+            canonicalCreatedAtUtc is! String) {
+          await uiLog.log(
+            'chat.send.semantic.error',
+            'owner=$operationCapsuleHex phase=prepare reason=missing_wasm_fields',
+          );
+          return const PluginChatSendResult(
+            status: PluginChatSendStatus.failed,
+            message: 'Chat package returned an incomplete message envelope',
+          );
+        }
         final CapsuleChatDeliverySendResult delivery;
         try {
           delivery = await chatDelivery.sendCanonicalEnvelopeWithTimeline(
@@ -318,9 +682,11 @@ class PluginRuntimeModuleService {
       observer: provider,
       readActiveCapsuleRootHex: activeCapsuleRootHex,
     );
+    late final MoltbookRuntimeModule moltbook;
     final moltbookAdapter = MoltbookExternalEffectAdapter(
       secretVault: secretVault,
       provider: provider,
+      authorize: (request) => moltbook.authorizeMoltbookEffect(request),
     );
     final effects = ExternalEffectService(
       readActiveCapsuleRootHex: activeCapsuleRootHex,
@@ -338,7 +704,7 @@ class PluginRuntimeModuleService {
     );
     final uiLog = const UiEventLogService();
     final pluginHostApi = runtime.buildPluginHostApiService();
-    final moltbook = MoltbookRuntimeModule(
+    moltbook = MoltbookRuntimeModule(
       pluginHostApi: pluginHostApi,
       uiLog: uiLog,
       moltbookConnection: connection,

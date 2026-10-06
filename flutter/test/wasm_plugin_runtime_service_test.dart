@@ -11,6 +11,40 @@ import 'package:hivra_app/services/wasm_plugin_runtime_service.dart';
 
 void main() {
   group('WasmPluginRuntimeService', () {
+    test('raw package binding never invokes the native runtime', () async {
+      final package = await _writePackage();
+      addTearDown(package.dispose);
+      final rawPath = '${package.tempDir.path}/module.wasm';
+      await File(rawPath).writeAsBytes(_wasmHeader, flush: true);
+      var calls = 0;
+      final service = WasmPluginRuntimeService(
+        invokeJson: ({
+          required moduleBytes,
+          required entryExport,
+          required inputJsonBytes,
+        }) {
+          calls++;
+          return _executedOutput;
+        },
+      );
+      await expectLater(
+        service.invoke(
+          request: _request(),
+          binding: PluginRuntimeBinding.externalPackage(
+            packageId: 'raw',
+            packageVersion: '1',
+            packageKind: 'wasm',
+            packageFilePath: rawPath,
+            packageDigestHex: sha256.convert(_wasmHeader).toString(),
+            runtimeAbi: WasmPluginRuntimeService.requiredRuntimeAbi,
+            runtimeEntryExport: WasmPluginRuntimeService.requiredEntryExport,
+            contractKind: 'moltbook_ambassador_draft',
+          ),
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      expect(calls, 0);
+    });
     test('returns null for host fallback binding', () async {
       final service = WasmPluginRuntimeService(invokeJson: _executedInvoker);
       final evidence = await service.invoke(

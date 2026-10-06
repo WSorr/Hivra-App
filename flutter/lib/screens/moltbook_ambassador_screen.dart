@@ -1437,6 +1437,78 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _closeUnpublishedPublication(
+    ExternalEffectOperation operation,
+  ) async {
+    setState(() => _publicationBusy = true);
+    try {
+      final checked = await widget.module.reconcileMoltbookPublication(
+        operation.operationId,
+        providerReferenceId: operation.providerReferenceId,
+      );
+      if (checked.state == ExternalEffectState.succeeded) {
+        final publications = await widget.module.loadMoltbookPublications();
+        if (!mounted) return;
+        setState(() => _publications = publications);
+        _showNotice('Published post found; the local attempt stays closed');
+        return;
+      }
+      if (!MoltbookPublicationService.canCloseWithoutReceipt(checked)) {
+        throw StateError('This attempt is not eligible for local closure');
+      }
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (dialogContext) => AlertDialog(
+              title: const Text('Close unconfirmed attempt?'),
+              content: const Text(
+                'Delivery is still unconfirmed. This closes only the local attempt; it does not send, cancel, or delete anything on Moltbook. The same publication stays protected against duplicate sending. Independent new posts can continue.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Keep blocked'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Close attempt'),
+                ),
+              ],
+            ),
+      );
+      if (!mounted || confirmed != true) return;
+      final result = await widget.module.closeMoltbookPublicationWithoutReceipt(
+        operation.operationId,
+      );
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        widget.module.loadMoltbookDrafts(),
+        widget.module.loadMoltbookPublications(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _storedDrafts = results[0] as List<MoltbookStoredDraft>;
+        _publications = results[1] as List<ExternalEffectOperation>;
+      });
+      _showNotice(
+        result.state == ExternalEffectState.terminalFailure
+            ? 'Attempt closed locally; exact retry remains blocked'
+            : 'Close state: ${result.state.wireName}',
+        isError: result.state != ExternalEffectState.terminalFailure,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice(
+          'Could not close publication attempt: $error',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
   Future<void> _checkPublishedPostStatus(
     ExternalEffectOperation operation,
   ) async {
@@ -1967,6 +2039,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                             onOpenPost: _openPublishedPost,
                             onRecheck: _reconcilePublication,
                             onCheckCurrentPost: _checkPublishedPostStatus,
+                            onCloseWithoutReceipt: _closeUnpublishedPublication,
                           ),
                         ),
                       ],
@@ -2753,6 +2826,8 @@ class MoltbookPublicationCard extends StatelessWidget {
   final Future<void> Function(ExternalEffectOperation operation) onRecheck;
   final Future<void> Function(ExternalEffectOperation operation)
   onCheckCurrentPost;
+  final Future<void> Function(ExternalEffectOperation operation)
+  onCloseWithoutReceipt;
 
   const MoltbookPublicationCard({
     super.key,
@@ -2762,6 +2837,7 @@ class MoltbookPublicationCard extends StatelessWidget {
     required this.onOpenPost,
     required this.onRecheck,
     required this.onCheckCurrentPost,
+    required this.onCloseWithoutReceipt,
   });
 
   @override
@@ -2815,6 +2891,8 @@ class MoltbookPublicationCard extends StatelessWidget {
                   MoltbookPublicationService.canManuallyReconcileTerminalFailure(
                     operation,
                   );
+              final canClose =
+                  MoltbookPublicationService.canCloseWithoutReceipt(operation);
               return ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 12),
@@ -2879,6 +2957,17 @@ class MoltbookPublicationCard extends StatelessWidget {
                             onPressed: busy ? null : () => onRecheck(operation),
                             icon: const Icon(Icons.sync_rounded),
                             label: const Text('Recheck publication'),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (canClose) ...[
+                          OutlinedButton.icon(
+                            onPressed:
+                                busy
+                                    ? null
+                                    : () => onCloseWithoutReceipt(operation),
+                            icon: const Icon(Icons.archive_outlined),
+                            label: const Text('Close unconfirmed attempt'),
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -2977,6 +3066,13 @@ class MoltbookPublicationCard extends StatelessWidget {
       label: 'Community ownership verified',
       icon: Icons.verified_rounded,
       color: Colors.green,
+    );
+  }
+  if (MoltbookPublicationService.isClosedWithoutReceipt(operation)) {
+    return (
+      label: 'Closed locally; delivery unconfirmed, exact retry blocked',
+      icon: Icons.archive_outlined,
+      color: const Color(0xFF9CA7B5),
     );
   }
   return switch (operation.state) {

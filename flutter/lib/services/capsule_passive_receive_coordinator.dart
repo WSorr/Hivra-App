@@ -49,6 +49,10 @@ typedef PassiveReceiveLogger =
     Future<void> Function(String event, String details);
 
 abstract interface class CapsulePassiveReceivePort {
+  void addResultListener(PassiveReceiveResultListener listener);
+
+  void removeResultListener(PassiveReceiveResultListener listener);
+
   Future<CapsulePassiveReceiveResult> trigger({
     required String capsuleHex,
     required CapsulePassiveReceiveReason reason,
@@ -76,7 +80,8 @@ class CapsulePassiveReceiveCoordinator implements CapsulePassiveReceivePort {
   Timer? _followUpTimer;
   String? _foregroundCapsuleHex;
   final Map<String, DateTime> _lastConnectivityTriggerAt = <String, DateTime>{};
-  PassiveReceiveResultListener? _resultListener;
+  final Set<PassiveReceiveResultListener> _resultListeners =
+      <PassiveReceiveResultListener>{};
 
   CapsulePassiveReceiveCoordinator({
     required InvitationIntentHandler invitations,
@@ -127,8 +132,14 @@ class CapsulePassiveReceiveCoordinator implements CapsulePassiveReceivePort {
        _connectivityCooldown = connectivityCooldown,
        _coalescer = _ProcessReceiveCoalescer();
 
-  void setResultListener(PassiveReceiveResultListener? listener) {
-    _resultListener = listener;
+  @override
+  void addResultListener(PassiveReceiveResultListener listener) {
+    _resultListeners.add(listener);
+  }
+
+  @override
+  void removeResultListener(PassiveReceiveResultListener listener) {
+    _resultListeners.remove(listener);
   }
 
   Future<CapsulePassiveReceiveResult> activateForeground({
@@ -283,8 +294,9 @@ class CapsulePassiveReceiveCoordinator implements CapsulePassiveReceivePort {
     if (postProjection != null) {
       _runDetached('post_projection', () => postProjection(result));
     }
-    final listener = _resultListener;
-    if (listener != null) {
+    for (final listener in List<PassiveReceiveResultListener>.of(
+      _resultListeners,
+    )) {
       _runDetached('result_listener', () => listener(result));
     }
     return result;

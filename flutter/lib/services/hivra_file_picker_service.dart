@@ -23,7 +23,7 @@ class HivraFilePickerService {
   static Future<XFile?> openPluginPackage() {
     return _openDocument(
       acceptedTypeGroups: const [
-        XTypeGroup(label: 'WASM plugin packages', extensions: ['wasm', 'zip']),
+        XTypeGroup(label: 'WASM plugin packages', extensions: ['zip']),
       ],
     );
   }

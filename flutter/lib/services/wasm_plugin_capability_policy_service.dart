@@ -6,6 +6,19 @@ class WasmPluginCapabilityPolicyService {
     'content.engagement.plan',
     'content.reply.prepare',
     'content.reply.delegate',
+    'workspace.render',
+    'workspace.continue',
+    'workspace.schedule',
+    'state.plugin.read_write',
+    'market.candles.read',
+    'market.instruments.read',
+    'account.snapshot.read',
+    'account.connect',
+    'order.entry.place',
+    'order.entry.cancel',
+    'order.snapshot.read',
+    'position.snapshot.read',
+    'position.exit.place',
   };
 
   const WasmPluginCapabilityPolicyService();

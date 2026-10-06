@@ -304,6 +304,7 @@ class HivraBindings {
       final executable = File(Platform.resolvedExecutable);
       final candidates = <String>[
         '${executable.parent.parent.path}/Frameworks/libhivra_ffi.dylib',
+        '${executable.parent.path}/libhivra_ffi.dylib',
         '${Directory.current.path}/libhivra_ffi.dylib',
         'libhivra_ffi.dylib',
       ];
@@ -324,6 +325,13 @@ class HivraBindings {
 
     if (Platform.isAndroid) {
       return DynamicLibrary.open('libhivra_ffi.so');
+    }
+
+    if (Platform.isLinux) {
+      // The standalone workspace runner ships beside the existing WASM host.
+      return DynamicLibrary.open(
+        '${File(Platform.resolvedExecutable).parent.path}/libhivra_ffi.so',
+      );
     }
 
     return DynamicLibrary.process();
@@ -383,7 +391,6 @@ class HivraBindings {
   late final HivraProjectHistoryViewV1Dart _projectHistoryViewV1;
   late final HivraImportLedgerDart _importLedger;
   late final HivraLedgerAppendEventDart _ledgerAppendEvent;
-  late final HivraWasmInvokeJsonDart _wasmInvokeJson;
 
   HivraBindings._internal() {
     _seedToMnemonic =
@@ -773,13 +780,6 @@ class HivraBindings {
         _lib
             .lookup<NativeFunction<HivraLedgerAppendEventC>>(
               'hivra_ledger_append_event',
-            )
-            .asFunction();
-
-    _wasmInvokeJson =
-        _lib
-            .lookup<NativeFunction<HivraWasmInvokeJsonC>>(
-              'hivra_wasm_invoke_json',
             )
             .asFunction();
 
@@ -1499,6 +1499,34 @@ class HivraBindings {
     required Uint8List moduleBytes,
     required String entryExport,
     required Uint8List inputJsonBytes,
+  }) => invokeInstalledWasmJson(
+    moduleBytes: moduleBytes,
+    entryExport: entryExport,
+    inputJsonBytes: inputJsonBytes,
+  );
+
+  static final HivraWasmInvokeJsonDart _wasmInvokeJson =
+      _lib
+          .lookup<NativeFunction<HivraWasmInvokeJsonC>>(
+            'hivra_wasm_invoke_json',
+          )
+          .asFunction();
+  static final HivraFreeStringDart _wasmFreeString =
+      _lib
+          .lookup<NativeFunction<HivraFreeStringC>>('hivra_free_string')
+          .asFunction();
+  static final HivraLastErrorMessageDart _wasmLastError =
+      _lib
+          .lookup<NativeFunction<HivraLastErrorMessageC>>(
+            'hivra_last_error_message',
+          )
+          .asFunction();
+
+  /// Loads only the WASM ABI; the server never initializes Capsule bindings.
+  static String? invokeInstalledWasmJson({
+    required Uint8List moduleBytes,
+    required String entryExport,
+    required Uint8List inputJsonBytes,
   }) {
     if (moduleBytes.isEmpty ||
         entryExport.trim().isEmpty ||
@@ -1521,9 +1549,16 @@ class HivraBindings {
         outPtr,
       );
       if (code != 0) {
-        throw FormatException(
-          lastErrorMessage() ?? 'WASM runtime invocation failed',
-        );
+        final error = _wasmLastError();
+        try {
+          throw FormatException(
+            error == nullptr
+                ? 'WASM runtime invocation failed'
+                : error.cast<Utf8>().toDartString(),
+          );
+        } finally {
+          if (error != nullptr) _wasmFreeString(error);
+        }
       }
       if (outPtr.value == nullptr) {
         throw const FormatException('WASM runtime returned no output');
@@ -1531,7 +1566,7 @@ class HivraBindings {
       return outPtr.value.cast<Utf8>().toDartString();
     } finally {
       if (outPtr.value != nullptr) {
-        _freeString(outPtr.value);
+        _wasmFreeString(outPtr.value);
       }
       calloc.free(modulePtr);
       calloc.free(entryPtr);

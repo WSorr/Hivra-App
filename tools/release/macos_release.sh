@@ -66,6 +66,10 @@ verify_macos_app_bundle() {
   fi
 
   codesign --verify --deep --strict "$app_path"
+  local runner_digest
+  runner_digest="$(bash "$ROOT/tools/release/workspace_runner.sh" --verify-assets \
+    "$app_path/Contents/Frameworks/App.framework/Resources/flutter_assets/assets/workspace_runner")"
+  [ "$runner_digest" = "$RUNNER_DIGEST" ] || die "$context bundled workspace runner changed after selection"
 }
 
 verify_macos_app_version() {
@@ -161,6 +165,7 @@ info "Release preflight"
 require_clean_tracked_worktree
 
 info "Build macOS release bundle"
+RUNNER_DIGEST="$(bash "$ROOT/tools/release/workspace_runner.sh" --verify-assets)"
 (
   cd "$FLUTTER_DIR"
   flutter build macos --release \
@@ -242,6 +247,7 @@ spctl_status=$SPCTL_STATUS
 spctl_output=$SPCTL_OUTPUT
 asset=$ASSET_NAME
 asset_sha256=$ZIP_SHA
+workspace_runner_sha256=$RUNNER_DIGEST
 EOF
 
 info "Done"

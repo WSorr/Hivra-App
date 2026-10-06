@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import '../models/consensus_models.dart';
 import '../models/plugin_host_api_models.dart';
 import 'plugin_host_contract_handler.dart';
+import 'plugin_contract_handlers.dart';
+import '../models/plugin_contract_ids.dart';
 import 'wasm_plugin_capability_policy_service.dart';
 
 class PluginHostApiService {
@@ -21,10 +23,10 @@ class PluginHostApiService {
     PluginRuntimeInvokeResolver? resolveRuntimeInvoke,
     WasmPluginCapabilityPolicyService capabilityPolicy =
         const WasmPluginCapabilityPolicyService(),
-  })  : _handlers = handlers,
-        _resolveRuntimeBinding = resolveRuntimeBinding,
-        _resolveRuntimeInvoke = resolveRuntimeInvoke,
-        _capabilityPolicy = capabilityPolicy;
+  }) : _handlers = handlers,
+       _resolveRuntimeBinding = resolveRuntimeBinding,
+       _resolveRuntimeInvoke = resolveRuntimeInvoke,
+       _capabilityPolicy = capabilityPolicy;
 
   PluginHostApiResponse execute(PluginHostApiRequest request) {
     return _executeResolved(
@@ -34,6 +36,42 @@ class PluginHostApiService {
     );
   }
 
+  Future<Future<void> Function()> captureRuntimeAuthorization({
+    required String pluginId,
+    required String method,
+  }) async {
+    final request = PluginHostApiRequest(
+      schemaVersion: schemaVersion,
+      pluginId: pluginId,
+      method: method,
+      args: const {},
+    );
+    Future<PluginRuntimeBinding> authorizedBinding() async {
+      final binding =
+          await _resolveRuntimeBinding?.call(pluginId) ??
+          const PluginRuntimeBinding.hostFallback();
+      if (_validateRuntimeBindingShape(binding) != null ||
+          await _preflightBeforeRuntime(request, binding) != null) {
+        throw StateError('Installed package authorization is unavailable');
+      }
+      return binding;
+    }
+
+    final initial = await authorizedBinding();
+    return () async {
+      final current = await authorizedBinding();
+      if (current.source != initial.source ||
+          current.packageId != initial.packageId ||
+          current.packageDigestHex != initial.packageDigestHex ||
+          current.contractKind != initial.contractKind ||
+          current.runtimeAbi != initial.runtimeAbi ||
+          current.runtimeEntryExport != initial.runtimeEntryExport ||
+          current.runtimeModulePath != initial.runtimeModulePath) {
+        throw StateError('Installed package changed during the action');
+      }
+    };
+  }
+
   Future<PluginHostApiResponse> executeWithRuntimeHook(
     PluginHostApiRequest request,
   ) async {
@@ -41,8 +79,9 @@ class PluginHostApiService {
       return execute(request);
     }
     final runtimeBinding = await _resolveRuntimeBinding(request.pluginId);
-    final runtimeBindingValidation =
-        _validateRuntimeBindingShape(runtimeBinding);
+    final runtimeBindingValidation = _validateRuntimeBindingShape(
+      runtimeBinding,
+    );
     if (runtimeBindingValidation != null) {
       return _rejected(
         pluginId: request.pluginId,
@@ -111,7 +150,7 @@ class PluginHostApiService {
         runtimeInvoke: null,
       );
     }
-    final handler = _handlerFor(request.pluginId);
+    final handler = _handlerFor(request.pluginId, runtimeBinding);
     if (handler == null) {
       return _rejected(
         pluginId: request.pluginId,
@@ -176,33 +215,36 @@ class PluginHostApiService {
     if (result == null) return null;
     return switch (result.status) {
       PluginHostApiStatus.blocked => _blocked(
-          pluginId: request.pluginId,
-          method: request.method,
-          blockingFacts: result.blockingFacts,
-          runtimeBinding: runtimeBinding,
-          runtimeInvoke: null,
-        ),
+        pluginId: request.pluginId,
+        method: request.method,
+        blockingFacts: result.blockingFacts,
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      ),
       PluginHostApiStatus.rejected => _rejected(
-          pluginId: request.pluginId,
-          method: request.method,
-          code: result.errorCode!,
-          message: result.errorMessage!,
-          runtimeBinding: runtimeBinding,
-          runtimeInvoke: null,
-        ),
+        pluginId: request.pluginId,
+        method: request.method,
+        code: result.errorCode!,
+        message: result.errorMessage!,
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      ),
       PluginHostApiStatus.executed => _rejected(
-          pluginId: request.pluginId,
-          method: request.method,
-          code: 'preflight_invalid',
-          message: 'Plugin preflight must not execute a contract',
-          runtimeBinding: runtimeBinding,
-          runtimeInvoke: null,
-        ),
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'preflight_invalid',
+        message: 'Plugin preflight must not execute a contract',
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      ),
     };
   }
 
-  bool _requiresExternalRuntimeExecution(PluginHostApiRequest request) {
-    final handler = _handlerFor(request.pluginId);
+  bool _requiresExternalRuntimeExecution(
+    PluginHostApiRequest request,
+    PluginRuntimeBinding binding,
+  ) {
+    final handler = _handlerFor(request.pluginId, binding);
     return handler != null &&
         handler.methods.contains(request.method) &&
         handler.requiresExternalRuntime;
@@ -217,7 +259,7 @@ class PluginHostApiService {
       return 'Runtime binding package_id is missing';
     }
     final packageKind = binding.packageKind?.trim().toLowerCase() ?? '';
-    if (packageKind != 'zip' && packageKind != 'wasm') {
+    if (packageKind != 'zip') {
       return 'Runtime binding package_kind is invalid';
     }
     return null;
@@ -238,13 +280,13 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
       );
     }
-    if (_requiresExternalRuntimeExecution(request)) {
+    if (_requiresExternalRuntimeExecution(request, runtimeBinding)) {
       if (runtimeBinding.source != 'external_package') {
         return _rejected(
           pluginId: request.pluginId,
           method: request.method,
           code: 'runtime_invoke_unavailable',
-          message: 'Runtime package is required for futures plugin execution',
+          message: 'Runtime package is required for plugin execution',
           runtimeBinding: runtimeBinding,
           runtimeInvoke: runtimeInvoke,
         );
@@ -289,7 +331,7 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
       );
     }
-    final handler = _handlerFor(request.pluginId);
+    final handler = _handlerFor(request.pluginId, runtimeBinding);
     if (handler != null) {
       if (!handler.methods.contains(request.method)) {
         return _rejected(
@@ -304,27 +346,27 @@ class PluginHostApiService {
       final result = handler.execute(request, runtimeInvoke: runtimeInvoke);
       return switch (result.status) {
         PluginHostApiStatus.executed => _executed(
-            pluginId: request.pluginId,
-            method: request.method,
-            runtimeBinding: runtimeBinding,
-            runtimeInvoke: runtimeInvoke,
-            result: result.result!,
-          ),
+          pluginId: request.pluginId,
+          method: request.method,
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: runtimeInvoke,
+          result: result.result!,
+        ),
         PluginHostApiStatus.blocked => _blocked(
-            pluginId: request.pluginId,
-            method: request.method,
-            blockingFacts: result.blockingFacts,
-            runtimeBinding: runtimeBinding,
-            runtimeInvoke: runtimeInvoke,
-          ),
+          pluginId: request.pluginId,
+          method: request.method,
+          blockingFacts: result.blockingFacts,
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: runtimeInvoke,
+        ),
         PluginHostApiStatus.rejected => _rejected(
-            pluginId: request.pluginId,
-            method: request.method,
-            code: result.errorCode!,
-            message: result.errorMessage!,
-            runtimeBinding: runtimeBinding,
-            runtimeInvoke: runtimeInvoke,
-          ),
+          pluginId: request.pluginId,
+          method: request.method,
+          code: result.errorCode!,
+          message: result.errorMessage!,
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: runtimeInvoke,
+        ),
       };
     }
     return _rejected(
@@ -344,7 +386,7 @@ class PluginHostApiService {
     if (runtimeBinding.source != 'external_package') {
       return null;
     }
-    final expected = _expectedContractKindForPlugin(pluginId);
+    final expected = _handlerFor(pluginId, runtimeBinding)?.contractKind;
     if (expected == null) {
       return null;
     }
@@ -356,10 +398,6 @@ class PluginHostApiService {
       return 'Runtime contract kind does not match requested plugin id';
     }
     return null;
-  }
-
-  String? _expectedContractKindForPlugin(String pluginId) {
-    return _handlerFor(pluginId)?.contractKind;
   }
 
   String? _validateRuntimeCapabilities({
@@ -380,10 +418,9 @@ class PluginHostApiService {
     } on FormatException {
       return 'Runtime capabilities contain unsupported entries';
     }
-    final required = _requiredCapabilitiesFor(
-      pluginId: pluginId,
-      method: method,
-    );
+    final required =
+        _handlerFor(pluginId, runtimeBinding)?.requiredCapabilities(method) ??
+        const <String>{};
     final normalizedSet = normalized.toSet();
     final missing =
         required.where((cap) => !normalizedSet.contains(cap)).toList()..sort();
@@ -393,17 +430,16 @@ class PluginHostApiService {
     return null;
   }
 
-  Set<String> _requiredCapabilitiesFor({
-    required String pluginId,
-    required String method,
-  }) {
-    return _handlerFor(pluginId)?.requiredCapabilities(method) ??
-        const <String>{};
-  }
-
-  PluginHostContractHandler? _handlerFor(String pluginId) {
+  PluginHostContractHandler? _handlerFor(
+    String pluginId, [
+    PluginRuntimeBinding? binding,
+  ]) {
     for (final handler in _handlers) {
       if (handler.pluginId == pluginId) return handler;
+    }
+    if (binding?.source == 'external_package' &&
+        binding?.contractKind == pluginWorkspaceContractKind) {
+      return PluginWorkspaceContractHandler(pluginId: pluginId);
     }
     return null;
   }
@@ -542,8 +578,8 @@ class PluginHostApiService {
       executionCapabilities: executionCapabilities,
       errorCode: errorCode,
       errorMessage: errorMessage,
-      blockingFacts: (blockingFacts.toList()
-        ..sort((a, b) => a.key.compareTo(b.key))),
+      blockingFacts:
+          (blockingFacts.toList()..sort((a, b) => a.key.compareTo(b.key))),
       result: result,
       canonicalJson: canonical,
       responseHashHex: responseHashHex,
@@ -586,16 +622,20 @@ class PluginHostApiService {
       'execution_capabilities': executionCapabilities,
       'error_code': errorCode,
       'error_message': errorMessage,
-      'blocking_facts': (blockingFacts
-          .map((fact) => <String, dynamic>{
-                'code': fact.code,
-                'subject_id': fact.subjectId,
-              })
-          .toList()
-        ..sort(
-          (a, b) => '${a['code']}:${a['subject_id'] ?? ''}'
-              .compareTo('${b['code']}:${b['subject_id'] ?? ''}'),
-        )),
+      'blocking_facts':
+          (blockingFacts
+              .map(
+                (fact) => <String, dynamic>{
+                  'code': fact.code,
+                  'subject_id': fact.subjectId,
+                },
+              )
+              .toList()
+            ..sort(
+              (a, b) => '${a['code']}:${a['subject_id'] ?? ''}'.compareTo(
+                '${b['code']}:${b['subject_id'] ?? ''}',
+              ),
+            )),
       'result': result,
     });
   }

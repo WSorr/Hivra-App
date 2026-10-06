@@ -1,11 +1,6 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
-
 import '../ffi/app_runtime_runtime.dart';
-import '../models/plugin_host_api_models.dart';
-import '../models/wasm_plugin_models.dart';
 import 'capsule_address_service.dart';
 import 'capsule_contact_label_store.dart';
 import 'capsule_diagnostics_service.dart';
@@ -244,69 +239,12 @@ class AppRuntimeService {
         ),
         const MoltbookAmbassadorPluginContractHandler(),
       ],
-      resolveRuntimeBinding: _resolvePluginRuntimeBinding,
+      resolveRuntimeBinding:
+          const WasmPluginRegistryService().resolveRuntimeBinding,
       resolveRuntimeInvoke:
           (request, binding) =>
               wasmRuntime.invoke(request: request, binding: binding),
     );
-  }
-
-  Future<PluginRuntimeBinding> _resolvePluginRuntimeBinding(
-    String pluginId,
-  ) async {
-    final normalizedPluginId = pluginId.trim();
-    if (normalizedPluginId.isEmpty) {
-      return const PluginRuntimeBinding.hostFallback();
-    }
-
-    final registry = const WasmPluginRegistryService();
-    final records = await registry.loadPlugins();
-    final pluginsDir = await registry.pluginsDirectory();
-    for (final record in records) {
-      final recordPluginId = record.pluginId?.trim();
-      if (recordPluginId == null || recordPluginId.isEmpty) {
-        continue;
-      }
-      if (recordPluginId != normalizedPluginId) {
-        continue;
-      }
-      final packageDigestHex = await _resolvePackageDigestHex(
-        registry: registry,
-        record: record,
-      );
-      final packagePath = '${pluginsDir.path}/${record.storedFileName}';
-      return PluginRuntimeBinding.externalPackage(
-        packageId: record.id,
-        packageVersion: record.pluginVersion,
-        packageKind: record.packageKind,
-        packageDigestHex: packageDigestHex,
-        packageFilePath: packagePath,
-        runtimeAbi: record.runtimeAbi,
-        runtimeEntryExport: record.runtimeEntryExport,
-        runtimeModulePath: record.runtimeModulePath,
-        contractKind: record.contractKind,
-        capabilities: record.capabilities,
-      );
-    }
-
-    return const PluginRuntimeBinding.hostFallback();
-  }
-
-  Future<String?> _resolvePackageDigestHex({
-    required WasmPluginRegistryService registry,
-    required WasmPluginRecord record,
-  }) async {
-    final pluginsDir = await registry.pluginsDirectory();
-    final packagePath = '${pluginsDir.path}/${record.storedFileName}';
-    final packageFile = File(packagePath);
-    if (!await packageFile.exists()) {
-      return null;
-    }
-    final bytes = await packageFile.readAsBytes();
-    if (bytes.isEmpty) {
-      return null;
-    }
-    return sha256.convert(bytes).toString();
   }
 
   String _hex(Uint8List bytes) =>

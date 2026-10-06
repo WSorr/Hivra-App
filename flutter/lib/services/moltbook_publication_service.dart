@@ -20,6 +20,15 @@ class MoltbookPublicationService {
       moltbookPersonFirstRuntimeSubmoltDescription;
   static const String defaultSubmolt = personFirstRuntimeSubmoltName;
   static const String replyActionClass = 'reply_draft';
+  static const String closedWithoutReceiptErrorCode =
+      'publication_closed_without_receipt';
+  static const Set<String> _absenceEvidenceErrorCodes = <String>{
+    'receipt_not_observed',
+    'reconciliation_window_unavailable',
+    'http_400',
+    'required_action_expired',
+    'verification_expired',
+  };
   static final Map<String, Future<void>> _engagementTails =
       <String, Future<void>>{};
 
@@ -61,8 +70,6 @@ class MoltbookPublicationService {
               ),
             )
             .toString();
-    final operationId = 'moltbook-post-$semanticId';
-    final marker = MoltbookPublicationContract.operationMarker(operationId);
     final content = MoltbookPublicationContract.publicationContent(draft.body);
     final ownerHex = _effects.activeOwnerCapsuleHex;
     final publicEffectKey = _postEffectKey(
@@ -72,51 +79,62 @@ class MoltbookPublicationService {
       title: draft.title,
       content: content,
     );
-    final canonicalPayload = jsonEncode(<String, dynamic>{
-      'schema_version': 3,
-      'account_name': binding.accountName,
-      'submolt_name': submolt,
-      'title': draft.title,
-      'content': content,
-      'operation_marker': marker,
-      'source_draft_hash_hex': draft.draftHashHex,
-    });
-    return _withEngagementLock(
-      '$ownerHex::post::${binding.accountId}',
-      () async {
-        _requireSameOwner(ownerHex);
-        final operation = retainedPostOperationForDraft(
-          operations: await list(),
-          accountBindingId: binding.accountId,
-          accountName: binding.accountName,
-          submoltName: submolt,
-          draft: draft,
-        );
-        if (operation != null) {
-          if (_postEffectKeyForOperation(operation) != publicEffectKey) {
-            throw StateError(
-              'The Moltbook draft is already bound to another exact publication',
-            );
-          }
-          if (operation.state == ExternalEffectState.terminalFailure) {
-            throw StateError(
-              'The exact Moltbook post has an unresolved delivery history; '
-              'change the reviewed text before preparing another effect',
-            );
-          }
-          return operation;
+    return _withEngagementLock('$ownerHex::post::${binding.accountId}', () async {
+      _requireSameOwner(ownerHex);
+      final operations = await list();
+      final operation = retainedPostOperationForDraft(
+        operations: operations,
+        accountBindingId: binding.accountId,
+        accountName: binding.accountName,
+        submoltName: submolt,
+        draft: draft,
+      );
+      if (operation != null) {
+        if (_postEffectKeyForOperation(operation) != publicEffectKey) {
+          throw StateError(
+            'The Moltbook draft is already bound to another exact publication',
+          );
         }
-        _requireSameOwner(ownerHex);
-        return _effects.prepare(
-          operationId: operationId,
-          pluginId: moltbookAmbassadorPluginId,
-          providerId: MoltbookConnectionService.providerId,
-          accountBindingId: binding.accountId,
-          effectKind: MoltbookExternalEffectAdapter.effectKind,
-          canonicalPayloadJson: canonicalPayload,
-        );
-      },
-    );
+        if (operation.state == ExternalEffectState.terminalFailure) {
+          throw StateError(
+            'The exact Moltbook post has an unresolved delivery history; '
+            'reconcile it before preparing another effect',
+          );
+        }
+        return operation;
+      }
+      final cancelledAttempts = operations.where(
+        (candidate) =>
+            isPostPublication(candidate) &&
+            candidate.accountBindingId == binding.accountId &&
+            candidate.state == ExternalEffectState.cancelled &&
+            _postEffectKeyForOperation(candidate) == publicEffectKey,
+      );
+      final retryOrdinal = cancelledAttempts.length;
+      final operationId =
+          retryOrdinal == 0
+              ? 'moltbook-post-$semanticId'
+              : 'moltbook-post-${sha256.convert(utf8.encode('$semanticId\nretry:$retryOrdinal')).toString()}';
+      final marker = MoltbookPublicationContract.operationMarker(operationId);
+      final canonicalPayload = jsonEncode(<String, dynamic>{
+        'schema_version': 3,
+        'account_name': binding.accountName,
+        'submolt_name': submolt,
+        'title': draft.title,
+        'content': content,
+        'operation_marker': marker,
+        'source_draft_hash_hex': draft.draftHashHex,
+      });
+      _requireSameOwner(ownerHex);
+      return _effects.prepare(
+        operationId: operationId,
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: MoltbookConnectionService.providerId,
+        accountBindingId: binding.accountId,
+        effectKind: MoltbookExternalEffectAdapter.effectKind,
+        canonicalPayloadJson: canonicalPayload,
+      );
+    });
   }
 
   Future<ExternalEffectOperation> prepareCommunity({
@@ -449,6 +467,23 @@ class MoltbookPublicationService {
         }.contains(operation.lastErrorCode);
   }
 
+  static bool isClosedWithoutReceipt(ExternalEffectOperation operation) {
+    return operation.state == ExternalEffectState.terminalFailure &&
+        operation.lastErrorCode == closedWithoutReceiptErrorCode &&
+        operation.receipt == null &&
+        operation.requiredAction == null;
+  }
+
+  static bool canCloseWithoutReceipt(ExternalEffectOperation operation) {
+    return isPostPublication(operation) &&
+        (operation.state == ExternalEffectState.unresolved ||
+            operation.state == ExternalEffectState.terminalFailure) &&
+        operation.receipt == null &&
+        operation.requiredAction == null &&
+        operation.attemptCount > 0 &&
+        _absenceEvidenceErrorCodes.contains(operation.lastErrorCode);
+  }
+
   static bool requiresReconciliation(ExternalEffectOperation operation) {
     return operation.state == ExternalEffectState.unresolved &&
         operation.requiredAction == null;
@@ -497,6 +532,17 @@ class MoltbookPublicationService {
     return _effects.cancel(
       pluginId: moltbookAmbassadorPluginId,
       operationId: operationId,
+    );
+  }
+
+  Future<ExternalEffectOperation> closeWithoutReceipt(String operationId) {
+    return _effects.retireWithoutReceipt(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: operationId,
+      allowedErrorCodes: _absenceEvidenceErrorCodes,
+      closureCode: closedWithoutReceiptErrorCode,
+      closureMessage:
+          'Closed locally without a confirmed receipt; delivery remains unconfirmed and exact retry stays blocked',
     );
   }
 

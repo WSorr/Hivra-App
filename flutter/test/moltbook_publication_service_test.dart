@@ -187,6 +187,52 @@ void main() {
     );
   });
 
+  test('local closure retains the exact draft deduplication identity', () {
+    final draft = _postDraft('1');
+    final closed = _postOperation(
+      operationId: 'moltbook-post-closed',
+      state: ExternalEffectState.terminalFailure,
+      draftHashHex: draft.draftHashHex,
+      lastErrorCode: MoltbookPublicationService.closedWithoutReceiptErrorCode,
+      withReceipt: false,
+    );
+
+    expect(
+      MoltbookPublicationService.retainedPostOperationForDraft(
+        operations: <ExternalEffectOperation>[closed],
+        accountBindingId: 'account-test',
+        accountName: 'agent',
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+        draft: draft,
+      ),
+      same(closed),
+    );
+    expect(MoltbookPublicationService.canCloseWithoutReceipt(closed), isFalse);
+  });
+
+  test('only an absent post attempt can be closed without receipt', () {
+    final unresolved = _postOperation(
+      operationId: 'moltbook-post-unresolved',
+      state: ExternalEffectState.unresolved,
+      draftHashHex: _hash,
+      lastErrorCode: 'receipt_not_observed',
+      withReceipt: false,
+    );
+    final spam = _postOperation(
+      operationId: 'moltbook-post-spam',
+      state: ExternalEffectState.terminalFailure,
+      draftHashHex: _hash,
+      lastErrorCode: 'provider_marked_spam',
+      withReceipt: false,
+    );
+
+    expect(
+      MoltbookPublicationService.canCloseWithoutReceipt(unresolved),
+      isTrue,
+    );
+    expect(MoltbookPublicationService.canCloseWithoutReceipt(spam), isFalse);
+  });
+
   test(
     'only confirmed authorization rejection permits exact reauthorization',
     () {
@@ -660,6 +706,54 @@ void main() {
       expect(repeated.operationId, first.operationId);
       expect(await publications.list(), hasLength(1));
     });
+
+    test(
+      'closed unconfirmed attempt cannot create a fresh effect for the same draft',
+      () async {
+        final draft = _postDraft('1');
+        await publications.prepare(
+          draft: draft,
+          submoltName: MoltbookPublicationService.defaultSubmolt,
+        );
+        final directory = await files.capsuleDirForHex(_ownerA);
+        final raw = await files.readPluginState(
+          directory,
+          moltbookAmbassadorPluginId,
+          'external_effects.v1.json',
+        );
+        final journal = Map<String, dynamic>.from(
+          jsonDecode(raw!) as Map<dynamic, dynamic>,
+        );
+        final operation = Map<String, dynamic>.from(
+          (journal['operations'] as List).single as Map<dynamic, dynamic>,
+        );
+        operation
+          ..['state'] = 'terminal_failure'
+          ..['attempt_count'] = 1
+          ..['revision'] = 1
+          ..['last_error_code'] =
+              MoltbookPublicationService.closedWithoutReceiptErrorCode
+          ..['last_error_message'] = 'Closed locally'
+          ..['receipt'] = null
+          ..['required_action'] = null;
+        journal['operations'] = <dynamic>[operation];
+        await files.writePluginState(
+          directory,
+          moltbookAmbassadorPluginId,
+          'external_effects.v1.json',
+          jsonEncode(journal),
+        );
+
+        await expectLater(
+          publications.prepare(
+            draft: draft,
+            submoltName: MoltbookPublicationService.defaultSubmolt,
+          ),
+          throwsStateError,
+        );
+        expect(await publications.list(), hasLength(1));
+      },
+    );
 
     test(
       'bounded public change approval binds configured community and commitment',

@@ -130,20 +130,13 @@ void main() {
   );
 
   test('install and remove plugin keeps registry and files in sync', () async {
-    final sourceFile = File('${tempDocsDir.path}/demo_plugin.wasm');
-    await sourceFile.writeAsBytes(const <int>[
-      0,
-      97,
-      115,
-      109,
-      1,
-      0,
-      0,
-      0,
-    ], flush: true);
+    final sourceFile = await _createPluginPackage(
+      tempDocsDir,
+      version: '0.1.0',
+    );
 
     final installed = await service.installPluginFromFile(sourceFile);
-    expect(installed.originalFileName, 'demo_plugin.wasm');
+    expect(installed.originalFileName, 'transactional-demo-0.1.0.zip');
 
     final pluginsDir = await service.pluginsDirectory();
     final storedFile = File('${pluginsDir.path}/${installed.storedFileName}');
@@ -159,6 +152,71 @@ void main() {
       isFalse,
     );
   });
+
+  test(
+    'raw module rejection preserves the installed ZIP and its binding',
+    () async {
+      final record = await service.installPluginFromFile(
+        await _createPluginPackage(tempDocsDir, version: '0.1.0'),
+      );
+      final before = await service.resolveRuntimeBinding(record.pluginId!);
+      final pluginsDir = await service.pluginsDirectory();
+      final registry = File('${pluginsDir.path}/registry.json');
+      final retained = await registry.readAsString();
+      final raw = File('${tempDocsDir.path}/replacement.wasm');
+      await raw.writeAsBytes(_wasmBytes, flush: true);
+      for (final source in [raw, File('${tempDocsDir.path}/replacement.zip')]) {
+        if (source != raw) await source.writeAsBytes(_wasmBytes, flush: true);
+        await expectLater(
+          service.installPluginFromFile(source),
+          throwsA(isA<FormatException>()),
+        );
+        expect(await registry.readAsString(), retained);
+        final current = await service.resolveRuntimeBinding(record.pluginId!);
+        expect(current.packageId, before.packageId);
+        expect(current.packageDigestHex, before.packageDigestHex);
+      }
+      expect(
+        (await pluginsDir.list().toList()).map((entry) => entry.path).toSet(),
+        {registry.path, '${pluginsDir.path}/${record.storedFileName}'},
+      );
+    },
+  );
+
+  test(
+    'legacy raw record cannot bind and remains explicitly removable',
+    () async {
+      final pluginsDir = await service.pluginsDirectory(create: true);
+      final raw = File('${pluginsDir.path}/legacy.wasm');
+      await raw.writeAsBytes(_wasmBytes, flush: true);
+      await File('${pluginsDir.path}/registry.json').writeAsString(
+        jsonEncode([
+          {
+            'id': 'legacy',
+            'storedFileName': 'legacy.wasm',
+            'packageKind': 'wasm',
+            'pluginId': 'hivra.contract.legacy.v1',
+            'contractKind': 'capsule_chat',
+            'runtimeAbi': 'hivra_host_abi_v2',
+            'runtimeEntryExport': 'hivra_evaluate_v1',
+            'capabilities': ['consensus_guard.read'],
+          },
+        ]),
+        flush: true,
+      );
+      expect(
+        (await service.resolveRuntimeBinding(
+          'hivra.contract.legacy.v1',
+        )).source,
+        'host_fallback',
+      );
+      expect(await raw.exists(), isTrue);
+      expect(await service.loadPlugins(), hasLength(1));
+      await service.removePlugin('legacy');
+      expect(await raw.exists(), isFalse);
+      expect(await service.loadPlugins(), isEmpty);
+    },
+  );
 
   test('stores manifest metadata for zip package install', () async {
     final sourceFile = File('${tempDocsDir.path}/demo_contract.zip');
@@ -313,10 +371,16 @@ void main() {
   );
 
   test('serializes concurrent installs across registry instances', () async {
-    final firstSource = File('${tempDocsDir.path}/first.wasm');
-    final secondSource = File('${tempDocsDir.path}/second.wasm');
-    await firstSource.writeAsBytes(_wasmBytes, flush: true);
-    await secondSource.writeAsBytes(_wasmBytes, flush: true);
+    final firstSource = _createPluginPackageSync(
+      tempDocsDir,
+      version: '0.1.0',
+      pluginId: 'hivra.contract.first.v1',
+    );
+    final secondSource = _createPluginPackageSync(
+      tempDocsDir,
+      version: '0.2.0',
+      pluginId: 'hivra.contract.second.v1',
+    );
     final blockingWrites = _BlockingRegistryWriteService();
     final firstService = WasmPluginRegistryService(
       dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
@@ -336,8 +400,11 @@ void main() {
     final installed = await service.loadPlugins();
     expect(installed, hasLength(2));
     expect(
-      installed.map((record) => record.originalFileName),
-      containsAll(<String>['first.wasm', 'second.wasm']),
+      installed.map((record) => record.pluginId),
+      containsAll(<String>[
+        'hivra.contract.first.v1',
+        'hivra.contract.second.v1',
+      ]),
     );
   });
 
@@ -370,8 +437,7 @@ void main() {
   });
 
   test('failed remove preserves the active record and package', () async {
-    final source = File('${tempDocsDir.path}/remove-me.wasm');
-    await source.writeAsBytes(_wasmBytes, flush: true);
+    final source = await _createPluginPackage(tempDocsDir, version: '0.1.0');
     final record = await service.installPluginFromFile(source);
     final pluginsDir = await service.pluginsDirectory();
     final storedFile = File('${pluginsDir.path}/${record.storedFileName}');
@@ -512,7 +578,11 @@ Future<File> _createPluginPackage(
   return file;
 }
 
-File _createPluginPackageSync(Directory root, {required String version}) {
+File _createPluginPackageSync(
+  Directory root, {
+  required String version,
+  String pluginId = 'hivra.contract.transactional-demo.v1',
+}) {
   final file = File('${root.path}/transactional-demo-$version.zip');
   file.writeAsBytesSync(
     _zipBytes(
@@ -521,7 +591,7 @@ File _createPluginPackageSync(Directory root, {required String version}) {
           'schema': 'hivra.plugin.manifest',
           'version': 1,
           'release_version': version,
-          'plugin_id': 'hivra.contract.transactional-demo.v1',
+          'plugin_id': pluginId,
           'contract': {'kind': 'transactional_demo'},
           'runtime': {
             'abi': 'hivra_host_abi_v2',

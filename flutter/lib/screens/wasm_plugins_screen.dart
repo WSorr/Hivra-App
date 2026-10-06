@@ -123,7 +123,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final safeName = _safePluginImportFileName(file.name, file.path);
       final source = File('${tempDir.path}/$safeName');
       await source.writeAsBytes(await file.readAsBytes(), flush: true);
-      final record = await _module.registry.installPluginFromFile(source);
+      final record = await _module.installPluginFromFile(source);
       await _module.uiLog.log(
         'plugin.install.success',
         'id=${record.id} plugin=${record.pluginId ?? "-"} '
@@ -218,7 +218,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     });
 
     try {
-      final record = await _module.sourceCatalog.installFromSourceEntry(entry);
+      final record = await _module.installPluginFromSource(entry);
       await _module.uiLog.log(
         'plugin.source.install.success',
         'id=${entry.id} plugin=${record.pluginId ?? "-"} '
@@ -809,7 +809,7 @@ class _EmptyInstalledState extends StatelessWidget {
           ),
           SizedBox(height: 6),
           Text(
-            'Install a .wasm or .zip package to stage it locally inside the plugin sandbox.',
+            'Install a .zip package containing manifest.json and a WASM module.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Color(0xFF93A0B1), height: 1.35),
           ),
