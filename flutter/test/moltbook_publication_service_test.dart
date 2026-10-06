@@ -711,7 +711,7 @@ void main() {
       'closed unconfirmed attempt cannot create a fresh effect for the same draft',
       () async {
         final draft = _postDraft('1');
-        final first = await publications.prepare(
+        await publications.prepare(
           draft: draft,
           submoltName: MoltbookPublicationService.defaultSubmolt,
         );
