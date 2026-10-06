@@ -47,6 +47,9 @@ class WasmPluginRegistryService {
       if (recordPluginId != normalizedPluginId) {
         continue;
       }
+      if (record.packageKind != 'zip') {
+        return const PluginRuntimeBinding.hostFallback();
+      }
       final packagePath = '${pluginsDir.path}/${record.storedFileName}';
       final packageFile = File(packagePath);
       final bytes = await packageFile.readAsBytes();
@@ -143,9 +146,9 @@ class WasmPluginRegistryService {
   }) async {
     final sourceName = _fileNameOnly(sourceFile.path);
     final extension = _fileExtension(sourceName).toLowerCase();
-    if (extension != '.wasm' && extension != '.zip') {
+    if (extension != '.zip') {
       throw const FormatException(
-        'Only .wasm or .zip plugin packages are supported',
+        'Install a .zip plugin package containing manifest.json and a WASM module',
       );
     }
     final pluginsDir = await pluginsDirectory(create: true);

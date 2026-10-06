@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-04
+Status date: 2026-10-06
 
 ## Current State
 
@@ -9,6 +9,10 @@ Status date: 2026-10-04
   `v1.0.3-test21` at `8e5c136`.
 - Core, Ledger, FFI, the WASM host, and one Flutter App Shell remain the
   runtime.
+- External-package admission hardening is complete: ZIP with a manifest is the
+  only installable format; legacy raw modules remain removable but cannot
+  bind or execute. The sandbox boundary is specified in specification section
+  5.2.3 (WASM Plugin Host Contract); no OS/process isolation is claimed.
 - Chat and Moltbook are the maintained installed product capabilities.
 - Trading 1.x was retired in `d1b6581` (#335). The user selected a new
   installable Jack Ventura WASM plugin under `plugins/trading-plugin-mvp.md`.

@@ -127,6 +127,9 @@ class WasmPluginSourceCatalogService {
     WasmPluginSourceCatalogEntry entry, {
     Future<void> Function(String? pluginId)? beforeInstall,
   }) async {
+    if (entry.packageKind != 'zip') {
+      throw const FormatException('Installed plugins require a ZIP package');
+    }
     final uri = Uri.tryParse(entry.downloadUrl);
     if (uri == null) {
       throw const FormatException(
@@ -160,11 +163,8 @@ class WasmPluginSourceCatalogService {
       );
     }
 
-    final extension = entry.packageKind == 'wasm' ? '.wasm' : '.zip';
     final tempDir = await Directory.systemTemp.createTemp('hivra_plugin_src_');
-    final tempFile = File(
-      '${tempDir.path}/${entry.id}_v${entry.version}$extension',
-    );
+    final tempFile = File('${tempDir.path}/${entry.id}_v${entry.version}.zip');
 
     final client = _httpClientFactory();
     client.autoUncompress = false;
@@ -266,7 +266,7 @@ class WasmPluginSourceCatalogService {
       if (seenEntryIds.contains(id)) {
         continue;
       }
-      if (packageKind != 'zip' && packageKind != 'wasm') {
+      if (packageKind != 'zip') {
         continue;
       }
       if (!_isSupportedDownloadUrl(downloadUrl)) {

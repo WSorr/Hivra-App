@@ -259,7 +259,7 @@ class PluginHostApiService {
       return 'Runtime binding package_id is missing';
     }
     final packageKind = binding.packageKind?.trim().toLowerCase() ?? '';
-    if (packageKind != 'zip' && packageKind != 'wasm') {
+    if (packageKind != 'zip') {
       return 'Runtime binding package_kind is invalid';
     }
     return null;

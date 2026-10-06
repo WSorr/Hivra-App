@@ -23,7 +23,7 @@ void main() {
     }
   });
 
-  test('accepts valid wasm binary package', () async {
+  test('rejects raw WASM even with a valid module header', () async {
     final file = File('${tempDir.path}/valid.wasm');
     await file.writeAsBytes(const <int>[
       0,
@@ -36,11 +36,7 @@ void main() {
       0,
     ], flush: true);
 
-    final preflight = await service.inspect(file);
-
-    expect(preflight.packageKind, 'wasm');
-    expect(preflight.pluginId, isNull);
-    expect(preflight.capabilities, isEmpty);
+    await expectLater(service.inspect(file), throwsA(isA<FormatException>()));
   });
 
   test('rejects wasm package with invalid header', () async {

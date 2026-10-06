@@ -809,7 +809,7 @@ class _EmptyInstalledState extends StatelessWidget {
           ),
           SizedBox(height: 6),
           Text(
-            'Install a .wasm or .zip package to stage it locally inside the plugin sandbox.',
+            'Install a .zip package containing manifest.json and a WASM module.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Color(0xFF93A0B1), height: 1.35),
           ),

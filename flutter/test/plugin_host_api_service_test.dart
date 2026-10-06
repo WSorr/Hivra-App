@@ -12,6 +12,44 @@ import 'package:hivra_app/services/plugin_host_contract_handler.dart';
 
 void main() {
   group('PluginHostApiService', () {
+    test(
+      'raw binding cannot authorize or invoke an external package',
+      () async {
+        var calls = 0;
+        final host = PluginHostApiService(
+          handlers: const [MoltbookAmbassadorPluginContractHandler()],
+          resolveRuntimeBinding:
+              (_) async => const PluginRuntimeBinding.externalPackage(
+                packageId: 'raw',
+                packageVersion: '1',
+                packageKind: 'wasm',
+                contractKind: 'moltbook_ambassador_draft',
+                capabilities: ['content.draft.prepare', 'consensus_guard.read'],
+              ),
+          resolveRuntimeInvoke: (_, _) async {
+            calls++;
+            return null;
+          },
+        );
+        final response = await host.executeWithRuntimeHook(
+          const PluginHostApiRequest(
+            schemaVersion: 1,
+            pluginId: moltbookAmbassadorPluginId,
+            method: prepareMoltbookDraftMethod,
+            args: {},
+          ),
+        );
+        expect(response.errorCode, 'runtime_binding_invalid');
+        await expectLater(
+          host.captureRuntimeAuthorization(
+            pluginId: moltbookAmbassadorPluginId,
+            method: prepareMoltbookDraftMethod,
+          ),
+          throwsStateError,
+        );
+        expect(calls, 0);
+      },
+    );
     test('rejects unsupported plugin id', () {
       final response = _service().execute(
         const PluginHostApiRequest(

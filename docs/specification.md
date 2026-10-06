@@ -811,7 +811,9 @@ WASM plugin execution is allowed only through a host boundary with explicit capa
 
 Mandatory constraints:
 
-1. Plugin runtime is sandboxed.
+1. Plugin runtime is an in-process Wasmi capability sandbox, not an OS/process
+   isolation boundary. Its no-import and resource limits do not protect the
+   host against a vulnerability in the native runtime itself.
 2. Plugin registry/storage is isolated from capsule ledger storage.
 3. Plugins MUST NOT append ledger events directly.
 4. Plugins MUST NOT bypass Engine validation or Core invariants.
@@ -826,6 +828,11 @@ Mandatory constraints:
 9. Plugin-owned deterministic semantics execute in WASM. Host fallback is a
    compatibility path only where explicitly allowed and MUST NOT mirror or
    replace semantics for contracts that require an external package.
+10. Installed plugins MUST be ZIP packages containing a manifest and a WASM
+    module. Raw `.wasm` files MUST NOT be installed, bound, or executed as
+    external packages. Direct module invocation remains available to the
+    low-level ABI and its tests, not as a registry or UI installation route.
+    Legacy raw records remain removable but confer no execution authority.
 
 ### 5.2.3 Identity Separation Rule
 
