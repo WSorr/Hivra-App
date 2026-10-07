@@ -494,63 +494,73 @@ class BingxMarketDataAdapter implements ExternalEffectAdapter {
       throw const FormatException('BingX open-order evidence is unreadable');
     }
     final ids = <String>{};
-    return rows.map((row) {
-      if (row is! Map) {
-        throw const FormatException('BingX open-order evidence is unreadable');
-      }
-      final id = row['orderID'] ?? row['orderId'];
-      if (row['symbol'] is! String ||
-          (id is! String && id is! int) ||
-          !RegExp(r'^[1-9][0-9]{0,29}$').hasMatch(id.toString()) ||
-          !ids.add(id.toString()) ||
-          (row['orderID'] != null &&
-              row['orderId'] != null &&
-              row['orderId'].toString() != id.toString())) {
-        throw const FormatException('BingX open-order evidence is unreadable');
-      }
-      if (row['symbol'] != symbol) {
-        throw const FormatException(
-          'BingX returned orders outside the requested instrument',
-        );
-      }
-      String number(String name) {
-        final raw = row[name];
-        final value = raw is num ? raw : num.tryParse(raw.toString());
-        if (value == null || !value.isFinite || value < 0) {
-          throw const FormatException(
-            'BingX open-order evidence is unreadable',
-          );
-        }
-        return value.toString();
-      }
+    return rows
+        .map<Map<String, dynamic>?>((row) {
+          if (row is! Map) {
+            throw const FormatException(
+              'BingX open-order evidence is unreadable',
+            );
+          }
+          final id = row['orderID'] ?? row['orderId'];
+          final rowSymbol = row['symbol'];
+          if (rowSymbol is! String ||
+              !RegExp(r'^[A-Z0-9]+-USDT$').hasMatch(rowSymbol) ||
+              (id is! String && id is! int) ||
+              !RegExp(r'^[1-9][0-9]{0,29}$').hasMatch(id.toString()) ||
+              !ids.add(id.toString()) ||
+              (row['orderID'] != null &&
+                  row['orderId'] != null &&
+                  row['orderId'].toString() != id.toString())) {
+            throw const FormatException(
+              'BingX open-order evidence is unreadable',
+            );
+          }
+          // BingX may ignore the symbol query and return another instrument.
+          // Those rows are account-bound evidence, but not evidence for this
+          // selected workspace instrument.
+          if (rowSymbol != symbol) return null;
+          String number(String name) {
+            final raw = row[name];
+            final value = raw is num ? raw : num.tryParse(raw.toString());
+            if (value == null || !value.isFinite || value < 0) {
+              throw const FormatException(
+                'BingX open-order evidence is unreadable',
+              );
+            }
+            return value.toString();
+          }
 
-      final quantity = number('origQty');
-      final filled = number('executedQty');
-      if (!['BUY', 'SELL'].contains(row['side']) ||
-          !['BOTH', 'LONG', 'SHORT'].contains(row['positionSide']) ||
-          ['type', 'status'].any(
-            (k) =>
-                row[k] is! String ||
-                !RegExp(r'^[A-Z_]{1,32}$').hasMatch(row[k] as String),
-          ) ||
-          num.parse(filled) > num.parse(quantity)) {
-        throw const FormatException('BingX open-order evidence is unreadable');
-      }
-      return <String, dynamic>{
-        'order_id': id.toString(),
-        'side': row['side'],
-        'position_side': row['positionSide'],
-        'type': row['type'],
-        'status': row['status'],
-        'price': number('price'),
-        'stop_price':
-            row['stopPrice'] == null || row['stopPrice'] == ''
-                ? '0'
-                : number('stopPrice'),
-        'quantity': quantity,
-        'filled_quantity': filled,
-      };
-    }).toList();
+          final quantity = number('origQty');
+          final filled = number('executedQty');
+          if (!['BUY', 'SELL'].contains(row['side']) ||
+              !['BOTH', 'LONG', 'SHORT'].contains(row['positionSide']) ||
+              ['type', 'status'].any(
+                (k) =>
+                    row[k] is! String ||
+                    !RegExp(r'^[A-Z_]{1,32}$').hasMatch(row[k] as String),
+              ) ||
+              num.parse(filled) > num.parse(quantity)) {
+            throw const FormatException(
+              'BingX open-order evidence is unreadable',
+            );
+          }
+          return <String, dynamic>{
+            'order_id': id.toString(),
+            'side': row['side'],
+            'position_side': row['positionSide'],
+            'type': row['type'],
+            'status': row['status'],
+            'price': number('price'),
+            'stop_price':
+                row['stopPrice'] == null || row['stopPrice'] == ''
+                    ? '0'
+                    : number('stopPrice'),
+            'quantity': quantity,
+            'filled_quantity': filled,
+          };
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList();
   }
 
   Future<Map<String, dynamic>> readOpenOrders(

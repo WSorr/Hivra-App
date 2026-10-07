@@ -3709,15 +3709,16 @@ void main() {
               if (fault == 'capsule') owner = 'b' * 64;
               if (fault == 'remove') registry.installed = false;
             };
-            await expectLater(
-              module().runWorkspaceAction(
-                record: registry.record,
-                action: 'list_orders',
-              ),
-              fault == 'symbol' ? throwsFormatException : throwsStateError,
-              reason: fault,
+            final listedResult = module().runWorkspaceAction(
+              record: registry.record,
+              action: 'list_orders',
             );
-            expect(listAdmissions, 1, reason: fault);
+            if (fault == 'symbol') {
+              expect((await listedResult)['rows'], isA<List>(), reason: fault);
+            } else {
+              await expectLater(listedResult, throwsStateError, reason: fault);
+            }
+            expect(listAdmissions, greaterThanOrEqualTo(1), reason: fault);
             expect(fixture.posts, 1, reason: fault);
             owner = 'a' * 64;
             packageDigest = 'c' * 64;
@@ -4106,7 +4107,7 @@ void main() {
   );
 
   test(
-    'open-order conflicts require exact instrument and provider identity',
+    'open-order conflicts require exact instrument while ignoring foreign orders',
     () async {
       for (final data in <dynamic>[
         [null],
@@ -4142,13 +4143,8 @@ void main() {
       final mismatch = await foreign.adapter().deliver(
         entryEffect(entryPlan()),
       );
-      expect(mismatch.errorCode, 'entry_not_sent');
-      expect(
-        mismatch.errorMessage,
-        contains('outside the requested instrument'),
-      );
-      expect(mismatch.errorMessage, isNot(contains('Open BTC-USDT order')));
-      expect(foreign.posts, 0);
+      expect(mismatch.status, ExternalEffectAdapterStatus.succeeded);
+      expect(foreign.posts, 1);
       for (final key in ['orderId', 'orderID']) {
         final exact =
             _EntryProvider()
@@ -4249,13 +4245,10 @@ void main() {
   );
 
   test(
-    'open-order listing rejects partial, duplicate or mismatched evidence',
+    'open-order listing ignores foreign instruments but rejects malformed evidence',
     () async {
       for (final rows in <dynamic>[
         [openOrder(), openOrder()],
-        [
-          {...openOrder(), 'symbol': 'VET-USDT'},
-        ],
         [
           {...openOrder(), 'price': 'NaN'},
         ],
@@ -4283,6 +4276,25 @@ void main() {
         );
         expect(fixture.posts, 0);
       }
+      final mixed =
+          _EntryProvider()
+            ..openDataOverride = {
+              'orders': [
+                {
+                  ...openOrder(),
+                  'symbol': 'DASH-USDT',
+                  'orderId': '2103610529511862273',
+                },
+                openOrder(),
+              ],
+            };
+      expect(
+        (await mixed.adapter().readOpenOrders(openOrdersRequest(), {
+          'api_key': 'test-key',
+          'secret_key': 'test-secret',
+        }))['orders'],
+        hasLength(1),
+      );
       final unavailable =
           _EntryProvider()
             ..afterOpenOrdersRead = () => throw TimeoutException('test-secret');
