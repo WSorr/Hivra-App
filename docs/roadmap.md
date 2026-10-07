@@ -32,11 +32,16 @@ The following product foundations are implemented and retained:
 ## Retired 1.x Capability
 
 The former Trading implementation was removed as a single bounded retirement:
-strategy and sizing code, provider execution, managed-order state, Chat-carried
-execution payloads, embedded and remote runners, UI, tests, ownership entries,
-and release obligations. Historical Git and release evidence remains available,
-but no Trading runtime, replacement strategy, compatibility path, or active
-roadmap promise is retained.
+its old strategy and sizing code, provider execution, managed-order state,
+Chat-carried execution payloads, embedded and remote runners, UI, tests,
+ownership entries, and release obligations are historical only. Historical Git
+and release evidence remains available and does not authorize restoration of
+that path.
+
+The replacement is the separately scoped installable Jack Ventura WASM
+capability described by `plugins/trading-plugin-mvp.md` and tracked in
+`development-control.md`. It is the maintained v1 Trading product boundary;
+it is not a compatibility path or a restoration of the retired implementation.
 
 ## Design-Only Hivra 2.0 Evidence
 

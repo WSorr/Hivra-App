@@ -3,7 +3,7 @@ name = "hivra-transport"
 version = "1.0.0"
 edition = "2021"
 authors = ["Hivra Team"]
-license = "MIT"
+license.workspace = true
 description = "Transport layer for Hivra"
 
 [lib]

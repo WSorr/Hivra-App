@@ -2,6 +2,7 @@
 name = "hivra-ffi"
 version = "1.0.0"
 edition = "2021"
+license.workspace = true
 description = "C FFI bindings for Hivra"
 
 [lib]

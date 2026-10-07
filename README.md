@@ -231,4 +231,4 @@ tools/cleanup/clean_local_artifacts.sh --dry-run
 
 ## License
 
-MIT
+Mozilla Public License 2.0. See [LICENSE](LICENSE).

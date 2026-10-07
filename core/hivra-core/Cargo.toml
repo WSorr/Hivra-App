@@ -3,7 +3,7 @@ name = "hivra-core"
 version = "1.0.0"
 edition = "2021"
 authors = ["Hivra Team"]
-license = "MIT"
+license.workspace = true
 description = "Core domain logic for Hivra"
 
 [lib]
