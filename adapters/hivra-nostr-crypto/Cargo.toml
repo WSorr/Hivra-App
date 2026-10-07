@@ -3,7 +3,7 @@ name = "hivra-nostr-crypto"
 version = "1.0.0"
 edition = "2021"
 description = "Nostr secp256k1 CryptoProvider adapter for Hivra Engine"
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 hivra-engine = { path = "../../engine/hivra-engine" }

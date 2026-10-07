@@ -3,7 +3,7 @@ name = "hivra-ed25519-crypto"
 version = "1.0.0"
 edition = "2021"
 description = "ed25519 CryptoProvider adapter for Hivra Engine"
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 hivra-engine = { path = "../../engine/hivra-engine" }

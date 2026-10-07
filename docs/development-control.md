@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-06
+Status date: 2026-10-07
 
 ## Current State
 
@@ -238,11 +238,29 @@ Status date: 2026-10-06
 - The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager
   baseline remains authoritative.
 
-## Active Outcome: Installable Jack Ventura Plugin
+## v1 Outcome: Installable Jack Ventura Plugin
+
+### v1 Closure Boundary
+
+As of 2026-10-07, the maintained v1 product is closed at a medium product
+result. Jack Ventura is an installable signed WASM capability with one
+user-selected instrument, host-owned credentials, a managed local or VPS
+executor, one durable effect journal, provider-scoped order reconciliation,
+Stop semantics, package replacement, restart recovery, and bounded VPS
+installation. This is the product users can operate without Git, a terminal,
+runner IDs, or manual server cleanup.
+
+This closure does not claim profitable strategy behavior or full autonomous
+trade performance. Live fill-to-confirmed-closure-to-reentry evidence remains
+an explicit experimental limitation, not a release promise. No further v1
+strategy filters, confirmation layers, alternative runner, or Trading host
+workflow may be added under this outcome. Any later live experiment must use
+the existing package and executor path and replace this status only with
+actual provider evidence.
 
 The user accepted the current single-entry evidence as sufficient for advancing
-on 2026-10-02. The next bounded outcome is continuous VPS operation of the
-installed Jack Ventura package and reentry after confirmed position closure.
+on 2026-10-02. Continuous VPS operation and reentry remain experimental
+follow-up evidence, not another mandatory v1 development pass.
 Do not tune strategy selection or add signal filters during this outcome.
 Calculation is not an obligation to place an order at start or on every cycle.
 One Start enables observation and the authorized trading lifecycle for the
