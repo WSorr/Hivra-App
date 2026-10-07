@@ -285,6 +285,42 @@ class ExternalEffectService {
     );
   }
 
+  /// Removes terminal records after the caller has verified that the provider
+  /// no longer needs their payload or replay identity.
+  Future<void> forgetTerminalOperations({
+    required String pluginId,
+    required String providerId,
+    required Set<String> operationIds,
+  }) {
+    final owner = _requireActiveOwner();
+    if (operationIds.isEmpty || operationIds.length > _maxJournalOperations) {
+      throw StateError('Terminal cleanup requires bounded exact operations');
+    }
+    return _withJournalLock(owner, pluginId, () async {
+      final operations = await _load(owner, pluginId);
+      final selected = operations
+          .where((operation) => operationIds.contains(operation.operationId))
+          .toList(growable: false);
+      if (selected.length != operationIds.length ||
+          selected.any(
+            (operation) =>
+                !operation.state.isTerminal ||
+                operation.providerId != providerId ||
+                _inFlight.containsKey(
+                  '$owner::$pluginId::${operation.operationId}',
+                ),
+          )) {
+        throw StateError(
+          'Only terminal, provider-bound and idle effects can be forgotten',
+        );
+      }
+      operations.removeWhere(
+        (operation) => operationIds.contains(operation.operationId),
+      );
+      await _save(owner, pluginId, operations);
+    });
+  }
+
   Future<ExternalEffectOperation> process({
     required String pluginId,
     required String operationId,

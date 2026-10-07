@@ -2035,8 +2035,15 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                           child: MoltbookPublicationCard(
                             operations: _publications,
                             busy: _publicationBusy,
+                            profileUri:
+                                _binding == null
+                                    ? null
+                                    : MoltbookPublicationService.accountProfileUri(
+                                      _binding!.accountName,
+                                    ),
                             observedPostStatuses: _observedPostStatuses,
                             onOpenPost: _openPublishedPost,
+                            onOpenProfile: _openPublishedPost,
                             onRecheck: _reconcilePublication,
                             onCheckCurrentPost: _checkPublishedPostStatus,
                             onCloseWithoutReceipt: _closeUnpublishedPublication,
@@ -2817,12 +2824,14 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
 class MoltbookPublicationCard extends StatelessWidget {
   final List<ExternalEffectOperation> operations;
   final bool busy;
+  final Uri? profileUri;
   final Map<
     String,
     ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})
   >
   observedPostStatuses;
   final Future<void> Function(Uri uri) onOpenPost;
+  final Future<void> Function(Uri uri) onOpenProfile;
   final Future<void> Function(ExternalEffectOperation operation) onRecheck;
   final Future<void> Function(ExternalEffectOperation operation)
   onCheckCurrentPost;
@@ -2833,8 +2842,10 @@ class MoltbookPublicationCard extends StatelessWidget {
     super.key,
     required this.operations,
     required this.busy,
+    required this.profileUri,
     required this.observedPostStatuses,
     required this.onOpenPost,
+    required this.onOpenProfile,
     required this.onRecheck,
     required this.onCheckCurrentPost,
     required this.onCloseWithoutReceipt,
@@ -2842,6 +2853,20 @@ class MoltbookPublicationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final actionable = operations
+        .where(
+          (operation) =>
+              !operation.state.isTerminal ||
+              operation.requiredAction != null ||
+              MoltbookPublicationService.canManuallyReconcileTerminalFailure(
+                operation,
+              ) ||
+              MoltbookPublicationService.canCloseWithoutReceipt(operation),
+        )
+        .toList(growable: false);
+    final visibleOperations = actionable;
+    final hiddenCount = operations.length - actionable.length;
+
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -2850,16 +2875,30 @@ class MoltbookPublicationCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Publication status · ${operations.length}',
+              actionable.isNotEmpty
+                  ? 'Needs attention · ${actionable.length}'
+                  : 'No pending publications',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Receipts record what Moltbook confirmed at delivery. Current post moderation can change later.',
+            Text(
+              hiddenCount > 0
+                  ? '$hiddenCount completed records are hidden. Compare public history on Moltbook.'
+                  : 'Public history is available on Moltbook; only unfinished actions appear here.',
               style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
             ),
             const SizedBox(height: 10),
-            ...operations.reversed.map((operation) {
+            if (profileUri != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () => onOpenProfile(profileUri!),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Open Moltbook profile'),
+                ),
+              ),
+            if (profileUri != null) const SizedBox(height: 8),
+            ...visibleOperations.reversed.map((operation) {
               final payload = MoltbookPublicationService.decodePayload(
                 operation,
               );

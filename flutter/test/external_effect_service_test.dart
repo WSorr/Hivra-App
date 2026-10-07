@@ -128,6 +128,31 @@ void main() {
     expect(restartedAdapter.reconcileCount, 0);
   });
 
+  test(
+    'forgets only exact idle terminal operations for the named provider',
+    () async {
+      final service = build(
+        _FakeExternalEffectAdapter(
+          deliverResults: <Object>[_success('post-1')],
+        ),
+      );
+      await prepareApprovedQueued(service);
+      final completed = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(completed.state, ExternalEffectState.succeeded);
+
+      await service.forgetTerminalOperations(
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: 'moltbook',
+        operationIds: {'post-1'},
+      );
+
+      expect(await service.list(pluginId: moltbookAmbassadorPluginId), isEmpty);
+    },
+  );
+
   Future<void> seedTradingHistory(int count) async {
     final service = build(_FakeExternalEffectAdapter(), providerId: 'bingx');
     final base = await service.prepare(

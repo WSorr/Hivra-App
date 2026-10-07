@@ -151,7 +151,6 @@ class MoltbookPublicChangeFeedStore {
               ? changes
                   .where(
                     (change) =>
-                        !change.isPending ||
                         !change.sourceId.startsWith('github-') ||
                         change.sourceId == normalizedSourceId,
                   )

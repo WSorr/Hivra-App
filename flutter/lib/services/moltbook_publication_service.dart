@@ -28,6 +28,7 @@ class MoltbookPublicationService {
     'http_400',
     'required_action_expired',
     'verification_expired',
+    'authorization_revoked',
   };
   static final Map<String, Future<void>> _engagementTails =
       <String, Future<void>>{};
@@ -528,6 +529,12 @@ class MoltbookPublicationService {
     return _effects.list(pluginId: moltbookAmbassadorPluginId);
   }
 
+  Future<List<ExternalEffectOperation>> listForWorkspace() async {
+    final operations = await list();
+    await forgetConfirmedHistory(operations);
+    return list();
+  }
+
   Future<ExternalEffectOperation> cancel(String operationId) {
     return _effects.cancel(
       pluginId: moltbookAmbassadorPluginId,
@@ -543,6 +550,31 @@ class MoltbookPublicationService {
       closureCode: closedWithoutReceiptErrorCode,
       closureMessage:
           'Closed locally without a confirmed receipt; delivery remains unconfirmed and exact retry stays blocked',
+    );
+  }
+
+  Future<void> forgetConfirmedHistory(
+    Iterable<ExternalEffectOperation> operations,
+  ) {
+    final operationIds =
+        operations
+            .where(
+              (operation) =>
+                  isPostPublication(operation) &&
+                  operation.providerId ==
+                      MoltbookConnectionService.providerId &&
+                  ((operation.state == ExternalEffectState.succeeded &&
+                          operation.receipt != null) ||
+                      (operation.state == ExternalEffectState.terminalFailure &&
+                          operation.lastErrorCode == 'provider_marked_spam')),
+            )
+            .map((operation) => operation.operationId)
+            .toSet();
+    if (operationIds.isEmpty) return Future<void>.value();
+    return _effects.forgetTerminalOperations(
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: MoltbookConnectionService.providerId,
+      operationIds: operationIds,
     );
   }
 
@@ -715,6 +747,18 @@ class MoltbookPublicationService {
       return null;
     }
     return Uri.https('www.moltbook.com', '/post/$postId');
+  }
+
+  static Uri? accountProfileUri(String accountName) {
+    final normalized = accountName.trim();
+    if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$').hasMatch(normalized)) {
+      return null;
+    }
+    return Uri(
+      scheme: 'https',
+      host: 'www.moltbook.com',
+      pathSegments: <String>['u', normalized],
+    );
   }
 
   static void validateDelegatedReplyBinding(

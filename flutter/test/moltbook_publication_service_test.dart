@@ -70,6 +70,17 @@ void main() {
     );
   });
 
+  test('accountProfileUri binds only a safe Moltbook account name', () {
+    expect(
+      MoltbookPublicationService.accountProfileUri('hivra_ambassador'),
+      Uri.parse('https://www.moltbook.com/u/hivra_ambassador'),
+    );
+    expect(
+      MoltbookPublicationService.accountProfileUri('not/a-profile'),
+      isNull,
+    );
+  });
+
   test('new post content omits the old automatic repository attribution', () {
     final attribution = MoltbookPublicationContract.attribution();
 
@@ -231,6 +242,18 @@ void main() {
       isTrue,
     );
     expect(MoltbookPublicationService.canCloseWithoutReceipt(spam), isFalse);
+  });
+
+  test('revoked authorization can close an unconfirmed post locally', () {
+    final revoked = _postOperation(
+      operationId: 'moltbook-post-revoked-authorization',
+      state: ExternalEffectState.terminalFailure,
+      draftHashHex: _hash,
+      lastErrorCode: 'authorization_revoked',
+      withReceipt: false,
+    );
+
+    expect(MoltbookPublicationService.canCloseWithoutReceipt(revoked), isTrue);
   });
 
   test(

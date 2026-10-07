@@ -85,7 +85,7 @@ void main() {
   });
 
   test(
-    'latest repository observation supersedes only undrafted commits',
+    'latest repository observation keeps only the current repository commit',
     () async {
       final drafted = await store.record(
         sourceId: 'github-${'a' * 40}',
@@ -121,11 +121,9 @@ void main() {
 
       final retained = await store.load();
       expect(retained.map((change) => change.sourceId), <String>[
-        drafted.sourceId,
         'capsule-local-change',
         latest.sourceId,
       ]);
-      expect(retained.first.draftHashHex, 'd' * 64);
       expect((await store.nextPending())?.sourceId, 'capsule-local-change');
       await expectLater(
         store.record(
