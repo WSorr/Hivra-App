@@ -128,6 +128,73 @@ void main() {
     expect(restartedAdapter.reconcileCount, 0);
   });
 
+  test(
+    'forgets only exact idle terminal operations for the named provider',
+    () async {
+      final service = build(
+        _FakeExternalEffectAdapter(
+          deliverResults: <Object>[_success('post-1')],
+        ),
+      );
+      await prepareApprovedQueued(service);
+      final completed = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(completed.state, ExternalEffectState.succeeded);
+
+      await service.forgetTerminalOperations(
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: 'moltbook',
+        operationIds: {'post-1'},
+      );
+
+      expect(await service.list(pluginId: moltbookAmbassadorPluginId), isEmpty);
+    },
+  );
+
+  test(
+    'keeps one latest unsent BingX entry and rewrites older failed attempts',
+    () async {
+      final service = build(_FakeExternalEffectAdapter(), providerId: 'bingx');
+      final base = await service.prepare(
+        operationId: 'entry-0',
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: 'bingx',
+        accountBindingId: 'account-1',
+        effectKind: 'order.entry.place',
+        canonicalPayloadJson: '{}',
+      );
+      final directory = await files.capsuleDirForHex(_rootA);
+      await files.writePluginState(
+        directory,
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+        jsonEncode({
+          'schema_version': 1,
+          'owner_capsule_hex': _rootA,
+          'plugin_id': moltbookAmbassadorPluginId,
+          'operations': List.generate(
+            4,
+            (i) => {
+              ...base.toJson(),
+              'operation_id': 'entry-$i',
+              'state': 'terminal_failure',
+              'last_error_code': 'entry_not_sent',
+              'last_error_message': 'No provider request was sent',
+              'updated_at_utc':
+                  DateTime.utc(2026, 7, 26, 12, i).toIso8601String(),
+            },
+          ),
+        }),
+      );
+
+      final retained = await service.list(pluginId: moltbookAmbassadorPluginId);
+
+      expect(retained.map((operation) => operation.operationId), ['entry-3']);
+    },
+  );
+
   Future<void> seedTradingHistory(int count) async {
     final service = build(_FakeExternalEffectAdapter(), providerId: 'bingx');
     final base = await service.prepare(

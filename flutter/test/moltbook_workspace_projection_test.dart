@@ -14,7 +14,7 @@ void main() {
   group('Moltbook current post status', () {
     final operation = _publishedPostOperation();
 
-    testWidgets('history separates receipt from current spam moderation', (
+    testWidgets('completed publication history is kept on Moltbook', (
       tester,
     ) async {
       var statusChecks = 0;
@@ -31,8 +31,12 @@ void main() {
               child: MoltbookPublicationCard(
                 operations: <ExternalEffectOperation>[operation],
                 busy: false,
+                profileUri: Uri.parse(
+                  'https://www.moltbook.com/u/hivra_ambassador',
+                ),
                 observedPostStatuses: statuses,
                 onOpenPost: (_) async {},
+                onOpenProfile: (_) async {},
                 onRecheck: (_) async {},
                 onCheckCurrentPost: (_) async => statusChecks += 1,
                 onCloseWithoutReceipt: (_) async {},
@@ -43,23 +47,13 @@ void main() {
       );
 
       await pumpHistory({});
+      expect(find.text('No pending publications'), findsOneWidget);
+      expect(find.text('Open Moltbook profile'), findsOneWidget);
       expect(
-        find.textContaining('current moderation not checked'),
+        find.textContaining('completed records are hidden'),
         findsOneWidget,
       );
-      await tester.tap(find.text('Post m/person-first-runtime'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Check current Moltbook status'));
-      await tester.pump();
-      expect(statusChecks, 1);
-
-      await pumpHistory({
-        operation.operationId: (
-          status: MoltbookObservedPostStatus.spam,
-          checkedAtUtc: DateTime.utc(2026, 9, 27),
-        ),
-      });
-      expect(find.textContaining('marked this post as spam'), findsOneWidget);
+      expect(statusChecks, 0);
     });
 
     test('verified post later marked spam is not treated as visible', () {

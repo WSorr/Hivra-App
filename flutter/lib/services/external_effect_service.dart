@@ -15,6 +15,7 @@ class ExternalEffectService {
   static const int _maxJournalOperations = 1000;
   static const int _terminalRetentionTarget = 800;
   static const int _completedGroupRetention = 5;
+  static const int _unsentEntryRetention = 1;
   static final Map<String, Future<ExternalEffectOperation>> _inFlight =
       <String, Future<ExternalEffectOperation>>{};
   static final Map<String, Future<void>> _journalTails =
@@ -283,6 +284,42 @@ class ExternalEffectService {
         );
       },
     );
+  }
+
+  /// Removes terminal records after the caller has verified that the provider
+  /// no longer needs their payload or replay identity.
+  Future<void> forgetTerminalOperations({
+    required String pluginId,
+    required String providerId,
+    required Set<String> operationIds,
+  }) {
+    final owner = _requireActiveOwner();
+    if (operationIds.isEmpty || operationIds.length > _maxJournalOperations) {
+      throw StateError('Terminal cleanup requires bounded exact operations');
+    }
+    return _withJournalLock(owner, pluginId, () async {
+      final operations = await _load(owner, pluginId);
+      final selected = operations
+          .where((operation) => operationIds.contains(operation.operationId))
+          .toList(growable: false);
+      if (selected.length != operationIds.length ||
+          selected.any(
+            (operation) =>
+                !operation.state.isTerminal ||
+                operation.providerId != providerId ||
+                _inFlight.containsKey(
+                  '$owner::$pluginId::${operation.operationId}',
+                ),
+          )) {
+        throw StateError(
+          'Only terminal, provider-bound and idle effects can be forgotten',
+        );
+      }
+      operations.removeWhere(
+        (operation) => operationIds.contains(operation.operationId),
+      );
+      await _save(owner, pluginId, operations);
+    });
   }
 
   Future<ExternalEffectOperation> process({
@@ -998,6 +1035,44 @@ class ExternalEffectService {
             )
             .toSet();
     operations.removeWhere((o) => removable.contains(o.completedGroup));
+    final unsentEntries =
+        operations
+            .where(
+              (o) =>
+                  o.providerId == 'bingx' &&
+                  o.effectKind == 'order.entry.place' &&
+                  o.state == ExternalEffectState.terminalFailure &&
+                  o.receipt == null &&
+                  o.completedGroup == null &&
+                  const <String>{
+                    'entry_not_sent',
+                    'provider_rejected',
+                  }.contains(o.lastErrorCode),
+            )
+            .toList()
+          ..sort(
+            (a, b) => DateTime.parse(
+              b.updatedAtUtc,
+            ).compareTo(DateTime.parse(a.updatedAtUtc)),
+          );
+    final retainedUnsentEntryIds =
+        unsentEntries
+            .take(_unsentEntryRetention)
+            .map((o) => o.operationId)
+            .toSet();
+    operations.removeWhere(
+      (o) =>
+          o.providerId == 'bingx' &&
+          o.effectKind == 'order.entry.place' &&
+          o.state == ExternalEffectState.terminalFailure &&
+          o.receipt == null &&
+          o.completedGroup == null &&
+          const <String>{
+            'entry_not_sent',
+            'provider_rejected',
+          }.contains(o.lastErrorCode) &&
+          !retainedUnsentEntryIds.contains(o.operationId),
+    );
     if (operations.length < _maxJournalOperations) {
       return operations.length != before;
     }

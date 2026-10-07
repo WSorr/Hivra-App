@@ -1691,8 +1691,11 @@ class MoltbookRuntimeModule {
     return drafts;
   }
 
-  Future<List<ExternalEffectOperation>> loadMoltbookPublications() =>
-      moltbookPublications.list();
+  Future<List<ExternalEffectOperation>> loadMoltbookPublications() async {
+    final operations = await moltbookPublications.list();
+    await _archiveClosedMoltbookDrafts(operations);
+    return moltbookPublications.list();
+  }
 
   Future<ExternalEffectOperation> prepareMoltbookCommunity({
     required String name,
@@ -2017,9 +2020,15 @@ class MoltbookRuntimeModule {
               : null);
       if (hash != null) hashes.add(hash);
     }
-    if (hashes.isEmpty) return;
-    await moltbookDrafts.deleteAll(hashes);
-    await uiLog.log('moltbook.draft.archive', 'closed count=${hashes.length}');
+    if (hashes.isNotEmpty) {
+      await moltbookDrafts.deleteAll(hashes);
+    }
+    if (hashes.isNotEmpty) {
+      await uiLog.log(
+        'moltbook.draft.archive',
+        'closed count=${hashes.length}',
+      );
+    }
   }
 
   Future<ExternalEffectOperation> resolveMoltbookPublicationVerificationWithAi({

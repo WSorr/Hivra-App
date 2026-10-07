@@ -28,6 +28,7 @@ class MoltbookPublicationService {
     'http_400',
     'required_action_expired',
     'verification_expired',
+    'authorization_revoked',
   };
   static final Map<String, Future<void>> _engagementTails =
       <String, Future<void>>{};
@@ -715,6 +716,18 @@ class MoltbookPublicationService {
       return null;
     }
     return Uri.https('www.moltbook.com', '/post/$postId');
+  }
+
+  static Uri? accountProfileUri(String accountName) {
+    final normalized = accountName.trim();
+    if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$').hasMatch(normalized)) {
+      return null;
+    }
+    return Uri(
+      scheme: 'https',
+      host: 'www.moltbook.com',
+      pathSegments: <String>['u', normalized],
+    );
   }
 
   static void validateDelegatedReplyBinding(
