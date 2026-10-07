@@ -1694,7 +1694,7 @@ class MoltbookRuntimeModule {
   Future<List<ExternalEffectOperation>> loadMoltbookPublications() async {
     final operations = await moltbookPublications.list();
     await _archiveClosedMoltbookDrafts(operations);
-    return moltbookPublications.listForWorkspace();
+    return moltbookPublications.list();
   }
 
   Future<ExternalEffectOperation> prepareMoltbookCommunity({
@@ -2023,7 +2023,6 @@ class MoltbookRuntimeModule {
     if (hashes.isNotEmpty) {
       await moltbookDrafts.deleteAll(hashes);
     }
-    await moltbookPublications.forgetConfirmedHistory(operations);
     if (hashes.isNotEmpty) {
       await uiLog.log(
         'moltbook.draft.archive',
