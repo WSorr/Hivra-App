@@ -1,16 +1,20 @@
 # Hivra Development Control
 
-Status date: 2026-10-08
+Status date: 2026-10-09
 
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Current source is protected `main`. The latest published prerelease is
-  `v1.0.3-test21` at `8e5c136`.
-- The prepared but unpublished `v1.0.4-test1` candidate is based on runtime
-  source `1d48082`; its GitHub tag and Release do not exist yet. Exact macOS
-  and Android artifacts still require the matching manual signoff rows before
-  release.
+- Current source is protected `main` at `6bea287`. The latest published
+  prerelease remains `v1.0.3-test21` at `8e5c136`.
+- No `v1.0.4-test1` tag or GitHub Release exists. Earlier local
+  `v1.0.4-test1` artifacts are invalidated by subsequent main changes and must
+  not be signed or published. A new candidate may be built only after this
+  readiness pass, from the final `main` commit and its matching canonical CI
+  runner, with fresh platform signoff rows.
+- `hivra-plugins/main` is clean at `37d1c36`; its latest published package
+  release is `v0.2.10-plugins`. `hivra_web/main` is clean at `8fb9ace`, while
+  Opsnex PR `#2` remains open and is not part of the Hivra release input.
 - The macOS runner enforces one running Hivra bundle instance: a duplicate
   launch activates the existing process and exits before Flutter/Capsule
   initialization.
