@@ -163,7 +163,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       return _providerFailure(error);
     } on _MoltbookAuthorizationRevoked {
       return const ExternalEffectAdapterResult(
-        status: ExternalEffectAdapterStatus.unresolved,
+        status: ExternalEffectAdapterStatus.terminalFailure,
         errorCode: 'authorization_revoked',
         errorMessage: 'Moltbook authorization changed before reconciliation',
       );

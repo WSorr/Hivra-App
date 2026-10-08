@@ -101,7 +101,7 @@ void main() {
     },
   );
 
-  test('reconciliation reports revoked package authority explicitly', () async {
+  test('reconciliation closes revoked package authority as terminal history', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
       provider: MoltbookProviderAdapter(
@@ -116,7 +116,7 @@ void main() {
 
     final result = await adapter.reconcile(_request());
 
-    expect(result.status, ExternalEffectAdapterStatus.unresolved);
+    expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
     expect(result.errorCode, 'authorization_revoked');
   });
 
