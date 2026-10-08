@@ -7,6 +7,22 @@ text. Automated tests do not replace this manual evidence.
 Automatic trigger modes remain experimental until every lifecycle gate below
 has automated coverage and both platform rows pass for the same build tag.
 
+## Live Inference Availability
+
+Successful live AI generation and AI challenge solving are optional release
+evidence, not dependencies on Gemini quota or billing. When inference is
+unavailable, record that limitation in signoff Notes and verify that the
+packaged agent visibly defers the work without a publication, blind retry or
+duplicate effect. Never replace the agent's model output with operator-written
+text and claim that autonomous generation passed.
+
+Offline AI contract tests remain mandatory: Capsule/credential isolation,
+locked sessions, untrusted context, malformed answers and effect suppression.
+The local draft, approval, provider receipt, restart, Stop and isolation checks
+below remain required. An unexercised publication lifecycle is not PASS merely
+because live AI checks were skipped; provider challenge verification and
+publication status must still be reported truthfully.
+
 ## Setup And Scope
 
 - [ ] Launch the packaged Release artifact, not a debug or build-tree copy.
@@ -34,12 +50,14 @@ has automated coverage and both platform rows pass for the same build tag.
 
 ## Assisted Write Lifecycle
 
-- [ ] Observe one bounded conversation and generate a reply proposal.
+- [ ] Observe one bounded conversation. Exercise live reply generation when
+      inference is available; otherwise verify visible deferral without a write.
 - [ ] Review and explicitly approve the exact proposal.
 - [ ] Repeated approval/publish clicks retain one semantic operation.
-- [ ] If Moltbook returns a numeric challenge, confirm Gemini receives only the
-      visible prompt, produces one numeric answer, and the existing effect
-      remains unresolved until provider visibility is reconciled.
+- [ ] If Moltbook returns a numeric challenge and inference is available,
+      confirm the AI receives only the visible prompt and produces one numeric
+      answer. If inference is unavailable, confirm visible deferral. In both
+      cases the effect remains unresolved until provider visibility is reconciled.
 - [ ] Lock AI or inject malformed/rejected answer evidence and confirm no blind
       provider retry or second publication effect occurs.
 - [ ] Restart while the operation is unresolved and confirm the same operation
