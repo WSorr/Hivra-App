@@ -37,6 +37,10 @@ class AiDoctorChatService {
     return _runtime.saveProviderApiKey(providerId, apiKey);
   }
 
+  Future<bool> hasProviderApiKey(String providerId) {
+    return _runtime.hasProviderApiKey(providerId);
+  }
+
   Future<void> savePreferredProviderId(String providerId) {
     return _runtime.savePreferredProviderId(providerId);
   }

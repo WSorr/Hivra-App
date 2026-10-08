@@ -179,6 +179,28 @@ void main() {
     });
 
     test(
+      'reports key presence without unlocking the provider session',
+      () async {
+        final secureStorage = _FakeSecureStorage();
+        final writer = buildStore(secureStorage);
+        await writer.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+        final restartedProcess = buildStore(secureStorage);
+        secureStorage.readCounts.clear();
+
+        expect(
+          await restartedProcess.hasApiKey(InferenceProviderKind.gemini),
+          isTrue,
+        );
+        expect(restartedProcess.isPreferredProviderUnlocked, isFalse);
+        expect(
+          restartedProcess.sessionApiKey(InferenceProviderKind.gemini),
+          isNull,
+        );
+        expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
+      },
+    );
+
+    test(
       'explicit session unlock does not rewrite preferred provider',
       () async {
         final secureStorage = _FakeSecureStorage();

@@ -201,6 +201,10 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
   AiDoctorOutboundPreview? _preview;
   String? _answer;
   String? _error;
+  String? _apiKeyStatusError;
+  bool _apiKeyConfigured = false;
+  bool _apiKeyStatusKnown = false;
+  bool _checkingApiKey = false;
   bool _busy = false;
 
   @override
@@ -221,12 +225,12 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
   Future<void> _loadPreferredProvider() async {
     try {
       final providerId = await widget.chatService.loadPreferredProviderId();
-      if (!mounted || providerId == null) return;
       final provider =
           InferenceProviderKind.values
               .where((candidate) => candidate.id == providerId)
-              .firstOrNull;
-      if (provider == null) return;
+              .firstOrNull ??
+          _provider;
+      if (!mounted) return;
       setState(() {
         _provider = provider;
         _modelController.text = provider.defaultModel;
@@ -234,11 +238,52 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
           _baseUrlController.text = 'http://127.0.0.1:11434';
         }
       });
+      await _refreshApiKeyStatus(provider);
     } catch (error) {
       await _uiLog.log(
         'ai_capsule_analyst',
         'provider_preference_load_error ${_doctorErrorMessage(error)}',
       );
+    }
+  }
+
+  Future<void> _refreshApiKeyStatus(InferenceProviderKind provider) async {
+    if (!provider.requiresApiKey) {
+      if (!mounted || _provider != provider) return;
+      setState(() {
+        _apiKeyConfigured = false;
+        _apiKeyStatusKnown = true;
+        _apiKeyStatusError = null;
+        _checkingApiKey = false;
+      });
+      return;
+    }
+    if (mounted && _provider == provider) {
+      setState(() {
+        _checkingApiKey = true;
+        _apiKeyStatusKnown = false;
+        _apiKeyStatusError = null;
+      });
+    }
+    try {
+      final configured = await widget.chatService.hasProviderApiKey(
+        provider.id,
+      );
+      if (!mounted || _provider != provider) return;
+      setState(() {
+        _apiKeyConfigured = configured;
+        _apiKeyStatusKnown = true;
+        _apiKeyStatusError = null;
+        _checkingApiKey = false;
+      });
+    } catch (error) {
+      if (!mounted || _provider != provider) return;
+      setState(() {
+        _apiKeyConfigured = false;
+        _apiKeyStatusKnown = false;
+        _apiKeyStatusError = _doctorErrorMessage(error);
+        _checkingApiKey = false;
+      });
     }
   }
 
@@ -261,6 +306,13 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
         'ai_capsule_analyst',
         'provider_settings_saved provider=${_provider.id}',
       );
+      if (_provider.requiresApiKey) {
+        setState(() {
+          _apiKeyConfigured = true;
+          _apiKeyStatusKnown = true;
+          _apiKeyStatusError = null;
+        });
+      }
       _apiKeyController.clear();
       _showSnack('${_provider.label} settings saved in secure storage');
     });
@@ -274,6 +326,13 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
         'ai_capsule_analyst',
         'provider_settings_cleared provider=${_provider.id}',
       );
+      if (_provider.requiresApiKey) {
+        setState(() {
+          _apiKeyConfigured = false;
+          _apiKeyStatusKnown = true;
+          _apiKeyStatusError = null;
+        });
+      }
       _apiKeyController.clear();
       _showSnack('${_provider.label} settings cleared');
     });
@@ -423,7 +482,10 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                             _baseUrlController.text = 'http://127.0.0.1:11434';
                           }
                           _error = null;
+                          _apiKeyStatusKnown = false;
+                          _apiKeyStatusError = null;
                         });
+                        unawaited(_refreshApiKeyStatus(provider));
                         unawaited(
                           widget.chatService
                               .savePreferredProviderId(provider.id)
@@ -465,6 +527,41 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (_provider.requiresApiKey) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _apiKeyStatusError != null
+                        ? Icons.error_outline
+                        : _apiKeyConfigured
+                        ? Icons.verified_outlined
+                        : Icons.info_outline,
+                    size: 18,
+                    color:
+                        _apiKeyStatusError != null
+                            ? theme.colorScheme.error
+                            : _apiKeyConfigured
+                            ? Colors.green
+                            : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _checkingApiKey
+                          ? 'Checking secure storage…'
+                          : _apiKeyStatusError != null
+                          ? 'Key status unavailable: $_apiKeyStatusError'
+                          : _apiKeyStatusKnown && _apiKeyConfigured
+                          ? '${_provider.label} API key is saved in secure storage.'
+                          : '${_provider.label} API key is not saved.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,

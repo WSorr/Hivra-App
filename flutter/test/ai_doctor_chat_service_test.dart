@@ -169,6 +169,9 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   }
 
   @override
+  Future<bool> hasProviderApiKey(String providerId) async => true;
+
+  @override
   Future<void> clearProviderApiKey(String providerId) async {
     configuration.add('clear-key:$providerId');
   }
