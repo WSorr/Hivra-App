@@ -70,6 +70,10 @@ Widget chatUnreadNavigationIcon(int unreadCount) {
 @visibleForTesting
 bool showGlobalHeaderRefreshForTab(int selectedIndex) => selectedIndex != 2;
 
+@visibleForTesting
+bool shouldPausePassiveReceive(AppLifecycleState state) =>
+    state == AppLifecycleState.paused || state == AppLifecycleState.detached;
+
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -205,9 +209,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       return;
     }
 
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
+    // macOS reports an unfocused but still visible window as inactive. Keep
+    // receiving there; only pause when the application is actually paused or
+    // detached.
+    if (shouldPausePassiveReceive(state)) {
       _passiveReceive.pauseForeground();
       _snapshotLedger();
     }
