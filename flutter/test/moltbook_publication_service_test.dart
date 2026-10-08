@@ -271,6 +271,28 @@ void main() {
     );
   });
 
+  test('retains a prepared post whose provider payload has attribution', () {
+    final draft = _postDraft('1');
+    final prepared = _postOperation(
+      operationId: 'moltbook-post-prepared-attributed',
+      state: ExternalEffectState.prepared,
+      draftHashHex: draft.draftHashHex,
+      includeAttribution: true,
+      withReceipt: false,
+    );
+
+    expect(
+      MoltbookPublicationService.retainedPostOperationForDraft(
+        operations: <ExternalEffectOperation>[prepared],
+        accountBindingId: 'account-test',
+        accountName: 'agent',
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+        draft: draft,
+      ),
+      same(prepared),
+    );
+  });
+
   test('revoked authorization can close an unconfirmed post locally', () {
     final revoked = _postOperation(
       operationId: 'moltbook-post-revoked-authorization',
@@ -1014,8 +1036,12 @@ ExternalEffectOperation _postOperation({
   String title = 'Exact public title',
   String? lastErrorCode,
   bool withReceipt = true,
+  bool includeAttribution = false,
 }) {
-  const content = 'Exact public body.';
+  final content =
+      includeAttribution
+          ? 'Exact public body.\n\n${MoltbookPublicationContract.attribution()}'
+          : 'Exact public body.';
   final payload = jsonEncode(<String, dynamic>{
     'schema_version': 3,
     'account_name': 'agent',
