@@ -16,11 +16,16 @@ import '../widgets/ai_diagnostics/provider_widgets.dart';
 import '../widgets/ai_diagnostics/report_widgets.dart';
 
 String _doctorErrorMessage(Object error) {
+  if (error is TimeoutException) {
+    return 'macOS Keychain check timed out. Unlock Keychain and tap Retry.';
+  }
   return error
       .toString()
       .replaceFirst(RegExp(r'^(Bad state|Exception):\s*'), '')
       .trim();
 }
+
+const _secureStorageStatusTimeout = Duration(seconds: 8);
 
 class CapsuleDoctorScreen extends StatefulWidget {
   final AppRuntimeService runtime;
@@ -266,9 +271,9 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
       });
     }
     try {
-      final configured = await widget.chatService.hasProviderApiKey(
-        provider.id,
-      );
+      final configured = await widget.chatService
+          .hasProviderApiKey(provider.id)
+          .timeout(_secureStorageStatusTimeout);
       if (!mounted || _provider != provider) return;
       setState(() {
         _apiKeyConfigured = configured;
