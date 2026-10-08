@@ -207,6 +207,8 @@ abstract class CapsuleInferenceRuntime {
 
   Future<void> saveProviderApiKey(String providerId, String apiKey);
 
+  Future<bool> hasProviderApiKey(String providerId);
+
   Future<void> clearProviderApiKey(String providerId);
 
   Future<void> saveProviderBaseUrl(String providerId, String baseUrl);
@@ -273,6 +275,11 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   @override
   Future<void> saveProviderApiKey(String providerId, String apiKey) async {
     await _credentialStore.saveApiKey(_requireProvider(providerId), apiKey);
+  }
+
+  @override
+  Future<bool> hasProviderApiKey(String providerId) {
+    return _credentialStore.hasApiKey(_requireProvider(providerId));
   }
 
   @override

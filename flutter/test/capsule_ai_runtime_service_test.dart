@@ -38,7 +38,7 @@ void main() {
       providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
       providerId: 'gemini',
       modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
     );
 
     expect(first.requestId, isNot(second.requestId));

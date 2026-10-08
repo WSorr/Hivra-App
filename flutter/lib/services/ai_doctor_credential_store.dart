@@ -64,7 +64,7 @@ class AiDoctorCredentialStore {
       _sessionApiKeys[provider] = normalized;
       await savePreferredProvider(provider);
     } catch (error) {
-      throw StateError('Secure AI credential storage is unavailable: $error');
+      throw _secureCredentialStorageError(error);
     }
   }
 
@@ -83,7 +83,20 @@ class AiDoctorCredentialStore {
       _sessionApiKeys[provider] = normalized;
       return normalized;
     } catch (error) {
-      throw StateError('Secure AI credential storage is unavailable: $error');
+      throw _secureCredentialStorageError(error);
+    }
+  }
+
+  Future<bool> hasApiKey(InferenceProviderKind provider) async {
+    final cached = _sessionApiKeys[provider];
+    if (cached != null && cached.isNotEmpty) return true;
+    final key = _keyForProvider(provider);
+    try {
+      // Check presence without copying the secret into the unlocked session.
+      final stored = await _secureStorage.read(key: key);
+      return stored?.trim().isNotEmpty == true;
+    } catch (error) {
+      throw _secureCredentialStorageError(error);
     }
   }
 
@@ -304,6 +317,20 @@ class AiDoctorCredentialStore {
       InferenceProviderKind.gemini => _geminiApiKeyKey,
       InferenceProviderKind.localOpenAiCompatible => _localOpenAiApiKeyKey,
     };
+  }
+
+  static StateError _secureCredentialStorageError(Object error) {
+    final message = error.toString();
+    if (message.contains('-67068') ||
+        message.contains('cannot find code object on disk') ||
+        message.contains('100002')) {
+      return StateError(
+        'macOS Keychain cannot verify this app bundle. Open the signed app '
+        'from a stable location and do not move or run it from a temporary '
+        'extracted folder, then try again.',
+      );
+    }
+    return StateError('Secure AI credential storage is unavailable: $error');
   }
 
   static String? _baseUrlKeyForProvider(InferenceProviderKind provider) {

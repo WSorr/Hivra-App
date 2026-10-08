@@ -16,7 +16,7 @@ enum InferenceProviderKind {
   gemini(
     id: 'gemini',
     label: 'Gemini',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-3.8-flash',
     requiresApiKey: true,
   ),
   localOpenAiCompatible(
