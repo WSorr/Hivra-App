@@ -29,6 +29,14 @@ platforms. `AI Surface` must be `PASS` on macOS and may be `PASS` or `N/A` on
 Android. Historical rows and their Trading evidence remain immutable; the
 retired columns no longer authorize or gate future product behavior.
 
+`AI Surface` attests the required local Analyst and authority-boundary smoke,
+not successful live model output. Live AI availability and any skipped
+generation/challenge-solving exercise are recorded in Notes under the relevant
+capability checklist. Quota exhaustion alone does not fail `AI Surface` or
+`Moltbook Smoke`, but it does not excuse missing non-AI lifecycle evidence.
+Offline AI regression tests remain required. Do not change historical rows or
+mark an unexercised workflow PASS to account for unavailable inference.
+
 | Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading READY/BLOCKED | Trading Risk Rejection | Trading Provider Receipt | Trading Restart Reconciliation | Trading Duplicate Suppression | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | v1.0.3-test12 | 2026-07-16T14:56:13Z | macOS | hivra_app-v1.0.3-test12-macos-universal.zip | 2f680ebf2106873332149d9ba5415fb17f8c0bb0d279b116eb59d6a44c5f5848 | PASS | LEGACY | LEGACY | LEGACY | LEGACY | LEGACY | N/A | PASS | PASS | codex | Packaged ZIP launch smoke passed from extracted artifact; current-session trading/plugin smoke covered BingX 0.2.3 install path and macOS reopen fix. Unsigned/not notarized test build. |
