@@ -857,7 +857,11 @@ class MoltbookPublicationService {
       accountName: payload['account_name']?.toString() ?? '',
       submoltName: payload['submolt_name']?.toString() ?? '',
       title: payload['title']?.toString() ?? '',
-      content: payload['content']?.toString() ?? '',
+      // The provider payload may contain the canonical attribution suffix;
+      // deduplication keys must use the same body normalization as prepare().
+      content: MoltbookPublicationContract.publicationContent(
+        payload['content']?.toString() ?? '',
+      ),
     );
   }
 
