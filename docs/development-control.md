@@ -1,12 +1,18 @@
 # Hivra Development Control
 
-Status date: 2026-10-07
+Status date: 2026-10-08
 
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
 - Current source is protected `main`. The latest published prerelease is
   `v1.0.3-test21` at `8e5c136`.
+- The prepared but unpublished `v1.0.3-test22` candidate is recorded in the
+  release signoff log; its GitHub tag and Release do not exist yet. That
+  artifact predates the single-instance fix and must be rebuilt before release.
+- The macOS runner enforces one running Hivra bundle instance: a duplicate
+  launch activates the existing process and exits before Flutter/Capsule
+  initialization.
 - Core, Ledger, FFI, the WASM host, and one Flutter App Shell remain the
   runtime.
 - External-package admission hardening is complete: ZIP with a manifest is the
