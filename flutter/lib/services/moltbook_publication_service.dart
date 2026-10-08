@@ -581,6 +581,13 @@ class MoltbookPublicationService {
     return postDraftHash(operation);
   }
 
+  static bool canArchiveTerminalPostDraft(ExternalEffectOperation operation) {
+    return isPostPublication(operation) &&
+        operation.state == ExternalEffectState.terminalFailure &&
+        operation.receipt == null &&
+        operation.requiredAction == null;
+  }
+
   static void _validateCommunityName(String name) {
     if (name.trim() != name ||
         name.length < 2 ||

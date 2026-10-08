@@ -244,6 +244,33 @@ void main() {
     expect(MoltbookPublicationService.canCloseWithoutReceipt(spam), isFalse);
   });
 
+  test('terminal post failure archives its local draft without a receipt', () {
+    final expired = _operation(
+      state: ExternalEffectState.terminalFailure,
+      lastErrorCode: 'required_action_expired',
+      withReceipt: false,
+    );
+    final unresolved = _operation(
+      state: ExternalEffectState.unresolved,
+      lastErrorCode: 'verification_required',
+      withReceipt: false,
+    );
+    final succeeded = _operation(state: ExternalEffectState.succeeded);
+
+    expect(
+      MoltbookPublicationService.canArchiveTerminalPostDraft(expired),
+      isTrue,
+    );
+    expect(
+      MoltbookPublicationService.canArchiveTerminalPostDraft(unresolved),
+      isFalse,
+    );
+    expect(
+      MoltbookPublicationService.canArchiveTerminalPostDraft(succeeded),
+      isFalse,
+    );
+  });
+
   test('revoked authorization can close an unconfirmed post locally', () {
     final revoked = _postOperation(
       operationId: 'moltbook-post-revoked-authorization',

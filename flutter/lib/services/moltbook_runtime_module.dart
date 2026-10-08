@@ -2014,8 +2014,7 @@ class MoltbookRuntimeModule {
     for (final operation in operations) {
       final hash =
           MoltbookPublicationService.succeededPostDraftHash(operation) ??
-          (operation.state == ExternalEffectState.terminalFailure &&
-                  operation.lastErrorCode == 'provider_marked_spam'
+          (MoltbookPublicationService.canArchiveTerminalPostDraft(operation)
               ? MoltbookPublicationService.postDraftHash(operation)
               : null);
       if (hash != null) hashes.add(hash);
