@@ -7,9 +7,10 @@ Status date: 2026-10-08
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
 - Current source is protected `main`. The latest published prerelease is
   `v1.0.3-test21` at `8e5c136`.
-- The prepared but unpublished `v1.0.3-test22` candidate is recorded in the
-  release signoff log; its GitHub tag and Release do not exist yet. That
-  artifact predates the single-instance fix and must be rebuilt before release.
+- The prepared but unpublished `v1.0.4-test1` candidate is based on runtime
+  source `1d48082`; its GitHub tag and Release do not exist yet. Exact macOS
+  and Android artifacts still require the matching manual signoff rows before
+  release.
 - The macOS runner enforces one running Hivra bundle instance: a duplicate
   launch activates the existing process and exits before Flutter/Capsule
   initialization.
@@ -19,6 +20,8 @@ Status date: 2026-10-08
   only installable format; legacy raw modules remain removable but cannot
   bind or execute. The sandbox boundary is specified in specification section
   5.2.3 (WASM Plugin Host Contract); no OS/process isolation is claimed.
+- External plugin package versions are independently replaceable when the host
+  ABI, contract, capability policy and catalog trust root remain unchanged.
 - Chat and Moltbook are the maintained installed product capabilities.
 - Trading 1.x was retired in `d1b6581` (#335). The user selected a new
   installable Jack Ventura WASM plugin under `plugins/trading-plugin-mvp.md`.

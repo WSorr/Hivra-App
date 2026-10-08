@@ -52,6 +52,20 @@ the local catalog path and surfaces a clear error if it is missing too.
 - Missing contract or capability metadata is rejected. Legacy compatibility must
   be handled by reinstalling a current package, never by bypassing permissions.
 
+## Version independence
+
+An external plugin version is released through `hivra-plugins` and installed
+from the signed catalog. Hivra does not need a new application release when a
+package changes, provided the package continues to use the supported host ABI,
+host contract, capability semantics and trusted catalog signing key. The
+catalog binds each package version to its exact digest, and the registry keeps
+one active package per plugin ID.
+
+A new Hivra release is required only when the host runtime or WASM ABI changes,
+the host contract or capability policy changes, a host-owned effect handler is
+added or changed, or the catalog trust root is rotated. Plugin strategy and
+private state changes alone remain plugin-repository changes.
+
 ## Local private-repo workflow
 
 Use:
