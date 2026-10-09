@@ -42,6 +42,8 @@ class CapsuleSelectorService {
   final UiEventLogService _uiLog;
   final CapsuleDeliveryInboxStore _deliveryInboxStore;
   final Duration _activationTimeout;
+  Future<void>? _activationInFlight;
+  String? _activationTarget;
 
   CapsuleSelectorService([
     CapsuleSelectorRuntime? runtime,
@@ -241,22 +243,48 @@ class CapsuleSelectorService {
   bool seedExists() => _runtime.seedExists();
 
   Future<bool> activateCapsule(String pubKeyHex) async {
-    final slowDiagnostic = Timer(_activationTimeout, () {
+    final existing = _activationInFlight;
+    if (existing != null && _activationTarget != pubKeyHex) {
+      throw StateError(
+        'Another capsule activation is still in progress. Retry after it '
+        'finishes.',
+      );
+    }
+
+    final operation = existing ?? _runtime.activateCapsule(pubKeyHex);
+    if (existing == null) {
+      _activationInFlight = operation;
+      _activationTarget = pubKeyHex;
       unawaited(
-        _uiLog.log(
-          'capsule.selector.service',
-          'activate.slow ${_shortHex(pubKeyHex)} '
-              'seconds=${_activationTimeout.inSeconds}',
+        operation.then<void>(
+          (_) => _clearActivation(operation),
+          onError: (Object _, StackTrace _) => _clearActivation(operation),
         ),
       );
-    });
+    }
+
     try {
-      await _runtime.activateCapsule(pubKeyHex);
+      await operation.timeout(_activationTimeout);
       return true;
     } on CapsuleSeedRequiredException {
       return false;
-    } finally {
-      slowDiagnostic.cancel();
+    } on TimeoutException {
+      await _uiLog.log(
+        'capsule.selector.service',
+        'activate.timeout ${_shortHex(pubKeyHex)} '
+            'seconds=${_activationTimeout.inSeconds}',
+      );
+      throw StateError(
+        'Capsule activation timed out after '
+        '${_activationTimeout.inSeconds} seconds. Unlock Keychain and tap Retry.',
+      );
+    }
+  }
+
+  void _clearActivation(Future<void> operation) {
+    if (identical(_activationInFlight, operation)) {
+      _activationInFlight = null;
+      _activationTarget = null;
     }
   }
 
