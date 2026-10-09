@@ -5,13 +5,16 @@ Status date: 2026-10-09
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Current source is protected `main` at `6bea287`. The latest published
+- Current source is protected `main` at `bc52ef5`. The latest published
   prerelease remains `v1.0.3-test21` at `8e5c136`.
 - No `v1.0.4-test1` tag or GitHub Release exists. Earlier local
   `v1.0.4-test1` artifacts are invalidated by subsequent main changes and must
   not be signed or published. A new candidate may be built only after this
   readiness pass, from the final `main` commit and its matching canonical CI
   runner, with fresh platform signoff rows.
+- Capsule selection now bounds delayed Keychain activation to 30 seconds and
+  returns a retryable error instead of leaving the user on an indefinite
+  spinner; a late completion remains owned by the original activation.
 - `hivra-plugins/main` is clean at `37d1c36`; its latest published package
   release is `v0.2.10-plugins`. `hivra_web/main` is clean at `8fb9ace`, while
   Opsnex PR `#2` remains open and is not part of the Hivra release input.
