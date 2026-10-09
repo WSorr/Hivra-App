@@ -371,9 +371,7 @@ void main() {
     expect(() => service.activateCapsule('aa'), throwsA(isA<StateError>()));
   });
 
-  test(
-    'slow activation reports diagnostics without orphaning its future',
-    () async {
+  test('activation timeout returns a retryable error', () async {
       final activation = Completer<void>();
       final log = _NoopUiLog();
       final service = CapsuleSelectorService(
@@ -383,25 +381,20 @@ void main() {
         const Duration(milliseconds: 1),
       );
 
-      var completed = false;
-      final result = service.activateCapsule('aa').then((value) {
-        completed = true;
-        return value;
-      });
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-
-      expect(completed, isFalse);
+      final result = service.activateCapsule('aa');
+      await expectLater(result, throwsA(isA<StateError>()));
       expect(
         log.entries,
         contains((
           source: 'capsule.selector.service',
-          message: 'activate.slow aa seconds=0',
+          message: 'activate.timeout aa seconds=0',
         )),
       );
+
       activation.complete();
-      expect(await result, isTrue);
-    },
-  );
+      await Future<void>.delayed(Duration.zero);
+      expect(await service.activateCapsule('aa'), isTrue);
+    });
 
   test('deleting a capsule clears its process chat projection', () async {
     const capsuleHex =
