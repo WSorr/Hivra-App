@@ -24,9 +24,11 @@ Hivra.
 - `derive_flutter_version.sh`: derives one monotonic cross-platform build
   number from the release tag.
 - `check_manual_release_signoff.sh`: requires digest-bound macOS and Android
-  signoff rows for the exact build tag. Manual Smoke and User Lifetime must
-  pass; Moltbook Smoke may be `PASS` or `N/A` when live provider or Gemini
-  access is unavailable.
+  signoff rows for the exact build tag. `test` releases require exact
+  packaged Manual Smoke; User Lifetime may be `PENDING` with a reason in
+  Notes. `public` releases require User Lifetime `PASS` on both platforms.
+  Moltbook Smoke may be `PASS` or `N/A` when live provider or Gemini access is
+  unavailable.
 - `publish_github_release.sh`: the only approved GitHub Release publication
   path; binds tag, source commit, metadata, artifact digests, and signoff.
 
@@ -39,6 +41,8 @@ Hivra.
    with its release script. The component is delivered inside Capsule, not as
    an extra installation step for its users.
 4. Exercise those exact packaged bytes using the matching platform checklist.
+   The full User Lifetime Safety Pack is mandatory for `public`; for an
+   internal `test` release it may remain explicitly `PENDING`.
 5. Record both rows in
    `docs/checklists/release-manual-signoff-log.md`.
 6. Publish with `tools/release/publish_github_release.sh`.
