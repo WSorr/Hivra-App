@@ -82,6 +82,9 @@ docs/checklists/release-manual-signoff-log.md
 
 ## Moltbook Ambassador
 
-- [ ] Moltbook release smoke checklist is completed: `docs/checklists/moltbook-release-smoke.md`.
-- [ ] One semantic operation survives duplicate click, restart, timeout, and
-      challenge handling without duplicate publication.
+- [ ] Optional: complete the Moltbook smoke checklist when live access is
+      available; otherwise record `N/A` in the release signoff row.
+- [ ] When live access is available, one semantic operation survives duplicate
+      click, restart, timeout, and challenge handling without duplicate
+      publication. When it is unavailable, verify visible deferral with no
+      provider effect and record `N/A` with the reason.

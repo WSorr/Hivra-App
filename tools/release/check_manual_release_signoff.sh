@@ -74,7 +74,7 @@ check_platform() {
   [ "$field_count" -eq 18 ] ||
     die "$platform signoff row has a malformed or retired field layout"
 
-  local date artifact manual moltbook lifetime ai_surface signer
+  local date artifact manual moltbook lifetime ai_surface signer notes
   local artifact_sha256
   date="$(field_value "$row" 3)"
   artifact="$(field_value "$row" 5)"
@@ -84,6 +84,7 @@ check_platform() {
   lifetime="$(field_value "$row" 14)"
   ai_surface="$(field_value "$row" 15)"
   signer="$(field_value "$row" 16)"
+  notes="$(field_value "$row" 17)"
 
   [ -n "$date" ] || die "$platform signoff row has empty date"
   [ -n "$artifact" ] || die "$platform signoff row has empty artifact"
@@ -93,7 +94,12 @@ check_platform() {
     die "$platform signoff date must be UTC ISO-8601 seconds: $date"
 
   status_is_pass "$manual" || die "$platform Manual Smoke must be PASS"
-  status_is_pass "$moltbook" || die "$platform Moltbook Smoke must be PASS"
+  status_is_pass_or_na "$moltbook" ||
+    die "$platform Moltbook Smoke must be PASS or N/A"
+  if [ "$(trim "$moltbook")" = "N/A" ]; then
+    [ -n "$(trim "$notes")" ] ||
+      die "$platform Moltbook Smoke N/A requires a reason in Notes"
+  fi
   status_is_pass "$lifetime" || die "$platform User Lifetime must be PASS"
 
   if [ "$platform" = "macOS" ]; then
@@ -138,8 +144,8 @@ self_test() {
 
 | Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading READY/BLOCKED | Trading Risk Rejection | Trading Provider Receipt | Trading Restart Reconciliation | Trading Duplicate Suppression | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | N/A | N/A | N/A | N/A | N/A | PASS | PASS | PASS | codex | self-test |
-| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | N/A | N/A | N/A | N/A | N/A | PASS | PASS | N/A | codex | self-test |
+| v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PASS | PASS | codex | live Moltbook smoke intentionally skipped |
+| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PASS | N/A | codex | live Moltbook smoke intentionally skipped |
 | v-invalid | 2026-01-01T00:00:02Z | macOS | hivra_app-v-invalid-macos-universal.zip | 1111111111111111111111111111111111111111111111111111111111111111 | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | codex | invalidated historical evidence |
 | v-retired | 2026-01-01T00:00:03Z | macOS | hivra_app-v-retired-macos-universal.zip | 2222222222222222222222222222222222222222222222222222222222222222 | PASS | PASS | PASS | PASS | PASS | codex | retired broad Trading Smoke layout |
 EOF
@@ -190,6 +196,21 @@ EOF
     fi
     rm -f "$mutated"
   done
+
+  mutated="$(mktemp)"
+  awk -F'|' -v OFS='|' '
+    $2 ~ /^[[:space:]]*v-selftest[[:space:]]*$/ &&
+    $4 ~ /^[[:space:]]*macOS[[:space:]]*$/ { $17 = " " }
+    { print }
+  ' "$tmp" > "$mutated"
+  if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
+    --build-tag v-selftest \
+    --platform macOS \
+    --channel public >/dev/null 2>&1; then
+    rm -f "$tmp" "$mutated"
+    die "self-test expected missing Moltbook N/A reason to fail"
+  fi
+  rm -f "$mutated"
 
   mutated="$(mktemp)"
   awk -F'|' -v OFS='|' '

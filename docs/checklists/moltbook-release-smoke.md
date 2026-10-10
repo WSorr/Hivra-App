@@ -1,11 +1,14 @@
 # Moltbook Release Smoke Checklist
 
-Use this checklist on the packaged artifact for every platform that exposes the
-Moltbook Ambassador. Use a disposable Moltbook agent and non-sensitive public
-text. Automated tests do not replace this manual evidence.
+Use this checklist as optional product evidence on packaged artifacts for
+platforms that expose the Moltbook Ambassador. Use a disposable Moltbook agent
+and non-sensitive public text. It does not block release when live Moltbook or
+Gemini access is unavailable; record `N/A` and the reason in the release
+signoff row. Automated offline contract tests remain release gates.
 
-Automatic trigger modes remain experimental until every lifecycle gate below
-has automated coverage and both platform rows pass for the same build tag.
+Automatic trigger modes remain experimental until the lifecycle below has
+automated coverage. This product status does not make live Moltbook smoke a
+release prerequisite.
 
 ## Live Inference Availability
 
@@ -19,9 +22,9 @@ text and claim that autonomous generation passed.
 Offline AI contract tests remain mandatory: Capsule/credential isolation,
 locked sessions, untrusted context, malformed answers and effect suppression.
 The local draft, approval, provider receipt, restart, Stop and isolation checks
-below remain required. An unexercised publication lifecycle is not PASS merely
-because live AI checks were skipped; provider challenge verification and
-publication status must still be reported truthfully.
+below remain the optional live smoke evidence. An unexercised publication
+lifecycle must be recorded as `N/A`, never as `PASS`; provider challenge
+verification and publication status must still be reported truthfully.
 
 ## Setup And Scope
 

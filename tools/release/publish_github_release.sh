@@ -134,9 +134,10 @@ self_test() {
   echo "PASS release-publication: self-test"
 }
 
-require_clean_tracked_worktree() {
-  git diff --quiet || die "GitHub publication requires a clean tracked worktree"
-  git diff --cached --quiet || die "GitHub publication requires a clean index"
+require_clean_worktree() {
+  local status
+  status="$(git status --porcelain --untracked-files=all)"
+  [ -z "$status" ] || die "GitHub publication requires a clean worktree"
 }
 
 require_tag_points_to_head() {
@@ -227,7 +228,7 @@ done
 require_cmd gh
 require_cmd git
 require_cmd shasum
-require_clean_tracked_worktree
+require_clean_worktree
 
 "$ROOT/tools/release/release_version_guard.sh" \
   --version "$VERSION" \

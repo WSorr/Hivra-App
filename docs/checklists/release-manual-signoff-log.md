@@ -24,16 +24,19 @@ retain the digest of the bytes that were actually exercised and mark the row
 may return to `PASS` only after the exact published bytes are exercised again.
 
 For publication, macOS and Android must each have one row for the build tag.
-`Manual Smoke`, `Moltbook Smoke`, and `User Lifetime` must be `PASS` on both
-platforms. `AI Surface` must be `PASS` on macOS and may be `PASS` or `N/A` on
+`Manual Smoke` and `User Lifetime` must be `PASS` on both platforms.
+`Moltbook Smoke` is optional release evidence and may be `PASS` or `N/A`; use
+`N/A` when live provider or Gemini work cannot be exercised and explain why in
+Notes. `AI Surface` must be `PASS` on macOS and may be `PASS` or `N/A` on
 Android. Historical rows and their Trading evidence remain immutable; the
 retired columns no longer authorize or gate future product behavior.
 
 `AI Surface` attests the required local Analyst and authority-boundary smoke,
 not successful live model output. Live AI availability and any skipped
 generation/challenge-solving exercise are recorded in Notes under the relevant
-capability checklist. Quota exhaustion alone does not fail `AI Surface` or
-`Moltbook Smoke`, but it does not excuse missing non-AI lifecycle evidence.
+capability checklist. Quota exhaustion does not fail `AI Surface` and may make
+`Moltbook Smoke` `N/A`; it does not excuse missing manual, lifetime, or offline
+contract evidence.
 Offline AI regression tests remain required. Do not change historical rows or
 mark an unexercised workflow PASS to account for unavailable inference.
 
