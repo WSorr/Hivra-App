@@ -30,7 +30,9 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Invitation send succeeds.
 - [ ] Invitation accept succeeds.
 - [ ] Backup/recovery entry path is reachable and operational.
-- [ ] Moltbook release smoke checklist was completed (`docs/checklists/moltbook-release-smoke.md`).
+- [ ] Moltbook smoke was completed when live provider access was available;
+      otherwise record `N/A` with the reason in the signoff row. Offline
+      Moltbook contract tests remain part of automated gates.
 - [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
 
 ## Diagnostics

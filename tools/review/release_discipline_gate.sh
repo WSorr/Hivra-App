@@ -160,8 +160,10 @@ require_present "$PRECHECK" 'user_lifetime_safety_gate\.sh' \
 for script in "$MAC_RELEASE_SCRIPT" "$ANDROID_RELEASE_SCRIPT"; do
   require_present "$script" 'release_version_guard\.sh' \
     "${script#$ROOT/} enforces release sequencing"
-  require_present "$script" 'require_clean_tracked_worktree' \
+  require_present "$script" 'require_clean_worktree' \
     "${script#$ROOT/} requires clean source"
+  require_present "$script" 'git status --porcelain --untracked-files=all' \
+    "${script#$ROOT/} rejects untracked source"
   require_present "$script" 'source_commit=\$SOURCE_COMMIT' \
     "${script#$ROOT/} records source commit"
   require_present "$script" 'source_tree_dirty=no' \
@@ -170,8 +172,8 @@ for script in "$MAC_RELEASE_SCRIPT" "$ANDROID_RELEASE_SCRIPT"; do
     "${script#$ROOT/} embeds the derived version"
 done
 
-if [ "$(rg -c 'require_clean_tracked_worktree' "$MAC_RELEASE_SCRIPT")" -ge 3 ] &&
-   [ "$(rg -c 'require_clean_tracked_worktree' "$ANDROID_RELEASE_SCRIPT")" -ge 3 ]; then
+if [ "$(rg -o 'require_clean_worktree' "$MAC_RELEASE_SCRIPT" | wc -l | tr -d ' ')" -ge 3 ] &&
+   [ "$(rg -o 'require_clean_worktree' "$ANDROID_RELEASE_SCRIPT" | wc -l | tr -d ' ')" -ge 3 ]; then
   pass "release packaging rechecks source after preflight and build"
 else
   fail "release packaging rechecks source after preflight and build"
@@ -190,8 +192,11 @@ require_present "$GITHUB_RELEASE_PUBLISH" 'preflight\.sh' \
   "publication enforces automated preflight"
 require_present "$GITHUB_RELEASE_PUBLISH" 'gh release create' \
   "publication has one release creation path"
-require_present "$GITHUB_RELEASE_PUBLISH" 'require_clean_tracked_worktree' \
+require_present "$GITHUB_RELEASE_PUBLISH" 'require_clean_worktree' \
   "publication requires clean source"
+require_present "$GITHUB_RELEASE_PUBLISH" \
+  'git status --porcelain --untracked-files=all' \
+  "publication rejects untracked source"
 require_present "$GITHUB_RELEASE_PUBLISH" 'require_tag_points_to_head' \
   "publication binds the tag to HEAD"
 require_present "$GITHUB_RELEASE_PUBLISH" 'verify_release_metadata' \

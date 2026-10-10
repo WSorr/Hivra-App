@@ -37,10 +37,11 @@ die() {
   exit 1
 }
 
-require_clean_tracked_worktree() {
+require_clean_worktree() {
   command -v git >/dev/null 2>&1 || die "Required command not found: git"
-  git diff --quiet || die "release packaging requires a clean tracked worktree"
-  git diff --cached --quiet || die "release packaging requires a clean index"
+  local status
+  status="$(git status --porcelain --untracked-files=all)"
+  [ -z "$status" ] || die "release packaging requires a clean worktree"
 }
 
 info() {
@@ -134,7 +135,7 @@ done
 [ -n "$VERSION" ] || die "--version is required"
 [ -n "$CHANNEL" ] || die "--channel is required"
 [[ "$CHANNEL" == "test" || "$CHANNEL" == "public" ]] || die "--channel must be test or public"
-require_clean_tracked_worktree
+require_clean_worktree
 
 FLUTTER_BUILD_NAME="$("$ROOT/tools/release/derive_flutter_version.sh" \
   --version "$VERSION" --field name)"
@@ -162,7 +163,7 @@ fi
 
 info "Release preflight"
 "$ROOT/tools/release/preflight.sh"
-require_clean_tracked_worktree
+require_clean_worktree
 
 info "Build macOS release bundle"
 RUNNER_DIGEST="$(bash "$ROOT/tools/release/workspace_runner.sh" --verify-assets)"
@@ -172,7 +173,7 @@ RUNNER_DIGEST="$(bash "$ROOT/tools/release/workspace_runner.sh" --verify-assets)
     --build-name "$FLUTTER_BUILD_NAME" \
     --build-number "$FLUTTER_BUILD_NUMBER"
 )
-require_clean_tracked_worktree
+require_clean_worktree
 
 [ -d "$APP_PATH" ] || die "Release app bundle not found: $APP_PATH"
 

@@ -37,7 +37,9 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Update build does not re-materialize previously resolved invitation history.
 - [ ] Legacy container migration does not rehydrate deleted canonical capsule files on relaunch.
 - [ ] Capsule Analyst release smoke checklist was completed (`docs/checklists/capsule-analyst-release-smoke.md`).
-- [ ] Moltbook release smoke checklist was completed (`docs/checklists/moltbook-release-smoke.md`).
+- [ ] Moltbook smoke was completed when live provider access was available;
+      otherwise record `N/A` with the reason in the signoff row. Offline
+      Moltbook contract tests remain part of automated gates.
 - [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
 
 ## Packaging

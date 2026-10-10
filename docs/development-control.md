@@ -1,12 +1,14 @@
 # Hivra Development Control
 
-Status date: 2026-10-09
+Status date: 2026-10-10
 
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Current source is protected `main` at `bc52ef5`. The latest published
-  prerelease remains `v1.0.3-test21` at `8e5c136`.
+- Current source is protected `main`. The exact release source is the final
+  merge SHA recorded by both platform artifact metadata files and bound to the
+  release tag. The latest published prerelease remains `v1.0.3-test21` at
+  `8e5c136`.
 - No `v1.0.4-test1` tag or GitHub Release exists. Earlier local
   `v1.0.4-test1` artifacts are invalidated by subsequent main changes and must
   not be signed or published. A new candidate may be built only after this
