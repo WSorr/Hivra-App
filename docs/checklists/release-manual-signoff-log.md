@@ -10,6 +10,9 @@ platform and completing the platform release checklist.
 Required status values:
 
 - `PASS`: gate was manually completed for this exact build tag and artifact.
+- `PENDING`: the full User Lifetime journey is intentionally deferred for an
+  internal `test` release; Notes must explain why. It is never valid for a
+  `public` release.
 - `N/A`: gate is intentionally not applicable to this platform. The retained
   Trading columns are historical after the 1.x Trading capability retirement
   and must be `N/A` for later release candidates.
@@ -24,12 +27,18 @@ retain the digest of the bytes that were actually exercised and mark the row
 may return to `PASS` only after the exact published bytes are exercised again.
 
 For publication, macOS and Android must each have one row for the build tag.
+For the `test` channel, `Manual Smoke` must be `PASS` and `User Lifetime` may
+be `PASS` or an explicitly explained `PENDING`. For the `public` channel,
 `Manual Smoke` and `User Lifetime` must be `PASS` on both platforms.
 `Moltbook Smoke` is optional release evidence and may be `PASS` or `N/A`; use
 `N/A` when live provider or Gemini work cannot be exercised and explain why in
 Notes. `AI Surface` must be `PASS` on macOS and may be `PASS` or `N/A` on
 Android. Historical rows and their Trading evidence remain immutable; the
 retired columns no longer authorize or gate future product behavior.
+
+`User Lifetime` is the complete new-user, recovery, migration, and long-term
+Capsule journey. It is a public-release qualification, not a substitute for
+the exact packaged smoke required by every test build.
 
 `AI Surface` attests the required local Analyst and authority-boundary smoke,
 not successful live model output. Live AI availability and any skipped

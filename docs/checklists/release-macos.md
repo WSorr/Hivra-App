@@ -40,7 +40,10 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Moltbook smoke was completed when live provider access was available;
       otherwise record `N/A` with the reason in the signoff row. Offline
       Moltbook contract tests remain part of automated gates.
-- [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
+- [ ] For a `public` release, complete the User Lifetime Safety Pack
+      (`docs/checklists/user-lifetime-safety-pack.md`) on this build.
+- [ ] For an internal `test` release, record `User Lifetime=PENDING` with a
+      reason in the signoff Notes, or complete it and record `PASS`.
 
 ## Packaging
 

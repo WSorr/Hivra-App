@@ -47,6 +47,12 @@ status_is_pass_or_na() {
   [ "$value" = "PASS" ] || [ "$value" = "N/A" ]
 }
 
+status_is_test_lifetime() {
+  local value
+  value="$(trim "$1")"
+  [ "$value" = "PASS" ] || [ "$value" = "PENDING" ]
+}
+
 find_row() {
   local platform="$1"
   awk -F'|' -v tag="$BUILD_TAG" -v platform="$platform" '
@@ -100,7 +106,16 @@ check_platform() {
     [ -n "$(trim "$notes")" ] ||
       die "$platform Moltbook Smoke N/A requires a reason in Notes"
   fi
-  status_is_pass "$lifetime" || die "$platform User Lifetime must be PASS"
+  if [ "$CHANNEL" = "public" ]; then
+    status_is_pass "$lifetime" || die "$platform User Lifetime must be PASS for public release"
+  else
+    status_is_test_lifetime "$lifetime" ||
+      die "$platform User Lifetime must be PASS or PENDING for test release"
+    if [ "$(trim "$lifetime")" = "PENDING" ]; then
+      [ -n "$(trim "$notes")" ] ||
+        die "$platform User Lifetime PENDING requires a reason in Notes"
+    fi
+  fi
 
   if [ "$platform" = "macOS" ]; then
     status_is_pass "$ai_surface" || die "macOS Capsule Analyst smoke must be PASS"
@@ -146,6 +161,8 @@ self_test() {
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PASS | PASS | codex | live Moltbook smoke intentionally skipped |
 | v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PASS | N/A | codex | live Moltbook smoke intentionally skipped |
+| v-test-deferred | 2026-01-01T00:00:02Z | macOS | hivra_app-v-test-deferred-macos-universal.zip | 3333333333333333333333333333333333333333333333333333333333333333 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PENDING | PASS | codex | full User Lifetime is reserved for public release |
+| v-test-deferred | 2026-01-01T00:00:03Z | Android | hivra_app-v-test-deferred-android-universal.apk | 4444444444444444444444444444444444444444444444444444444444444444 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PENDING | N/A | codex | full User Lifetime is reserved for public release |
 | v-invalid | 2026-01-01T00:00:02Z | macOS | hivra_app-v-invalid-macos-universal.zip | 1111111111111111111111111111111111111111111111111111111111111111 | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | codex | invalidated historical evidence |
 | v-retired | 2026-01-01T00:00:03Z | macOS | hivra_app-v-retired-macos-universal.zip | 2222222222222222222222222222222222222222222222222222222222222222 | PASS | PASS | PASS | PASS | PASS | codex | retired broad Trading Smoke layout |
 EOF
@@ -162,6 +179,34 @@ EOF
     rm -f "$tmp"
     die "self-test expected missing build tag to fail"
   fi
+
+  HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
+    --build-tag v-test-deferred \
+    --platform all \
+    --channel test >/dev/null
+
+  if HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
+    --build-tag v-test-deferred \
+    --platform all \
+    --channel public >/dev/null 2>&1; then
+    rm -f "$tmp"
+    die "self-test expected deferred User Lifetime to fail public release"
+  fi
+
+  mutated="$(mktemp)"
+  awk -F'|' -v OFS='|' '
+    $2 ~ /^[[:space:]]*v-test-deferred[[:space:]]*$/ &&
+    $4 ~ /^[[:space:]]*macOS[[:space:]]*$/ { $17 = " " }
+    { print }
+  ' "$tmp" > "$mutated"
+  if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
+    --build-tag v-test-deferred \
+    --platform macOS \
+    --channel test >/dev/null 2>&1; then
+    rm -f "$tmp" "$mutated"
+    die "self-test expected pending User Lifetime without Notes to fail"
+  fi
+  rm -f "$mutated"
 
   if HIVRA_MANUAL_SIGNOFF_LOG="$tmp" bash "$0" \
     --build-tag v-invalid \
