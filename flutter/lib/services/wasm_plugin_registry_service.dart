@@ -50,8 +50,11 @@ class WasmPluginRegistryService {
       if (record.packageKind != 'zip') {
         return const PluginRuntimeBinding.hostFallback();
       }
-      final packagePath = '${pluginsDir.path}/${record.storedFileName}';
-      final packageFile = File(packagePath);
+      final packageFile = _storedFile(pluginsDir, record);
+      final packagePath = packageFile.path;
+      if (!await _isRegularFile(packageFile)) {
+        return const PluginRuntimeBinding.hostFallback();
+      }
       final bytes = await packageFile.readAsBytes();
       final packageDigestHex =
           bytes.isEmpty ? null : sha256.convert(bytes).toString();
@@ -78,7 +81,7 @@ class WasmPluginRegistryService {
   }
 
   Future<List<WasmPluginRecord>> loadPlugins() async {
-    return _serialized(() => _loadPluginsUnlocked());
+    return _serialized(() => _loadPluginsUnlocked(failClosed: true));
   }
 
   Future<List<WasmPluginRecord>> _loadPluginsUnlocked({
@@ -318,6 +321,7 @@ class WasmPluginRegistryService {
     try {
       final dir = await pluginsDirectory();
       for (final record in records) {
+        if (!_isSafeStoredFileName(record.storedFileName)) continue;
         final file = File('${dir.path}/${record.storedFileName}');
         await _deleteFileIfPresent(file);
       }
@@ -397,15 +401,43 @@ class WasmPluginRegistryService {
     final dir = await pluginsDirectory();
     final kept = <WasmPluginRecord>[];
     for (final record in records) {
-      final fileName = record.storedFileName.trim();
-      if (fileName.isEmpty) {
+      final file = _storedFile(dir, record);
+      final type = await FileSystemEntity.type(file.path, followLinks: false);
+      if (type == FileSystemEntityType.notFound) {
         continue;
       }
-      final file = File('${dir.path}/$fileName');
-      if (await file.exists()) {
+      if (type != FileSystemEntityType.file) {
+        throw FormatException(
+          'Plugin registry entry ${record.id} does not reference a regular package file',
+        );
+      }
+      if (await _isRegularFile(file)) {
         kept.add(record);
       }
     }
     return kept;
+  }
+
+  File _storedFile(Directory directory, WasmPluginRecord record) {
+    if (!_isSafeStoredFileName(record.storedFileName)) {
+      throw FormatException(
+        'Plugin registry entry ${record.id} has an unsafe stored file name',
+      );
+    }
+    return File('${directory.path}/${record.storedFileName}');
+  }
+
+  bool _isSafeStoredFileName(String value) {
+    return value.isNotEmpty &&
+        value == value.trim() &&
+        value != '.' &&
+        value != '..' &&
+        !value.contains('/') &&
+        !value.contains('\\');
+  }
+
+  Future<bool> _isRegularFile(File file) async {
+    return await FileSystemEntity.type(file.path, followLinks: false) ==
+        FileSystemEntityType.file;
   }
 }

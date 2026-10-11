@@ -129,6 +129,52 @@ void main() {
     },
   );
 
+  test('loadPlugins fails closed for a corrupted registry file', () async {
+    final pluginsDir = await service.pluginsDirectory(create: true);
+    final registry = File('${pluginsDir.path}/registry.json');
+    await registry.writeAsString('{not-json', flush: true);
+
+    await expectLater(service.loadPlugins(), throwsA(isA<FormatException>()));
+  });
+
+  test(
+    'loadPlugins rejects unsafe paths and symlinks without deleting targets',
+    () async {
+      final pluginsDir = await service.pluginsDirectory(create: true);
+      final outside = File('${tempDocsDir.path}/outside.zip');
+      await outside.writeAsString('outside', flush: true);
+      final registry = File('${pluginsDir.path}/registry.json');
+
+      await registry.writeAsString(
+        jsonEncode([
+          {
+            'id': 'traversal',
+            'storedFileName': '../outside.zip',
+            'installedAtIso': '2026-03-29T12:00:00Z',
+          },
+        ]),
+        flush: true,
+      );
+      await expectLater(service.loadPlugins(), throwsA(isA<FormatException>()));
+      expect(await outside.exists(), isTrue);
+
+      final link = Link('${pluginsDir.path}/linked.zip');
+      await link.create(outside.path);
+      await registry.writeAsString(
+        jsonEncode([
+          {
+            'id': 'symlink',
+            'storedFileName': 'linked.zip',
+            'installedAtIso': '2026-03-29T12:00:00Z',
+          },
+        ]),
+        flush: true,
+      );
+      await expectLater(service.loadPlugins(), throwsA(isA<FormatException>()));
+      expect(await outside.exists(), isTrue);
+    },
+  );
+
   test('install and remove plugin keeps registry and files in sync', () async {
     final sourceFile = await _createPluginPackage(
       tempDocsDir,
