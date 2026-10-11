@@ -24,7 +24,7 @@ Options:
 
 This is the only approved GitHub publication path. It refuses to publish unless:
   - automated preflight passes for the exact build tag;
-  - manual signoff log has PASS rows for macOS and Android;
+  - manual signoff log satisfies the channel-specific macOS and Android rules;
   - local release artifacts and checksums exist.
 USAGE
 }

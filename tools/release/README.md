@@ -32,6 +32,26 @@ Hivra.
 - `publish_github_release.sh`: the only approved GitHub Release publication
   path; binds tag, source commit, metadata, artifact digests, and signoff.
 
+## Gate ownership
+
+Each layer answers one question:
+
+- `review_all.sh` and `release_discipline_gate.sh` check repository structure,
+  wiring, and rule consistency. They do not prove a release artifact or a
+  user journey.
+- `preflight.sh` checks the pinned toolchain, source tests, analysis, review
+  gates, and any already-built bundles. Missing local bundles are warnings so
+  development checks can run before packaging.
+- `macos_release.sh` and `android_release.sh` create exact platform bytes
+  from a clean checkout and record their source commit, runner digest, and
+  artifact digest.
+- `release-manual-signoff-log.md` records behavior observed on those exact
+  bytes. `test` accepts deferred User Lifetime evidence and Moltbook `N/A`
+  with a reason; `public` requires User Lifetime `PASS` on both platforms.
+- `publish_github_release.sh` is the final conjunction: clean tree, valid
+  version sequence, tag binding, metadata binding, artifact digests, and
+  channel-appropriate signoff. It does not repeat product testing.
+
 ## Flow
 
 1. Obtain the next allowed tag with
