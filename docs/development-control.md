@@ -1,11 +1,11 @@
 # Hivra Development Control
 
-Status date: 2026-10-10
+Status date: 2026-10-11
 
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Current source is protected `main` at `65acdd8`. The published test release
+- Current source is protected `main` at `49f227f`. The published test release
   `v1.0.4-test1` is bound to that tag; its macOS and Android artifacts were
   built from source commit `bfe6945` and the later tag commit contains only
   the immutable artifact signoff rows.
@@ -17,7 +17,7 @@ Status date: 2026-10-10
   returns a retryable error instead of leaving the user on an indefinite
   spinner; a late completion remains owned by the original activation.
 - `hivra-plugins/main` is clean at `37d1c36`; its latest published package
-  release is `v0.2.10-plugins`. `hivra_web/main` is clean at `8fb9ace`, while
+  release is `v0.2.10-plugins`. `hivra_web/main` is clean at `78fe683`, while
   Opsnex PR `#2` remains open and is not part of the Hivra release input.
 - The macOS runner enforces one running Hivra bundle instance: a duplicate
   launch activates the existing process and exits before Flutter/Capsule
