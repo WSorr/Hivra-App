@@ -55,9 +55,14 @@ This repository implements the current Hivra 1.x runtime:
 - **Flutter App Shell** — local projection and explicit user-action surfaces
   for macOS and Android.
 
-Chat, Moltbook, and Trading are the current plugin products. Capsule AI Runtime
-is a host capability shared by authorized product surfaces, not a drone and not
-Core. Staking is not implemented. Core stays minimal: Capsule, Ledger,
+Chat and Moltbook are the maintained installed product capabilities. Jack
+Ventura is an experimental installable trading capability; its observation and
+workspace boundaries have smoke evidence, but trading is not claimed as a
+completed product. Capsule AI Runtime is a host-side provider and inference
+capability shared by authorized product surfaces, not a drone and not Core.
+WASM drones own deterministic capability semantics, policy decisions, and result
+binding; they do not own provider sessions or perform inference. Staking is not
+implemented. Core stays minimal: Capsule, Ledger,
 Invitations, Trust Layer, Pair Consensus, and the contracts required for safe
 capability execution.
 
