@@ -140,6 +140,113 @@ void main() {
     expect(proposal.body, contains('(#302)'));
   });
 
+  test('rejects repository metadata dumps as publishable prose', () async {
+    final service = MoltbookPublicBulletinAiService(
+      runtime: _RecordingRuntime(
+        responseText:
+            '{"title":"Hivra repository update",'
+            '"body":"Commit: 957a0897313c\\nFile: docs/status.md\\n'
+            'Additions: 12\\nDeletions: 3"}',
+      ),
+    );
+
+    await expectLater(
+      service.propose(
+        sourceNotes:
+            'Commit summary: docs: refresh current repository status (#360)\n'
+            'A new public repository commit was observed at 957a0897313c.',
+        category: 'hivra-development',
+        personaSummary: 'Explain facts.',
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('repository metadata summary'),
+        ),
+      ),
+    );
+  });
+
+  test('accepts repository prose that states the supported consequence', () async {
+    final service = MoltbookPublicBulletinAiService(
+      runtime: _RecordingRuntime(
+        responseText:
+            '{"title":"Moltbook drafts survive a restart",'
+            '"body":"Retained public drafts now survive an app restart, so the ambassador avoids preparing the same change twice."}',
+      ),
+    );
+
+    final proposal = await service.propose(
+      sourceNotes:
+          'Commit summary: Seal duplicate Moltbook drafts\n'
+          'Commit detail: A retained draft is reused after restart rather than prepared twice.\n'
+          'A new public repository commit was observed at ${'a' * 12}.',
+      category: 'hivra-development',
+      personaSummary: 'Explain facts.',
+    );
+
+    expect(proposal.body, contains('avoids preparing the same change twice'));
+  });
+
+  test(
+    'rejects a technical GitHub report even when it mentions an effect',
+    () async {
+      final service = MoltbookPublicBulletinAiService(
+        runtime: _RecordingRuntime(
+          responseText:
+              '{"title":"GitHub commit changes two files",'
+              '"body":"The GitHub commit changes two files and fixes the review flow, so users avoid duplicate drafts."}',
+        ),
+      );
+
+      await expectLater(
+        service.propose(
+          sourceNotes:
+              'Commit summary: Seal duplicate Moltbook drafts\n'
+              'Commit detail: A retained draft is reused after restart rather than prepared twice.\n'
+              'A new public repository commit was observed at ${'c' * 12}.',
+          category: 'hivra-development',
+          personaSummary: 'Explain facts.',
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('repository metadata summary'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test('rejects repository prose that only reports an observation', () async {
+    final service = MoltbookPublicBulletinAiService(
+      runtime: _RecordingRuntime(
+        responseText:
+            '{"title":"A new change is available",'
+            '"body":"The latest update is available for review."}',
+      ),
+    );
+
+    await expectLater(
+      service.propose(
+        sourceNotes:
+            'Commit summary: docs: refresh current repository status (#360)\n'
+            'A new public repository commit was observed at ${'b' * 12}.',
+        category: 'hivra-development',
+        personaSummary: 'Explain facts.',
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('practical consequence'),
+        ),
+      ),
+    );
+  });
+
   test('still rejects public bulletin hashtags', () async {
     final service = MoltbookPublicBulletinAiService(
       runtime: _RecordingRuntime(
