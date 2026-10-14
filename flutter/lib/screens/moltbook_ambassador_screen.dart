@@ -36,7 +36,57 @@ void resetMoltbookPublicChangeInput({
   required DateTime recordedAt,
 }) {
   bulletinIdController.text = newMoltbookPublicChangeSourceId(recordedAt);
-  publicSourceNotesController.clear();
+  replaceMoltbookPublicSourceNotes(
+    controller: publicSourceNotesController,
+    text: '',
+  );
+}
+
+void replaceMoltbookPublicSourceNotes({
+  required TextEditingController controller,
+  required String text,
+}) {
+  controller.value = TextEditingValue(
+    text: text,
+    selection: TextSelection.collapsed(offset: text.length),
+    composing: TextRange.empty,
+  );
+}
+
+Widget moltbookPublicSourceNotesField({
+  required TextEditingController controller,
+  required ValueChanged<String> onSetText,
+}) {
+  return ValueListenableBuilder<TextEditingValue>(
+    valueListenable: controller,
+    builder:
+        (context, value, child) => MergeSemantics(
+          child: Semantics(
+            key: const ValueKey('moltbook-public-source-notes'),
+            container: true,
+            label: 'Public source notes',
+            value: value.text,
+            textField: true,
+            multiline: true,
+            focusable: true,
+            enabled: true,
+            excludeSemantics: true,
+            onSetText: onSetText,
+            child: child,
+          ),
+        ),
+    child: TextField(
+      controller: controller,
+      minLines: 3,
+      maxLines: 8,
+      decoration: const InputDecoration(
+        labelText: 'Public source notes',
+        helperText:
+            'Explicit public input only. No secrets or private Capsule data.',
+        alignLabelWithHint: true,
+      ),
+    ),
+  );
 }
 
 String moltbookAiSessionTitle({
@@ -1705,6 +1755,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     );
   }
 
+  void _replacePublicSourceNotes(String text) {
+    if (!mounted) return;
+    setState(
+      () => replaceMoltbookPublicSourceNotes(
+        controller: _publicSourceNotesController,
+        text: text,
+      ),
+    );
+  }
+
   ExternalEffectOperation? _latestOperationWhere(
     bool Function(ExternalEffectOperation operation) predicate,
   ) {
@@ -2005,6 +2065,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                           onRecordPublicChange: _recordPublicChange,
                           onProposeNextPublicChange:
                               () => _proposeNextPublicChange(),
+                          onReplacePublicSourceNotes: _replacePublicSourceNotes,
                           onPrepare: _prepareDraft,
                         ),
                       ),
@@ -3165,6 +3226,7 @@ class _MoltbookDraftCard extends StatelessWidget {
   final VoidCallback onProposePublicBulletin;
   final VoidCallback onRecordPublicChange;
   final VoidCallback onProposeNextPublicChange;
+  final ValueChanged<String> onReplacePublicSourceNotes;
   final VoidCallback onPrepare;
 
   const _MoltbookDraftCard({
@@ -3184,6 +3246,7 @@ class _MoltbookDraftCard extends StatelessWidget {
     required this.onProposePublicBulletin,
     required this.onRecordPublicChange,
     required this.onProposeNextPublicChange,
+    required this.onReplacePublicSourceNotes,
     required this.onPrepare,
   });
 
@@ -3293,18 +3356,21 @@ class _MoltbookDraftCard extends StatelessWidget {
                     style: TextStyle(color: Color(0xFFA9C7C4), height: 1.35),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
+                  moltbookPublicSourceNotesField(
                     controller: publicSourceNotesController,
-                    minLines: 3,
-                    maxLines: 8,
-                    decoration: const InputDecoration(
-                      labelText: 'Public source notes',
-                      helperText:
-                          'Explicit public input only. No secrets or private Capsule data.',
-                      alignLabelWithHint: true,
-                    ),
+                    onSetText: onReplacePublicSourceNotes,
                   ),
                   const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed:
+                          busy ? null : () => onReplacePublicSourceNotes(''),
+                      icon: const Icon(Icons.clear_all_rounded),
+                      label: const Text('Clear source notes'),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   FilledButton.tonalIcon(
                     onPressed: busy ? null : onRecordPublicChange,
                     icon: const Icon(Icons.playlist_add_check_rounded),
