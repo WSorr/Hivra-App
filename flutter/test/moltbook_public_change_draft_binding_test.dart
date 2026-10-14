@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/moltbook_ambassador_models.dart';
 import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
@@ -19,6 +20,63 @@ void main() {
 
     expect(bulletinId.text, 'change-1789221736104926');
     expect(sourceNotes.text, isEmpty);
+  });
+
+  test('source note replacement clears the old multiline editing value', () {
+    final sourceNotes = TextEditingController(
+      text: 'Old first line\nOld second line',
+    );
+    addTearDown(sourceNotes.dispose);
+
+    replaceMoltbookPublicSourceNotes(
+      controller: sourceNotes,
+      text: 'New first line\nNew second line',
+    );
+
+    expect(sourceNotes.text, 'New first line\nNew second line');
+    expect(sourceNotes.selection, const TextSelection.collapsed(offset: 30));
+    expect(sourceNotes.value.composing, TextRange.empty);
+  });
+
+  testWidgets('source notes semantics replaces the controller value', (
+    WidgetTester tester,
+  ) async {
+    final sourceNotes = TextEditingController(text: 'Old line\nOld detail');
+    addTearDown(sourceNotes.dispose);
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: moltbookPublicSourceNotesField(
+            controller: sourceNotes,
+            onSetText:
+                (text) => replaceMoltbookPublicSourceNotes(
+                  controller: sourceNotes,
+                  text: text,
+                ),
+          ),
+        ),
+      ),
+    );
+
+    final labeledNodes = find.bySemanticsLabel('Public source notes');
+    final node = <SemanticsNode>[
+      for (var index = 0; index < labeledNodes.evaluate().length; index++)
+        tester.getSemantics(labeledNodes.at(index)),
+    ].firstWhere(
+      (candidate) =>
+          candidate.getSemanticsData().hasAction(SemanticsAction.setText),
+    );
+    node.owner!.performAction(
+      node.id,
+      SemanticsAction.setText,
+      'New line\nNew detail',
+    );
+    await tester.pump();
+
+    expect(sourceNotes.text, 'New line\nNew detail');
+    semantics.dispose();
   });
 
   test('queued public change replaces stale manual draft identity', () {
