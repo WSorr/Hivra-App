@@ -253,7 +253,15 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       enforceHost: false,
     );
     if (grant?['executor'] == 'vps') {
-      throw StateError('Return to online mode before reinstalling the VPS');
+      final existing = await _remote.connection(owner, record.pluginId!);
+      final sameAssignedVps =
+          existing != null &&
+          existing['host'] == host &&
+          existing['port'] == port &&
+          existing['executor_id'] == grant?['executor_id'];
+      if (!sameAssignedVps) {
+        throw StateError('Return to online mode before reinstalling the VPS');
+      }
     }
     final binding = await registry.resolveRuntimeBinding(record.pluginId!);
     if (binding.packageId != record.id) throw StateError('Package changed');

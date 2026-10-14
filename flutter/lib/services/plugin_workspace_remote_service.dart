@@ -148,10 +148,23 @@ class PluginWorkspaceRemoteService {
       Uint8List.fromList([...data.bytes, ...data.publicKey.bytes]),
       'hivra-workspace',
     );
-    final pem = previous == null ? generated.toPem() : await _key(previous);
+    final previousKey = previous == null ? null : await _key(previous);
+    final repairingMissingKey =
+        previous != null &&
+        previousKey == null &&
+        previous['host'] == host &&
+        previous['port'] == port;
+    // A saved connection can outlive its Keychain entry. When the user
+    // supplies the root password for that same VPS, repair the key in place:
+    // preserve the executor identity so the existing runner remains the one
+    // authoritative executor, while replacing only its authorized SSH key.
+    final pem =
+        previous == null || repairingMissingKey
+            ? generated.toPem()
+            : previousKey;
     if (pem == null) {
       throw StateError(
-        'VPS key unavailable; reconnect from its original Capsule',
+        'VPS key unavailable; enter the root password for the original VPS',
       );
     }
     final identity = SSHKeyPair.fromPem(pem).single;
