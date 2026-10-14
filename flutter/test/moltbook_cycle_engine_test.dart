@@ -355,6 +355,163 @@ void main() {
   });
 
   test(
+    'new repository snapshot removes an unapproved draft from the previous snapshot',
+    () async {
+      final previousSourceId = 'github-news-v2-${'a' * 40}';
+      final previousChange = await publicChanges.record(
+        sourceId: previousSourceId,
+        category: 'hivra',
+        facts: const <String>['An older public repository change.'],
+      );
+      final previousDraft = _draftPreview(
+        'e' * 64,
+        bulletinId: previousSourceId,
+      );
+      await drafts.save(previousDraft);
+      await publicChanges.markDrafted(
+        previousChange.commitmentHashHex,
+        previousDraft.draftHashHex,
+      );
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'b' * 40}',
+        facts: <String>['A newer public repository change.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(drafts.deletedHashes, contains(previousDraft.draftHashHex));
+      expect(
+        drafts.stored.any(
+          (draft) => draft.preview.draftHashHex == previousDraft.draftHashHex,
+        ),
+        isFalse,
+      );
+      expect(
+        (await publicChanges.load()).map((change) => change.sourceId),
+        contains('github-news-v2-${'b' * 40}'),
+      );
+    },
+  );
+
+  test(
+    'new repository snapshot retains a draft with an active publication effect',
+    () async {
+      final previousSourceId = 'github-news-v2-${'c' * 40}';
+      final previousChange = await publicChanges.record(
+        sourceId: previousSourceId,
+        category: 'hivra',
+        facts: const <String>['An older public repository change.'],
+      );
+      final previousDraft = _draftPreview(
+        'f' * 64,
+        bulletinId: previousSourceId,
+      );
+      await drafts.save(previousDraft);
+      await publicChanges.markDrafted(
+        previousChange.commitmentHashHex,
+        previousDraft.draftHashHex,
+      );
+      await publications.prepare(
+        draft: previousDraft,
+        submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      );
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'d' * 40}',
+        facts: <String>['A newer public repository change.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(drafts.deletedHashes, isNot(contains(previousDraft.draftHashHex)));
+      expect(
+        drafts.stored.any(
+          (draft) => draft.preview.draftHashHex == previousDraft.draftHashHex,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'new repository snapshot removes a draft held by another account effect',
+    () async {
+      final previousSourceId = 'github-news-v2-${'e' * 40}';
+      final previousChange = await publicChanges.record(
+        sourceId: previousSourceId,
+        category: 'hivra',
+        facts: const <String>['An older public repository change.'],
+      );
+      final previousDraft = _draftPreview(
+        'a' * 64,
+        bulletinId: previousSourceId,
+      );
+      await drafts.save(previousDraft);
+      await publicChanges.markDrafted(
+        previousChange.commitmentHashHex,
+        previousDraft.draftHashHex,
+      );
+      final prepared = await publications.prepare(
+        draft: previousDraft,
+        submoltName: MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      );
+      publications.operations = <ExternalEffectOperation>[
+        _operationWithState(
+          prepared,
+          ExternalEffectState.prepared,
+          accountBindingId: 'agent-2',
+        ),
+      ];
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'f' * 40}',
+        facts: <String>['A newer public repository change.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(drafts.deletedHashes, contains(previousDraft.draftHashHex));
+    },
+  );
+
+  test(
+    'new repository snapshot archives legacy repository drafts without touching ordinary drafts',
+    () async {
+      final legacySourceId = 'github-${'1' * 40}';
+      final legacyChange = await publicChanges.record(
+        sourceId: legacySourceId,
+        category: 'hivra',
+        facts: const <String>['A legacy repository change.'],
+      );
+      final legacyDraft = _draftPreview('1' * 64, bulletinId: legacySourceId);
+      await drafts.save(legacyDraft);
+      await publicChanges.markDrafted(
+        legacyChange.commitmentHashHex,
+        legacyDraft.draftHashHex,
+      );
+
+      final ordinaryDraft = _draftPreview(
+        '2' * 64,
+        bulletinId: 'manual-change',
+      );
+      await drafts.save(ordinaryDraft);
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'3' * 40}',
+        facts: <String>['A current repository change.'],
+      );
+
+      await module.runMoltbookCycle();
+
+      expect(drafts.deletedHashes, contains(legacyDraft.draftHashHex));
+      expect(drafts.deletedHashes, isNot(contains(ordinaryDraft.draftHashHex)));
+      expect(
+        drafts.stored.any(
+          (draft) => draft.preview.draftHashHex == ordinaryDraft.draftHashHex,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'stopped manual proposal preserves category and AI failure boundaries',
     () async {
       configuration.enabled = false;
@@ -2637,8 +2794,11 @@ class _RecordingDraftStore implements MoltbookDraftStore {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-MoltbookDraftPreview _draftPreview(String hash) => MoltbookDraftPreview(
-  bulletinId: 'public-change',
+MoltbookDraftPreview _draftPreview(
+  String hash, {
+  String bulletinId = 'public-change',
+}) => MoltbookDraftPreview(
+  bulletinId: bulletinId,
   releaseTag: '2026-08-30',
   category: 'hivra-development',
   title: 'Public change',
@@ -2708,13 +2868,14 @@ ExternalEffectOperation _spamRejectedPostOperation() {
 
 ExternalEffectOperation _operationWithState(
   ExternalEffectOperation operation,
-  ExternalEffectState state,
-) => ExternalEffectOperation(
+  ExternalEffectState state, {
+  String? accountBindingId,
+}) => ExternalEffectOperation(
   ownerCapsuleHex: operation.ownerCapsuleHex,
   operationId: operation.operationId,
   pluginId: operation.pluginId,
   providerId: operation.providerId,
-  accountBindingId: operation.accountBindingId,
+  accountBindingId: accountBindingId ?? operation.accountBindingId,
   effectKind: operation.effectKind,
   canonicalPayloadJson: operation.canonicalPayloadJson,
   payloadHashHex: operation.payloadHashHex,

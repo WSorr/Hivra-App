@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/moltbook_ambassador_models.dart';
 import '../models/plugin_contract_ids.dart';
 import 'capsule_file_store.dart';
 
@@ -114,9 +115,7 @@ class MoltbookPublicChangeFeedStore {
       final normalizedCategory = category.trim();
       final normalizedFacts = facts.map((fact) => fact.trim()).toList();
       if (latestRepositoryCommit &&
-          !RegExp(
-            r'^github-(?:news-v2-)?[0-9a-f]{40}$',
-          ).hasMatch(normalizedSourceId)) {
+          !isMoltbookRepositoryCommitSourceId(normalizedSourceId)) {
         throw const FormatException('Invalid public repository commit source');
       }
       final commitment = commitmentFor(
@@ -151,7 +150,7 @@ class MoltbookPublicChangeFeedStore {
               ? changes
                   .where(
                     (change) =>
-                        !change.sourceId.startsWith('github-') ||
+                        !isMoltbookRepositoryCommitSourceId(change.sourceId) ||
                         change.sourceId == normalizedSourceId,
                   )
                   .toList()

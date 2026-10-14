@@ -1578,6 +1578,11 @@ class MoltbookRuntimeModule {
         facts: observation.facts,
         latestRepositoryCommit: true,
       );
+      await _discardObsoleteRepositoryDrafts(
+        ownerHex: ownerHex,
+        accountBindingId: accountBindingId,
+        cycleEpoch: cycleEpoch,
+      );
       await uiLog.log(
         'moltbook.public_repository.observe',
         'retained source=${_safeLogValue(change.sourceId)} '
@@ -1591,6 +1596,53 @@ class MoltbookRuntimeModule {
       );
       return false;
     }
+  }
+
+  Future<void> _discardObsoleteRepositoryDrafts({
+    required String ownerHex,
+    required String accountBindingId,
+    required int cycleEpoch,
+  }) async {
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    final activeSourceIds =
+        (await moltbookPublicChanges.load())
+            .where(
+              (change) => isMoltbookRepositoryCommitSourceId(change.sourceId),
+            )
+            .map((change) => change.sourceId)
+            .toSet();
+    final operations = await moltbookPublications.list();
+    final staleDraftHashes = <String>{};
+    for (final draft in await moltbookDrafts.load()) {
+      final sourceId = draft.preview.bulletinId;
+      if (!isMoltbookRepositoryCommitSourceId(sourceId)) {
+        continue;
+      }
+      if (activeSourceIds.contains(sourceId)) continue;
+      final hasActiveEffect = operations.any(
+        (operation) =>
+            operation.accountBindingId == accountBindingId &&
+            MoltbookPublicationService.postDraftHash(operation) ==
+                draft.preview.draftHashHex &&
+            !operation.state.isTerminal,
+      );
+      if (!hasActiveEffect) staleDraftHashes.add(draft.preview.draftHashHex);
+    }
+    if (staleDraftHashes.isEmpty) return;
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    await moltbookDrafts.deleteAll(staleDraftHashes);
+    await uiLog.log(
+      'moltbook.draft.archive',
+      'obsolete repository drafts removed count=${staleDraftHashes.length}',
+    );
   }
 
   Future<void> _ensureMoltbookCycleScope(
