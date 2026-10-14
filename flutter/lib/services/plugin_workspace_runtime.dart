@@ -548,6 +548,49 @@ class PluginWorkspaceRuntime {
             _canonical(requests.single) != _canonical(approvedOrder))) {
       throw StateError('Plugin did not request the exact confirmed effect');
     }
+    // A recovered VPS key can restore the executor before the provider
+    // credentials are present on that executor. Keep the package-owned public
+    // presentation available in this read-only case so the user can reconnect
+    // the account from the workspace. Do not expose stale execution controls
+    // or order actions until fresh account evidence is available.
+    if (action == 'open' &&
+        credentials == null &&
+        requests.isNotEmpty &&
+        requests.every(
+          (request) =>
+              (request['kind'] == 'account.snapshot.read') ||
+              (request['kind'] == 'order.snapshot.read' &&
+                  request['scope'] == 'durable'),
+        ) &&
+        await _readCredentials(owner: owner, pluginId: pluginId) == null) {
+      final view = Map<String, dynamic>.from(output['view'] as Map);
+      view.remove('schedule');
+      final actions =
+          (view['actions'] as List? ?? const []).where((raw) {
+            final action = raw as Map;
+            final id = action['id'];
+            final host = action['host'];
+            return id != 'start' &&
+                id != 'stop' &&
+                id != 'list_orders' &&
+                host != 'bingx.order.submit' &&
+                host != 'workspace.start' &&
+                host != 'workspace.stop';
+          }).toList();
+      if (!actions.any(
+        (raw) => (raw as Map)['host'] == 'bingx.account.connect',
+      )) {
+        actions.insert(0, {
+          'id': 'connect',
+          'label': 'Reconnect account',
+          'host': 'bingx.account.connect',
+        });
+      }
+      view['actions'] = actions;
+      view['message'] =
+          '${view['message'] ?? ''}\nReconnect your BingX account to refresh VPS observations. No trading action is enabled.';
+      return view;
+    }
     for (final request in requests) {
       if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
       final kind = request['kind'];
