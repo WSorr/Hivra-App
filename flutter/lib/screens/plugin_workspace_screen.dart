@@ -841,6 +841,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                     view['host_connection']?['installed'] == true))
               ExpansionTile(
                 title: const Text('Advanced settings'),
+                childrenPadding: const EdgeInsets.only(top: 8),
                 children: [
                   for (final raw in view['fields'] as List)
                     if ((raw as Map)['advanced'] == true) _field(raw),
