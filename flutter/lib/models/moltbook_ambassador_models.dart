@@ -8,6 +8,9 @@ import 'plugin_contract_ids.dart';
 final RegExp _unsafePublicTextControls = RegExp(
   r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]',
 );
+final RegExp _moltbookRepositoryCommitSourcePattern = RegExp(
+  r'^github-(?:news-v2-)?[0-9a-f]{40}$',
+);
 
 const String moltbookPersonFirstRuntimeSubmoltName = 'person-first-runtime';
 const String moltbookPersonFirstRuntimeSubmoltDisplayName =
@@ -17,6 +20,9 @@ const String moltbookPersonFirstRuntimeSubmoltDescription =
     'primary execution context. Identity, relationships, rules, history, '
     'capabilities, and continuity remain person-owned, while apps and agents '
     'stay replaceable.';
+
+bool isMoltbookRepositoryCommitSourceId(String value) =>
+    _moltbookRepositoryCommitSourcePattern.hasMatch(value);
 
 bool _containsUnsafePublicTextControls(String value) =>
     _unsafePublicTextControls.hasMatch(value);

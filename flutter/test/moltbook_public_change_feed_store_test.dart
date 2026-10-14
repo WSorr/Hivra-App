@@ -161,6 +161,30 @@ void main() {
   );
 
   test(
+    'latest repository observation retains ordinary github-prefixed sources',
+    () async {
+      final ordinary = await store.record(
+        sourceId: 'github-manual-note',
+        category: 'hivra-development',
+        facts: const <String>['A manually recorded public note.'],
+      );
+
+      await store.record(
+        sourceId: 'github-news-v2-${'a' * 40}',
+        category: 'hivra-development',
+        facts: const <String>['The current repository commit.'],
+        latestRepositoryCommit: true,
+      );
+
+      expect((await store.load()).map((change) => change.sourceId), <String>[
+        'github-manual-note',
+        'github-news-v2-${'a' * 40}',
+      ]);
+      expect(ordinary.isPending, isTrue);
+    },
+  );
+
+  test(
     'public repository source rejects redirects and malformed bounded summary',
     () async {
       for (final value in <String>[
