@@ -3,8 +3,44 @@ import 'package:hivra_app/models/moltbook_ambassador_models.dart';
 import 'package:hivra_app/models/moltbook_provider_models.dart';
 import 'package:hivra_app/services/capsule_ai_runtime_service.dart';
 import 'package:hivra_app/services/moltbook_public_bulletin_ai_service.dart';
+import 'package:hivra_app/services/moltbook_runtime_module.dart';
 
 void main() {
+  test('sanitizes provider credentials and action tokens before logging', () {
+    final sanitized = sanitizeMoltbookErrorForLog(
+      Exception(
+        'provider rejected authorization: Bearer bearer-secret '
+        'api_key=provider-key-value '
+        'action_token=moltbook_verify_secret verification_token=verify-secret '
+        'operation=moltbook-post-123',
+      ),
+    );
+
+    expect(sanitized, contains('authorization:<redacted>'));
+    expect(sanitized, contains('api_key=<redacted>'));
+    expect(sanitized, contains('action_token=<redacted>'));
+    expect(sanitized, contains('verification_token=<redacted>'));
+    expect(sanitized, contains('moltbook-post-123'));
+    expect(sanitized, isNot(contains('bearer-secret')));
+    expect(sanitized, isNot(contains('provider-key-value')));
+    expect(sanitized, isNot(contains('moltbook_verify_secret')));
+    expect(sanitized, isNot(contains('verify-secret')));
+  });
+
+  test('sanitizes personal contact data and bounds provider errors', () {
+    final sanitized = sanitizeMoltbookErrorForLog(
+      'failed for user@example.com at /Users/ms/private/runtime '
+      '${'x' * 400}',
+    );
+
+    expect(sanitized, contains('<redacted-email>'));
+    expect(sanitized, contains('<redacted-path>'));
+    expect(sanitized.length, 240);
+    expect(sanitized, endsWith('...'));
+    expect(sanitized, isNot(contains('user@example.com')));
+    expect(sanitized, isNot(contains('/Users/ms/private/runtime')));
+  });
+
   test('routes bounded public notes through Capsule AI Runtime', () async {
     final runtime = _RecordingRuntime(
       responseText:

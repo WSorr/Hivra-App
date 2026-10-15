@@ -20,6 +20,40 @@ import 'moltbook_public_repository_source_adapter.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
 
+String sanitizeMoltbookErrorForLog(Object error) {
+  var sanitized = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  sanitized = sanitized.replaceAllMapped(
+    RegExp(
+      r'''\b(authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|action[_-]?token|verification[_-]?token|secret|password|private[_-]?key)\b\s*([:=])\s*(?:bearer\s+|basic\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&}]+)''',
+      caseSensitive: false,
+    ),
+    (match) => '${match.group(1)}${match.group(2)}<redacted>',
+  );
+  sanitized = sanitized.replaceAllMapped(
+    RegExp(r'\b(?:bearer|basic)\s+[^\s,;&}]+', caseSensitive: false),
+    (_) => '<redacted-auth>',
+  );
+  sanitized = sanitized.replaceAll(
+    RegExp(
+      r'\b(?:AIza[0-9A-Za-z_-]{20,}|sk-[0-9A-Za-z_-]{16,}|gh[pousr]_[0-9A-Za-z_]{20,}|github(?:_pat)_[0-9A-Za-z_]{20,}|glpat-[0-9A-Za-z_-]{16,}|xox[baprs]-[0-9A-Za-z-]{16,}|eyJ[0-9A-Za-z_-]{16,}\.[0-9A-Za-z_-]+\.[0-9A-Za-z_-]+)\b',
+      caseSensitive: false,
+    ),
+    '<redacted-token>',
+  );
+  sanitized = sanitized.replaceAll(
+    RegExp(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'),
+    '<redacted-email>',
+  );
+  sanitized = sanitized.replaceAll(
+    RegExp(r'(?:/Users|/home)/[^\s,;]+|[A-Za-z]:\\Users\\[^\s,;]+'),
+    '<redacted-path>',
+  );
+
+  if (sanitized.length <= 240) return sanitized;
+  return '${sanitized.substring(0, 237)}...';
+}
+
 class MoltbookRuntimeModule {
   static const String _automaticMoltbookReleaseTag = 'development';
   static const int _maxDailyWrites = 3;
@@ -2357,8 +2391,7 @@ class MoltbookRuntimeModule {
       _readActiveCapsuleRootHex()?.trim().toLowerCase() == operationCapsuleHex;
 
   String _safeError(Object error) {
-    final compact = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
-    return compact.length <= 240 ? compact : compact.substring(0, 240);
+    return sanitizeMoltbookErrorForLog(error);
   }
 
   String _safeLogValue(String value) {
