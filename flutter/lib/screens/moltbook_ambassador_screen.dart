@@ -20,11 +20,26 @@ void bindMoltbookPublicChangeProposal({
   required TextEditingController bodyController,
   required TextEditingController factsController,
 }) {
-  bulletinIdController.text = change.sourceId;
-  categoryController.text = change.category;
-  titleController.text = proposal.title;
-  bodyController.text = proposal.body;
-  factsController.text = change.facts.join('\n');
+  replaceMoltbookTextController(
+    controller: bulletinIdController,
+    text: change.sourceId,
+  );
+  replaceMoltbookTextController(
+    controller: categoryController,
+    text: change.category,
+  );
+  replaceMoltbookTextController(
+    controller: titleController,
+    text: proposal.title,
+  );
+  replaceMoltbookTextController(
+    controller: bodyController,
+    text: proposal.body,
+  );
+  replaceMoltbookTextController(
+    controller: factsController,
+    text: change.facts.join('\n'),
+  );
 }
 
 String newMoltbookPublicChangeSourceId(DateTime recordedAt) =>
@@ -35,14 +50,17 @@ void resetMoltbookPublicChangeInput({
   required TextEditingController publicSourceNotesController,
   required DateTime recordedAt,
 }) {
-  bulletinIdController.text = newMoltbookPublicChangeSourceId(recordedAt);
+  replaceMoltbookTextController(
+    controller: bulletinIdController,
+    text: newMoltbookPublicChangeSourceId(recordedAt),
+  );
   replaceMoltbookPublicSourceNotes(
     controller: publicSourceNotesController,
     text: '',
   );
 }
 
-void replaceMoltbookPublicSourceNotes({
+void replaceMoltbookTextController({
   required TextEditingController controller,
   required String text,
 }) {
@@ -53,39 +71,67 @@ void replaceMoltbookPublicSourceNotes({
   );
 }
 
+void replaceMoltbookPublicSourceNotes({
+  required TextEditingController controller,
+  required String text,
+}) {
+  replaceMoltbookTextController(controller: controller, text: text);
+}
+
+Widget moltbookReviewedTextField({
+  required String semanticsKey,
+  required String label,
+  required TextEditingController controller,
+  required ValueChanged<String> onSetText,
+  int? minLines,
+  int? maxLines,
+  String? helperText,
+}) {
+  final multiline = (maxLines ?? minLines ?? 1) != 1;
+  return ValueListenableBuilder<TextEditingValue>(
+    valueListenable: controller,
+    builder: (context, value, child) {
+      return Semantics(
+        key: ValueKey(semanticsKey),
+        container: true,
+        label: label,
+        value: value.text,
+        textField: true,
+        multiline: multiline,
+        focusable: true,
+        enabled: true,
+        excludeSemantics: true,
+        onSetText: onSetText,
+        child: ExcludeSemantics(child: child),
+      );
+    },
+    child: TextField(
+      controller: controller,
+      minLines: minLines,
+      maxLines: maxLines,
+      onChanged: onSetText,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helperText,
+        alignLabelWithHint: multiline,
+      ),
+    ),
+  );
+}
+
 Widget moltbookPublicSourceNotesField({
   required TextEditingController controller,
   required ValueChanged<String> onSetText,
 }) {
-  return ValueListenableBuilder<TextEditingValue>(
-    valueListenable: controller,
-    builder:
-        (context, value, child) => MergeSemantics(
-          child: Semantics(
-            key: const ValueKey('moltbook-public-source-notes'),
-            container: true,
-            label: 'Public source notes',
-            value: value.text,
-            textField: true,
-            multiline: true,
-            focusable: true,
-            enabled: true,
-            excludeSemantics: true,
-            onSetText: onSetText,
-            child: child,
-          ),
-        ),
-    child: TextField(
-      controller: controller,
-      minLines: 3,
-      maxLines: 8,
-      decoration: const InputDecoration(
-        labelText: 'Public source notes',
-        helperText:
-            'Explicit public input only. No secrets or private Capsule data.',
-        alignLabelWithHint: true,
-      ),
-    ),
+  return moltbookReviewedTextField(
+    semanticsKey: 'moltbook-public-source-notes',
+    label: 'Public source notes',
+    controller: controller,
+    onSetText: onSetText,
+    minLines: 3,
+    maxLines: 8,
+    helperText:
+        'Explicit public input only. No secrets or private Capsule data.',
   );
 }
 
@@ -1050,9 +1096,18 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       if (!mounted) return;
       setState(() {
         _publicBulletinProposal = proposal;
-        _titleHintController.text = proposal.title;
-        _reviewedBodyController.text = proposal.body;
-        _factsController.text = proposal.facts.join('\n');
+        replaceMoltbookTextController(
+          controller: _titleHintController,
+          text: proposal.title,
+        );
+        replaceMoltbookTextController(
+          controller: _reviewedBodyController,
+          text: proposal.body,
+        );
+        replaceMoltbookTextController(
+          controller: _factsController,
+          text: proposal.facts.join('\n'),
+        );
         _draftPreview = null;
       });
       _showNotice(
@@ -3300,25 +3355,32 @@ class _MoltbookDraftCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            TextField(
+            moltbookReviewedTextField(
+              semanticsKey: 'moltbook-reviewed-post-title',
+              label: 'Reviewed post title',
               controller: titleHintController,
-              decoration: const InputDecoration(
-                labelText: 'Reviewed post title',
-                helperText:
-                    'Specific and factual. Avoid generic repeated titles.',
-              ),
+              onSetText:
+                  (text) => replaceMoltbookTextController(
+                    controller: titleHintController,
+                    text: text,
+                  ),
+              helperText:
+                  'Specific and factual. Avoid generic repeated titles.',
             ),
             const SizedBox(height: 12),
-            TextField(
+            moltbookReviewedTextField(
+              semanticsKey: 'moltbook-reviewed-post-body',
+              label: 'Reviewed post body',
               controller: reviewedBodyController,
+              onSetText:
+                  (text) => replaceMoltbookTextController(
+                    controller: reviewedBodyController,
+                    text: text,
+                  ),
               minLines: 4,
               maxLines: 10,
-              decoration: const InputDecoration(
-                labelText: 'Reviewed post body',
-                helperText:
-                    'Natural public prose. Edit before WASM validation; no automatic publication.',
-                alignLabelWithHint: true,
-              ),
+              helperText:
+                  'Natural public prose. Edit before WASM validation; no automatic publication.',
             ),
             const SizedBox(height: 12),
             TextField(
@@ -3415,16 +3477,19 @@ class _MoltbookDraftCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
+            moltbookReviewedTextField(
+              semanticsKey: 'moltbook-public-facts',
+              label: 'Public facts',
               controller: factsController,
+              onSetText:
+                  (text) => replaceMoltbookTextController(
+                    controller: factsController,
+                    text: text,
+                  ),
               minLines: 3,
               maxLines: 8,
-              decoration: const InputDecoration(
-                labelText: 'Public facts',
-                helperText:
-                    'One supporting fact per line. These are provenance for the reviewed prose.',
-                alignLabelWithHint: true,
-              ),
+              helperText:
+                  'One supporting fact per line. These are provenance for the reviewed prose.',
             ),
             const SizedBox(height: 14),
             FilledButton.icon(

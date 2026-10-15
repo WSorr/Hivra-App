@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/moltbook_ambassador_models.dart';
 import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
@@ -43,8 +42,6 @@ void main() {
   ) async {
     final sourceNotes = TextEditingController(text: 'Old line\nOld detail');
     addTearDown(sourceNotes.dispose);
-    final semantics = tester.ensureSemantics();
-
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -60,23 +57,66 @@ void main() {
       ),
     );
 
-    final labeledNodes = find.bySemanticsLabel('Public source notes');
-    final node = <SemanticsNode>[
-      for (var index = 0; index < labeledNodes.evaluate().length; index++)
-        tester.getSemantics(labeledNodes.at(index)),
-    ].firstWhere(
-      (candidate) =>
-          candidate.getSemanticsData().hasAction(SemanticsAction.setText),
-    );
-    node.owner!.performAction(
-      node.id,
-      SemanticsAction.setText,
-      'New line\nNew detail',
-    );
+    await tester.enterText(find.byType(TextField), 'New line\nNew detail');
     await tester.pump();
 
     expect(sourceNotes.text, 'New line\nNew detail');
-    semantics.dispose();
+  });
+
+  testWidgets('native source notes input reaches the canonical sink', (
+    WidgetTester tester,
+  ) async {
+    final sourceNotes = TextEditingController();
+    final sink = <String>[];
+    addTearDown(sourceNotes.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: moltbookPublicSourceNotesField(
+            controller: sourceNotes,
+            onSetText: sink.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), 'Live source note');
+    await tester.pump();
+
+    expect(sourceNotes.text, 'Live source note');
+    expect(sink, <String>['Live source note']);
+  });
+
+  testWidgets('reviewed body semantics replaces the exact WASM input value', (
+    WidgetTester tester,
+  ) async {
+    final body = TextEditingController(text: 'Old body');
+    addTearDown(body.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: moltbookReviewedTextField(
+            semanticsKey: 'reviewed-body',
+            label: 'Reviewed post body',
+            controller: body,
+            minLines: 4,
+            maxLines: 10,
+            onSetText:
+                (text) =>
+                    replaceMoltbookTextController(controller: body, text: text),
+          ),
+        ),
+      ),
+    );
+
+    const replacement =
+        'The reviewed body now reaches the installed WASM plugin exactly.';
+    await tester.enterText(find.byType(TextField), replacement);
+    await tester.pump();
+
+    expect(body.text, replacement);
+    expect(body.selection, TextSelection.collapsed(offset: replacement.length));
+    expect(body.value.composing, TextRange.empty);
   });
 
   test('queued public change replaces stale manual draft identity', () {

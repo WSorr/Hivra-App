@@ -337,7 +337,27 @@ class MoltbookPublicBulletinAiService {
   }) {
     if (!_isRepositoryObservation(sourceFacts)) return;
 
-    final publicationText = '${proposal.title}\n${proposal.body}';
+    _validateRepositoryPublicationText(
+      title: proposal.title,
+      body: proposal.body,
+    );
+  }
+
+  static void validateRepositoryDraftText({
+    required String bulletinId,
+    required String title,
+    required String body,
+  }) {
+    if (!isMoltbookRepositoryCommitSourceId(bulletinId)) return;
+
+    _validateRepositoryPublicationText(title: title, body: body);
+  }
+
+  static void _validateRepositoryPublicationText({
+    required String title,
+    required String body,
+  }) {
+    final publicationText = '$title\n$body';
     final metadataLabels =
         _repositoryMetadataLabel.allMatches(publicationText).length;
     if (metadataLabels != 0 ||
@@ -347,7 +367,7 @@ class MoltbookPublicBulletinAiService {
         'AI public bulletin is a repository metadata summary',
       );
     }
-    if (!_practicalConsequence.hasMatch(proposal.body)) {
+    if (!_practicalConsequence.hasMatch(body)) {
       throw const FormatException(
         'AI public bulletin must state the supported practical consequence',
       );

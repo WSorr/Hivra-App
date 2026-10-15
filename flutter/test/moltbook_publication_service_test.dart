@@ -780,6 +780,66 @@ void main() {
     });
 
     test(
+      'repository metadata draft is rejected before approval preparation',
+      () async {
+        final draft = MoltbookDraftPreview(
+          bulletinId: 'github-news-v2-${'e' * 40}',
+          releaseTag: 'development',
+          category: 'hivra-development',
+          title: 'Hivra commit changes two files',
+          body:
+              'The GitHub commit changes two files and fixes the review flow.',
+          audience: 'public',
+          approvalRequired: true,
+          safetyFlags: const <String>[],
+          draftHashHex: 'e' * 64,
+          canonicalDraftJson: '{}',
+        );
+
+        await expectLater(
+          publications.prepare(
+            draft: draft,
+            submoltName: MoltbookPublicationService.defaultSubmolt,
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains('repository metadata summary'),
+            ),
+          ),
+        );
+        expect(await publications.list(), isEmpty);
+      },
+    );
+
+    test(
+      'repository news with a supported user consequence remains preparable',
+      () async {
+        final draft = MoltbookDraftPreview(
+          bulletinId: 'github-news-v2-${'f' * 40}',
+          releaseTag: 'development',
+          category: 'hivra-development',
+          title: 'Moltbook drafts survive a restart',
+          body:
+              'Retained public drafts survive an app restart, so the ambassador avoids preparing the same change twice.',
+          audience: 'public',
+          approvalRequired: true,
+          safetyFlags: const <String>[],
+          draftHashHex: 'f' * 64,
+          canonicalDraftJson: '{}',
+        );
+
+        final operation = await publications.prepare(
+          draft: draft,
+          submoltName: MoltbookPublicationService.defaultSubmolt,
+        );
+
+        expect(operation.state, ExternalEffectState.prepared);
+      },
+    );
+
+    test(
       'closed unconfirmed attempt cannot create a fresh effect for the same draft',
       () async {
         final draft = _postDraft('1');
