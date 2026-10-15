@@ -10,6 +10,7 @@ import '../models/plugin_contract_ids.dart';
 import 'external_effect_service.dart';
 import 'moltbook_connection_service.dart';
 import 'moltbook_external_effect_adapter.dart';
+import 'moltbook_public_bulletin_ai_service.dart';
 
 class MoltbookPublicationService {
   static const String personFirstRuntimeSubmoltName =
@@ -52,6 +53,11 @@ class MoltbookPublicationService {
     required MoltbookDraftPreview draft,
     required String submoltName,
   }) async {
+    MoltbookPublicBulletinAiService.validateRepositoryDraftText(
+      bulletinId: draft.bulletinId,
+      title: draft.title,
+      body: draft.body,
+    );
     final binding = await _loadBinding();
     if (binding == null) {
       throw StateError('Connect a Moltbook account before publication');
