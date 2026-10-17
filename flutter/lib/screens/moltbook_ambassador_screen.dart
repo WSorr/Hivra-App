@@ -100,7 +100,6 @@ Widget moltbookReviewedTextField({
         multiline: multiline,
         focusable: true,
         enabled: true,
-        excludeSemantics: true,
         onSetText: onSetText,
         child: ExcludeSemantics(child: child),
       );

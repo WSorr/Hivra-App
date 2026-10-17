@@ -56,8 +56,12 @@ String sanitizeMoltbookErrorForLog(Object error) {
 
 class MoltbookRuntimeModule {
   static const String _automaticMoltbookReleaseTag = 'development';
-  static const int _maxDailyWrites = 3;
-  static const int _minIntervalMinutes = 30;
+  static const int _maxDailyPosts = 3;
+  static const int _minPostIntervalMinutes = 30;
+  // Moltbook has a separate comment/reply rate limit. The installed bounded
+  // reply contract keeps its own conservative local floor and budget.
+  static const int _maxDailyReplies = 12;
+  static const int _minReplyIntervalMinutes = 5;
   static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles =
       <String, Future<MoltbookCycleSummary>>{};
   static final Map<String, int> _moltbookCycleEpochs = <String, int>{};
@@ -380,6 +384,13 @@ class MoltbookRuntimeModule {
     final drafts = await moltbookDrafts.load();
     final publications = await moltbookPublications.list();
     final configuration = await _ambassadorConfiguration.load();
+    if (_hasPendingMoltbookVerification(publications)) {
+      await uiLog.log(
+        'moltbook.cycle.public_change',
+        'blocked pending Moltbook verification before selecting a new change',
+      );
+      return null;
+    }
     final publicationAvailable =
         allowPublication &&
         publications.every(
@@ -430,7 +441,7 @@ class MoltbookRuntimeModule {
       if (configuration.approvalMode ==
               MoltbookAmbassadorConfiguration.approvalBounded &&
           publicationAvailable) {
-        await _requireBoundedMoltbookWriteAvailable(DateTime.now().toUtc());
+        await _requireBoundedMoltbookPostAvailable(DateTime.now().toUtc());
       }
       final proposal = await proposeMoltbookPublicBulletin(
         change.sourceNotes,
@@ -492,7 +503,7 @@ class MoltbookRuntimeModule {
       );
       return preview;
     }
-    await _requireBoundedMoltbookWriteAvailable(DateTime.now().toUtc());
+    await _requireBoundedMoltbookPostAvailable(DateTime.now().toUtc());
     await _ensureMoltbookCycleScope(
       ownerHex,
       accountBindingId,
@@ -864,7 +875,10 @@ class MoltbookRuntimeModule {
       throw StateError('Active capsule identity is unavailable');
     }
     final now = (nowUtc ?? DateTime.now()).toUtc();
-    final usage = await _moltbookBoundedWriteUsage(now);
+    final usage = await _moltbookBoundedWriteUsage(
+      now,
+      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+    );
     final writesToday = usage.writesToday;
     final minutesSinceLastWrite = usage.minutesSinceLastWrite;
     final response = await pluginHostApi.executeWithRuntimeHook(
@@ -881,9 +895,9 @@ class MoltbookRuntimeModule {
           'engagement_plan_hash_hex': draft.engagementPlanHashHex,
           'reply_draft_hash_hex': draft.draftHashHex,
           'policy_version': 1,
-          'max_daily_writes': _maxDailyWrites,
+          'max_daily_writes': _maxDailyReplies,
           'writes_today': writesToday,
-          'min_interval_minutes': _minIntervalMinutes,
+          'min_interval_minutes': _minReplyIntervalMinutes,
           'minutes_since_last_write': minutesSinceLastWrite,
           'observed_at_utc': now.toIso8601String(),
         },
@@ -912,7 +926,7 @@ class MoltbookRuntimeModule {
     await uiLog.log(
       'moltbook.reply.delegate',
       'authorized draft=${draft.draftHashHex.substring(0, 12)}.. '
-          'budget=$writesToday/$_maxDailyWrites',
+          'budget=$writesToday/$_maxDailyReplies',
     );
     return authorization;
   }
@@ -1255,6 +1269,7 @@ class MoltbookRuntimeModule {
     final before = await moltbookFeedCheckpoint.load();
     var reconciledCount = 0;
     var challengedCount = 0;
+    var pendingVerification = false;
     final unresolved = (await moltbookPublications.list())
         .where((operation) => operation.state == ExternalEffectState.unresolved)
         .toList(growable: false);
@@ -1280,11 +1295,21 @@ class MoltbookRuntimeModule {
             resolved.lastErrorCode == 'verification_required') {
           challengedCount++;
         }
+        if (_hasPendingMoltbookVerification(<ExternalEffectOperation>[
+          resolved,
+        ])) {
+          pendingVerification = true;
+        }
       } catch (error) {
         blockedCount++;
         if (operation.requiredAction != null ||
             operation.lastErrorCode == 'verification_required') {
           challengedCount++;
+        }
+        if (_hasPendingMoltbookVerification(<ExternalEffectOperation>[
+          operation,
+        ])) {
+          pendingVerification = true;
         }
         await uiLog.log(
           'moltbook.cycle.reconcile',
@@ -1292,6 +1317,7 @@ class MoltbookRuntimeModule {
         );
       }
     }
+    if (pendingVerification) blockedCount++;
     await _ensureMoltbookCycleScope(
       ownerHex,
       accountBindingId,
@@ -1499,7 +1525,7 @@ class MoltbookRuntimeModule {
         break;
       }
     }
-    if (!proposalPathClaimed) {
+    if (!proposalPathClaimed && !pendingVerification) {
       try {
         await _ensureMoltbookCycleScope(
           ownerHex,
@@ -1976,7 +2002,10 @@ class MoltbookRuntimeModule {
         authorizationAge > const Duration(minutes: 10)) {
       throw StateError('Delegated reply authorization is stale');
     }
-    final usage = await _moltbookBoundedWriteUsage(now);
+    final usage = await _moltbookBoundedWriteUsage(
+      now,
+      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+    );
     if (usage.writesToday != authorization.writesToday ||
         usage.writesToday >= authorization.maxDailyWrites ||
         (usage.minutesSinceLastWrite != null &&
@@ -1996,37 +2025,55 @@ class MoltbookRuntimeModule {
     return queued;
   }
 
-  Future<void> _requireBoundedMoltbookWriteAvailable(DateTime nowUtc) async {
-    final usage = await _moltbookBoundedWriteUsage(nowUtc);
-    if (usage.writesToday >= _maxDailyWrites) {
-      throw StateError('Moltbook bounded daily write budget is exhausted');
+  Future<void> _requireBoundedMoltbookPostAvailable(DateTime nowUtc) async {
+    final usage = await _moltbookBoundedWriteUsage(
+      nowUtc,
+      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+    );
+    if (usage.writesToday >= _maxDailyPosts) {
+      throw StateError('Moltbook bounded daily post budget is exhausted');
     }
     final minutesSinceLastWrite = usage.minutesSinceLastWrite;
     if (minutesSinceLastWrite != null &&
-        minutesSinceLastWrite < _minIntervalMinutes) {
-      throw StateError('Moltbook bounded write interval has not elapsed');
+        minutesSinceLastWrite < _minPostIntervalMinutes) {
+      throw StateError('Moltbook bounded post interval has not elapsed');
     }
   }
 
+  bool _hasPendingMoltbookVerification(
+    Iterable<ExternalEffectOperation> operations,
+  ) {
+    return operations.any(
+      (operation) =>
+          operation.effectKind ==
+              MoltbookExternalEffectAdapter.postEffectKind &&
+          operation.state == ExternalEffectState.unresolved &&
+          operation.lastErrorCode == 'verification_required' &&
+          operation.requiredAction?.kind == 'numeric_challenge',
+    );
+  }
+
   Future<({int writesToday, int? minutesSinceLastWrite})>
-  _moltbookBoundedWriteUsage(DateTime nowUtc) async {
+  _moltbookBoundedWriteUsage(
+    DateTime nowUtc, {
+    required String effectKind,
+  }) async {
     final now = nowUtc.toUtc();
     final dayStart = DateTime.utc(now.year, now.month, now.day);
     final committedWrites =
         (await moltbookPublications.list())
             .where(
               (operation) =>
-                  const <String>{
-                    MoltbookExternalEffectAdapter.commentEffectKind,
-                    MoltbookExternalEffectAdapter.postEffectKind,
-                  }.contains(operation.effectKind) &&
-                  const <ExternalEffectState>{
-                    ExternalEffectState.approved,
-                    ExternalEffectState.queued,
-                    ExternalEffectState.delivering,
-                    ExternalEffectState.unresolved,
-                    ExternalEffectState.succeeded,
-                  }.contains(operation.state),
+                  operation.effectKind == effectKind &&
+                  (const <ExternalEffectState>{
+                        ExternalEffectState.approved,
+                        ExternalEffectState.queued,
+                        ExternalEffectState.delivering,
+                        ExternalEffectState.unresolved,
+                        ExternalEffectState.succeeded,
+                      }.contains(operation.state) ||
+                      (operation.state == ExternalEffectState.terminalFailure &&
+                          operation.providerReferenceId != null)),
             )
             .toList()
           ..sort((a, b) {

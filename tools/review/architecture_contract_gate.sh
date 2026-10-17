@@ -855,10 +855,10 @@ require_present "$PLUGIN_CONTRACT_HANDLERS" 'moltbook_ambassador_delegated_reply
   "Moltbook host validates delegated authorization contract kind"
 require_present "$MOLTBOOK_PUBLICATION" 'validateDelegatedReplyBinding' \
   "Moltbook delegated approval binds the exact canonical reply effect"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'maxDailyWrites = 3' \
-  "Moltbook delegated replies have a conservative daily budget"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'minIntervalMinutes = 30' \
-  "Moltbook delegated replies have a conservative minimum interval"
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'maxDailyReplies = 12' \
+  "Moltbook delegated replies have a conservative local daily budget"
+require_present "$MOLTBOOK_RUNTIME_MODULE" 'minReplyIntervalMinutes = 5' \
+  "Moltbook delegated replies have a conservative local minimum interval"
 require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "natural_non_repetitive_prose.*true" \
   "Moltbook public-bulletin AI requests bounded natural prose"
 require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "publication_controlled_by_runtime_policy.*true" \
