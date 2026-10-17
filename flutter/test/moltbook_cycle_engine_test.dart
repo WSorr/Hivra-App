@@ -1505,26 +1505,123 @@ void main() {
     },
   );
 
-  test('bounded cycle fails closed after three durable writes today', () async {
-    configuration.approvalMode =
-        MoltbookAmbassadorConfiguration.approvalBounded;
-    heartbeatHost.engagementAction = 'reply_draft';
-    final now = DateTime.now().toUtc();
-    final today = DateTime.utc(now.year, now.month, now.day);
-    publications.operations = <ExternalEffectOperation>[
-      _committedReply('daily-1', today),
-      _committedReply('daily-2', today),
-      _committedReply('daily-3', today),
-    ];
+  test(
+    'bounded cycle fails closed after twelve durable replies today',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      final now = DateTime.now().toUtc();
+      final today = DateTime.utc(now.year, now.month, now.day);
+      publications.operations = List<ExternalEffectOperation>.generate(
+        12,
+        (index) => _committedReply('daily-${index + 1}', today),
+      );
 
-    final summary = await module.runMoltbookCycle();
+      final summary = await module.runMoltbookCycle();
 
-    expect(heartbeatHost.authorizationCount, 1);
-    expect(publications.preparedReplies, isEmpty);
-    expect(publications.delegatedApprovalCount, 0);
-    expect(publications.processedIds, isEmpty);
-    expect(summary.blockedCount, 1);
-  });
+      expect(heartbeatHost.authorizationCount, 1);
+      expect(publications.preparedReplies, isEmpty);
+      expect(publications.delegatedApprovalCount, 0);
+      expect(publications.processedIds, isEmpty);
+      expect(summary.blockedCount, 1);
+    },
+  );
+
+  test(
+    'a recent post does not block a bounded reply to a new comment',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      publications.operations = <ExternalEffectOperation>[
+        _committedPost(
+          'recent-post',
+          DateTime.now().toUtc().subtract(const Duration(minutes: 1)),
+        ),
+      ];
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(heartbeatHost.authorizationCount, 1);
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test(
+    'bounded cycle counts provider-created terminal posts in the daily budget',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'no_action';
+      final now = DateTime.now().toUtc();
+      final today = DateTime.utc(now.year, now.month, now.day);
+      publications.operations = <ExternalEffectOperation>[
+        _committedPost(
+          'failed-post-1',
+          today,
+          state: ExternalEffectState.terminalFailure,
+          providerReferenceId: 'provider-post-1',
+          lastErrorCode: 'verification_expired',
+        ),
+        _committedPost(
+          'failed-post-2',
+          today.add(const Duration(minutes: 40)),
+          state: ExternalEffectState.terminalFailure,
+          providerReferenceId: 'provider-post-2',
+          lastErrorCode: 'verification_expired',
+        ),
+        _committedPost(
+          'failed-post-3',
+          today.add(const Duration(minutes: 80)),
+          state: ExternalEffectState.terminalFailure,
+          providerReferenceId: 'provider-post-3',
+          lastErrorCode: 'verification_expired',
+        ),
+      ];
+      await publicChanges.record(
+        sourceId: 'capsule-change-after-provider-failures',
+        category: 'hivra',
+        facts: const <String>['A later confirmed change remains queued.'],
+      );
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(summary.blockedCount, 1);
+      expect(ai.bulletinProposalCount, 0);
+      expect(publications.preparedPostDestinations, isEmpty);
+      expect(publications.processedPostIds, isEmpty);
+    },
+  );
+
+  test(
+    'pending post verification blocks a new public change until resolved',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      publications.operations = <ExternalEffectOperation>[
+        _operation(
+          challenged: true,
+          effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+        ),
+      ];
+      await publicChanges.record(
+        sourceId: 'capsule-change-during-pending-verification',
+        category: 'hivra',
+        facts: const <String>['A later confirmed change must wait.'],
+      );
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(summary.blockedCount, 1);
+      expect(summary.challengedCount, 1);
+      expect(ai.bulletinProposalCount, 0);
+      expect(publications.preparedPostDestinations, isEmpty);
+      expect(publications.processedPostIds, isEmpty);
+    },
+  );
 
   test('bounded cycle cannot delegate a root comment', () async {
     configuration.approvalMode =
@@ -1608,7 +1705,7 @@ void main() {
       publications.operations = <ExternalEffectOperation>[
         _committedReply(
           'recent-1',
-          DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+          DateTime.now().toUtc().subtract(const Duration(minutes: 1)),
         ),
       ];
       final restartedModule = buildModule(MoltbookCycleTriggerService());
@@ -2673,13 +2770,14 @@ const String _rootB =
 ExternalEffectOperation _operation({
   bool challenged = false,
   String challengeErrorCode = 'verification_required',
+  String effectKind = MoltbookExternalEffectAdapter.commentEffectKind,
 }) => ExternalEffectOperation(
   ownerCapsuleHex: _rootA,
   operationId: 'effect-1',
   pluginId: moltbookAmbassadorPluginId,
   providerId: 'moltbook',
   accountBindingId: 'agent-1',
-  effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+  effectKind: effectKind,
   canonicalPayloadJson: '{}',
   payloadHashHex:
       'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
@@ -2732,30 +2830,35 @@ ExternalEffectOperation _committedReply(
   receipt: null,
 );
 
-ExternalEffectOperation _committedPost(String operationId, DateTime updated) =>
-    ExternalEffectOperation(
-      ownerCapsuleHex: _rootA,
-      operationId: operationId,
-      pluginId: moltbookAmbassadorPluginId,
-      providerId: 'moltbook',
-      accountBindingId: 'agent-1',
-      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
-      canonicalPayloadJson: '{}',
-      payloadHashHex:
-          'abababababababababababababababababababababababababababababababab',
-      state: ExternalEffectState.succeeded,
-      approvalEvidenceHashHex:
-          'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
-      attemptCount: 1,
-      revision: 2,
-      createdAtUtc:
-          updated.subtract(const Duration(minutes: 1)).toIso8601String(),
-      updatedAtUtc: updated.toIso8601String(),
-      lastErrorCode: null,
-      lastErrorMessage: null,
-      requiredAction: null,
-      receipt: null,
-    );
+ExternalEffectOperation _committedPost(
+  String operationId,
+  DateTime updated, {
+  ExternalEffectState state = ExternalEffectState.succeeded,
+  String? providerReferenceId,
+  String? lastErrorCode,
+}) => ExternalEffectOperation(
+  ownerCapsuleHex: _rootA,
+  operationId: operationId,
+  pluginId: moltbookAmbassadorPluginId,
+  providerId: 'moltbook',
+  accountBindingId: 'agent-1',
+  effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+  canonicalPayloadJson: '{}',
+  payloadHashHex:
+      'abababababababababababababababababababababababababababababababab',
+  state: state,
+  approvalEvidenceHashHex:
+      'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+  attemptCount: 1,
+  revision: 2,
+  createdAtUtc: updated.subtract(const Duration(minutes: 1)).toIso8601String(),
+  updatedAtUtc: updated.toIso8601String(),
+  lastErrorCode: lastErrorCode,
+  lastErrorMessage: lastErrorCode == null ? null : 'Provider outcome',
+  providerReferenceId: providerReferenceId,
+  requiredAction: null,
+  receipt: null,
+);
 
 class _RecordingDraftStore implements MoltbookDraftStore {
   final Set<String> deletedHashes = <String>{};

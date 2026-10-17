@@ -8,6 +8,7 @@ typedef MoltbookPublicJsonReader = Future<Object?> Function(Uri uri);
 class MoltbookPublicRepositorySourceAdapter {
   static const int _maxResponseBytes = 262144;
   static const Duration _requestTimeout = Duration(seconds: 12);
+  static const int _historyWindow = 20;
 
   final MoltbookPublicJsonReader _readJson;
 
@@ -27,13 +28,14 @@ class MoltbookPublicRepositorySourceAdapter {
       Uri.https(
         'api.github.com',
         '/repos/$owner/$name/commits',
-        <String, String>{'per_page': '1'},
+        <String, String>{'per_page': '$_historyWindow'},
       ),
     );
-    if (latest is! List || latest.length != 1 || latest.single is! Map) {
+    if (latest is! List || latest.isEmpty) {
       throw const FormatException('GitHub latest commit response is invalid');
     }
-    final commit = Map<String, dynamic>.from(latest.single as Map);
+    final commit = _selectLatestSubstantiveCommit(latest);
+    if (commit == null) return null;
     final sha = _commitSha(commit['sha']);
     final metadata = commit['commit'];
     if (metadata is! Map) {
@@ -59,6 +61,29 @@ class MoltbookPublicRepositorySourceAdapter {
     ];
     return (sourceId: 'github-news-v2-$sha', facts: facts);
   }
+
+  static Map<String, dynamic>? _selectLatestSubstantiveCommit(
+    List<Object?> commits,
+  ) {
+    for (final candidate in commits) {
+      if (candidate is! Map) {
+        throw const FormatException('GitHub commit entry is invalid');
+      }
+      final commit = Map<String, dynamic>.from(candidate);
+      final metadata = commit['commit'];
+      if (metadata is! Map) {
+        throw const FormatException('GitHub commit metadata is invalid');
+      }
+      final message = Map<String, dynamic>.from(metadata)['message'];
+      final subject = _commitSubject(message);
+      if (_isServiceCommit(subject)) continue;
+      return commit;
+    }
+    return null;
+  }
+
+  static bool _isServiceCommit(String subject) =>
+      RegExp(r'^docs\(control\):', caseSensitive: false).hasMatch(subject);
 
   static String _commitSha(Object? value) {
     final sha = value?.toString().trim().toLowerCase() ?? '';

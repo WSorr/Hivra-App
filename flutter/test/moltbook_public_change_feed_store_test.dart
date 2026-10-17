@@ -67,7 +67,7 @@ void main() {
       'A new public repository commit was observed at ${'a' * 12}.',
     ]);
     expect(requested.map((uri) => uri.toString()), <String>[
-      'https://api.github.com/repos/WSorr/Hivra-App/commits?per_page=1',
+      'https://api.github.com/repos/WSorr/Hivra-App/commits?per_page=20',
     ]);
 
     final retained = await store.record(
@@ -83,6 +83,46 @@ void main() {
     expect(replay.commitmentHashHex, retained.commitmentHashHex);
     expect(await store.load(), hasLength(1));
   });
+
+  test(
+    'skips a docs control commit and selects the latest substantive commit',
+    () async {
+      final source = MoltbookPublicRepositorySourceAdapter(
+        readJson: (uri) async {
+          expect(uri.queryParameters['per_page'], '20');
+          return <Object?>[
+            <String, Object?>{
+              'sha': 'e' * 40,
+              'commit': <String, Object?>{
+                'message':
+                    'docs(control): reconcile synchronized repository state',
+                'author': <String, Object?>{'date': '2026-10-17T10:00:00Z'},
+              },
+            },
+            <String, Object?>{
+              'sha': 'f' * 40,
+              'commit': <String, Object?>{
+                'message':
+                    'fix(jack-ui): space advanced settings content\n\n'
+                    'Keep advanced settings readable on the packaged app.',
+                'author': <String, Object?>{'date': '2026-10-17T09:00:00Z'},
+              },
+            },
+          ];
+        },
+      );
+
+      final observation = await source.observeLatestCommit(
+        'https://github.com/WSorr/Hivra-App',
+      );
+
+      expect(observation?.sourceId, 'github-news-v2-${'f' * 40}');
+      expect(
+        observation?.facts.first,
+        'Commit summary: fix(jack-ui): space advanced settings content',
+      );
+    },
+  );
 
   test(
     'latest repository observation keeps only the current repository commit',

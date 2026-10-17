@@ -333,9 +333,13 @@ Every cycle has explicit limits. Initial v1 defaults are:
 
 - at most 100 normalized remote items inspected per cycle;
 - at most 5 candidates sent to deterministic planning;
-- at most 3 committed bounded writes per UTC day across posts and replies;
-- at least 30 minutes between committed bounded writes across posts and
-  replies;
+- at most 3 committed bounded posts per UTC day in the local bounded policy;
+- at least 30 minutes between committed bounded posts, matching Moltbook's
+  server-side post limit;
+- replies use their separate Moltbook comment budget and do not consume the
+  post cooldown. The installed bounded reply contract keeps its own
+  conservative local budget and floor while the provider's comment limit is
+  enforced server-side;
 - no automatic reply to a target older than the configured maximum age;
 - the durable processed-id checkpoint may retain up to 500 ids, while each WASM
   heartbeat receives only the most recent 128 ids;

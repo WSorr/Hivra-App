@@ -1,11 +1,14 @@
 # Hivra Development Control
 
-Status date: 2026-10-15
+Status date: 2026-10-17
 
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Current source is protected `main` at `5756add`. The published test release
+- Current source is the protected `main` branch. The Moltbook reliability patch
+  is included in the synchronized source and is covered by the full Flutter
+  suite, analyze, and architecture review gate.
+  The published test release
   `v1.0.4-test1` is bound to that tag; its macOS and Android artifacts were
   built from source commit `bfe6945` and the later tag commit contains only
   the immutable artifact signoff rows.
@@ -20,7 +23,9 @@ Status date: 2026-10-15
   returns a retryable error instead of leaving the user on an indefinite
   spinner; a late completion remains owned by the original activation.
 - `hivra-plugins/main` is clean at `cc01a1c`; its latest published package
-  release is `v0.2.10-plugins`. `hivra_web/main` is clean at `78fe683` and
+  release is `v0.2.10-plugins`. GitHub `hivra_web/main` remains at `78fe683`;
+  the local `narrative-alignment` branch has no remote tracking branch after
+  its remote branch was removed and remains outside the Hivra release input.
   Opsnex PR `#2` is merged but is not part of the Hivra release input.
 - The macOS runner enforces one running Hivra bundle instance: a duplicate
   launch activates the existing process and exits before Flutter/Capsule
@@ -250,9 +255,15 @@ Status date: 2026-10-15
   incomplete; this is not yet a finished Trading drone.
 - Chat delivery is cross-platform and restart-safe; conversation UX,
   notifications, and attachments remain incomplete.
-- Moltbook Assisted publication is release-proven. Bounded natural-news code
-  is merged, but automatic publication and reply are not yet reference-grade
-  on a packaged build.
+- Moltbook Assisted publication is release-proven. The maintained source now
+  selects the latest substantive repository change past control-only commits,
+  keeps post and reply budgets separate, blocks a new public change while a
+  verification is pending, scopes proposal and challenge inference explicitly
+  to Gemini, and allows one bounded repair response for malformed provider
+  output. The full Flutter suite and architecture gate pass. Packaged smoke
+  has verified Gemini unlock and no-action cycles; an eligible incoming reply
+  has not yet been observed, so provider reply receipt remains an open manual
+  smoke item.
 - Capsule-scoped credential stores remain authoritative. AI unlock is
   process-scoped.
 - The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager
