@@ -438,11 +438,6 @@ class MoltbookRuntimeModule {
       if (drafts.any((draft) => draft.preview.bulletinId == change.sourceId)) {
         return null;
       }
-      if (configuration.approvalMode ==
-              MoltbookAmbassadorConfiguration.approvalBounded &&
-          publicationAvailable) {
-        await _requireBoundedMoltbookPostAvailable(DateTime.now().toUtc());
-      }
       final proposal = await proposeMoltbookPublicBulletin(
         change.sourceNotes,
         category: change.category,
@@ -1359,7 +1354,6 @@ class MoltbookRuntimeModule {
     }
     final heartbeatPlan = heartbeat.plan;
     String? deferredFeedPostId;
-    var proposalPathClaimed = false;
     for (final candidatePostId in heartbeatPlan.candidatePostIds) {
       try {
         final selectionKind =
@@ -1438,7 +1432,6 @@ class MoltbookRuntimeModule {
             cycleEpoch: cycleEpoch,
           );
           if (existing.isEmpty) {
-            proposalPathClaimed = true;
             final configuration = await _ambassadorConfiguration.load();
             if (const <String>{
               MoltbookAmbassadorConfiguration.approvalAssisted,
@@ -1525,7 +1518,7 @@ class MoltbookRuntimeModule {
         break;
       }
     }
-    if (!proposalPathClaimed && !pendingVerification) {
+    if (!pendingVerification) {
       try {
         await _ensureMoltbookCycleScope(
           ownerHex,
