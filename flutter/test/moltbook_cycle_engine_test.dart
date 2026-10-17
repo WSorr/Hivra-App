@@ -1174,14 +1174,15 @@ void main() {
       final summary = await restarted.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
-      expect(ai.bulletinProposalCount, 0);
+      expect(ai.bulletinProposalCount, 1);
+      expect(drafts.stored, hasLength(1));
       expect(publications.preparedPostDestinations, isEmpty);
       expect(publications.postApprovalCount, 0);
       expect(publications.processedPostIds, isEmpty);
       final retained = (await publicChanges.load()).singleWhere(
         (item) => item.sourceId == change.sourceId,
       );
-      expect(retained.isPending, isTrue);
+      expect(retained.isPending, isFalse);
     },
   );
 
@@ -1590,7 +1591,8 @@ void main() {
       final summary = await module.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
-      expect(ai.bulletinProposalCount, 0);
+      expect(ai.bulletinProposalCount, 1);
+      expect(drafts.stored, hasLength(1));
       expect(publications.preparedPostDestinations, isEmpty);
       expect(publications.processedPostIds, isEmpty);
     },
@@ -1856,6 +1858,86 @@ void main() {
     expect(duplicate, isNull);
     expect(connection.observeCount, 1);
   });
+
+  test(
+    'configured session replies once before preparing the project news draft',
+    () async {
+      configuration.triggerPolicy =
+          MoltbookAmbassadorConfiguration.triggerSession;
+      ai.unlocked = true;
+      heartbeatHost.engagementAction = 'reply_draft';
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'a' * 40}',
+        facts: const <String>[
+          'Hivra now completes one bounded Moltbook cycle from the installed runtime.',
+        ],
+      );
+
+      final summary = await module.startConfiguredMoltbookCycles();
+
+      expect(summary, isNotNull);
+      expect(
+        publications.preparedReplies,
+        hasLength(1),
+        reason: log.entries
+            .map((entry) => '${entry.source}: ${entry.message}')
+            .join('\n'),
+      );
+      expect(ai.proposalCount, 1);
+      expect(ai.bulletinProposalCount, 1);
+      expect(drafts.stored, hasLength(1));
+      expect(
+        drafts.stored.single.preview.bulletinId,
+        'github-news-v2-${'a' * 40}',
+      );
+      expect(publications.preparedPostDestinations, isEmpty);
+      final replyIndex = log.entries.indexWhere(
+        (entry) =>
+            entry.source == 'moltbook.cycle.propose' &&
+            entry.message.startsWith('prepared '),
+      );
+      final newsIndex = log.entries.indexWhere(
+        (entry) =>
+            entry.source == 'moltbook.cycle.public_change' &&
+            entry.message.startsWith('prepared '),
+      );
+      expect(replyIndex, greaterThanOrEqualTo(0));
+      expect(newsIndex, greaterThan(replyIndex));
+    },
+  );
+
+  test(
+    'configured bounded session replies once before publishing project news',
+    () async {
+      configuration.triggerPolicy =
+          MoltbookAmbassadorConfiguration.triggerSession;
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      ai.unlocked = true;
+      heartbeatHost.engagementAction = 'reply_draft';
+      publications.completeReplies = true;
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'b' * 40}',
+        facts: const <String>[
+          'Hivra now completes one bounded Moltbook cycle from the installed runtime.',
+        ],
+      );
+
+      final summary = await module.startConfiguredMoltbookCycles();
+
+      expect(summary, isNotNull);
+      expect(publications.preparedReplies, hasLength(1));
+      expect(publications.processedIds, contains('reply-effect-1'));
+      expect(ai.proposalCount, 1);
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.preparedPostDestinations, <String>[
+        MoltbookPublicationService.personFirstRuntimeSubmoltName,
+      ]);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(drafts.stored, isEmpty);
+      expect(summary!.blockedCount, 0);
+    },
+  );
 
   test('configured session can resume immediately after AI unlock', () async {
     configuration.triggerPolicy =
@@ -2503,6 +2585,7 @@ class _CyclePublications implements MoltbookPublicationService {
   int postApprovalCount = 0;
   bool leavePostUnresolved = false;
   bool resolvePostOnRecheck = false;
+  bool completeReplies = false;
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
@@ -2551,6 +2634,14 @@ class _CyclePublications implements MoltbookPublicationService {
         ExternalEffectState.succeeded,
       );
       operations[postIndex] = succeeded;
+      return succeeded;
+    }
+    if (existingIndex >= 0 && completeReplies) {
+      final succeeded = _operationWithState(
+        operations[existingIndex],
+        ExternalEffectState.succeeded,
+      );
+      operations[existingIndex] = succeeded;
       return succeeded;
     }
     return _operation(challenged: true);

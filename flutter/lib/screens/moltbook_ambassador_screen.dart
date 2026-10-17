@@ -101,7 +101,7 @@ Widget moltbookReviewedTextField({
         focusable: true,
         enabled: true,
         onSetText: onSetText,
-        child: ExcludeSemantics(child: child),
+        child: child,
       );
     },
     child: TextField(
@@ -3382,9 +3382,15 @@ class _MoltbookDraftCard extends StatelessWidget {
                   'Natural public prose. Edit before WASM validation; no automatic publication.',
             ),
             const SizedBox(height: 12),
-            TextField(
+            moltbookReviewedTextField(
+              semanticsKey: 'moltbook-reviewed-post-audience',
+              label: 'Audience',
               controller: audienceController,
-              decoration: const InputDecoration(labelText: 'Audience'),
+              onSetText:
+                  (text) => replaceMoltbookTextController(
+                    controller: audienceController,
+                    text: text,
+                  ),
             ),
             const SizedBox(height: 12),
             Container(
