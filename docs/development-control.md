@@ -2,12 +2,109 @@
 
 Status date: 2026-10-17
 
+This file is the Hivra control plane. It owns current decisions, development
+rules, the selected product outcome, and the integration boundary. Detailed
+history belongs in Git, pull requests, release signoff rows, and focused
+evidence documents; historical paragraphs below never reopen a retired path.
+
+## Development Rules
+
+### 1. Establish the owner before editing
+
+Before changing code, identify the complete input-to-effect path, its canonical
+owner, existing tests, compatibility paths, and the document that owns the
+contract. If the change would add an owner, reducer, DTO, lifecycle, gate, or
+document, first redesign it to reuse or replace an existing one.
+
+### 2. Keep one truth lane and one effect lane
+
+- The Ledger owns historical domain facts.
+- Canonical projections own current state.
+- The App Shell renders projections and sends explicit intents.
+- WASM owns package-private strategy and policy semantics.
+- The host owns authorization, credentials, persistence, normalized provider
+  evidence, and permitted effects.
+- A transport or provider adapter moves data; it does not become a domain owner.
+
+Different inputs that produce the same state change or external effect converge
+before execution. A replacement removes or seals the path it supersedes in the
+same bounded change.
+
+### 3. Preserve package replacement
+
+An installed package must remain replaceable without rebuilding Capsule. Host
+contracts may expose capabilities and opaque state, but the host must not read
+private package fields or implement a temporary strategy fallback. Package,
+grant, Capsule, restart, and removal changes must be covered where they affect
+the lifecycle.
+
+### 4. Work in one bounded product outcome
+
+Every pass names one user-visible outcome, the owner that changes, and the
+evidence that proves it. Do not split one journey into status-only passes,
+release candidates, or speculative framework work. V2 remains design-only until
+an explicit migration unit is activated.
+
+### 5. Use the validation ladder in order
+
+1. Focused unit/widget or package tests for the changed semantics.
+2. `flutter analyze` and the relevant Rust/package checks.
+3. `tools/review/review_all.sh` and the matching security/architecture gates.
+4. A clean exact packaged artifact from the guarded release path.
+5. Manual smoke for the user journey, including restart and failure recovery
+   when the change affects persistence, credentials, or external effects.
+6. Release signoff and publication only after the exact artifact smoke passes.
+
+Tests prove semantics; they do not prove product acceptance. Never call a
+build a release candidate before its source, runner, artifact digest, and smoke
+evidence are bound together.
+
+### 6. Upgrade dependencies and tooling as one controlled unit
+
+An upgrade must record the previous and new versions, why the change is needed,
+the supported platform matrix, generated-file deltas, focused compatibility
+tests, full gates, and an exact packaged smoke. Update
+`toolchains/hivra-baseline.conf` and `docs/platform-toolchain-evolution.md`
+together.
+Do not upgrade a dependency, Flutter, Xcode, Rust, or Android stack as drive-by
+cleanup. If the canonical CI runner was built for a different source tree,
+packaging stops until a matching runner is available.
+
+### 7. Maintain documentation by status, not chronology
+
+- Current decisions go in this file.
+- Permanent laws go in `product-axis.md`.
+- Maintained protocol behavior goes in `specification.md`.
+- Capability and architecture boundaries go in their focused contract.
+- Procedures go in `checklists/`.
+- Results go in evidence/signoff records.
+- Historical implementation detail stays in Git or an explicitly historical
+  evidence document.
+
+Do not duplicate a fact in multiple current documents. When a contract changes,
+update its owner and the routing entry in `docs/README.md` in the same pass.
+
+### 8. Stop conditions are explicit
+
+Stop and report a concrete blocker when the exact package cannot be built,
+Keychain or signing identity is unavailable, the matching runner is missing,
+the artifact differs from the smoke artifact, or the required user journey is
+not observable. Do not bypass a gate, substitute a build-tree binary, mutate a
+Capsule by hand, or infer success from a provider request without a receipt.
+
+### 9. Definition of done
+
+A pass is complete only when it reports the product outcome, added and removed
+owners/paths, validation evidence, remaining risk, and required manual smoke.
+No commit, push, tag, release, VPS mutation, or external effect is implied by a
+green repository gate.
+
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Current source is the protected `main` branch. The Moltbook reliability patch
-  is included in the synchronized source and is covered by the full Flutter
-  suite, analyze, and architecture review gate.
+- Current source is the protected `main` branch at `b87690d`. The Moltbook
+  reliability patch is included in the synchronized source and is covered by
+  the full Flutter suite, analyze, and architecture review gate.
   The published test release
   `v1.0.4-test1` is bound to that tag; its macOS and Android artifacts were
   built from source commit `bfe6945` and the later tag commit contains only
@@ -16,9 +113,10 @@ Status date: 2026-10-17
   built only from the final `main` commit and its matching canonical CI runner,
   with fresh platform signoff rows and a new tag selected by
   `release_version_guard.sh`.
-- Local candidate `v1.0.4-test2` was packaged from synchronized source `5756add`
-  with runner digest `66d3fc658f8e77dca459360f50e9d1ac15f8c9c745c46ce2caa5cbe6e38e216b`;
-  it has no tag, publication, or manual release signoff.
+- No `v1.0.4-test2` release is published. Earlier local candidates built from
+  `5756add` are historical, have no signoff, and do not authorize a release.
+  A new candidate must be rebuilt from the current `main` commit with its
+  matching canonical CI runner.
 - Capsule selection now bounds delayed Keychain activation to 30 seconds and
   returns a retryable error instead of leaving the user on an indefinite
   spinner; a late completion remains owned by the original activation.
@@ -266,10 +364,16 @@ Status date: 2026-10-17
   smoke item.
 - Capsule-scoped credential stores remain authoritative. AI unlock is
   process-scoped.
-- The Flutter 3.47.4, Dart 3.13.3, Xcode 27, and Swift Package Manager
+- The Flutter 3.47.4, Dart 3.13.3, Xcode 27.1, and Swift Package Manager
   baseline remains authoritative.
 
-## v1 Outcome: Installable Jack Ventura Plugin
+## Retained Product Outcome: Installable Jack Ventura Plugin
+
+The section below retains the bounded Jack outcome and its evidence. It is not
+a chronological work log and it cannot authorize restoration of a retired
+runner, strategy, or host path. Update the short current-state bullets above
+when the product decision changes; append detailed proof only to the matching
+evidence record.
 
 ### v1 Closure Boundary
 
@@ -525,18 +629,13 @@ the pending Start/Stop, protection, profit-exit or VPS acceptance.
 Historical Git, pull-request, and release evidence remains immutable history.
 It does not authorize restoration of the retired implementation.
 
-## Product Discipline
+## Current Product Constraints
 
-1. Freeze V2 implementation, new process documents, universal frameworks,
-   speculative DTOs, and optional dependencies.
-2. Deliver one complete user outcome per pull request.
-3. Use focused tests while developing; run full repository verification once
-   on the final candidate before pull request, then rely on required CI.
-4. Refactor only the active journey. Owner and execution-path counts must not
-   increase; replacements remove or seal their predecessors.
-5. Green gates are necessary evidence, not product acceptance.
-6. Keep new Trading implementation within the accepted JackV brief; do not
-   restore retired strategy, runner, or host workflow paths.
+1. Hivra 1.x remains the maintained runtime; V2 is design-only.
+2. Each pull request delivers one complete product outcome and keeps owner and
+   execution-path counts non-increasing.
+3. New Jack work stays inside the accepted installable capability boundary;
+   retired strategy, runner, and host paths remain sealed.
 
 ## Queued Product Outcomes
 

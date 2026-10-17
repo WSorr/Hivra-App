@@ -30,7 +30,7 @@ change. It must not be smuggled into feature work or a release candidate.
 
 ## 2. Current Verified Baseline
 
-Audit date: 2026-09-17.
+Audit date: 2026-10-17.
 
 The baseline below is the currently exercised development environment. It is a
 compatibility matrix, not permission to distribute a manually built artifact.
@@ -49,15 +49,15 @@ Release scripts remain the authority for embedded app version and packaging.
 | Kotlin plugin | 2.2.20 | Android embedding and keystore bridge |
 | JDK | Android Studio JBR 21 resolved through Flutter | Canonical Android build execution environment; plain shell Gradle JDK selection is noncanonical diagnostic evidence |
 | Android NDK | 28.2.13676358 | `cargo ndk` Rust FFI build |
-| Xcode | 27.0 / macOS SDK 27.0 | macOS packaging and native loading; Skia remains selected while Flutter Impeller issue #185394 is open |
+| Xcode | 27.1 / macOS SDK 27.0 | macOS packaging and native loading; Skia remains selected while Flutter Impeller issue #185394 is open |
 | Swift Package Manager | Flutter-generated local package | macOS Flutter plugins |
 
 Observed host evidence:
 
-- macOS `27.0` on Apple Silicon;
+- macOS `27.0.1` with Xcode `27.1` on Apple Silicon;
 - Flutter doctor resolves JBR `21.0.9` and Android SDK `36.1.0`;
 - `./gradlew --version` from a plain shell resolves OpenJDK `17.0.18`;
-- Xcode `27.0` is selected and can package macOS, but simulator-runtime
+- Xcode `27.1` is selected and can package macOS, but simulator-runtime
   discovery remains unhealthy;
 - the connected Android device runs Android 16 / API 36;
 - all required Android Rust targets plus `wasm32-unknown-unknown` are installed.
@@ -95,7 +95,7 @@ that “current” does not silently become “approved”.
 | Rust / Cargo | Rust 1.97.1 | Separate post-T0 toolchain unit; not adopted |
 | Android NDK | r29 available; r28.2 remains Flutter 3.47.4 default | Keep r28.2 baseline until a dedicated compatibility pass |
 | AGP / Gradle | AGP 8.13.2 with Gradle 8.14 satisfies Flutter 3.47.4 | Keep baseline; AGP 9 remains a separate migration |
-| Xcode | Xcode 27.0 | Adopted by the active T1/T3 migration; repair simulator discovery separately if iOS evidence is required |
+| Xcode | Xcode 27.1 | Adopted by the active T1/T3 migration; repair simulator discovery separately if iOS evidence is required |
 
 Primary audit sources:
 
