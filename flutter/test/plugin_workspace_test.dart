@@ -304,11 +304,34 @@ void main() {
         remote.request(connection, 'status', {'owner': 'b' * 64}),
         throwsStateError,
       );
+      // A package replacement may have a new local install ID while the VPS
+      // still owns the old binding. Recovery must return that remote authority
+      // before rebinding the sealed local grant to the replacement.
+      final replacementDigest = digest;
+      localRegistry.record = WasmPluginRecord.fromJson({
+        ...localRegistry.record.toJson(),
+        'id': 'replacement-package',
+      });
+      localRegistry.executionBinding =
+          () => PluginRuntimeBinding.externalPackage(
+            packageId: localRegistry.record.id,
+            packageVersion: localRegistry.record.pluginVersion,
+            packageKind: 'zip',
+            packageDigestHex: replacementDigest,
+            packageFilePath: package.path,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: [
+              ...localRegistry.record.capabilities,
+              'workspace.schedule',
+            ],
+          );
       await module.useWorkspaceOnline(localRegistry.record);
       final localGrant = await module.readWorkspaceExecution(
         localRegistry.record,
       );
       expect(localGrant!['executor'], 'local');
+      expect(localGrant['package_id'], 'replacement-package');
+      expect(localGrant['package_digest'], replacementDigest);
       expect(localGrant['expires_at_ms'], 0);
       expect(
         (await remote.connection(

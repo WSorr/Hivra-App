@@ -211,6 +211,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         record,
         enforceHost: false,
         ownerCapsuleHex: owner,
+        allowRemoteRecoveryBinding: true,
       );
       if (grant?['executor'] == 'vps') {
         final c = await _remote.connection(owner, record.pluginId!);
@@ -251,6 +252,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     final grant = await super.readWorkspaceExecution(
       record,
       enforceHost: false,
+      allowRemoteRecoveryBinding: true,
     );
     if (grant?['executor'] == 'vps') {
       final existing = await _remote.connection(owner, record.pluginId!);
@@ -282,6 +284,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     final grant = await super.readWorkspaceExecution(
       record,
       enforceHost: false,
+      allowRemoteRecoveryBinding: true,
     );
     if (grant?['executor'] == 'vps') {
       final c = await _remote.connection(owner, record.pluginId!);
@@ -313,6 +316,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     final grant = await super.readWorkspaceExecution(
       record,
       enforceHost: false,
+      allowRemoteRecoveryBinding: true,
     );
     final c = await _remote.connection(owner, record.pluginId!);
     if (grant?['executor'] == 'vps') {
@@ -404,6 +408,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     final grant = await super.readWorkspaceExecution(
       record,
       enforceHost: false,
+      allowRemoteRecoveryBinding: true,
     );
     var c = await _remote.connection(owner, record.pluginId!);
     if (grant?['executor'] == 'vps') {
