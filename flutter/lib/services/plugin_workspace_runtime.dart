@@ -90,13 +90,19 @@ class PluginWorkspaceRuntime {
     WasmPluginRecord record, {
     bool enforceHost = true,
     String? ownerCapsuleHex,
+    bool allowRemoteRecoveryBinding = false,
   }) async {
     final owner =
         ownerCapsuleHex ?? activeCapsuleRootHex()?.trim().toLowerCase();
     if (owner == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
       throw StateError('An active Capsule is required');
     }
-    return _readExecution(record, owner, enforceHost: enforceHost);
+    return _readExecution(
+      record,
+      owner,
+      enforceHost: enforceHost,
+      allowRemoteRecoveryBinding: allowRemoteRecoveryBinding,
+    );
   }
 
   /// Restore only host authority/timing. Provider availability must not be a
@@ -1343,6 +1349,7 @@ class PluginWorkspaceRuntime {
     WasmPluginRecord record,
     String owner, {
     bool enforceHost = true,
+    bool allowRemoteRecoveryBinding = false,
   }) async {
     final directory = await _fileStore.capsuleDirForHex(owner, create: false);
     var raw = await _fileStore.readPluginState(
@@ -1373,12 +1380,18 @@ class PluginWorkspaceRuntime {
         'Workspace execution belongs to VPS; connect to its current state',
       );
     }
-    if (control['package_id'] != record.id ||
-        binding.packageId != record.id ||
-        control['package_digest'] != binding.packageDigestHex ||
+    final packageMatches =
+        control['package_id'] == record.id &&
+        binding.packageId == record.id &&
+        control['package_digest'] == binding.packageDigestHex;
+    if ((!packageMatches &&
+            !(allowRemoteRecoveryBinding &&
+                !enforceHost &&
+                control['executor'] == 'vps')) ||
         !binding.capabilities.contains('workspace.schedule')) {
-      // Package replacement cannot inherit authority, but must not erase a
-      // remote assignment and let a newly installed local package trade.
+      // A replaced package may not execute a stale local grant. A VPS grant
+      // is exposed here only to the authenticated return path, which rebinds
+      // the sealed checkpoint to the currently installed package.
       return null;
     }
     return Map<String, dynamic>.from(control);
@@ -1466,6 +1479,7 @@ class PluginWorkspaceRuntime {
               record,
               owner,
               enforceHost: false,
+              allowRemoteRecoveryBinding: true,
             );
             if (control == null) {
               throw StateError('Authorize execution before handoff');
@@ -1512,8 +1526,9 @@ class PluginWorkspaceRuntime {
             );
             if (!_isStillOwnedBy(owner) ||
                 binding.packageId != record.id ||
-                binding.packageDigestHex != control['package_digest'] ||
-                !binding.capabilities.contains('workspace.schedule')) {
+                !binding.capabilities.contains('workspace.schedule') ||
+                (control['executor'] != 'vps' &&
+                    binding.packageDigestHex != control['package_digest'])) {
               throw StateError('Handoff package or Capsule changed');
             }
             await _fileStore.writePluginState(
@@ -1789,7 +1804,12 @@ class PluginWorkspaceRuntime {
     await _serialize(
       '$owner::${record.pluginId}',
       () => _withWorkspaceLease(owner, record, () async {
-        final control = await _readExecution(record, owner, enforceHost: false);
+        final control = await _readExecution(
+          record,
+          owner,
+          enforceHost: false,
+          allowRemoteRecoveryBinding: true,
+        );
         if (control == null ||
             control['executor'] != 'vps' ||
             control['executor_id'] != executorId ||
@@ -1797,8 +1817,18 @@ class PluginWorkspaceRuntime {
             control['package_digest'] != checkpoint['package_digest']) {
           throw StateError('Return does not match the assigned workspace');
         }
+        final binding = await registry.resolveRuntimeBinding(record.pluginId!);
+        if (binding.packageId != record.id ||
+            binding.packageDigestHex == null ||
+            !binding.capabilities.contains('workspace.schedule')) {
+          throw StateError('Installed workspace changed during return');
+        }
         final restored =
-            {...incoming, 'package_id': record.id}
+            {
+                ...incoming,
+                'package_id': record.id,
+                'package_digest': binding.packageDigestHex,
+              }
               ..remove('handoff_id')
               ..remove('handoff_digest');
         final directory = await _fileStore.capsuleDirForHex(
