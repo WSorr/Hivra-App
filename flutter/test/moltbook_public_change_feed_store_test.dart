@@ -85,7 +85,7 @@ void main() {
   });
 
   test(
-    'skips a docs control commit and selects the latest substantive commit',
+    'skips control-only commits and selects the latest substantive commit',
     () async {
       final source = MoltbookPublicRepositorySourceAdapter(
         readJson: (uri) async {
@@ -94,13 +94,19 @@ void main() {
             <String, Object?>{
               'sha': 'e' * 40,
               'commit': <String, Object?>{
-                'message':
-                    'docs(control): reconcile synchronized repository state',
+                'message': 'docs: reconcile synchronized repository state',
                 'author': <String, Object?>{'date': '2026-10-17T10:00:00Z'},
               },
             },
             <String, Object?>{
               'sha': 'f' * 40,
+              'commit': <String, Object?>{
+                'message': 'chore: refresh generated package metadata',
+                'author': <String, Object?>{'date': '2026-10-17T09:30:00Z'},
+              },
+            },
+            <String, Object?>{
+              'sha': 'd' * 40,
               'commit': <String, Object?>{
                 'message':
                     'fix(jack-ui): space advanced settings content\n\n'
@@ -116,7 +122,7 @@ void main() {
         'https://github.com/WSorr/Hivra-App',
       );
 
-      expect(observation?.sourceId, 'github-news-v2-${'f' * 40}');
+      expect(observation?.sourceId, 'github-news-v2-${'d' * 40}');
       expect(
         observation?.facts.first,
         'Commit summary: fix(jack-ui): space advanced settings content',
