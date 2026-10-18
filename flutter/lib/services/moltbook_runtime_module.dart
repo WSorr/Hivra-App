@@ -312,9 +312,23 @@ class MoltbookRuntimeModule {
     required String accountBindingId,
     required int cycleEpoch,
     required bool resumePrepared,
+    List<MoltbookPublicChange> additionalChanges =
+        const <MoltbookPublicChange>[],
     Future<void> Function()? authorization,
   }) async {
-    final changes = await moltbookPublicChanges.load();
+    final changes = <MoltbookPublicChange>[
+      ...await moltbookPublicChanges.load(),
+    ];
+    for (final additional in additionalChanges) {
+      if (isMoltbookRepositoryCommitSourceId(additional.sourceId)) {
+        changes.removeWhere(
+          (change) => isMoltbookRepositoryCommitSourceId(change.sourceId),
+        );
+      }
+      if (changes.every((change) => change.sourceId != additional.sourceId)) {
+        changes.add(additional);
+      }
+    }
     if (changes.isEmpty) return null;
     final authorize =
         authorization ??
@@ -378,9 +392,10 @@ class MoltbookRuntimeModule {
     required String accountBindingId,
     required int cycleEpoch,
     bool allowPublication = true,
+    MoltbookPublicChange? transientChange,
   }) async {
     final changes = await moltbookPublicChanges.load();
-    if (changes.isEmpty) return null;
+    if (changes.isEmpty && transientChange == null) return null;
     final drafts = await moltbookDrafts.load();
     final publications = await moltbookPublications.list();
     final configuration = await _ambassadorConfiguration.load();
@@ -407,6 +422,10 @@ class MoltbookRuntimeModule {
           configuration.approvalMode ==
               MoltbookAmbassadorConfiguration.approvalBounded &&
           publicationAvailable,
+      additionalChanges:
+          transientChange == null
+              ? const <MoltbookPublicChange>[]
+              : <MoltbookPublicChange>[transientChange],
     );
     if (change == null) return null;
     MoltbookDraftPreview preview;
@@ -461,7 +480,31 @@ class MoltbookRuntimeModule {
         reviewedBody: proposal.body,
         audience: configuration.primaryCommunity,
         publicChangeCommitmentHashHex: change.commitmentHashHex,
+        transientPublicChange:
+            transientChange?.sourceId == change.sourceId
+                ? transientChange
+                : null,
       );
+      final persisted = changes.any(
+        (candidate) => candidate.sourceId == change.sourceId,
+      );
+      if (!persisted && transientChange?.sourceId == change.sourceId) {
+        final recorded = await moltbookPublicChanges.record(
+          sourceId: change.sourceId,
+          category: change.category,
+          facts: change.facts,
+          latestRepositoryCommit: true,
+        );
+        await moltbookPublicChanges.markDrafted(
+          recorded.commitmentHashHex,
+          preview.draftHashHex,
+        );
+        await _discardObsoleteRepositoryDrafts(
+          ownerHex: ownerHex,
+          accountBindingId: accountBindingId,
+          cycleEpoch: cycleEpoch,
+        );
+      }
       await uiLog.log(
         'moltbook.cycle.public_change',
         'prepared source=${_safeLogValue(change.sourceId)} '
@@ -1254,13 +1297,13 @@ class MoltbookRuntimeModule {
       cycleEpoch: cycleEpoch,
     );
     var blockedCount = 0;
-    final repositoryObservationSucceeded =
-        await _ingestConfiguredPublicRepository(
-          ownerHex: ownerHex,
-          accountBindingId: accountBindingId,
-          cycleEpoch: cycleEpoch,
-        );
-    if (!repositoryObservationSucceeded) blockedCount++;
+    final repositoryObservation = await _ingestConfiguredPublicRepository(
+      ownerHex: ownerHex,
+      accountBindingId: accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    if (repositoryObservation.blocked) blockedCount++;
+    final repositoryChange = repositoryObservation.change;
     final before = await moltbookFeedCheckpoint.load();
     var reconciledCount = 0;
     var challengedCount = 0;
@@ -1529,6 +1572,7 @@ class MoltbookRuntimeModule {
           ownerHex: ownerHex,
           accountBindingId: accountBindingId,
           cycleEpoch: cycleEpoch,
+          transientChange: repositoryChange,
         );
         await _ensureMoltbookCycleScope(
           ownerHex,
@@ -1598,13 +1642,14 @@ class MoltbookRuntimeModule {
     return summary;
   }
 
-  Future<bool> _ingestConfiguredPublicRepository({
+  Future<({MoltbookPublicChange? change, bool blocked})>
+  _ingestConfiguredPublicRepository({
     required String ownerHex,
     required String accountBindingId,
     required int cycleEpoch,
   }) async {
     final source = _publicRepositorySource;
-    if (source == null) return true;
+    if (source == null) return (change: null, blocked: false);
     final configuration = await _ambassadorConfiguration.load();
     ({String sourceId, List<String> facts})? observation;
     try {
@@ -1616,38 +1661,39 @@ class MoltbookRuntimeModule {
         'moltbook.public_repository.observe',
         'deferred ${_safeError(error)}',
       );
-      return false;
+      return (change: null, blocked: true);
     }
-    if (observation == null) return true;
+    if (observation == null) return (change: null, blocked: false);
     await _ensureMoltbookCycleScope(
       ownerHex,
       accountBindingId,
       cycleEpoch: cycleEpoch,
     );
     try {
-      final change = await moltbookPublicChanges.record(
+      final change = MoltbookPublicChange(
         sourceId: observation.sourceId,
         category: configuration.allowedTopics.first,
-        facts: observation.facts,
-        latestRepositoryCommit: true,
+        facts: List<String>.unmodifiable(observation.facts),
+        commitmentHashHex: MoltbookPublicChangeFeedStore.commitmentFor(
+          sourceId: observation.sourceId,
+          category: configuration.allowedTopics.first,
+          facts: observation.facts,
+        ),
+        recordedAtUtc: DateTime.now().toUtc(),
       );
-      await _discardObsoleteRepositoryDrafts(
-        ownerHex: ownerHex,
-        accountBindingId: accountBindingId,
-        cycleEpoch: cycleEpoch,
-      );
+      MoltbookPublicChangeFeedStore.validate(change);
       await uiLog.log(
         'moltbook.public_repository.observe',
-        'retained source=${_safeLogValue(change.sourceId)} '
+        'observed source=${_safeLogValue(change.sourceId)} '
             'facts=${change.facts.length}',
       );
-      return true;
+      return (change: change, blocked: false);
     } on FormatException catch (error) {
       await uiLog.log(
         'moltbook.public_repository.observe',
         'deferred ${_safeError(error)}',
       );
-      return false;
+      return (change: null, blocked: true);
     }
   }
 
@@ -2280,6 +2326,7 @@ class MoltbookRuntimeModule {
     required String reviewedBody,
     required String audience,
     String? publicChangeCommitmentHashHex,
+    MoltbookPublicChange? transientPublicChange,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
     _requireMoltbookEnabled(configuration);
@@ -2310,7 +2357,11 @@ class MoltbookRuntimeModule {
                     candidate.commitmentHashHex ==
                     publicChangeCommitmentHashHex,
               )
-              .singleOrNull;
+              .singleOrNull ??
+          (transientPublicChange?.commitmentHashHex ==
+                  publicChangeCommitmentHashHex
+              ? transientPublicChange
+              : null);
       if (change == null || !change.isPending) {
         await uiLog.log(
           'moltbook.draft.prepare',
@@ -2394,7 +2445,11 @@ class MoltbookRuntimeModule {
                     candidate.commitmentHashHex ==
                     publicChangeCommitmentHashHex,
               )
-              .singleOrNull;
+              .singleOrNull ??
+          (transientPublicChange?.commitmentHashHex ==
+                  publicChangeCommitmentHashHex
+              ? transientPublicChange
+              : null);
       if (change == null || !change.isPending) {
         throw StateError('Pending public change is unavailable');
       }
@@ -2404,7 +2459,8 @@ class MoltbookRuntimeModule {
       }
     }
     await moltbookDrafts.save(preview);
-    if (publicChangeCommitmentHashHex != null) {
+    if (publicChangeCommitmentHashHex != null &&
+        transientPublicChange == null) {
       await moltbookPublicChanges.markDrafted(
         publicChangeCommitmentHashHex,
         preview.draftHashHex,

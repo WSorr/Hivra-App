@@ -82,8 +82,10 @@ class MoltbookPublicRepositorySourceAdapter {
     return null;
   }
 
-  static bool _isServiceCommit(String subject) =>
-      RegExp(r'^docs\(control\):', caseSensitive: false).hasMatch(subject);
+  static bool _isServiceCommit(String subject) => RegExp(
+    r'^(?:docs(?:\([^)]*\))?|chore|ci|build)(?::|\([^)]*\):)',
+    caseSensitive: false,
+  ).hasMatch(subject);
 
   static String _commitSha(Object? value) {
     final sha = value?.toString().trim().toLowerCase() ?? '';

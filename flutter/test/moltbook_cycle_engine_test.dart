@@ -985,6 +985,24 @@ void main() {
   );
 
   test(
+    'Gemini failure leaves a transient repository change out of Capsule',
+    () async {
+      ai.unlocked = true;
+      ai.error = StateError('Gemini quota exhausted');
+      publicRepositorySource.observation = (
+        sourceId: 'github-news-v2-${'9' * 40}',
+        facts: const <String>['A new public repository change.'],
+      );
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(summary.blockedCount, 1);
+      expect(await publicChanges.load(), isEmpty);
+      expect(drafts.stored, isEmpty);
+    },
+  );
+
+  test(
     'Capsule switch after public repository read aborts the cycle',
     () async {
       publicRepositorySource.observation = (
