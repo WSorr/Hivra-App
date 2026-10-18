@@ -99,7 +99,7 @@ class WasmPluginPackagePreflightService {
       throw const FormatException('Unsupported plugin manifest version');
     }
 
-    final pluginId = manifest['plugin_id']?.toString().trim();
+    final pluginId = manifest['plugin_id']?.toString().trim().toLowerCase();
     if (pluginId == null || pluginId.isEmpty) {
       throw const FormatException('Plugin manifest is missing plugin_id');
     }

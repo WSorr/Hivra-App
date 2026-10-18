@@ -32,16 +32,16 @@ class WasmPluginRegistryService {
   }
 
   Future<PluginRuntimeBinding> resolveRuntimeBinding(String pluginId) async {
-    final normalizedPluginId = pluginId.trim();
-    if (normalizedPluginId.isEmpty) {
+    final normalizedPluginId = _normalizePluginId(pluginId);
+    if (normalizedPluginId == null) {
       return const PluginRuntimeBinding.hostFallback();
     }
 
     final records = await loadPlugins();
     final pluginsDir = await pluginsDirectory();
     for (final record in records) {
-      final recordPluginId = record.pluginId?.trim();
-      if (recordPluginId == null || recordPluginId.isEmpty) {
+      final recordPluginId = _normalizePluginId(record.pluginId);
+      if (recordPluginId == null) {
         continue;
       }
       if (recordPluginId != normalizedPluginId) {
@@ -274,7 +274,7 @@ class WasmPluginRegistryService {
   }
 
   String? _dedupeKey(WasmPluginRecord record) {
-    final pluginId = _normalizeOptional(record.pluginId);
+    final pluginId = _normalizePluginId(record.pluginId);
     if (pluginId == null) return null;
     return pluginId;
   }
@@ -292,14 +292,19 @@ class WasmPluginRegistryService {
     required List<WasmPluginRecord> existing,
     required String? incomingPluginId,
   }) {
-    final pluginId = _normalizeOptional(incomingPluginId);
+    final pluginId = _normalizePluginId(incomingPluginId);
     if (pluginId == null) {
       return const <WasmPluginRecord>[];
     }
     return existing.where((record) {
-      final recordPluginId = _normalizeOptional(record.pluginId);
+      final recordPluginId = _normalizePluginId(record.pluginId);
       return recordPluginId == pluginId;
     }).toList();
+  }
+
+  String? _normalizePluginId(String? value) {
+    final normalized = value?.trim().toLowerCase() ?? '';
+    return normalized.isEmpty ? null : normalized;
   }
 
   String? _normalizeOptional(String? value) {

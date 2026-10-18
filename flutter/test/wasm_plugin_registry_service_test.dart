@@ -364,6 +364,36 @@ void main() {
     },
   );
 
+  test('canonicalizes plugin_id casing for replacement and binding', () async {
+    final uppercase = await _createPluginPackage(
+      tempDocsDir,
+      version: '0.1.0',
+      pluginId: 'HIVRA.CONTRACT.CASED.V1',
+    );
+
+    final installed = await service.installPluginFromFile(uppercase);
+
+    expect(installed.pluginId, 'hivra.contract.cased.v1');
+    final binding = await service.resolveRuntimeBinding(
+      'Hivra.Contract.Cased.V1',
+    );
+    expect(binding.packageId, installed.id);
+
+    final lowercase = await _createPluginPackage(
+      tempDocsDir,
+      version: '0.2.0',
+      pluginId: 'hivra.contract.cased.v1',
+    );
+    final replacement = await service.installPluginFromFile(lowercase);
+
+    expect((await service.loadPlugins()).map((r) => r.id), [replacement.id]);
+    expect(
+      (await service.resolveRuntimeBinding('HIVRA.CONTRACT.CASED.V1'))
+          .packageId,
+      replacement.id,
+    );
+  });
+
   test(
     'installing a newer version replaces the active plugin package',
     () async {
@@ -618,8 +648,13 @@ const List<int> _wasmBytes = <int>[0, 97, 115, 109, 1, 0, 0, 0];
 Future<File> _createPluginPackage(
   Directory root, {
   required String version,
+  String pluginId = 'hivra.contract.transactional-demo.v1',
 }) async {
-  final file = _createPluginPackageSync(root, version: version);
+  final file = _createPluginPackageSync(
+    root,
+    version: version,
+    pluginId: pluginId,
+  );
   await file.parent.create(recursive: true);
   return file;
 }
