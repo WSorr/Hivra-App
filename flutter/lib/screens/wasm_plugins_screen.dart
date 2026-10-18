@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/plugin_contract_ids.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../services/plugin_runtime_module_service.dart';
@@ -945,7 +946,13 @@ class _InstalledPluginTile extends StatelessWidget {
         runtimeAbi == WasmPluginRuntimeService.requiredRuntimeAbi;
     final entryMatches =
         runtimeEntryExport == WasmPluginRuntimeService.requiredEntryExport;
-    final ready = !isZipPackage || (abiMatches && entryMatches);
+    final capabilitiesMatch = pluginCapabilitiesSatisfyContract(
+      pluginId: record.pluginId,
+      contractKind: record.contractKind,
+      capabilities: record.capabilities,
+    );
+    final ready =
+        !isZipPackage || (abiMatches && entryMatches && capabilitiesMatch);
 
     return Container(
       decoration: BoxDecoration(

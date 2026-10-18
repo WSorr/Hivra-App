@@ -40,20 +40,17 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
 
   final pluginId = record.pluginId?.trim();
   final contractKind = record.contractKind?.trim();
+  final requiredCapabilities = requiredCapabilitiesForPlugin(
+    pluginId: pluginId,
+    contractKind: contractKind,
+  );
   if (pluginId != null &&
       pluginId.isNotEmpty &&
-      contractKind == pluginWorkspaceContractKind &&
-      record.capabilities.contains('workspace.render') &&
-      record.capabilities.contains('workspace.continue') &&
-      record.capabilities.contains('state.plugin.read_write')) {
-    return pluginWorkspaceContractKind;
+      requiredCapabilities != null &&
+      record.capabilities.toSet().containsAll(requiredCapabilities)) {
+    return contractKind;
   }
-  return switch ((pluginId, contractKind)) {
-    (capsuleChatPluginId, capsuleChatContractKind) => capsuleChatContractKind,
-    (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind) =>
-      moltbookAmbassadorContractKind,
-    _ => null,
-  };
+  return null;
 }
 
 @visibleForTesting

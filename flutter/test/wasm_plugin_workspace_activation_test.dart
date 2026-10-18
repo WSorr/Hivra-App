@@ -11,13 +11,78 @@ void main() {
     ];
 
     for (final (pluginId, contractKind) in profiles) {
+      final capabilities = switch (contractKind) {
+        capsuleChatContractKind => capsuleChatRequiredCapabilities.toList(),
+        moltbookAmbassadorContractKind =>
+          moltbookAmbassadorRequiredCapabilities.toList(),
+        _ => const <String>[],
+      };
       expect(
         installedPluginWorkspaceContractKind(
-          _record(pluginId: pluginId, contractKind: contractKind),
+          _record(
+            pluginId: pluginId,
+            contractKind: contractKind,
+            capabilities: capabilities,
+          ),
         ),
         contractKind,
       );
     }
+  });
+
+  test('specialized workspaces fail closed when a grant is missing', () {
+    expect(
+      installedPluginWorkspaceContractKind(
+        _record(
+          pluginId: capsuleChatPluginId,
+          contractKind: capsuleChatContractKind,
+          capabilities: const <String>[],
+        ),
+      ),
+      isNull,
+    );
+    expect(
+      installedPluginWorkspaceContractKind(
+        _record(
+          pluginId: moltbookAmbassadorPluginId,
+          contractKind: moltbookAmbassadorContractKind,
+          capabilities: const ['content.draft.prepare'],
+        ),
+      ),
+      isNull,
+    );
+  });
+
+  test('readiness shares the activation capability contract', () {
+    expect(
+      pluginCapabilitiesSatisfyContract(
+        pluginId: moltbookAmbassadorPluginId,
+        contractKind: moltbookAmbassadorContractKind,
+        capabilities: moltbookAmbassadorRequiredCapabilities.toList(),
+      ),
+      isTrue,
+    );
+    expect(
+      pluginCapabilitiesSatisfyContract(
+        pluginId: moltbookAmbassadorPluginId,
+        contractKind: moltbookAmbassadorContractKind,
+        capabilities: const [
+          'content.draft.prepare',
+          'content.engagement.plan',
+          'content.feed.plan',
+          'content.reply.prepare',
+        ],
+      ),
+      isFalse,
+    );
+    expect(
+      pluginCapabilitiesSatisfyContract(
+        pluginId: 'hivra.contract.independent.v1',
+        contractKind: 'other_contract',
+        capabilities: const [],
+      ),
+      isTrue,
+    );
   });
 
   test('mutated or incomplete manifest profiles expose no workspace', () {
