@@ -112,6 +112,37 @@ void main() {
   });
 
   test(
+    'canonicalizes plugin ids before creating Capsule state paths',
+    () async {
+      final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+
+      await store.writePluginState(
+        dir,
+        'HIVRA.CONTRACT.CASED.V1',
+        'workspace.v1.json',
+        '{"opaque":true}',
+      );
+
+      expect(
+        await store.readPluginState(
+          dir,
+          'hivra.contract.cased.v1',
+          'workspace.v1.json',
+        ),
+        '{"opaque":true}',
+      );
+      final stateDirectory = await store.pluginStateDirectory(
+        dir,
+        'HIVRA.CONTRACT.CASED.V1',
+      );
+      expect(
+        stateDirectory.path,
+        endsWith('/plugin_state/hivra.contract.cased.v1'),
+      );
+    },
+  );
+
+  test(
     'keeps the authoritative ledger when backup persistence fails',
     () async {
       final safeStore = CapsuleFileStore(

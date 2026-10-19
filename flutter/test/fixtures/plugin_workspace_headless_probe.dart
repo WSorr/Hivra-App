@@ -137,7 +137,31 @@ Future<void> main(List<String> args) async {
     registry.installed = true;
     // A changed binding is admitted only as a fresh action, never as a
     // continuation of the prior digest. No private-state migration in host.
+    final beforeReplacement = await files.readPluginState(
+      directory,
+      registry.record.pluginId!,
+      'workspace.v1.json',
+    );
     rewriteDigest = true;
+    var replacementRejected = false;
+    try {
+      await runtime().runWorkspaceAction(
+        record: registry.record,
+        action: 'observe',
+      );
+    } on StateError {
+      replacementRejected = true;
+    }
+    if (!replacementRejected ||
+        await files.readPluginState(
+              directory,
+              registry.record.pluginId!,
+              'workspace.v1.json',
+            ) !=
+            beforeReplacement) {
+      throw StateError('Replaced package committed stale state');
+    }
+    rewriteDigest = false;
     await runtime().runWorkspaceAction(
       record: registry.record,
       action: 'observe',

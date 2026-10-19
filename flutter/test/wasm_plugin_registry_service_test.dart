@@ -5,7 +5,12 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hivra_app/models/plugin_contract_ids.dart';
+import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/services/atomic_file_write_service.dart';
+import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/plugin_host_api_service.dart';
+import 'package:hivra_app/services/plugin_workspace_runtime.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 
@@ -388,11 +393,301 @@ void main() {
 
     expect((await service.loadPlugins()).map((r) => r.id), [replacement.id]);
     expect(
-      (await service.resolveRuntimeBinding('HIVRA.CONTRACT.CASED.V1'))
-          .packageId,
+      (await service.resolveRuntimeBinding(
+        'HIVRA.CONTRACT.CASED.V1',
+      )).packageId,
       replacement.id,
     );
   });
+
+  test(
+    'replacement and restart preserve opaque state without crossing Capsule or plugin scope',
+    () async {
+      final dirs = _TestUserVisibleDataDirectoryService(tempDocsDir);
+      final files = CapsuleFileStore(dirs: dirs);
+      var owner = 'a' * 64;
+      const plugin = 'hivra.contract.replaceable.v1';
+      final capsuleA = await files.capsuleDirForHex(owner, create: true);
+      final capsuleB = await files.capsuleDirForHex('b' * 64, create: true);
+      const original = {
+        'old_layout': [7, true],
+      };
+      const migrated = {
+        'different_private_shape': {
+          'opaque': [7, true],
+        },
+      };
+      await files.writePluginState(
+        capsuleA,
+        plugin,
+        'workspace.v1.json',
+        jsonEncode(original),
+      );
+      await files.writePluginState(
+        capsuleB,
+        plugin,
+        'workspace.v1.json',
+        '{"foreign_capsule":true}',
+      );
+      await files.writePluginState(
+        capsuleA,
+        '$plugin.other',
+        'workspace.v1.json',
+        '{"foreign_plugin":true}',
+      );
+      final foreignCapsule = await files.readPluginState(
+        capsuleB,
+        plugin,
+        'workspace.v1.json',
+      );
+      final foreignPlugin = await files.readPluginState(
+        capsuleA,
+        '$plugin.other',
+        'workspace.v1.json',
+      );
+      var invokes = 0;
+      Future<void> Function()? duringInvoke;
+      var expectedState = <String, dynamic>{...original};
+      var outputState = <String, dynamic>{...original};
+      PluginWorkspaceRuntime runtime(WasmPluginRegistryService registry) =>
+          PluginWorkspaceRuntime(
+            registry: registry,
+            fileStore: files,
+            readActiveCapsuleRootHex: () => owner,
+            scheduleTimers: false,
+            readCredentials:
+                ({required owner, required pluginId}) async =>
+                    throw StateError(
+                      'Read-only replacement must not read credentials',
+                    ),
+            writeCredentials:
+                ({required owner, required pluginId, required value}) async =>
+                    throw StateError('Replacement must not write credentials'),
+            pluginHostApi: PluginHostApiService(
+              handlers: [],
+              resolveRuntimeBinding: registry.resolveRuntimeBinding,
+              resolveRuntimeInvoke: (request, _) async {
+                invokes++;
+                expect(request.pluginId, plugin);
+                expect(request.args['state'], expectedState);
+                await duringInvoke?.call();
+                return PluginRuntimeInvokeEvidence(
+                  mode: 'wasmi_v1',
+                  modulePath: 'plugin/module.wasm',
+                  moduleSelection: 'zip_manifest',
+                  moduleDigestHex: 'c' * 64,
+                  invokeDigestHex: 'd' * 64,
+                  semanticStatus: PluginHostApiStatus.executed,
+                  semanticErrorCode: null,
+                  semanticErrorMessage: null,
+                  semanticResult: {
+                    'state': outputState,
+                    'requests': [],
+                    'view': {
+                      'title': 'Replaceable workspace',
+                      'message': '',
+                      'details': '',
+                      'fields': [],
+                      'actions': [],
+                      'columns': [],
+                      'rows': [],
+                    },
+                  },
+                );
+              },
+            ),
+          );
+      Future<File> package(String version, String id) => _createPluginPackage(
+        tempDocsDir,
+        version: version,
+        pluginId: id,
+        contractKind: pluginWorkspaceContractKind,
+        capabilities: [
+          'workspace.render',
+          'workspace.continue',
+          'state.plugin.read_write',
+        ],
+      );
+      final installed = await service.installPluginFromFile(
+        await package('1.0.0', plugin.toUpperCase()),
+      );
+      await runtime(
+        service,
+      ).runWorkspaceAction(record: installed, action: 'open');
+      final replacement = await service.installPluginFromFile(
+        await package('2.0.0', plugin),
+      );
+      expect(replacement.id, isNot(installed.id));
+      expect(
+        jsonDecode(
+          (await files.readPluginState(capsuleA, plugin, 'workspace.v1.json'))!,
+        ),
+        original,
+      );
+      final readsBeforeStaleAction = invokes;
+      await expectLater(
+        runtime(service).runWorkspaceAction(record: installed, action: 'open'),
+        throwsStateError,
+      );
+      expect(invokes, readsBeforeStaleAction);
+      outputState = {...migrated};
+      await runtime(
+        service,
+      ).runWorkspaceAction(record: replacement, action: 'open');
+      expectedState = {...migrated};
+      final restartedRegistry = WasmPluginRegistryService(dataDirs: dirs);
+      final reopened = (await restartedRegistry.loadPlugins()).single;
+      expect(reopened.pluginId, plugin);
+      await runtime(
+        restartedRegistry,
+      ).runWorkspaceAction(record: reopened, action: 'open');
+      expect(
+        jsonDecode(
+          (await files.readPluginState(capsuleA, plugin, 'workspace.v1.json'))!,
+        ),
+        migrated,
+      );
+      owner = 'b' * 64;
+      expectedState = {'foreign_capsule': true};
+      outputState = {...expectedState};
+      await runtime(
+        restartedRegistry,
+      ).runWorkspaceAction(record: reopened, action: 'open');
+      owner = 'a' * 64;
+      expectedState = {...migrated};
+      outputState = {'stale_write': true};
+      duringInvoke = () async {
+        await restartedRegistry.installPluginFromFile(
+          await package('3.0.0', plugin.toUpperCase()),
+        );
+      };
+      await expectLater(
+        runtime(
+          restartedRegistry,
+        ).runWorkspaceAction(record: reopened, action: 'open'),
+        throwsStateError,
+      );
+      expect(
+        jsonDecode(
+          (await files.readPluginState(capsuleA, plugin, 'workspace.v1.json'))!,
+        ),
+        migrated,
+      );
+      final newest = (await restartedRegistry.loadPlugins()).single;
+      duringInvoke = () => restartedRegistry.removePlugin(newest.id);
+      await expectLater(
+        runtime(
+          restartedRegistry,
+        ).runWorkspaceAction(record: newest, action: 'open'),
+        throwsStateError,
+      );
+      expect(
+        jsonDecode(
+          (await files.readPluginState(capsuleA, plugin, 'workspace.v1.json'))!,
+        ),
+        migrated,
+      );
+      expect(
+        await files.readPluginState(capsuleB, plugin, 'workspace.v1.json'),
+        foreignCapsule,
+      );
+      expect(
+        await files.readPluginState(
+          capsuleA,
+          '$plugin.other',
+          'workspace.v1.json',
+        ),
+        foreignPlugin,
+      );
+      for (final file in [
+        'workspace-execution.v1.json',
+        'external_effects.v1.json',
+      ]) {
+        expect(await files.readPluginState(capsuleA, plugin, file), isNull);
+      }
+      final readsBeforeRemoval = invokes;
+      await expectLater(
+        runtime(
+          restartedRegistry,
+        ).runWorkspaceAction(record: reopened, action: 'open'),
+        throwsStateError,
+      );
+      expect(invokes, readsBeforeRemoval);
+      expect(
+        jsonDecode(
+          (await files.readPluginState(capsuleA, plugin, 'workspace.v1.json'))!,
+        ),
+        migrated,
+      );
+    },
+  );
+
+  test(
+    'unsafe identities cannot escape the plugin state scope or replace a valid package',
+    () async {
+      final installed = await service.installPluginFromFile(
+        await _createPluginPackage(tempDocsDir, version: '1.0.0'),
+      );
+      final files = CapsuleFileStore(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      );
+      final capsule = await files.capsuleDirForHex('a' * 64, create: true);
+      for (final id in [
+        '.',
+        '..',
+        '../other',
+        'one/two',
+        'one\\two',
+        'non-ascii-é',
+      ]) {
+        await expectLater(
+          files.writePluginState(capsule, id, 'workspace.v1.json', '{}'),
+          throwsFormatException,
+        );
+        await expectLater(
+          service.installPluginFromFile(
+            await _createPluginPackage(
+              tempDocsDir,
+              version: '2.0.0',
+              pluginId: id,
+            ),
+          ),
+          throwsFormatException,
+        );
+        expect((await service.loadPlugins()).single.id, installed.id);
+      }
+      expect(await Directory('${capsule.path}/plugin_state').exists(), false);
+      expect(await File('${capsule.path}/workspace.v1.json').exists(), false);
+    },
+  );
+
+  test(
+    'loads legacy uppercase registry records into the canonical identity',
+    () async {
+      final source = await _createPluginPackage(
+        tempDocsDir,
+        version: '0.3.0',
+        pluginId: 'hivra.contract.legacy-case.v1',
+      );
+      final installed = await service.installPluginFromFile(source);
+      final registryFile = File(
+        '${(await service.pluginsDirectory()).path}/registry.json',
+      );
+      final raw = jsonDecode(await registryFile.readAsString()) as List;
+      raw.single['pluginId'] = 'HIVRA.CONTRACT.LEGACY-CASE.V1';
+      await registryFile.writeAsString(jsonEncode(raw), flush: true);
+
+      final loaded = await service.loadPlugins();
+
+      expect(loaded.single.pluginId, 'hivra.contract.legacy-case.v1');
+      expect(
+        (await service.resolveRuntimeBinding(
+          'HIVRA.CONTRACT.LEGACY-CASE.V1',
+        )).packageId,
+        installed.id,
+      );
+    },
+  );
 
   test(
     'installing a newer version replaces the active plugin package',
@@ -649,11 +944,15 @@ Future<File> _createPluginPackage(
   Directory root, {
   required String version,
   String pluginId = 'hivra.contract.transactional-demo.v1',
+  String contractKind = 'transactional_demo',
+  List<String> capabilities = const ['content.draft.prepare'],
 }) async {
   final file = _createPluginPackageSync(
     root,
     version: version,
     pluginId: pluginId,
+    contractKind: contractKind,
+    capabilities: capabilities,
   );
   await file.parent.create(recursive: true);
   return file;
@@ -663,6 +962,8 @@ File _createPluginPackageSync(
   Directory root, {
   required String version,
   String pluginId = 'hivra.contract.transactional-demo.v1',
+  String contractKind = 'transactional_demo',
+  List<String> capabilities = const ['content.draft.prepare'],
 }) {
   final file = File('${root.path}/transactional-demo-$version.zip');
   file.writeAsBytesSync(
@@ -673,12 +974,12 @@ File _createPluginPackageSync(
           'version': 1,
           'release_version': version,
           'plugin_id': pluginId,
-          'contract': {'kind': 'transactional_demo'},
+          'contract': {'kind': contractKind},
           'runtime': {
             'abi': 'hivra_host_abi_v2',
             'entry_export': 'hivra_evaluate_v1',
           },
-          'capabilities': ['content.draft.prepare'],
+          'capabilities': capabilities,
         }),
         'plugin/module.wasm': _wasmBytes,
       },

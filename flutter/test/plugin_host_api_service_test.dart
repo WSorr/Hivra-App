@@ -78,6 +78,61 @@ void main() {
       expect(response.result?['message_text'], 'hello');
     });
 
+    for (final change in ['remove', 'replace', 'raw', 'revoke', 'reorder']) {
+      test(
+        'runtime result respects package authority after await: $change',
+        () async {
+          var completed = false;
+          final host = PluginHostApiService(
+            handlers: [
+              CapsuleChatPluginContractHandler(readSignable: _signable),
+            ],
+            resolveRuntimeBinding: (_) async {
+              if (completed && change == 'remove') {
+                return const PluginRuntimeBinding.hostFallback();
+              }
+              return PluginRuntimeBinding.externalPackage(
+                packageVersion: '1.0.0',
+                packageId:
+                    completed && change == 'replace'
+                        ? 'new-package'
+                        : 'original-package',
+                packageKind: completed && change == 'raw' ? 'wasm' : 'zip',
+                packageDigestHex: 'a' * 64,
+                contractKind: capsuleChatContractKind,
+                capabilities:
+                    completed && change == 'revoke'
+                        ? ['consensus_guard.read']
+                        : completed && change == 'reorder'
+                        ? ['content.draft.prepare', 'consensus_guard.read']
+                        : ['consensus_guard.read', 'content.draft.prepare'],
+              );
+            },
+            resolveRuntimeInvoke: (_, _) async {
+              completed = true;
+              return _chatRuntimeEvidence();
+            },
+          );
+          final response = await host.executeWithRuntimeHook(
+            PluginHostApiRequest(
+              schemaVersion: 1,
+              pluginId: capsuleChatPluginId,
+              method: postCapsuleChatMethod,
+              args: _validChatArgs(),
+            ),
+          );
+          if (change == 'reorder') {
+            expect(response.status, PluginHostApiStatus.executed);
+            expect(response.result?['message_text'], 'hello');
+          } else {
+            expect(response.status, PluginHostApiStatus.rejected);
+            expect(response.errorCode, 'runtime_binding_changed');
+            expect(response.result, isNull);
+          }
+        },
+      );
+    }
+
     test('rejects chat envelope with a different request identity', () async {
       final canonical = _canonicalChat.replaceFirst('"msg-1"', '"msg-2"');
       final response = await _service(

@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
+import '../models/moltbook_provider_models.dart';
 import '../models/plugin_contract_ids.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'moltbook_connection_service.dart';
@@ -450,7 +451,9 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
               : content == payload.content && title == payload.title;
       if (matches && _isVerifiedPublicPost(post)) {
         final postId = _stringId(post['id'] ?? post['post_id']);
-        if (postId != null) return _success(request, postId);
+        if (postId != null) {
+          return _reconcilePostById(request, apiKey, payload, postId);
+        }
       }
     }
     return _receiptNotObserved();
@@ -462,16 +465,37 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     _MoltbookPostPayload payload,
     String postId,
   ) async {
-    final post = await _provider.observePost(apiKey, postId: postId);
-    final matches = post.matchesExactPublication(
-      postId: postId,
-      authorName: payload.accountName,
-      submoltName: payload.submoltName,
-      title: payload.title,
-      content: payload.content,
-    );
+    final MoltbookPostObservation post;
+    try {
+      // An authenticated read can expose content hidden from everyone else.
+      post = await _provider.observePost(null, postId: postId);
+    } on MoltbookProviderException {
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.unresolved,
+        errorCode: 'public_observation_unavailable',
+        errorMessage:
+            'Public visibility could not be checked; keep the exact effect',
+      );
+    }
+    final matches =
+        post.authorId == request.accountBindingId &&
+        post.matchesExactPublication(
+          postId: postId,
+          authorName: payload.accountName,
+          submoltName: payload.submoltName,
+          title: payload.title,
+          content: payload.content,
+        );
     if (!matches) {
       return _receiptNotObserved();
+    }
+    if (post.isDeleted) {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        providerReferenceId: post.postId,
+        errorCode: 'provider_post_deleted',
+        errorMessage: 'Moltbook reports the exact post as deleted',
+      );
     }
     if (post.isSpam) {
       return ExternalEffectAdapterResult(
@@ -482,8 +506,31 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
             'Moltbook retained the exact post but marked it as spam; publication retry is blocked',
       );
     }
-    if (!post.isVerified) return _receiptNotObserved();
-    return _success(request, post.postId);
+    if (post.isVerified) return _success(request, post.postId);
+    // Moltbook's post challenge has a five-minute lifetime. An exact retained
+    // post cannot stay actionable forever just because its status stays pending.
+    final expiredPending =
+        post.verificationStatus == 'pending' &&
+        const {
+          'required_action_expired',
+          'verification_expired',
+        }.contains(request.lastErrorCode) &&
+        !_clock().toUtc().isBefore(
+          DateTime.parse(post.createdAtUtc).add(const Duration(minutes: 5)),
+        );
+    if (post.verificationStatus == 'failed' || expiredPending) {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        providerReferenceId: post.postId,
+        errorCode:
+            expiredPending
+                ? 'provider_verification_expired'
+                : 'provider_verification_failed',
+        errorMessage:
+            'The exact Moltbook post did not complete verification; no publication retry was made',
+      );
+    }
+    return _receiptNotObserved();
   }
 
   Future<ExternalEffectAdapterResult> _reconcileComment(
