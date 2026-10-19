@@ -182,6 +182,11 @@ provider outcome (verified publication or definite rejection, including spam),
 the composition owner deletes the matching processed draft and then removes
 the complete effect, payload, challenge and receipt from local storage. Local
 cancellation removes only the unsent effect and preserves an authoring draft.
+An explicit local closure abandons the uncertain attempt and deletes its source
+draft through the same settlement owner. It makes no remote change, claims no
+receipt, and does not reset the existing public-change source cursor. A restart
+cannot regenerate that attempted source. Automatic reconciliation never chooses
+local abandonment on the user's behalf.
 An empty effect journal is deleted. Loading the workspace settles pre-existing
 completed records through the same path; uncertain records remain pending.
 
@@ -262,9 +267,16 @@ Transition rules:
 11. An exact provider-referenced post marked as spam is a terminal provider
     rejection, not ambiguous delivery. It blocks publication retry but not the
     next independent effect.
-12. A local closure never claims provider absence or permits exact retry.
-    Missing profile history, expired verification, and HTTP errors are not
-    proof of non-delivery. Closure retains the original publication identity.
+12. A local closure never claims provider absence or requests another delivery.
+    Missing profile history and HTTP errors are not proof of non-delivery.
+    Explicit abandonment removes the local attempt rather than retaining an
+    archive that permanently blocks independent work.
+13. An exact post with `verification_status=failed` is a definite provider
+    verification failure. A retained pending post may also settle when the
+    durable effect records challenge expiry and the provider-created timestamp
+    is beyond Moltbook's documented five-minute post challenge lifetime. A
+    still-valid challenge, unknown provider status, mismatched post, or accepted
+    verification awaiting its receipt remains unresolved.
 
 ## 6. Operating and trigger modes
 
@@ -325,7 +337,8 @@ One cycle executes in this order:
     human review. Under explicitly enabled Bounded policy, apply the current
     WASM authorization and host-owned durable budget to that same effect path.
     An occupied effect slot blocks every new external effect. Definite
-    completion releases the slot; local closure of an unknown outcome does not.
+    completion or explicit local abandonment releases the slot. An unresolved
+    delivery that has not been explicitly abandoned continues to block it.
 12. Process through the common adapter, observe the result, then settle and
     remove the completed effect before another may start.
 13. Commit the checkpoint only through the newest safely observed boundary.
@@ -375,8 +388,9 @@ until resolved, cancelled safely, or expired according to provider evidence.
 - Failure or expiry of one challenge does not stop observation or reconciliation
   of other targets.
 - Network timeout remains unresolved and reconciles before any retry.
-- An eligible `receipt_not_observed` attempt may be closed locally without
-  claiming provider absence or success; its exact retry remains blocked.
+- An eligible `receipt_not_observed` attempt may be explicitly abandoned locally
+  without claiming provider absence or success. Its source draft is removed and
+  its existing source cursor is preserved, so automatic cycles cannot replay it.
 - Revoked credentials stop remote reads/writes and preserve local evidence.
 - Rate limits pause cycles until the provider reset time.
 - Capsule switching cancels in-memory work; late completion cannot mutate the

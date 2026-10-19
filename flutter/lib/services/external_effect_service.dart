@@ -1184,6 +1184,7 @@ class ExternalEffectService {
       canonicalPayloadJson: operation.canonicalPayloadJson,
       payloadHashHex: operation.payloadHashHex,
       providerReferenceId: operation.providerReferenceId,
+      lastErrorCode: operation.lastErrorCode,
     );
     request.validate();
     return request;

@@ -107,6 +107,44 @@ void main() {
   });
 
   test(
+    'explicit abandonment frees the slot without replay after restart',
+    () async {
+      final change = await publicChanges.record(
+        sourceId: 'abandoned-news',
+        category: 'hivra',
+        facts: ['This old attempted news must not be regenerated.'],
+      );
+      final draft = _draftPreview('e' * 64);
+      await drafts.save(draft);
+      await publicChanges.markDrafted(
+        change.commitmentHashHex,
+        draft.draftHashHex,
+      );
+      final old = _committedPost(
+        'unknown-old-post',
+        DateTime.now().toUtc(),
+        state: ExternalEffectState.terminalFailure,
+        lastErrorCode: 'verification_expired',
+      );
+      publications.operations = [old];
+
+      final closed = await module.closeMoltbookPublicationWithoutReceipt(
+        old.operationId,
+      );
+      expect(closed.receipt, isNull);
+      expect(publications.operations, isEmpty);
+      expect(drafts.stored, isEmpty);
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(ai.bulletinProposalCount, 0);
+      expect(publications.processedIds, isEmpty);
+      expect(publications.operations, isEmpty);
+      expect((await publicChanges.load()).single.isPending, isFalse);
+    },
+  );
+
+  test(
     'restart resumes the existing prepared news effect without another Gemini proposal',
     () async {
       ai.unlocked = true;
@@ -2151,7 +2189,7 @@ class _CycleConnection implements MoltbookConnectionService {
         submoltName: 'hivra',
         score: 1,
         commentCount: 1,
-        isVerified: true,
+        verificationStatus: 'verified',
         isSpam: false,
         isLocked: false,
         createdAtUtc: '2026-08-01T00:00:00.000Z',
@@ -2703,6 +2741,24 @@ class _CyclePublications implements MoltbookPublicationService {
     );
     operations[index] = cancelled;
     return cancelled;
+  }
+
+  @override
+  Future<ExternalEffectOperation> closeWithoutReceipt(
+    String operationId,
+  ) async {
+    final index = operations.indexWhere((op) => op.operationId == operationId);
+    final operation = operations[index];
+    final closed = ExternalEffectOperation.fromJson({
+      ...operation.toJson(),
+      'state': 'terminal_failure',
+      'last_error_code':
+          MoltbookPublicationService.closedWithoutReceiptErrorCode,
+      'last_error_message': 'Abandoned without resending',
+      'revision': operation.revision + 1,
+    });
+    operations[index] = closed;
+    return closed;
   }
 
   @override

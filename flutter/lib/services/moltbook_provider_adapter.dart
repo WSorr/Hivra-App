@@ -545,7 +545,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
       submoltName: _requiredString(submolt, 'name'),
       score: _requiredInt(post, 'score'),
       commentCount: _requiredNonNegativeInt(post, 'comment_count'),
-      isVerified: _requiredString(post, 'verification_status') == 'verified',
+      verificationStatus: _requiredString(post, 'verification_status'),
       isSpam: _requiredBool(post, 'is_spam'),
       isLocked: _requiredBool(post, 'is_locked'),
       createdAtUtc: createdAt.toIso8601String(),

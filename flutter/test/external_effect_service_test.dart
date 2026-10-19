@@ -186,6 +186,10 @@ void main() {
       expect(adapter.deliverCount, 1);
       expect(adapter.reconcileCount, 1);
       expect(completed.providerReferenceId, 'provider-post');
+      expect(
+        adapter.lastReconcileRequest?.lastErrorCode,
+        'required_action_expired',
+      );
     },
   );
 

@@ -770,7 +770,7 @@ MoltbookConversationObservation _conversation() {
       submoltName: 'general',
       score: 3,
       commentCount: 1,
-      isVerified: true,
+      verificationStatus: 'verified',
       isSpam: false,
       isLocked: false,
       createdAtUtc: '2026-07-29T10:00:00.000Z',

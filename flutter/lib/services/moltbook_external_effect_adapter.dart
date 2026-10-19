@@ -463,13 +463,15 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     String postId,
   ) async {
     final post = await _provider.observePost(apiKey, postId: postId);
-    final matches = post.matchesExactPublication(
-      postId: postId,
-      authorName: payload.accountName,
-      submoltName: payload.submoltName,
-      title: payload.title,
-      content: payload.content,
-    );
+    final matches =
+        post.authorId == request.accountBindingId &&
+        post.matchesExactPublication(
+          postId: postId,
+          authorName: payload.accountName,
+          submoltName: payload.submoltName,
+          title: payload.title,
+          content: payload.content,
+        );
     if (!matches) {
       return _receiptNotObserved();
     }
@@ -482,8 +484,31 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
             'Moltbook retained the exact post but marked it as spam; publication retry is blocked',
       );
     }
-    if (!post.isVerified) return _receiptNotObserved();
-    return _success(request, post.postId);
+    if (post.isVerified) return _success(request, post.postId);
+    // Moltbook's post challenge has a five-minute lifetime. An exact retained
+    // post cannot stay actionable forever just because its status stays pending.
+    final expiredPending =
+        post.verificationStatus == 'pending' &&
+        const {
+          'required_action_expired',
+          'verification_expired',
+        }.contains(request.lastErrorCode) &&
+        !_clock().toUtc().isBefore(
+          DateTime.parse(post.createdAtUtc).add(const Duration(minutes: 5)),
+        );
+    if (post.verificationStatus == 'failed' || expiredPending) {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        providerReferenceId: post.postId,
+        errorCode:
+            expiredPending
+                ? 'provider_verification_expired'
+                : 'provider_verification_failed',
+        errorMessage:
+            'The exact Moltbook post did not complete verification; no publication retry was made',
+      );
+    }
+    return _receiptNotObserved();
   }
 
   Future<ExternalEffectAdapterResult> _reconcileComment(

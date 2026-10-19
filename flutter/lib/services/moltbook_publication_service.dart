@@ -504,7 +504,6 @@ class MoltbookPublicationService {
     return ((operation.state == ExternalEffectState.unresolved ||
                 operation.state == ExternalEffectState.delivering) &&
             operation.requiredAction == null) ||
-        isClosedWithoutReceipt(operation) ||
         canManuallyReconcileTerminalFailure(operation);
   }
 
@@ -565,7 +564,7 @@ class MoltbookPublicationService {
       allowedErrorCodes: _absenceEvidenceErrorCodes,
       closureCode: closedWithoutReceiptErrorCode,
       closureMessage:
-          'Closed locally without a confirmed receipt; delivery remains unconfirmed and exact retry stays blocked',
+          'Abandoned locally without a confirmed receipt; no publication was retried',
     );
   }
 

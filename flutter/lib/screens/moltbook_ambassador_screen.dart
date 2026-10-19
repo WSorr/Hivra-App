@@ -1561,7 +1561,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
             (dialogContext) => AlertDialog(
               title: const Text('Close unconfirmed attempt?'),
               content: const Text(
-                'Delivery is still unconfirmed. This closes only the local attempt; it does not send, cancel, or delete anything on Moltbook. The same publication stays protected against duplicate sending. Independent new posts can continue.',
+                'Delivery is still unconfirmed. Abandon this local attempt and its source draft without resending. Nothing on Moltbook is changed, and no successful receipt is claimed. Independent new work can continue.',
               ),
               actions: [
                 TextButton(
@@ -1590,7 +1590,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       });
       _showNotice(
         result.state == ExternalEffectState.terminalFailure
-            ? 'Attempt closed locally; exact retry remains blocked'
+            ? 'Local attempt and source draft removed without resending'
             : 'Close state: ${result.state.wireName}',
         isError: result.state != ExternalEffectState.terminalFailure,
       );
@@ -3101,13 +3101,6 @@ class MoltbookPublicationCard extends StatelessWidget {
       label: 'Community ownership verified',
       icon: Icons.verified_rounded,
       color: Colors.green,
-    );
-  }
-  if (MoltbookPublicationService.isClosedWithoutReceipt(operation)) {
-    return (
-      label: 'Closed locally; delivery unconfirmed, exact retry blocked',
-      icon: Icons.archive_outlined,
-      color: const Color(0xFF9CA7B5),
     );
   }
   return switch (operation.state) {

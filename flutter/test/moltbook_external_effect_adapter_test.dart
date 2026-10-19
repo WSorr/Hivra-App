@@ -101,24 +101,27 @@ void main() {
     },
   );
 
-  test('reconciliation closes revoked package authority as terminal history', () async {
-    final adapter = MoltbookExternalEffectAdapter(
-      secretVault: vault,
-      provider: MoltbookProviderAdapter(
-        send: (request) async => _postResponse('post-must-not-be-read'),
-      ),
-      authorize: (_) async {
-        return () async {
-          throw StateError('package was replaced');
-        };
-      },
-    );
+  test(
+    'reconciliation closes revoked package authority as terminal history',
+    () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async => _postResponse('post-must-not-be-read'),
+        ),
+        authorize: (_) async {
+          return () async {
+            throw StateError('package was replaced');
+          };
+        },
+      );
 
-    final result = await adapter.reconcile(_request());
+      final result = await adapter.reconcile(_request());
 
-    expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
-    expect(result.errorCode, 'authorization_revoked');
-  });
+      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+      expect(result.errorCode, 'authorization_revoked');
+    },
+  );
 
   test('publishes a v3 post without the automatic repository link', () async {
     final requests = <MoltbookHttpRequest>[];
@@ -1020,6 +1023,126 @@ void main() {
     },
   );
 
+  for (final scenario
+      in <({String status, String? priorError, int minute, String? expected})>[
+        (
+          status: 'failed',
+          priorError: 'http_400',
+          minute: 0,
+          expected: 'provider_verification_failed',
+        ),
+        (
+          status: 'pending',
+          priorError: 'required_action_expired',
+          minute: 6,
+          expected: 'provider_verification_expired',
+        ),
+        (
+          status: 'pending',
+          priorError: 'verification_expired',
+          minute: 4,
+          expected: null,
+        ),
+        (
+          status: 'pending',
+          priorError: 'verification_receipt_pending',
+          minute: 6,
+          expected: null,
+        ),
+        (
+          status: 'unknown',
+          priorError: 'required_action_expired',
+          minute: 6,
+          expected: null,
+        ),
+      ]) {
+    test('recovery preserves verification evidence: $scenario', () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        authorize: _allowRequest,
+        clock: () => DateTime.utc(2026, 7, 26, 14, scenario.minute),
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            return _postResponse(
+              'exact-post',
+              verificationStatus: scenario.status,
+            );
+          },
+        ),
+      );
+      final result = await adapter.reconcile(
+        _request(
+          providerReferenceId: 'exact-post',
+          lastErrorCode: scenario.priorError,
+        ),
+      );
+      expect(
+        result.status,
+        scenario.expected == null
+            ? ExternalEffectAdapterStatus.unresolved
+            : ExternalEffectAdapterStatus.terminalFailure,
+      );
+      expect(result.errorCode, scenario.expected ?? 'receipt_not_observed');
+      expect(result.receipt, isNull);
+      if (scenario.expected != null) {
+        expect(result.providerReferenceId, 'exact-post');
+      }
+      expect(requests.single.method, 'GET');
+    });
+  }
+
+  test('expired recovery cannot settle different exact text', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      authorize: _allowRequest,
+      clock: () => DateTime.utc(2026, 7, 26, 14, 6),
+      provider: MoltbookProviderAdapter(
+        send:
+            (_) async => _postResponse(
+              'exact-post',
+              title: 'Different title',
+              verificationStatus: 'failed',
+            ),
+      ),
+    );
+    final result = await adapter.reconcile(
+      _request(
+        providerReferenceId: 'exact-post',
+        lastErrorCode: 'verification_expired',
+      ),
+    );
+    expect(result.status, ExternalEffectAdapterStatus.unresolved);
+    expect(result.errorCode, 'receipt_not_observed');
+  });
+
+  test(
+    'failed verification stays unresolved for a different provider account',
+    () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        authorize: _allowRequest,
+        provider: MoltbookProviderAdapter(
+          send:
+              (_) async => _postResponse(
+                'exact-post',
+                authorId: 'another-account',
+                verificationStatus: 'failed',
+              ),
+        ),
+      );
+      final result = await adapter.reconcile(
+        _request(
+          providerReferenceId: 'exact-post',
+          lastErrorCode: 'verification_expired',
+        ),
+      );
+      expect(result.status, ExternalEffectAdapterStatus.unresolved);
+      expect(result.errorCode, 'receipt_not_observed');
+    },
+  );
+
   test('keeps v1 marker reconciliation for existing queued effects', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
@@ -1207,6 +1330,7 @@ void main() {
 ExternalEffectAdapterRequest _request({
   String owner = _owner,
   String? providerReferenceId,
+  String? lastErrorCode,
 }) {
   const payload =
       '{"schema_version":2,"account_name":"HivraAgent",'
@@ -1227,6 +1351,7 @@ ExternalEffectAdapterRequest _request({
     payloadHashHex:
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     providerReferenceId: providerReferenceId,
+    lastErrorCode: lastErrorCode,
   );
 }
 
@@ -1379,6 +1504,7 @@ MoltbookHttpResponse _submoltResponse() => _jsonResponse(_submoltBody());
 
 MoltbookHttpResponse _postResponse(
   String postId, {
+  String authorId = 'account-1',
   String title = 'Release note',
   String content =
       'Public fact\n\n'
@@ -1399,7 +1525,7 @@ MoltbookHttpResponse _postResponse(
       'comment_count': 0,
       'created_at': '2026-07-26T14:00:00.000Z',
       'updated_at': '2026-07-26T14:01:00.000Z',
-      'author': <String, dynamic>{'id': 'account-1', 'name': 'HivraAgent'},
+      'author': <String, dynamic>{'id': authorId, 'name': 'HivraAgent'},
       'submolt': <String, dynamic>{'name': 'general'},
     },
   });

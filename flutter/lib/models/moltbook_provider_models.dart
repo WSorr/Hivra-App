@@ -182,7 +182,9 @@ class MoltbookPostObservation {
   final String submoltName;
   final int score;
   final int commentCount;
-  final bool isVerified;
+  final String verificationStatus;
+
+  bool get isVerified => verificationStatus == 'verified';
   final bool isSpam;
   final bool isLocked;
   final String createdAtUtc;
@@ -197,7 +199,7 @@ class MoltbookPostObservation {
     required this.submoltName,
     required this.score,
     required this.commentCount,
-    required this.isVerified,
+    required this.verificationStatus,
     required this.isSpam,
     required this.isLocked,
     required this.createdAtUtc,
@@ -218,6 +220,7 @@ class MoltbookPostObservation {
       this.content == content;
 
   void validate() {
+    _bounded('conversation.verification_status', verificationStatus, 1, 64);
     _bounded('conversation.post_id', postId, 1, 256);
     _bounded('conversation.title', title, 1, 300);
     _bounded('conversation.content', content, 0, 40000);

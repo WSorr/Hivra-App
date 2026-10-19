@@ -2332,6 +2332,7 @@ class MoltbookRuntimeModule {
     String operationId,
   ) async {
     final result = await moltbookPublications.closeWithoutReceipt(operationId);
+    await _settleMoltbookOperations([result]);
     await uiLog.log(
       'moltbook.publication.close_without_receipt',
       'operation=$operationId state=${result.state.wireName}',

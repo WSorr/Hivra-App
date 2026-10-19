@@ -398,7 +398,7 @@ class _FakeObserver implements MoltbookObservePort {
         submoltName: 'general',
         score: 1,
         commentCount: 1,
-        isVerified: true,
+        verificationStatus: 'verified',
         isSpam: false,
         isLocked: false,
         createdAtUtc: '2026-07-29T10:00:00.000Z',

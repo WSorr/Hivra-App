@@ -182,7 +182,7 @@ void main() {
     );
   });
 
-  test('local closure retains the exact draft deduplication identity', () {
+  test('explicit local closure is ready for settlement without a receipt', () {
     final draft = _postDraft('1');
     final closed = _postOperation(
       operationId: 'moltbook-post-closed',
@@ -203,6 +203,7 @@ void main() {
       same(closed),
     );
     expect(MoltbookPublicationService.canCloseWithoutReceipt(closed), isFalse);
+    expect(MoltbookPublicationService.requiresReconciliation(closed), isFalse);
   });
 
   test('only an absent post attempt can be closed without receipt', () {
