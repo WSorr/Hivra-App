@@ -39,7 +39,7 @@ Set<String>? requiredCapabilitiesForPlugin({
   required String? pluginId,
   required String? contractKind,
 }) {
-  final normalizedPluginId = pluginId?.trim();
+  final normalizedPluginId = canonicalPluginId(pluginId);
   final normalizedContractKind = contractKind?.trim();
   if (normalizedContractKind == pluginWorkspaceContractKind) {
     return pluginWorkspaceRequiredCapabilities;

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/screens/main_screen.dart';
+import 'package:hivra_app/services/plugin_contract_handlers.dart';
 
 void main() {
   test('installed manifest profiles select the canonical workspace', () {
@@ -30,27 +31,97 @@ void main() {
     }
   });
 
-  test('specialized workspaces fail closed when a grant is missing', () {
-    expect(
-      installedPluginWorkspaceContractKind(
-        _record(
-          pluginId: capsuleChatPluginId,
-          contractKind: capsuleChatContractKind,
-          capabilities: const <String>[],
-        ),
+  test('every required capability controls readiness and activation', () {
+    final profiles = <(String, String, Set<String>)>[
+      (
+        capsuleChatPluginId,
+        capsuleChatContractKind,
+        capsuleChatRequiredCapabilities,
       ),
-      isNull,
-    );
-    expect(
-      installedPluginWorkspaceContractKind(
-        _record(
-          pluginId: moltbookAmbassadorPluginId,
-          contractKind: moltbookAmbassadorContractKind,
-          capabilities: const ['content.draft.prepare'],
-        ),
+      (
+        moltbookAmbassadorPluginId,
+        moltbookAmbassadorContractKind,
+        moltbookAmbassadorRequiredCapabilities,
       ),
-      isNull,
-    );
+      (
+        'hivra.contract.independent.v1',
+        pluginWorkspaceContractKind,
+        pluginWorkspaceRequiredCapabilities,
+      ),
+    ];
+    for (final (pluginId, contractKind, required) in profiles) {
+      for (final missing in required) {
+        final capabilities =
+            required.where((value) => value != missing).toList();
+        final record = _record(
+          pluginId: pluginId,
+          contractKind: contractKind,
+          capabilities: capabilities,
+        );
+        expect(
+          pluginCapabilitiesSatisfyContract(
+            pluginId: pluginId,
+            contractKind: contractKind,
+            capabilities: capabilities,
+          ),
+          isFalse,
+          reason: '$pluginId without $missing',
+        );
+        expect(
+          installedPluginWorkspaceContractKind(record),
+          isNull,
+          reason: '$pluginId without $missing',
+        );
+      }
+      final capabilities = [...required, 'consensus_guard.read'];
+      expect(
+        installedPluginWorkspaceContractKind(
+          _record(
+            pluginId: ' ${pluginId.toUpperCase()} ',
+            contractKind: contractKind,
+            capabilities: capabilities,
+          ),
+        ),
+        contractKind,
+      );
+      expect(
+        pluginCapabilitiesSatisfyContract(
+          pluginId: ' ${pluginId.toUpperCase()} ',
+          contractKind: contractKind,
+          capabilities: capabilities,
+        ),
+        isTrue,
+      );
+    }
+  });
+
+  test('workspace requirements cover exactly the host method requirements', () {
+    final handlers = [
+      const PluginWorkspaceContractHandler(
+        pluginId: 'hivra.contract.independent.v1',
+      ),
+      CapsuleChatPluginContractHandler(
+        readSignable:
+            (_) =>
+                throw StateError(
+                  'No consensus read during capability inspection',
+                ),
+      ),
+      const MoltbookAmbassadorPluginContractHandler(),
+    ];
+    for (final handler in handlers) {
+      final requiredByHost = <String>{
+        for (final method in handler.methods)
+          ...handler.requiredCapabilities(method),
+      };
+      expect(
+        requiredCapabilitiesForPlugin(
+          pluginId: handler.pluginId,
+          contractKind: handler.contractKind,
+        ),
+        requiredByHost,
+      );
+    }
   });
 
   test('readiness shares the activation capability contract', () {

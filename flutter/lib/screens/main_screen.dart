@@ -38,7 +38,7 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
     return null;
   }
 
-  final pluginId = record.pluginId?.trim();
+  final pluginId = canonicalPluginId(record.pluginId);
   final contractKind = record.contractKind?.trim();
   final requiredCapabilities = requiredCapabilitiesForPlugin(
     pluginId: pluginId,
