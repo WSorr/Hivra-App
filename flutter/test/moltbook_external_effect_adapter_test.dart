@@ -27,6 +27,57 @@ void main() {
     );
   });
 
+  for (final status in ['unavailable', 'spam', 'deleted']) {
+    test('a hidden public post cannot mint a receipt: $status', () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        authorize: _allowRequest,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            if (request.headers.containsKey('authorization')) {
+              return _postResponse('public-post');
+            }
+            if (status == 'unavailable') {
+              return MoltbookHttpResponse(
+                statusCode: 404,
+                headers: const {},
+                bodyBytes: Uint8List.fromList(utf8.encode('{}')),
+              );
+            }
+            return _postResponse(
+              'public-post',
+              isSpam: status == 'spam',
+              isDeleted: status == 'deleted',
+            );
+          },
+        ),
+      );
+      final result = await adapter.reconcile(
+        _request(providerReferenceId: 'public-post'),
+      );
+      expect(result.receipt, isNull);
+      expect(
+        result.status,
+        status == 'unavailable'
+            ? ExternalEffectAdapterStatus.unresolved
+            : ExternalEffectAdapterStatus.terminalFailure,
+      );
+      expect(
+        result.errorCode,
+        {
+          'unavailable': 'public_observation_unavailable',
+          'spam': 'provider_marked_spam',
+          'deleted': 'provider_post_deleted',
+        }[status],
+      );
+      expect(requests, hasLength(1));
+      expect(requests.single.method, 'GET');
+      expect(requests.single.headers.containsKey('authorization'), isFalse);
+    });
+  }
+
   test('publishes exact payload and returns a bound receipt', () async {
     final requests = <MoltbookHttpRequest>[];
     final adapter = MoltbookExternalEffectAdapter(
@@ -63,6 +114,7 @@ void main() {
       'Public fact\n\n[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
     );
     expect(body['content'], isNot(contains('hivra-effect:')));
+    expect(requests.last.headers.containsKey('authorization'), isFalse);
     expect(requests.last.method, 'GET');
     expect(requests.last.uri.path, '/api/v1/posts/post-123');
   });
@@ -101,24 +153,27 @@ void main() {
     },
   );
 
-  test('reconciliation closes revoked package authority as terminal history', () async {
-    final adapter = MoltbookExternalEffectAdapter(
-      secretVault: vault,
-      provider: MoltbookProviderAdapter(
-        send: (request) async => _postResponse('post-must-not-be-read'),
-      ),
-      authorize: (_) async {
-        return () async {
-          throw StateError('package was replaced');
-        };
-      },
-    );
+  test(
+    'reconciliation closes revoked package authority as terminal history',
+    () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async => _postResponse('post-must-not-be-read'),
+        ),
+        authorize: (_) async {
+          return () async {
+            throw StateError('package was replaced');
+          };
+        },
+      );
 
-    final result = await adapter.reconcile(_request());
+      final result = await adapter.reconcile(_request());
 
-    expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
-    expect(result.errorCode, 'authorization_revoked');
-  });
+      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+      expect(result.errorCode, 'authorization_revoked');
+    },
+  );
 
   test('publishes a v3 post without the automatic repository link', () async {
     final requests = <MoltbookHttpRequest>[];
@@ -862,38 +917,38 @@ void main() {
     expect(result.errorCode, 'receipt_not_observed');
   });
 
-  test(
-    'reconciles v2 publication by exact approved title and content',
-    () async {
-      final adapter = MoltbookExternalEffectAdapter(
-        secretVault: vault,
-        authorize: _allowRequest,
-        provider: MoltbookProviderAdapter(
-          send:
-              (_) async => _jsonResponse(<String, dynamic>{
-                'success': true,
-                'agent': <String, dynamic>{'name': 'HivraAgent'},
-                'recentPosts': <Map<String, dynamic>>[
-                  <String, dynamic>{
-                    'id': 'matched-post',
-                    'title': 'Release note',
-                    'content':
-                        'Public fact\n\n'
-                        '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
-                    'verification_status': 'verified',
-                    'is_spam': false,
-                  },
-                ],
-              }),
-        ),
-      );
+  test('reconciles v2 publication by exact approved title and content', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      authorize: _allowRequest,
+      provider: MoltbookProviderAdapter(
+        send:
+            (request) async =>
+                request.uri.path.endsWith('/posts/matched-post')
+                    ? _postResponse('matched-post')
+                    : _jsonResponse(<String, dynamic>{
+                      'success': true,
+                      'agent': <String, dynamic>{'name': 'HivraAgent'},
+                      'recentPosts': <Map<String, dynamic>>[
+                        <String, dynamic>{
+                          'id': 'matched-post',
+                          'title': 'Release note',
+                          'content':
+                              'Public fact\n\n'
+                              '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+                          'verification_status': 'verified',
+                          'is_spam': false,
+                        },
+                      ],
+                    }),
+      ),
+    );
 
-      final result = await adapter.reconcile(_request());
+    final result = await adapter.reconcile(_request());
 
-      expect(result.status, ExternalEffectAdapterStatus.succeeded);
-      expect(result.receipt?.providerReceiptId, 'matched-post');
-    },
-  );
+    expect(result.status, ExternalEffectAdapterStatus.succeeded);
+    expect(result.receipt?.providerReceiptId, 'matched-post');
+  });
 
   test(
     'reconciles a durable provider reference by exact post lookup',
@@ -921,7 +976,7 @@ void main() {
   );
 
   test(
-    'falls back to exact profile reconciliation when post lookup returns 400',
+    'a public lookup failure cannot be replaced by an authenticated profile',
     () async {
       final requests = <MoltbookHttpRequest>[];
       final adapter = MoltbookExternalEffectAdapter(
@@ -960,11 +1015,11 @@ void main() {
         _request(providerReferenceId: 'matched-post'),
       );
 
-      expect(result.status, ExternalEffectAdapterStatus.succeeded);
-      expect(result.receipt?.providerReceiptId, 'matched-post');
+      expect(result.status, ExternalEffectAdapterStatus.unresolved);
+      expect(result.receipt, isNull);
+      expect(result.errorCode, 'public_observation_unavailable');
       expect(requests.map((request) => request.uri.path), <String>[
         '/api/v1/posts/matched-post',
-        '/api/v1/agents/profile',
       ]);
     },
   );
@@ -1020,29 +1075,156 @@ void main() {
     },
   );
 
+  for (final scenario
+      in <({String status, String? priorError, int minute, String? expected})>[
+        (
+          status: 'failed',
+          priorError: 'http_400',
+          minute: 0,
+          expected: 'provider_verification_failed',
+        ),
+        (
+          status: 'pending',
+          priorError: 'required_action_expired',
+          minute: 6,
+          expected: 'provider_verification_expired',
+        ),
+        (
+          status: 'pending',
+          priorError: 'verification_expired',
+          minute: 4,
+          expected: null,
+        ),
+        (
+          status: 'pending',
+          priorError: 'verification_receipt_pending',
+          minute: 6,
+          expected: null,
+        ),
+        (
+          status: 'unknown',
+          priorError: 'required_action_expired',
+          minute: 6,
+          expected: null,
+        ),
+      ]) {
+    test('recovery preserves verification evidence: $scenario', () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        authorize: _allowRequest,
+        clock: () => DateTime.utc(2026, 7, 26, 14, scenario.minute),
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            return _postResponse(
+              'exact-post',
+              verificationStatus: scenario.status,
+            );
+          },
+        ),
+      );
+      final result = await adapter.reconcile(
+        _request(
+          providerReferenceId: 'exact-post',
+          lastErrorCode: scenario.priorError,
+        ),
+      );
+      expect(
+        result.status,
+        scenario.expected == null
+            ? ExternalEffectAdapterStatus.unresolved
+            : ExternalEffectAdapterStatus.terminalFailure,
+      );
+      expect(result.errorCode, scenario.expected ?? 'receipt_not_observed');
+      expect(result.receipt, isNull);
+      if (scenario.expected != null) {
+        expect(result.providerReferenceId, 'exact-post');
+      }
+      expect(requests.single.method, 'GET');
+    });
+  }
+
+  test('expired recovery cannot settle different exact text', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      authorize: _allowRequest,
+      clock: () => DateTime.utc(2026, 7, 26, 14, 6),
+      provider: MoltbookProviderAdapter(
+        send:
+            (_) async => _postResponse(
+              'exact-post',
+              title: 'Different title',
+              verificationStatus: 'failed',
+            ),
+      ),
+    );
+    final result = await adapter.reconcile(
+      _request(
+        providerReferenceId: 'exact-post',
+        lastErrorCode: 'verification_expired',
+      ),
+    );
+    expect(result.status, ExternalEffectAdapterStatus.unresolved);
+    expect(result.errorCode, 'receipt_not_observed');
+  });
+
+  test(
+    'failed verification stays unresolved for a different provider account',
+    () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        authorize: _allowRequest,
+        provider: MoltbookProviderAdapter(
+          send:
+              (_) async => _postResponse(
+                'exact-post',
+                authorId: 'another-account',
+                verificationStatus: 'failed',
+              ),
+        ),
+      );
+      final result = await adapter.reconcile(
+        _request(
+          providerReferenceId: 'exact-post',
+          lastErrorCode: 'verification_expired',
+        ),
+      );
+      expect(result.status, ExternalEffectAdapterStatus.unresolved);
+      expect(result.errorCode, 'receipt_not_observed');
+    },
+  );
+
   test('keeps v1 marker reconciliation for existing queued effects', () async {
     final adapter = MoltbookExternalEffectAdapter(
       secretVault: vault,
       authorize: _allowRequest,
       provider: MoltbookProviderAdapter(
         send:
-            (_) async => _jsonResponse(<String, dynamic>{
-              'success': true,
-              'agent': <String, dynamic>{'name': 'HivraAgent'},
-              'recentPosts': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'id': 'legacy-matched-post',
-                  'title': 'Release note',
-                  'content':
-                      'Public fact\n\n'
-                      '[Hivra on GitHub]'
-                      '(https://github.com/WSorr/Hivra-App#'
-                      'hivra-effect:post-1)',
-                  'verification_status': 'verified',
-                  'is_spam': false,
-                },
-              ],
-            }),
+            (request) async =>
+                request.uri.path.endsWith('/posts/legacy-matched-post')
+                    ? _postResponse(
+                      'legacy-matched-post',
+                      content:
+                          'Public fact\n\n[Hivra on GitHub](https://github.com/WSorr/Hivra-App#hivra-effect:post-1)',
+                    )
+                    : _jsonResponse(<String, dynamic>{
+                      'success': true,
+                      'agent': <String, dynamic>{'name': 'HivraAgent'},
+                      'recentPosts': <Map<String, dynamic>>[
+                        <String, dynamic>{
+                          'id': 'legacy-matched-post',
+                          'title': 'Release note',
+                          'content':
+                              'Public fact\n\n'
+                              '[Hivra on GitHub]'
+                              '(https://github.com/WSorr/Hivra-App#'
+                              'hivra-effect:post-1)',
+                          'verification_status': 'verified',
+                          'is_spam': false,
+                        },
+                      ],
+                    }),
       ),
     );
 
@@ -1092,58 +1274,72 @@ void main() {
     expect(result.receipt, isNull);
   });
 
-  test('reconciles reply only by exact target, author, and content', () async {
-    final adapter = MoltbookExternalEffectAdapter(
-      secretVault: vault,
-      authorize: _allowRequest,
-      provider: MoltbookProviderAdapter(
-        send: (request) async {
-          if (request.uri.path.endsWith('/comments')) {
-            return _jsonResponse(<String, dynamic>{
-              'post_id': 'post-1',
-              'sort': 'new',
-              'comments': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'id': 'comment-2',
-                  'content': 'A bounded reviewed reply.',
-                  'parent_id': 'comment-1',
-                  'upvotes': 0,
-                  'downvotes': 0,
-                  'created_at': '2026-07-29T10:05:00.000Z',
-                  'author': <String, dynamic>{
-                    'id': 'agent-1',
-                    'name': 'HivraAgent',
+  for (final status in ['visible', 'deleted', 'spam', 'pending', 'failed']) {
+    test('reconciles only visible verified reply: $status', () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        authorize: _allowRequest,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            if (request.uri.path.endsWith('/comments')) {
+              return _jsonResponse(<String, dynamic>{
+                'post_id': 'post-1',
+                'sort': 'new',
+                'comments': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'comment-2',
+                    'is_deleted': status == 'deleted',
+                    'is_spam': status == 'spam',
+                    'verification_status':
+                        ['pending', 'failed'].contains(status)
+                            ? status
+                            : 'verified',
+                    'content': 'A bounded reviewed reply.',
+                    'parent_id': 'comment-1',
+                    'upvotes': 0,
+                    'downvotes': 0,
+                    'created_at': '2026-07-29T10:05:00.000Z',
+                    'author': <String, dynamic>{
+                      'id': 'agent-1',
+                      'name': 'HivraAgent',
+                    },
                   },
-                },
-              ],
-              'has_more': false,
+                ],
+                'has_more': false,
+              });
+            }
+            return _jsonResponse(<String, dynamic>{
+              'post': <String, dynamic>{
+                'id': 'post-1',
+                'title': 'Post',
+                'content': 'Body',
+                'author': <String, dynamic>{'id': 'writer', 'name': 'Writer'},
+                'submolt': <String, dynamic>{'name': 'general'},
+                'score': 0,
+                'comment_count': 1,
+                'verification_status': 'verified',
+                'is_spam': false,
+                'is_deleted': false,
+                'is_locked': false,
+                'created_at': '2026-07-29T10:00:00.000Z',
+                'updated_at': '2026-07-29T10:05:00.000Z',
+              },
             });
-          }
-          return _jsonResponse(<String, dynamic>{
-            'post': <String, dynamic>{
-              'id': 'post-1',
-              'title': 'Post',
-              'content': 'Body',
-              'author': <String, dynamic>{'id': 'writer', 'name': 'Writer'},
-              'submolt': <String, dynamic>{'name': 'general'},
-              'score': 0,
-              'comment_count': 1,
-              'verification_status': 'verified',
-              'is_spam': false,
-              'is_locked': false,
-              'created_at': '2026-07-29T10:00:00.000Z',
-              'updated_at': '2026-07-29T10:05:00.000Z',
-            },
-          });
-        },
-      ),
-    );
+          },
+        ),
+      );
 
-    final result = await adapter.reconcile(_commentRequest());
+      final result = await adapter.reconcile(_commentRequest());
 
-    expect(result.status, ExternalEffectAdapterStatus.succeeded);
-    expect(result.receipt?.providerReceiptId, 'comment-2');
-  });
+      if (status == 'visible') {
+        expect(result.status, ExternalEffectAdapterStatus.succeeded);
+        expect(result.receipt?.providerReceiptId, 'comment-2');
+      } else {
+        expect(result.status, ExternalEffectAdapterStatus.unresolved);
+        expect(result.receipt, isNull);
+      }
+    });
+  }
 
   test('credential lookup is bound to originating capsule scope', () async {
     final request = _request(owner: _otherOwner);
@@ -1207,6 +1403,7 @@ void main() {
 ExternalEffectAdapterRequest _request({
   String owner = _owner,
   String? providerReferenceId,
+  String? lastErrorCode,
 }) {
   const payload =
       '{"schema_version":2,"account_name":"HivraAgent",'
@@ -1227,6 +1424,7 @@ ExternalEffectAdapterRequest _request({
     payloadHashHex:
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     providerReferenceId: providerReferenceId,
+    lastErrorCode: lastErrorCode,
   );
 }
 
@@ -1379,12 +1577,14 @@ MoltbookHttpResponse _submoltResponse() => _jsonResponse(_submoltBody());
 
 MoltbookHttpResponse _postResponse(
   String postId, {
+  String authorId = 'account-1',
   String title = 'Release note',
   String content =
       'Public fact\n\n'
           '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
   String verificationStatus = 'verified',
   bool isSpam = false,
+  bool isDeleted = false,
 }) {
   return _jsonResponse(<String, dynamic>{
     'success': true,
@@ -1394,12 +1594,13 @@ MoltbookHttpResponse _postResponse(
       'content': content,
       'verification_status': verificationStatus,
       'is_spam': isSpam,
+      'is_deleted': isDeleted,
       'is_locked': false,
       'score': 0,
       'comment_count': 0,
       'created_at': '2026-07-26T14:00:00.000Z',
       'updated_at': '2026-07-26T14:01:00.000Z',
-      'author': <String, dynamic>{'id': 'account-1', 'name': 'HivraAgent'},
+      'author': <String, dynamic>{'id': authorId, 'name': 'HivraAgent'},
       'submolt': <String, dynamic>{'name': 'general'},
     },
   });

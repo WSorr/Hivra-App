@@ -76,35 +76,221 @@ void main() {
     module = buildModule(triggers);
   });
 
-  test('successful verification archives its exact source draft', () async {
-    ai.unlocked = true;
-    ai.verificationAnswer = '50';
-    final challenged = _operation(challenged: true);
-    publications.operations = <ExternalEffectOperation>[challenged];
-    publications.verificationResult = _succeededPostOperation();
-
-    final result = await module.resolveMoltbookPublicationVerificationWithAi(
-      operationId: challenged.operationId,
+  for (final removed in [false, true]) {
+    test(
+      'package replacement/removal during result read preserves the effect: $removed',
+      () async {
+        final operation = _succeededPostOperation();
+        publications.operations = [operation];
+        publications.afterPublicRead = () {
+          if (removed) {
+            heartbeatHost.installed = false;
+          } else {
+            heartbeatHost.packageDigest = 'replacement';
+          }
+        };
+        await expectLater(
+          module.inspectMoltbookPublication(operation),
+          throwsStateError,
+        );
+        expect(publications.operations.single, same(operation));
+        expect(drafts.deletedHashes, isEmpty);
+        expect(publications.processedIds, isEmpty);
+      },
     );
+  }
 
-    expect(result.state, ExternalEffectState.succeeded);
-    expect(ai.verificationSolutionCount, 1);
-    expect(publications.verificationAnswers, <String>['50']);
-    expect(drafts.deletedHashes, <String>{'f' * 64});
-  });
+  test(
+    'a delivery requiring reconciliation cannot be closed as a shown result',
+    () async {
+      final operation = ExternalEffectOperation.fromJson({
+        ..._succeededPostOperation().toJson(),
+        'state': 'terminal_failure',
+        'receipt': null,
+        'last_error_code': 'http_400',
+      });
+      publications.operations = [operation];
+      await expectLater(
+        module.finishPresentedMoltbookPublication(
+          operation: operation,
+          displayedPost: _visiblePost(),
+        ),
+        throwsStateError,
+      );
+      expect(publications.operations.single, same(operation));
+      expect(drafts.deletedHashes, isEmpty);
+    },
+  );
 
-  test('provider-marked spam archives its closed source draft', () async {
-    final draft = _draftPreview('f' * 64);
-    await drafts.save(draft);
-    publications.operations = <ExternalEffectOperation>[
-      _spamRejectedPostOperation(),
-    ];
+  test(
+    'successful verification retains the source and receipt until the result is shown',
+    () async {
+      ai.unlocked = true;
+      ai.verificationAnswer = '50';
+      final challenged = _operation(challenged: true);
+      publications.operations = <ExternalEffectOperation>[challenged];
+      publications.verificationResult = _succeededPostOperation();
 
-    final loaded = await module.loadMoltbookDrafts();
+      final result = await module.resolveMoltbookPublicationVerificationWithAi(
+        operationId: challenged.operationId,
+      );
 
-    expect(loaded, isEmpty);
-    expect(drafts.deletedHashes, <String>{draft.draftHashHex});
-  });
+      expect(result.state, ExternalEffectState.succeeded);
+      expect(ai.verificationSolutionCount, 1);
+      expect(publications.verificationAnswers, <String>['50']);
+      expect(drafts.deletedHashes, isEmpty);
+      final restarted = buildModule(MoltbookCycleTriggerService());
+      expect(await restarted.loadMoltbookPublications(), hasLength(1));
+      await restarted.finishPresentedMoltbookPublication(
+        operation: result,
+        displayedPost: _visiblePost(),
+      );
+      expect(publications.operations, isEmpty);
+      expect(drafts.deletedHashes, <String>{'f' * 64});
+    },
+  );
+
+  test(
+    'provider-marked spam keeps its reference and exact draft for display',
+    () async {
+      final draft = _draftPreview('f' * 64);
+      await drafts.save(draft);
+      publications.operations = <ExternalEffectOperation>[
+        _spamRejectedPostOperation(),
+      ];
+
+      final loaded = await module.loadMoltbookDrafts();
+
+      expect(loaded, hasLength(1));
+      expect(drafts.deletedHashes, isEmpty);
+      expect(publications.operations, hasLength(1));
+    },
+  );
+
+  test(
+    'cancel prepared effect preserves its authoring draft and frees the slot',
+    () async {
+      final draft = _draftPreview('d' * 64);
+      await drafts.save(draft);
+      final prepared = await publications.prepare(
+        draft: draft,
+        submoltName: 'general',
+      );
+      await module.cancelMoltbookPublication(prepared.operationId);
+      expect(publications.operations, isEmpty);
+      expect(drafts.stored.single.preview.draftHashHex, draft.draftHashHex);
+      expect(publications.processedIds, isEmpty);
+      expect(ai.bulletinProposalCount, 0);
+    },
+  );
+
+  test(
+    'explicit abandonment frees the slot without replay after restart',
+    () async {
+      final change = await publicChanges.record(
+        sourceId: 'abandoned-news',
+        category: 'hivra',
+        facts: ['This old attempted news must not be regenerated.'],
+      );
+      final draft = _draftPreview('e' * 64);
+      await drafts.save(draft);
+      await publicChanges.markDrafted(
+        change.commitmentHashHex,
+        draft.draftHashHex,
+      );
+      final old = _committedPost(
+        'unknown-old-post',
+        DateTime.now().toUtc(),
+        state: ExternalEffectState.terminalFailure,
+        lastErrorCode: 'verification_expired',
+      );
+      publications.operations = [old];
+
+      final closed = await module.closeMoltbookPublicationWithoutReceipt(
+        old.operationId,
+      );
+      expect(closed.receipt, isNull);
+      expect(publications.operations, isEmpty);
+      expect(drafts.stored, isEmpty);
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(ai.bulletinProposalCount, 0);
+      expect(publications.processedIds, isEmpty);
+      expect(publications.operations, isEmpty);
+      expect((await publicChanges.load()).single.isPending, isFalse);
+    },
+  );
+
+  test(
+    'restart resumes the existing prepared news effect without another Gemini proposal',
+    () async {
+      ai.unlocked = true;
+      await publicChanges.record(
+        sourceId: 'restart-prepared-news',
+        category: 'hivra',
+        facts: ['The existing news draft survives restart.'],
+      );
+      await module.runMoltbookCycle();
+      final draft = drafts.stored.single.preview;
+      await module.prepareMoltbookPublication(
+        draft: draft,
+        submoltName: configuration.primaryCommunity,
+      );
+      expect(publications.operations, hasLength(1));
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(publications.operations, hasLength(1));
+      expect(drafts.stored, hasLength(1));
+    },
+  );
+
+  test(
+    'restart processes queued work before considering another news effect',
+    () async {
+      ai.unlocked = true;
+      await publicChanges.record(
+        sourceId: 'restart-queued-news',
+        category: 'hivra',
+        facts: ['The queued news draft survives restart.'],
+      );
+      await module.runMoltbookCycle();
+      final draft = drafts.stored.single.preview;
+      final prepared = await module.prepareMoltbookPublication(
+        draft: draft,
+        submoltName: configuration.primaryCommunity,
+      );
+      await module.approveMoltbookPublication(prepared);
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.processedPostIds, [prepared.operationId]);
+      expect(publications.operations, hasLength(1));
+      expect(drafts.stored, hasLength(1));
+    },
+  );
+
+  test(
+    'restart reconciles interrupted delivery without sending again',
+    () async {
+      final interrupted = _committedPost(
+        'interrupted-news',
+        DateTime.now().toUtc(),
+        state: ExternalEffectState.delivering,
+      );
+      publications.operations = [interrupted];
+      publications.resolvePostOnRecheck = true;
+
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+
+      expect(publications.reconciledIds, [interrupted.operationId]);
+      expect(publications.processedPostIds, isEmpty);
+      expect(publications.operations, hasLength(1));
+      expect(ai.bulletinProposalCount, 0);
+    },
+  );
 
   test('locked AI cannot submit a Moltbook verification answer', () async {
     final challenged = _operation(challenged: true);
@@ -133,7 +319,7 @@ void main() {
 
     expect(drafts.deletedHashes, contains(draft.draftHashHex));
     expect(publications.cancelledIds, <String>[operation.operationId]);
-    expect(publications.operations.single.state, ExternalEffectState.cancelled);
+    expect(publications.operations, isEmpty);
   });
 
   test('deleting a draft cannot bypass an approved publication', () async {
@@ -169,7 +355,7 @@ void main() {
 
     expect(loaded, isEmpty);
     expect(publications.cancelledIds, <String>[operation.operationId]);
-    expect(publications.operations.single.state, ExternalEffectState.cancelled);
+    expect(publications.operations, isEmpty);
   });
 
   test(
@@ -433,7 +619,7 @@ void main() {
   );
 
   test(
-    'new repository snapshot removes a draft held by another account effect',
+    'a pending effect from another account stays sealed during observation',
     () async {
       final previousSourceId = 'github-news-v2-${'e' * 40}';
       final previousChange = await publicChanges.record(
@@ -468,7 +654,7 @@ void main() {
 
       await module.runMoltbookCycle();
 
-      expect(drafts.deletedHashes, contains(previousDraft.draftHashHex));
+      expect(drafts.deletedHashes, isEmpty);
     },
   );
 
@@ -794,7 +980,7 @@ void main() {
   );
 
   test(
-    'stale unresolved post does not block a distinct confirmed change',
+    'an unresolved post keeps the single slot and suppresses new AI work',
     () async {
       ai.unlocked = true;
       configuration.approvalMode =
@@ -814,10 +1000,10 @@ void main() {
 
       await module.runMoltbookCycle();
 
-      expect(ai.bulletinProposalCount, 2);
-      expect(publications.postApprovalCount, 2);
-      expect(publications.processedPostIds, hasLength(2));
-      expect(publications.operations, hasLength(2));
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.postApprovalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(publications.operations, hasLength(1));
     },
   );
 
@@ -841,7 +1027,7 @@ void main() {
   });
 
   test(
-    'distinct news effect proceeds without resubmitting an older post',
+    'restart preserves an unknown post until its exact receipt is observed',
     () async {
       ai.unlocked = true;
       configuration.approvalMode =
@@ -861,44 +1047,46 @@ void main() {
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
       expect(
         drafts.stored.map((draft) => draft.preview.bulletinId),
-        contains('capsule-change-after-receipt'),
+        isNot(contains('capsule-change-after-receipt')),
       );
-      expect(publications.processedPostIds, hasLength(2));
+      expect(publications.processedPostIds, hasLength(1));
 
       publications.resolvePostOnRecheck = true;
       publications.leavePostUnresolved = false;
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(publications.operations, hasLength(1));
+      await module.finishPresentedMoltbookPublication(
+        operation: publications.operations.single,
+        displayedPost: _visiblePost(),
+      );
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
 
       expect(ai.bulletinProposalCount, 2);
       expect(publications.postApprovalCount, 2);
       expect(publications.processedPostIds, hasLength(2));
-      expect(publications.operations, hasLength(2));
-      expect(drafts.stored, isEmpty);
+      expect(publications.operations, hasLength(1));
+      expect(drafts.stored, hasLength(1));
     },
   );
 
-  test(
-    'unapproved unrelated preparation does not block bounded news',
-    () async {
-      configuration.approvalMode =
-          MoltbookAmbassadorConfiguration.approvalBounded;
-      publications.operations = <ExternalEffectOperation>[
-        _operationWithState(_operation(), ExternalEffectState.prepared),
-      ];
-      await publicChanges.record(
-        sourceId: 'capsule-change-after-preparation',
-        category: 'hivra',
-        facts: const <String>['A confirmed change is ready for publication.'],
-      );
+  test('an unapproved effect also owns the single publication slot', () async {
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    publications.operations = <ExternalEffectOperation>[
+      _operationWithState(_operation(), ExternalEffectState.prepared),
+    ];
+    await publicChanges.record(
+      sourceId: 'capsule-change-after-preparation',
+      category: 'hivra',
+      facts: const <String>['A confirmed change is ready for publication.'],
+    );
 
-      await module.runMoltbookCycle();
+    await module.runMoltbookCycle();
 
-      expect(publications.postApprovalCount, 1);
-      expect(publications.processedPostIds, hasLength(1));
-      expect(publications.operations, hasLength(2));
-    },
-  );
+    expect(publications.postApprovalCount, 0);
+    expect(publications.processedPostIds, isEmpty);
+    expect(publications.operations, hasLength(1));
+  });
 
   test('provider read failure still prepares a local news draft', () async {
     ai.unlocked = true;
@@ -958,9 +1146,11 @@ void main() {
       expect(ai.bulletinProposalCount, 1);
       expect(publications.postApprovalCount, 1);
       expect(publications.processedPostIds, hasLength(1));
-      expect(drafts.stored.map((draft) => draft.preview.draftHashHex), <String>[
-        unrelatedDraft.draftHashHex,
-      ]);
+      expect(drafts.stored, hasLength(2));
+      expect(
+        drafts.stored.map((draft) => draft.preview.draftHashHex),
+        contains(unrelatedDraft.draftHashHex),
+      );
       expect((await publicChanges.load()).single.isPending, isFalse);
     },
   );
@@ -1044,7 +1234,7 @@ void main() {
       ]);
       expect(publications.postApprovalCount, 1);
       expect(publications.processedPostIds, hasLength(1));
-      expect(drafts.stored, isEmpty);
+      expect(drafts.stored, hasLength(1));
       final persisted = (await publicChanges.load()).single;
       expect(persisted.sourceId, change.sourceId);
       expect(persisted.isPending, isFalse);
@@ -1189,18 +1379,23 @@ void main() {
       );
       final restarted = buildModule(MoltbookCycleTriggerService());
 
+      for (final completed in publications.operations) {
+        await checkpoint.recordProcessedWrite(completed);
+        await checkpoint.finishProcessedWrite(completed.operationId);
+      }
+      publications.operations.clear();
       final summary = await restarted.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
-      expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, hasLength(1));
+      expect(ai.bulletinProposalCount, 0);
+      expect(drafts.stored, isEmpty);
       expect(publications.preparedPostDestinations, isEmpty);
       expect(publications.postApprovalCount, 0);
       expect(publications.processedPostIds, isEmpty);
       final retained = (await publicChanges.load()).singleWhere(
         (item) => item.sourceId == change.sourceId,
       );
-      expect(retained.isPending, isFalse);
+      expect(retained.isPending, isTrue);
     },
   );
 
@@ -1220,7 +1415,7 @@ void main() {
 
       expect(summary.blockedCount, 0);
       expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, isEmpty);
+      expect(drafts.stored, hasLength(1));
       expect(publications.preparedPostDestinations, <String>[
         'my-capsule-notes',
       ]);
@@ -1560,6 +1755,11 @@ void main() {
         ),
       ];
 
+      for (final completed in publications.operations) {
+        await checkpoint.recordProcessedWrite(completed);
+        await checkpoint.finishProcessedWrite(completed.operationId);
+      }
+      publications.operations.clear();
       final summary = await module.runMoltbookCycle();
 
       expect(heartbeatHost.authorizationCount, 1);
@@ -1583,21 +1783,21 @@ void main() {
           today,
           state: ExternalEffectState.terminalFailure,
           providerReferenceId: 'provider-post-1',
-          lastErrorCode: 'verification_expired',
+          lastErrorCode: 'provider_marked_spam',
         ),
         _committedPost(
           'failed-post-2',
           today.add(const Duration(minutes: 40)),
           state: ExternalEffectState.terminalFailure,
           providerReferenceId: 'provider-post-2',
-          lastErrorCode: 'verification_expired',
+          lastErrorCode: 'provider_marked_spam',
         ),
         _committedPost(
           'failed-post-3',
           today.add(const Duration(minutes: 80)),
           state: ExternalEffectState.terminalFailure,
           providerReferenceId: 'provider-post-3',
-          lastErrorCode: 'verification_expired',
+          lastErrorCode: 'provider_marked_spam',
         ),
       ];
       await publicChanges.record(
@@ -1606,11 +1806,16 @@ void main() {
         facts: const <String>['A later confirmed change remains queued.'],
       );
 
+      for (final completed in publications.operations) {
+        await checkpoint.recordProcessedWrite(completed);
+        await checkpoint.finishProcessedWrite(completed.operationId);
+      }
+      publications.operations.clear();
       final summary = await module.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
-      expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, hasLength(1));
+      expect(ai.bulletinProposalCount, 0);
+      expect(drafts.stored, isEmpty);
       expect(publications.preparedPostDestinations, isEmpty);
       expect(publications.processedPostIds, isEmpty);
     },
@@ -1878,7 +2083,7 @@ void main() {
   });
 
   test(
-    'configured session replies once before preparing the project news draft',
+    'an assisted reply waits for processing before the next project news draft',
     () async {
       configuration.triggerPolicy =
           MoltbookAmbassadorConfiguration.triggerSession;
@@ -1902,12 +2107,8 @@ void main() {
             .join('\n'),
       );
       expect(ai.proposalCount, 1);
-      expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, hasLength(1));
-      expect(
-        drafts.stored.single.preview.bulletinId,
-        'github-news-v2-${'a' * 40}',
-      );
+      expect(ai.bulletinProposalCount, 0);
+      expect(drafts.stored, isEmpty);
       expect(publications.preparedPostDestinations, isEmpty);
       final replyIndex = log.entries.indexWhere(
         (entry) =>
@@ -1920,7 +2121,7 @@ void main() {
             entry.message.startsWith('prepared '),
       );
       expect(replyIndex, greaterThanOrEqualTo(0));
-      expect(newsIndex, greaterThan(replyIndex));
+      expect(newsIndex, -1);
     },
   );
 
@@ -1952,7 +2153,7 @@ void main() {
         MoltbookPublicationService.personFirstRuntimeSubmoltName,
       ]);
       expect(publications.processedPostIds, hasLength(1));
-      expect(drafts.stored, isEmpty);
+      expect(drafts.stored, hasLength(1));
       expect(summary!.blockedCount, 0);
     },
   );
@@ -2088,7 +2289,7 @@ class _CycleConnection implements MoltbookConnectionService {
         submoltName: 'hivra',
         score: 1,
         commentCount: 1,
-        isVerified: true,
+        verificationStatus: 'verified',
         isSpam: false,
         isLocked: false,
         createdAtUtc: '2026-08-01T00:00:00.000Z',
@@ -2129,7 +2330,12 @@ class _CycleConnection implements MoltbookConnectionService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
+class _MemoryCheckpoint extends MoltbookFeedCheckpointStore {
+  _MemoryCheckpoint()
+    : super(
+        fileStore: _MemoryFileStore(),
+        readActiveCapsuleRootHex: () => _rootA,
+      );
   MoltbookFeedCheckpoint value = const MoltbookFeedCheckpoint.empty();
   int commitCount = 0;
 
@@ -2139,6 +2345,7 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
   @override
   Future<MoltbookFeedCheckpoint> save(MoltbookFeedCheckpoint checkpoint) async {
     commitCount++;
+    await super.save(checkpoint);
     value = checkpoint;
     return value;
   }
@@ -2586,6 +2793,15 @@ class _PublicRepositorySource implements MoltbookPublicRepositorySourceAdapter {
 }
 
 class _CyclePublications implements MoltbookPublicationService {
+  void Function()? afterPublicRead;
+  @override
+  Future<MoltbookPostObservation> observePublicResult(
+    ExternalEffectOperation operation,
+  ) async {
+    afterPublicRead?.call();
+    return _visiblePost();
+  }
+
   List<ExternalEffectOperation> operations = <ExternalEffectOperation>[];
   final List<String> processedIds = <String>[];
   final List<ExternalEffectOperation> preparedReplies =
@@ -2606,7 +2822,22 @@ class _CyclePublications implements MoltbookPublicationService {
   bool completeReplies = false;
 
   @override
-  Future<List<ExternalEffectOperation>> list() async => operations;
+  Future<void> forgetProcessed(
+    ExternalEffectOperation operation, {
+    MoltbookPostObservation? displayedPost,
+    required Future<void> Function() beforeDelete,
+    required Future<void> Function() afterDelete,
+  }) async {
+    if (!operations.any((item) => item.operationId == operation.operationId)) {
+      return;
+    }
+    await beforeDelete();
+    operations.removeWhere((item) => item.operationId == operation.operationId);
+    await afterDelete();
+  }
+
+  @override
+  Future<List<ExternalEffectOperation>> list() async => List.of(operations);
 
   @override
   Future<ExternalEffectOperation> cancel(String operationId) async {
@@ -2620,6 +2851,24 @@ class _CyclePublications implements MoltbookPublicationService {
     );
     operations[index] = cancelled;
     return cancelled;
+  }
+
+  @override
+  Future<ExternalEffectOperation> closeWithoutReceipt(
+    String operationId,
+  ) async {
+    final index = operations.indexWhere((op) => op.operationId == operationId);
+    final operation = operations[index];
+    final closed = ExternalEffectOperation.fromJson({
+      ...operation.toJson(),
+      'state': 'terminal_failure',
+      'last_error_code':
+          MoltbookPublicationService.closedWithoutReceiptErrorCode,
+      'last_error_message': 'Abandoned without resending',
+      'revision': operation.revision + 1,
+    });
+    operations[index] = closed;
+    return closed;
   }
 
   @override
@@ -2776,7 +3025,10 @@ class _CyclePublications implements MoltbookPublicationService {
   }) async {
     verificationResolveCount++;
     verificationAnswers.add(answer);
-    return verificationResult!;
+    final result = verificationResult!;
+    operations.removeWhere((item) => item.operationId == operationId);
+    operations.add(result);
+    return result;
   }
 
   @override
@@ -2952,7 +3204,7 @@ ExternalEffectOperation _committedPost(
   providerId: 'moltbook',
   accountBindingId: 'agent-1',
   effectKind: MoltbookExternalEffectAdapter.postEffectKind,
-  canonicalPayloadJson: '{}',
+  canonicalPayloadJson: '{"source_draft_hash_hex":"${'e' * 64}"}',
   payloadHashHex:
       'abababababababababababababababababababababababababababababababab',
   state: state,
@@ -2966,7 +3218,16 @@ ExternalEffectOperation _committedPost(
   lastErrorMessage: lastErrorCode == null ? null : 'Provider outcome',
   providerReferenceId: providerReferenceId,
   requiredAction: null,
-  receipt: null,
+  receipt:
+      state == ExternalEffectState.succeeded
+          ? ExternalEffectReceipt(
+            operationId: operationId,
+            providerId: 'moltbook',
+            providerReceiptId: 'post-$operationId',
+            evidenceHashHex: 'e' * 64,
+            receivedAtUtc: updated.toIso8601String(),
+          )
+          : null,
 );
 
 class _RecordingDraftStore implements MoltbookDraftStore {
@@ -3226,3 +3487,19 @@ class _MemoryFileStore implements CapsuleFileStore {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
+
+MoltbookPostObservation _visiblePost() => const MoltbookPostObservation(
+  postId: 'post-1',
+  title: 'Public title',
+  content: 'Exact body',
+  authorId: 'agent-1',
+  authorName: 'agent',
+  submoltName: 'general',
+  score: 0,
+  commentCount: 0,
+  verificationStatus: 'verified',
+  isSpam: false,
+  isLocked: false,
+  createdAtUtc: '2026-08-01T00:00:00.000Z',
+  updatedAtUtc: '2026-08-01T00:00:00.000Z',
+);

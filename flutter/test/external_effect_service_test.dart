@@ -70,6 +70,129 @@ void main() {
     );
   }
 
+  test(
+    'a single-slot provider serializes concurrent preparation across effect kinds',
+    () async {
+      final service = build(_FakeExternalEffectAdapter());
+      Future<bool> attempt(String id, String kind) async {
+        try {
+          await service.prepare(
+            operationId: id,
+            pluginId: moltbookAmbassadorPluginId,
+            providerId: 'moltbook',
+            accountBindingId: 'account-1',
+            effectKind: kind,
+            canonicalPayloadJson: '{}',
+            pendingCapacity: 1,
+          );
+          return true;
+        } on StateError {
+          return false;
+        }
+      }
+
+      final admitted = await Future.wait([
+        attempt('post', 'post'),
+        attempt('reply', 'reply'),
+      ]);
+      expect(admitted.where((value) => value), hasLength(1));
+      expect(
+        await service.list(pluginId: moltbookAmbassadorPluginId),
+        hasLength(1),
+      );
+      final restarted = build(_FakeExternalEffectAdapter());
+      await expectLater(
+        restarted.prepare(
+          operationId: 'other',
+          pluginId: moltbookAmbassadorPluginId,
+          providerId: 'moltbook',
+          accountBindingId: 'account-1',
+          effectKind: 'community',
+          canonicalPayloadJson: '{}',
+          pendingCapacity: 1,
+        ),
+        throwsStateError,
+      );
+    },
+  );
+
+  test(
+    'uncertain delivery retains its single slot and cannot be forgotten',
+    () async {
+      final service = build(
+        _FakeExternalEffectAdapter(
+          deliverResults: [
+            const ExternalEffectAdapterResult(
+              status: ExternalEffectAdapterStatus.unresolved,
+              errorCode: 'network_timeout',
+              errorMessage: 'Outcome unknown',
+            ),
+          ],
+        ),
+      );
+      await prepareApprovedQueued(service);
+      final pending = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(pending.state, ExternalEffectState.unresolved);
+      await expectLater(
+        service.forgetTerminalOperations(
+          pluginId: moltbookAmbassadorPluginId,
+          providerId: 'moltbook',
+          operationIds: {'post-1'},
+        ),
+        throwsStateError,
+      );
+      expect(
+        await service.list(pluginId: moltbookAmbassadorPluginId),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'reconciliation can confirm a final rejection for the exact existing provider reference',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: [
+          const ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'required_action_expired',
+            errorMessage: 'Verification timed out',
+            providerReferenceId: 'provider-post',
+          ),
+        ],
+        reconcileResults: [
+          const ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'provider_marked_spam',
+            errorMessage: 'Provider confirms spam',
+            providerReferenceId: 'provider-post',
+          ),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+      await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      final completed = await service.reconcileOnly(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(completed.lastErrorCode, 'provider_marked_spam');
+      expect(adapter.deliverCount, 1);
+      expect(adapter.reconcileCount, 1);
+      expect(completed.providerReferenceId, 'provider-post');
+      expect(
+        adapter.lastReconcileRequest?.lastErrorCode,
+        'required_action_expired',
+      );
+    },
+  );
+
   test('persists one successful operation across restart', () async {
     final adapter = _FakeExternalEffectAdapter(
       deliverResults: <Object>[_success('post-1')],

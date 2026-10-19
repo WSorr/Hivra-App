@@ -63,6 +63,16 @@ void main() {
     },
   );
 
+  test(
+    'public result observation uses no credential or secure-storage read',
+    () async {
+      final post = await service.observePublicPost('own-post-1');
+      expect(post.postId, 'own-post-1');
+      expect(secureStorage.readCount, 0);
+      expect(observer.keys, isEmpty);
+    },
+  );
+
   test('screen-safe binding load does not read secure storage', () async {
     await service.connect('secret-key');
     secureStorage.readCount = 0;
@@ -136,6 +146,28 @@ void main() {
     await expectLater(service.refresh(), throwsA(isA<StateError>()));
     expect((await service.loadBinding())?.accountId, 'agent-1');
   });
+
+  test(
+    'live account statistics use the bound provider without a local copy',
+    () async {
+      await service.connect('secret-key');
+      final account = await service.observeAccount();
+      expect(account.accountId, 'agent-1');
+      final directory = await files.capsuleDirForHex(_rootA);
+      final state = await files.pluginStateDirectory(
+        directory,
+        'hivra.contract.moltbook-ambassador.v1',
+      );
+      final names =
+          await state
+              .list()
+              .map((entry) => entry.path.split('/').last)
+              .toList();
+      expect(names, ['connection.v1.json']);
+      observer.accountId = 'different-account';
+      await expectLater(service.observeAccount(), throwsStateError);
+    },
+  );
 
   test(
     'home observation uses the bound key without persisting remote data',
@@ -255,6 +287,15 @@ void main() {
 }
 
 class _FakeObserver implements MoltbookObservePort {
+  @override
+  Future<MoltbookPostObservation> observePost(
+    String? apiKey, {
+    required String postId,
+  }) async {
+    expect(apiKey, isNull);
+    return (await observeConversation('', postId: postId)).post;
+  }
+
   final List<String> keys = <String>[];
   final List<String> homeKeys = <String>[];
   final List<String> feedKeys = <String>[];
@@ -376,7 +417,7 @@ class _FakeObserver implements MoltbookObservePort {
         submoltName: 'general',
         score: 1,
         commentCount: 1,
-        isVerified: true,
+        verificationStatus: 'verified',
         isSpam: false,
         isLocked: false,
         createdAtUtc: '2026-07-29T10:00:00.000Z',

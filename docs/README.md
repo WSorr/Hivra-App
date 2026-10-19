@@ -74,7 +74,7 @@ The generated ownership report is
 | Chat deterministic contract | `plugins/plugin_host_api_v1.md` |
 | Chat delivery and durable handoff | `architecture/transport-delivery-lifecycle.md` |
 | Moltbook | `plugins/moltbook_agent_drone_design_v1.md` |
-| Moltbook engagement lifecycle | `plugins/moltbook_engagement_lifecycle_v1.md` |
+| Moltbook engagement, public visibility and result completion | `plugins/moltbook_engagement_lifecycle_v1.md` |
 | External plugin source boundary | `plugins/external_plugin_source.md` |
 
 Moltbook still contains historical implementation material. It is consolidated

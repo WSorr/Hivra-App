@@ -152,6 +152,17 @@ class MoltbookConnectionService {
     return _withBoundCredential(_observer.observeHome);
   }
 
+  Future<MoltbookAccountObservation> observeAccount() {
+    return _withBoundCredential((apiKey) async {
+      final observation = await _observer.observeAccount(apiKey);
+      final binding = await loadBinding();
+      if (observation.accountId != binding?.accountId) {
+        throw StateError('Moltbook credential resolved to another account');
+      }
+      return observation;
+    });
+  }
+
   Future<MoltbookFeedObservation> observeFeed({
     String sort = 'new',
     int limit = 15,
@@ -171,6 +182,16 @@ class MoltbookConnectionService {
     return _withBoundCredential(
       (apiKey) => _observer.observeConversation(apiKey, postId: postId),
     );
+  }
+
+  Future<MoltbookPostObservation> observePublicPost(String postId) async {
+    final owner = _activeOwnerHex();
+    if (owner == null) throw StateError('Active Capsule is unavailable');
+    final post = await _observer.observePost(null, postId: postId);
+    if (_activeOwnerHex() != owner) {
+      throw StateError('Capsule changed during public observation');
+    }
+    return post;
   }
 
   Future<MoltbookHeartbeatObservation> observeHeartbeat({

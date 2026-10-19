@@ -354,6 +354,7 @@ class ExternalEffectAdapterRequest {
   final String canonicalPayloadJson;
   final String payloadHashHex;
   final String? providerReferenceId;
+  final String? lastErrorCode;
 
   const ExternalEffectAdapterRequest({
     required this.ownerCapsuleHex,
@@ -365,6 +366,7 @@ class ExternalEffectAdapterRequest {
     required this.canonicalPayloadJson,
     required this.payloadHashHex,
     this.providerReferenceId,
+    this.lastErrorCode,
   });
 
   void validate() {
@@ -376,6 +378,9 @@ class ExternalEffectAdapterRequest {
     _validateIdentifier('effect_kind', effectKind);
     _validateBounded('canonical_payload_json', canonicalPayloadJson, 2, 65536);
     _validateHash('payload_hash_hex', payloadHashHex);
+    if (lastErrorCode != null) {
+      _validateIdentifier('last_error_code', lastErrorCode!);
+    }
     if (providerReferenceId != null) {
       _validateBounded('provider_reference_id', providerReferenceId!, 1, 256);
     }

@@ -157,36 +157,6 @@ String moltbookAiSessionDescription({
   return 'Unlock once to let foreground cycles prepare drafts. Locked cycles pause before inference.';
 }
 
-enum MoltbookObservedPostStatus {
-  visible,
-  spam,
-  unverified,
-  mismatch,
-  unavailable,
-}
-
-MoltbookObservedPostStatus moltbookObservedPostStatus(
-  ExternalEffectOperation operation,
-  MoltbookPostObservation post,
-) {
-  final payload = MoltbookPublicationService.decodePayload(operation);
-  final receipt = operation.receipt;
-  if (operation.state != ExternalEffectState.succeeded ||
-      receipt == null ||
-      !post.matchesExactPublication(
-        postId: receipt.providerReceiptId,
-        authorName: payload['account_name']?.toString() ?? '',
-        submoltName: payload['submolt_name']?.toString() ?? '',
-        title: payload['title']?.toString() ?? '',
-        content: payload['content']?.toString() ?? '',
-      )) {
-    return MoltbookObservedPostStatus.mismatch;
-  }
-  if (post.isSpam) return MoltbookObservedPostStatus.spam;
-  if (!post.isVerified) return MoltbookObservedPostStatus.unverified;
-  return MoltbookObservedPostStatus.visible;
-}
-
 class MoltbookAmbassadorScreen extends StatefulWidget {
   final MoltbookRuntimeModule module;
 
@@ -256,11 +226,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
       const <ExternalEffectOperation>[];
-  final Map<
-    String,
-    ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})
-  >
-  _observedPostStatuses = {};
+  MoltbookAccountObservation? _liveAccount;
   bool _draftBusy = false;
   bool _publicFactsBusy = false;
   bool _publicationBusy = false;
@@ -373,6 +339,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _loading = false;
       });
       if (binding != null && binding.isClaimed && binding.isActive) {
+        unawaited(_refreshRemoteStatistics());
         unawaited(_startConfiguredCycles(showNotice: false));
       }
     } catch (error) {
@@ -412,6 +379,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       final binding = await widget.module.refreshMoltbookBinding();
       if (!mounted) return;
       setState(() => _binding = binding);
+      await _refreshRemoteStatistics();
       _showNotice('Moltbook account verified');
     } catch (error) {
       if (!mounted) return;
@@ -429,6 +397,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       if (!mounted) return;
       setState(() {
         _binding = null;
+        _liveAccount = null;
         _homeObservation = null;
         _feedObservation = null;
         _conversationObservation = null;
@@ -578,7 +547,25 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     await _refreshCycleProjection();
   }
 
+  Future<void> _refreshRemoteStatistics() async {
+    final owner = widget.module.activeCapsuleRootHex();
+    final accountId = _binding?.accountId;
+    if (accountId == null) return;
+    if (mounted) setState(() => _liveAccount = null);
+    try {
+      final account = await widget.module.observeMoltbookAccount();
+      if (mounted &&
+          owner == widget.module.activeCapsuleRootHex() &&
+          accountId == _binding?.accountId) {
+        setState(() => _liveAccount = account);
+      }
+    } catch (_) {
+      // Unavailable remote statistics never become a local guessed count.
+    }
+  }
+
   Future<void> _refreshCycleProjection() async {
+    unawaited(_refreshRemoteStatistics());
     if (_binding == null) {
       if (mounted) setState(() => _cycleTriggerSnapshot = null);
       return;
@@ -1404,7 +1391,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       setState(() {
         _storedDrafts = results[0] as List<MoltbookStoredDraft>;
         _publications = results[1] as List<ExternalEffectOperation>;
+        if (result.state.isTerminal) {
+          _draftPreview = null;
+          _replyDraftPreview = null;
+        }
       });
+      unawaited(_refreshRemoteStatistics());
       _showNotice(
         result.state == ExternalEffectState.succeeded
             ? 'Moltbook receipt verified'
@@ -1421,7 +1413,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
-  Future<void> _cancelQueuedPublication(
+  Future<void> _cancelUnsentPublication(
     ExternalEffectOperation operation,
   ) async {
     final payload = MoltbookPublicationService.decodePayload(operation);
@@ -1430,7 +1422,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       barrierDismissible: false,
       builder:
           (dialogContext) => AlertDialog(
-            title: const Text('Cancel approved publication?'),
+            title: const Text('Cancel unsent publication?'),
             content: SizedBox(
               width: 620,
               child: SingleChildScrollView(
@@ -1453,7 +1445,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'No provider request will be made. The cancelled effect remains in local history, and the local draft remains available for review or deletion.',
+                      'No provider request will be made. The cancelled effect is removed; the local draft remains available for review or deletion.',
                     ),
                   ],
                 ),
@@ -1462,7 +1454,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Keep queued'),
+                child: const Text('Keep pending'),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
@@ -1482,7 +1474,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       setState(() => _publications = publications);
       _showNotice(
         result.state == ExternalEffectState.cancelled
-            ? 'Approved publication cancelled without delivery'
+            ? 'Unsent publication cancelled; authoring draft preserved'
             : 'Cancellation state: ${result.state.wireName}',
         isError: result.state != ExternalEffectState.cancelled,
       );
@@ -1490,6 +1482,30 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       if (mounted) {
         _showNotice('Could not cancel publication: $error', isError: true);
       }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
+  Future<void> _finishPublicationResult(
+    ExternalEffectOperation operation,
+    MoltbookPostObservation displayed,
+  ) async {
+    setState(() => _publicationBusy = true);
+    try {
+      await widget.module.finishPresentedMoltbookPublication(
+        operation: operation,
+        displayedPost: displayed,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      final drafts = await widget.module.loadMoltbookDrafts();
+      if (!mounted) return;
+      setState(() {
+        _publications = publications;
+        _storedDrafts = drafts;
+      });
+    } catch (error) {
+      if (mounted) _showNotice('Result retained: $error', isError: true);
     } finally {
       if (mounted) setState(() => _publicationBusy = false);
     }
@@ -1524,6 +1540,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       final publications = await widget.module.loadMoltbookPublications();
       if (!mounted) return;
       setState(() => _publications = publications);
+      unawaited(_refreshRemoteStatistics());
       _showNotice(
         result.state == ExternalEffectState.succeeded
             ? 'Published post found and receipt restored'
@@ -1568,7 +1585,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
             (dialogContext) => AlertDialog(
               title: const Text('Close unconfirmed attempt?'),
               content: const Text(
-                'Delivery is still unconfirmed. This closes only the local attempt; it does not send, cancel, or delete anything on Moltbook. The same publication stays protected against duplicate sending. Independent new posts can continue.',
+                'Delivery is still unconfirmed. Abandon this local attempt and its source draft without resending. Nothing on Moltbook is changed, and no successful receipt is claimed. Independent new work can continue.',
               ),
               actions: [
                 TextButton(
@@ -1597,7 +1614,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       });
       _showNotice(
         result.state == ExternalEffectState.terminalFailure
-            ? 'Attempt closed locally; exact retry remains blocked'
+            ? 'Local attempt and source draft removed without resending'
             : 'Close state: ${result.state.wireName}',
         isError: result.state != ExternalEffectState.terminalFailure,
       );
@@ -1608,45 +1625,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           isError: true,
         );
       }
-    } finally {
-      if (mounted) setState(() => _publicationBusy = false);
-    }
-  }
-
-  Future<void> _checkPublishedPostStatus(
-    ExternalEffectOperation operation,
-  ) async {
-    final postUri = MoltbookPublicationService.publishedPostUri(operation);
-    if (postUri == null ||
-        MoltbookPublicationService.isCommunityOperation(operation) ||
-        MoltbookPublicationService.decodePayload(
-          operation,
-        ).containsKey('post_id')) {
-      return;
-    }
-    setState(() {
-      _publicationBusy = true;
-      _observedPostStatuses.remove(operation.operationId);
-    });
-    try {
-      final observation = await widget.module.observeMoltbookConversation(
-        operation.receipt!.providerReceiptId,
-      );
-      if (!mounted) return;
-      setState(() {
-        _observedPostStatuses[operation.operationId] = (
-          status: moltbookObservedPostStatus(operation, observation.post),
-          checkedAtUtc: DateTime.now().toUtc(),
-        );
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _observedPostStatuses[operation.operationId] = (
-          status: MoltbookObservedPostStatus.unavailable,
-          checkedAtUtc: DateTime.now().toUtc(),
-        );
-      });
     } finally {
       if (mounted) setState(() => _publicationBusy = false);
     }
@@ -1781,7 +1759,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       setState(() {
         _storedDrafts = results[0] as List<MoltbookStoredDraft>;
         _publications = results[1] as List<ExternalEffectOperation>;
+        if (result.state.isTerminal) {
+          _draftPreview = null;
+          _replyDraftPreview = null;
+        }
       });
+      unawaited(_refreshRemoteStatistics());
       _showNotice(
         result.state == ExternalEffectState.succeeded
             ? 'Moltbook post verified and visible'
@@ -1841,12 +1824,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       (operation) =>
           operation.requiredAction != null && !operation.state.isTerminal,
     );
-    final supersededPostFailureIds =
-        MoltbookPublicationService.supersededPostFailureIds(_publications);
     final recoverableOperation = _latestOperationWhere(
       (operation) =>
-          MoltbookPublicationService.requiresReconciliation(operation) &&
-          !supersededPostFailureIds.contains(operation.operationId),
+          MoltbookPublicationService.requiresReconciliation(operation),
     );
     final reconciliationOperation = recoverableOperation;
     final queuedOperation = _latestOperationWhere(
@@ -1890,8 +1870,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _publications
             .where(
               (operation) =>
-                  operation.state == ExternalEffectState.terminalFailure &&
-                  !supersededPostFailureIds.contains(operation.operationId),
+                  operation.state == ExternalEffectState.terminalFailure,
             )
             .length;
     final projectedChallengedCount =
@@ -1921,12 +1900,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           (preparedReplyOperation != null || _replyDraftPreview != null
               ? 1
               : 0),
-      publishedCount:
-          _publications
-              .where(
-                (operation) => operation.state == ExternalEffectState.succeeded,
-              )
-              .length,
       challengedCount: projectedChallengedCount,
       blockedCount: projectedBlockedCount,
     );
@@ -1985,6 +1958,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       const SizedBox(height: 16),
                       MoltbookWorkflowCard(
                         projection: projection,
+                        accountObservation: _liveAccount,
                         writePolicy: _approvalMode,
                         triggerPolicy: _triggerPolicy,
                         busy: workspaceBusy,
@@ -1993,7 +1967,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                         onCancelQueuedEffect:
                             projection.canCancelQueuedEffect &&
                                     queuedPostOperation != null
-                                ? () => _cancelQueuedPublication(
+                                ? () => _cancelUnsentPublication(
                                   queuedPostOperation,
                                 )
                                 : null,
@@ -2140,31 +2114,40 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                           ),
                         ),
                       ],
-                      if (_publications.isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        _MoltbookWorkspaceSection(
-                          icon: Icons.public_rounded,
-                          title: 'Publication history',
-                          subtitle:
-                              '${_publications.length} publication ${_publications.length == 1 ? "record" : "records"}',
-                          child: MoltbookPublicationCard(
-                            operations: _publications,
-                            busy: _publicationBusy,
-                            profileUri:
-                                _binding == null
-                                    ? null
-                                    : MoltbookPublicationService.accountProfileUri(
-                                      _binding!.accountName,
-                                    ),
-                            observedPostStatuses: _observedPostStatuses,
-                            onOpenPost: _openPublishedPost,
-                            onOpenProfile: _openPublishedPost,
-                            onRecheck: _reconcilePublication,
-                            onCheckCurrentPost: _checkPublishedPostStatus,
-                            onCloseWithoutReceipt: _closeUnpublishedPublication,
+                      const SizedBox(height: 20),
+                      _MoltbookWorkspaceSection(
+                        icon: Icons.public_rounded,
+                        key: ValueKey(
+                          _publications.any(
+                            MoltbookPublicationService.retainsPublicationResult,
                           ),
                         ),
-                      ],
+                        initiallyExpanded: _publications.any(
+                          MoltbookPublicationService.retainsPublicationResult,
+                        ),
+                        title: 'Current publication',
+                        subtitle:
+                            _publications.isEmpty
+                                ? 'No pending effect · history is on Moltbook'
+                                : 'Waiting for the current effect to finish',
+                        child: MoltbookPublicationCard(
+                          operations: _publications,
+                          busy: _publicationBusy,
+                          profileUri:
+                              _binding == null
+                                  ? null
+                                  : MoltbookPublicationService.accountProfileUri(
+                                    _binding!.accountName,
+                                  ),
+                          onInspect: widget.module.inspectMoltbookPublication,
+                          onFinish: _finishPublicationResult,
+                          onCancel: _cancelUnsentPublication,
+                          onOpenPost: _openPublishedPost,
+                          onOpenProfile: _openPublishedPost,
+                          onRecheck: _reconcilePublication,
+                          onCloseWithoutReceipt: _closeUnpublishedPublication,
+                        ),
+                      ),
                       const SizedBox(height: 24),
                       _MoltbookWorkspaceSection(
                         icon: Icons.tune_rounded,
@@ -2460,6 +2443,7 @@ class _MoltbookWorkspaceSection extends StatelessWidget {
   final bool initiallyExpanded;
 
   const _MoltbookWorkspaceSection({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -2489,6 +2473,7 @@ class _MoltbookWorkspaceSection extends StatelessWidget {
 
 class MoltbookWorkflowCard extends StatelessWidget {
   final MoltbookWorkspaceProjection projection;
+  final MoltbookAccountObservation? accountObservation;
   final String writePolicy;
   final String triggerPolicy;
   final bool busy;
@@ -2500,6 +2485,7 @@ class MoltbookWorkflowCard extends StatelessWidget {
   const MoltbookWorkflowCard({
     super.key,
     required this.projection,
+    this.accountObservation,
     required this.writePolicy,
     required this.triggerPolicy,
     required this.busy,
@@ -2529,8 +2515,8 @@ class MoltbookWorkflowCard extends StatelessWidget {
         Icons.verified_user_outlined,
       ),
       MoltbookWorkspaceNextAction.reconcile => (
-        'Earlier publication: delivery unconfirmed',
-        'Recheck without resending it. New confirmed changes can continue within the write limits.',
+        'Current publication: delivery unconfirmed',
+        'Recheck this operation without resending. The next effect waits for its result.',
         'Recheck publication',
         Icons.sync_problem_outlined,
       ),
@@ -2643,7 +2629,6 @@ class MoltbookWorkflowCard extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               subtitle: Text(
-                '${projection.publishedCount} published · '
                 '${projection.proposedCount} drafts · '
                 '${projection.blockedCount} blocked',
               ),
@@ -2663,10 +2648,17 @@ class MoltbookWorkflowCard extends StatelessWidget {
                         label: 'Proposed',
                         value: projection.proposedCount,
                       ),
-                      _CycleMetric(
-                        label: 'Published',
-                        value: projection.publishedCount,
-                      ),
+                      if (accountObservation != null) ...[
+                        _CycleMetric(
+                          label: 'Posts on Moltbook',
+                          value: accountObservation!.postsCount,
+                        ),
+                        _CycleMetric(
+                          label: 'Comments on Moltbook',
+                          value: accountObservation!.commentsCount,
+                        ),
+                      ] else
+                        const Text('Moltbook statistics unavailable'),
                       _CycleMetric(
                         label: 'Challenged',
                         value: projection.challengedCount,
@@ -2726,7 +2718,7 @@ class MoltbookWorkflowCard extends StatelessWidget {
               ],
             ],
             if (projection.nextAction ==
-                    MoltbookWorkspaceNextAction.reconcile &&
+                    MoltbookWorkspaceNextAction.reviewDraft &&
                 onRunCycle != null) ...[
               const SizedBox(height: 10),
               OutlinedButton.icon(
@@ -2882,7 +2874,7 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
                   if (existingOperation?.state ==
                       ExternalEffectState.terminalFailure) {
                     publicationGuidance =
-                        'delivery unresolved · resolve in Publication history';
+                        'delivery unresolved · resolve in Current publication';
                   } else if (existingOperation != null) {
                     final payload = MoltbookPublicationService.decodePayload(
                       existingOperation,
@@ -2890,15 +2882,15 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
                     final retainedDestination = payload['submolt_name'];
                     if (retainedDestination != submoltController.text.trim()) {
                       publicationGuidance =
-                          'bound to m/$retainedDestination · resolve in Publication history';
+                          'bound to m/$retainedDestination · resolve in Current publication';
                     }
                   }
                 } on StateError {
                   publicationGuidance =
-                      'publication history conflict · resolve in Publication history';
+                      'pending publication conflict · resolve in Current publication';
                 } on FormatException {
                   publicationGuidance =
-                      'publication history invalid · resolve in Publication history';
+                      'pending publication invalid · resolve in Current publication';
                 }
               }
               final reviewBlocked = publicationGuidance != null;
@@ -2936,51 +2928,88 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
   }
 }
 
-class MoltbookPublicationCard extends StatelessWidget {
+class MoltbookPublicationCard extends StatefulWidget {
   final List<ExternalEffectOperation> operations;
   final bool busy;
   final Uri? profileUri;
-  final Map<
-    String,
-    ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})
-  >
-  observedPostStatuses;
+  final Future<void> Function(ExternalEffectOperation operation)? onCancel;
   final Future<void> Function(Uri uri) onOpenPost;
   final Future<void> Function(Uri uri) onOpenProfile;
   final Future<void> Function(ExternalEffectOperation operation) onRecheck;
   final Future<void> Function(ExternalEffectOperation operation)
-  onCheckCurrentPost;
-  final Future<void> Function(ExternalEffectOperation operation)
   onCloseWithoutReceipt;
+
+  final Future<MoltbookPostObservation> Function(ExternalEffectOperation)?
+  onInspect;
+  final Future<void> Function(ExternalEffectOperation, MoltbookPostObservation)?
+  onFinish;
 
   const MoltbookPublicationCard({
     super.key,
     required this.operations,
     required this.busy,
     required this.profileUri,
-    required this.observedPostStatuses,
+    this.onCancel,
+    this.onInspect,
+    this.onFinish,
     required this.onOpenPost,
     required this.onOpenProfile,
     required this.onRecheck,
-    required this.onCheckCurrentPost,
     required this.onCloseWithoutReceipt,
   });
 
   @override
+  State<MoltbookPublicationCard> createState() =>
+      _MoltbookPublicationCardState();
+}
+
+class _MoltbookPublicationCardState extends State<MoltbookPublicationCard> {
+  String? _inspectionKey;
+  Future<MoltbookPostObservation>? _inspection;
+
+  Future<MoltbookPostObservation>? _inspect(ExternalEffectOperation operation) {
+    if (widget.onInspect == null) return null;
+    final future = Future<MoltbookPostObservation>.sync(
+      () => widget.onInspect!(operation),
+    );
+    // A provider error may arrive before the next frame attaches FutureBuilder.
+    // Keep it available to the builder without an unhandled async error.
+    future.ignore();
+    return future;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final operations = widget.operations;
+    final busy = widget.busy;
+    final profileUri = widget.profileUri;
+    final onCancel = widget.onCancel;
+    final onOpenPost = widget.onOpenPost;
+    final onOpenProfile = widget.onOpenProfile;
+    final onRecheck = widget.onRecheck;
+    final onCloseWithoutReceipt = widget.onCloseWithoutReceipt;
+    final current =
+        operations
+            .where(MoltbookPublicationService.retainsPublicationResult)
+            .lastOrNull;
+    final key =
+        current == null ? null : '${current.operationId}:${current.revision}';
+    if (key != _inspectionKey) {
+      _inspectionKey = key;
+      _inspection = current == null ? null : _inspect(current);
+    }
+
     final actionable = operations
         .where(
           (operation) =>
+              MoltbookPublicationService.retainsPublicationResult(operation) ||
               !operation.state.isTerminal ||
               operation.requiredAction != null ||
-              MoltbookPublicationService.canManuallyReconcileTerminalFailure(
-                operation,
-              ) ||
+              MoltbookPublicationService.requiresReconciliation(operation) ||
               MoltbookPublicationService.canCloseWithoutReceipt(operation),
         )
         .toList(growable: false);
     final visibleOperations = actionable;
-    final hiddenCount = operations.length - actionable.length;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -2997,9 +3026,7 @@ class MoltbookPublicationCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              hiddenCount > 0
-                  ? '$hiddenCount completed records are hidden. Compare public history on Moltbook.'
-                  : 'Public history is available on Moltbook; only unfinished actions appear here.',
+              'Public history and current moderation are available on Moltbook.',
               style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
             ),
             const SizedBox(height: 10),
@@ -3007,7 +3034,7 @@ class MoltbookPublicationCard extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: () => onOpenProfile(profileUri!),
+                  onPressed: () => onOpenProfile(profileUri),
                   icon: const Icon(Icons.open_in_new),
                   label: const Text('Open Moltbook profile'),
                 ),
@@ -3039,15 +3066,16 @@ class MoltbookPublicationCard extends StatelessWidget {
                 postUri,
                 isCommunity: isCommunity,
                 isReply: isReply,
-                observedPostStatus: observedPostStatuses[operation.operationId],
               );
               final canRecheck =
-                  MoltbookPublicationService.canManuallyReconcileTerminalFailure(
-                    operation,
-                  );
+                  MoltbookPublicationService.requiresReconciliation(operation);
               final canClose =
                   MoltbookPublicationService.canCloseWithoutReceipt(operation);
               return ExpansionTile(
+                initiallyExpanded:
+                    MoltbookPublicationService.retainsPublicationResult(
+                      operation,
+                    ),
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 12),
                 title: Text(
@@ -3095,14 +3123,12 @@ class MoltbookPublicationCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (postUri != null && !isReply) ...[
+                        if (operation.state == ExternalEffectState.prepared &&
+                            onCancel != null) ...[
                           OutlinedButton.icon(
-                            onPressed:
-                                busy
-                                    ? null
-                                    : () => onCheckCurrentPost(operation),
-                            icon: const Icon(Icons.fact_check_outlined),
-                            label: const Text('Check current Moltbook status'),
+                            onPressed: busy ? null : () => onCancel(operation),
+                            icon: const Icon(Icons.cancel_outlined),
+                            label: const Text('Cancel prepared effect'),
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -3125,8 +3151,86 @@ class MoltbookPublicationCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 12),
                         ],
+                        if (MoltbookPublicationService.retainsPublicationResult(
+                          operation,
+                        )) ...[
+                          if (postUri != null)
+                            SelectableText(postUri.toString()),
+                          FutureBuilder<MoltbookPostObservation>(
+                            future:
+                                current?.operationId == operation.operationId
+                                    ? _inspection
+                                    : null,
+                            builder: (context, snapshot) {
+                              final post =
+                                  snapshot.connectionState ==
+                                              ConnectionState.done &&
+                                          !snapshot.hasError
+                                      ? snapshot.data
+                                      : null;
+                              final finalStatus =
+                                  post != null &&
+                                  (post.isVerified ||
+                                      post.isSpam ||
+                                      post.isDeleted ||
+                                      post.verificationStatus == 'failed');
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    post == null
+                                        ? snapshot.hasError
+                                            ? 'Public visibility unknown: ${snapshot.error}'
+                                            : 'Public visibility has not been checked'
+                                        : 'Public visibility: ${post.isVerified && !post.isSpam && !post.isDeleted ? "visible" : "not visible"}\n'
+                                            'Moderation: ${post.verificationStatus} · spam=${post.isSpam} · deleted=${post.isDeleted}',
+                                  ),
+                                  if (widget.onInspect != null)
+                                    OutlinedButton(
+                                      onPressed:
+                                          busy ||
+                                                  current?.operationId !=
+                                                      operation.operationId ||
+                                                  snapshot.connectionState ==
+                                                      ConnectionState.waiting
+                                              ? null
+                                              : () {
+                                                setState(() {
+                                                  _inspection = _inspect(
+                                                    operation,
+                                                  );
+                                                });
+                                              },
+                                      child: const Text(
+                                        'Check public visibility',
+                                      ),
+                                    ),
+                                  if (widget.onFinish != null &&
+                                      operation.state.isTerminal)
+                                    OutlinedButton(
+                                      onPressed:
+                                          busy ||
+                                                  !finalStatus ||
+                                                  MoltbookPublicationService.requiresReconciliation(
+                                                    operation,
+                                                  )
+                                              ? null
+                                              : () => widget.onFinish!(
+                                                operation,
+                                                post,
+                                              ),
+                                      child: const Text('Close shown result'),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (payload['title'] is String)
+                          SelectableText(payload['title'] as String),
                         const Text(
-                          'Exact public text',
+                          'Exact submitted text',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 4),
@@ -3160,54 +3264,7 @@ class MoltbookPublicationCard extends StatelessWidget {
   Uri? postUri, {
   bool isCommunity = false,
   bool isReply = false,
-  ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})?
-  observedPostStatus,
 }) {
-  if (postUri != null) {
-    if (isReply) {
-      return (
-        label: 'Reply receipt confirmed; current status not checked',
-        icon: Icons.history_rounded,
-        color: Colors.orange,
-      );
-    }
-    if (observedPostStatus == null) {
-      return (
-        label: 'Publication receipt confirmed; current moderation not checked',
-        icon: Icons.history_rounded,
-        color: Colors.orange,
-      );
-    }
-    final checkedAt =
-        '${observedPostStatus.checkedAtUtc.toUtc().toIso8601String().substring(0, 16)} UTC';
-    return switch (observedPostStatus.status) {
-      MoltbookObservedPostStatus.visible => (
-        label: 'Verified and not spam at $checkedAt',
-        icon: Icons.verified_rounded,
-        color: Colors.green,
-      ),
-      MoltbookObservedPostStatus.spam => (
-        label: 'Moltbook marked this post as spam at $checkedAt',
-        icon: Icons.report_gmailerrorred_rounded,
-        color: Colors.redAccent,
-      ),
-      MoltbookObservedPostStatus.unverified => (
-        label: 'Post was not verified at $checkedAt',
-        icon: Icons.warning_amber_rounded,
-        color: Colors.orange,
-      ),
-      MoltbookObservedPostStatus.mismatch => (
-        label: 'Provider post did not match this receipt at $checkedAt',
-        icon: Icons.error_outline_rounded,
-        color: Colors.redAccent,
-      ),
-      MoltbookObservedPostStatus.unavailable => (
-        label: 'Current moderation unavailable at $checkedAt',
-        icon: Icons.sync_problem_rounded,
-        color: Colors.orange,
-      ),
-    };
-  }
   if (operation.requiredAction != null) {
     return (
       label: 'Action required: solve verification with Gemini',
@@ -3220,13 +3277,6 @@ class MoltbookPublicationCard extends StatelessWidget {
       label: 'Community ownership verified',
       icon: Icons.verified_rounded,
       color: Colors.green,
-    );
-  }
-  if (MoltbookPublicationService.isClosedWithoutReceipt(operation)) {
-    return (
-      label: 'Closed locally; delivery unconfirmed, exact retry blocked',
-      icon: Icons.archive_outlined,
-      color: const Color(0xFF9CA7B5),
     );
   }
   return switch (operation.state) {
@@ -3246,7 +3296,7 @@ class MoltbookPublicationCard extends StatelessWidget {
       color: Colors.orange,
     ),
     ExternalEffectState.succeeded => (
-      label: 'Verified receipt has no usable post link',
+      label: 'Provider receipt confirmed; check public visibility',
       icon: Icons.link_off_rounded,
       color: Colors.orange,
     ),

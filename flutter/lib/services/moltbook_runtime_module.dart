@@ -394,10 +394,10 @@ class MoltbookRuntimeModule {
     bool allowPublication = true,
     MoltbookPublicChange? transientChange,
   }) async {
-    final changes = await moltbookPublicChanges.load();
+    final publications = await loadMoltbookPublications();
+    var changes = await moltbookPublicChanges.load();
     if (changes.isEmpty && transientChange == null) return null;
     final drafts = await moltbookDrafts.load();
-    final publications = await moltbookPublications.list();
     final configuration = await _ambassadorConfiguration.load();
     if (_hasPendingMoltbookVerification(publications)) {
       await uiLog.log(
@@ -406,14 +406,23 @@ class MoltbookRuntimeModule {
       );
       return null;
     }
-    final publicationAvailable =
-        allowPublication &&
-        publications.every(
-          (operation) =>
-              operation.state.isTerminal ||
-              operation.state == ExternalEffectState.prepared ||
-              operation.state == ExternalEffectState.unresolved,
-        );
+    if (publications.isNotEmpty) {
+      // Resume only the draft already occupying the slot; no new inference
+      // or effect can compete with it, including legacy multi-record data.
+      if (!allowPublication ||
+          publications.length != 1 ||
+          publications.single.state != ExternalEffectState.prepared ||
+          !MoltbookPublicationService.isPostPublication(publications.single)) {
+        return null;
+      }
+      final hash = MoltbookPublicationService.postDraftHash(
+        publications.single,
+      );
+      changes = changes.where((change) => change.draftHashHex == hash).toList();
+      if (changes.isEmpty) return null;
+      transientChange = null;
+    }
+    final publicationAvailable = allowPublication;
     final change = await _selectNextMoltbookPublicChange(
       ownerHex: ownerHex,
       accountBindingId: accountBindingId,
@@ -456,6 +465,11 @@ class MoltbookRuntimeModule {
     } else {
       if (drafts.any((draft) => draft.preview.bulletinId == change.sourceId)) {
         return null;
+      }
+      if (publicationAvailable &&
+          configuration.approvalMode ==
+              MoltbookAmbassadorConfiguration.approvalBounded) {
+        await _requireBoundedMoltbookPostAvailable(DateTime.now().toUtc());
       }
       final proposal = await proposeMoltbookPublicBulletin(
         change.sourceNotes,
@@ -596,6 +610,9 @@ class MoltbookRuntimeModule {
     }
     return preview;
   }
+
+  Future<MoltbookAccountObservation> observeMoltbookAccount() =>
+      moltbookConnection.observeAccount();
 
   Future<MoltbookConnectionBinding?> loadMoltbookBinding() =>
       moltbookConnection.loadBinding();
@@ -1296,6 +1313,7 @@ class MoltbookRuntimeModule {
       accountBindingId,
       cycleEpoch: cycleEpoch,
     );
+    await loadMoltbookPublications();
     var blockedCount = 0;
     final repositoryObservation = await _ingestConfiguredPublicRepository(
       ownerHex: ownerHex,
@@ -1309,7 +1327,16 @@ class MoltbookRuntimeModule {
     var challengedCount = 0;
     var pendingVerification = false;
     final unresolved = (await moltbookPublications.list())
-        .where((operation) => operation.state == ExternalEffectState.unresolved)
+        .where(
+          (operation) =>
+              const {
+                ExternalEffectState.approved,
+                ExternalEffectState.queued,
+                ExternalEffectState.delivering,
+                ExternalEffectState.unresolved,
+              }.contains(operation.state) ||
+              MoltbookPublicationService.requiresReconciliation(operation),
+        )
         .toList(growable: false);
     for (final operation in unresolved) {
       await _ensureMoltbookCycleScope(
@@ -1319,7 +1346,10 @@ class MoltbookRuntimeModule {
       );
       try {
         var resolved =
-            operation.requiredAction == null
+            operation.state == ExternalEffectState.queued ||
+                    operation.state == ExternalEffectState.approved
+                ? await processMoltbookPublication(operation.operationId)
+                : operation.requiredAction == null
                 ? await reconcileMoltbookPublication(operation.operationId)
                 : operation;
         resolved = await _resolveMoltbookVerificationWithAiIfEligible(
@@ -1396,8 +1426,10 @@ class MoltbookRuntimeModule {
       rethrow;
     }
     final heartbeatPlan = heartbeat.plan;
+    final slotOccupied = (await moltbookPublications.list()).isNotEmpty;
     String? deferredFeedPostId;
-    for (final candidatePostId in heartbeatPlan.candidatePostIds) {
+    for (final candidatePostId
+        in slotOccupied ? const <String>[] : heartbeatPlan.candidatePostIds) {
       try {
         final selectionKind =
             heartbeatPlan.priority == 'review_activity'
@@ -1821,16 +1853,16 @@ class MoltbookRuntimeModule {
 
   Future<List<MoltbookStoredDraft>> loadMoltbookDrafts() async {
     final operations = await moltbookPublications.list();
-    await _archiveClosedMoltbookDrafts(operations);
+    await _settleMoltbookOperations(operations);
     final drafts = await moltbookDrafts.load();
     final draftHashes =
         drafts.map((draft) => draft.preview.draftHashHex).toSet();
     var cancelledOrphans = 0;
-    for (final operation in operations) {
+    for (final operation in List<ExternalEffectOperation>.of(operations)) {
       if (operation.state != ExternalEffectState.prepared) continue;
       final draftHash = MoltbookPublicationService.postDraftHash(operation);
       if (draftHash == null || draftHashes.contains(draftHash)) continue;
-      await moltbookPublications.cancel(operation.operationId);
+      await cancelMoltbookPublication(operation.operationId);
       cancelledOrphans++;
     }
     if (cancelledOrphans > 0) {
@@ -1844,7 +1876,7 @@ class MoltbookRuntimeModule {
 
   Future<List<ExternalEffectOperation>> loadMoltbookPublications() async {
     final operations = await moltbookPublications.list();
-    await _archiveClosedMoltbookDrafts(operations);
+    await _settleMoltbookOperations(operations);
     return moltbookPublications.list();
   }
 
@@ -1903,11 +1935,7 @@ class MoltbookRuntimeModule {
       draft: draft,
       submoltName: effectiveSubmoltName,
     );
-    if (operation.state == ExternalEffectState.succeeded) {
-      await moltbookDrafts.delete(draft.draftHashHex);
-    } else {
-      await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[operation]);
-    }
+    await _settleMoltbookOperations(<ExternalEffectOperation>[operation]);
     await uiLog.log(
       'moltbook.publication.prepare',
       'operation=${operation.operationId} '
@@ -2013,7 +2041,7 @@ class MoltbookRuntimeModule {
             );
     await ensureCycleScope();
     if (!processAuthorizedEffect) return queued;
-    return moltbookPublications.process(queued.operationId);
+    return processMoltbookPublication(queued.operationId);
   }
 
   Future<ExternalEffectOperation> approveMoltbookPublication(
@@ -2021,7 +2049,7 @@ class MoltbookRuntimeModule {
   ) async {
     _requireMoltbookEnabled(await _ambassadorConfiguration.load());
     final queued = await moltbookPublications.approveAndQueue(operation);
-    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[queued]);
+    await _settleMoltbookOperations(<ExternalEffectOperation>[queued]);
     await uiLog.log(
       'moltbook.publication.approve',
       'operation=${queued.operationId} state=${queued.state.wireName}',
@@ -2099,31 +2127,35 @@ class MoltbookRuntimeModule {
   }) async {
     final now = nowUtc.toUtc();
     final dayStart = DateTime.utc(now.year, now.month, now.day);
+    final operations = await loadMoltbookPublications();
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null) throw StateError('Moltbook account is not connected');
+    final processed = await moltbookFeedCheckpoint.writeUsage(
+      binding.accountId,
+      effectKind,
+      now,
+    );
     final committedWrites =
-        (await moltbookPublications.list())
+        operations
             .where(
               (operation) =>
+                  operation.accountBindingId == binding.accountId &&
                   operation.effectKind == effectKind &&
                   (const <ExternalEffectState>{
                         ExternalEffectState.approved,
                         ExternalEffectState.queued,
                         ExternalEffectState.delivering,
                         ExternalEffectState.unresolved,
-                        ExternalEffectState.succeeded,
                       }.contains(operation.state) ||
                       (operation.state == ExternalEffectState.terminalFailure &&
                           operation.providerReferenceId != null)),
             )
             .toList()
-          ..sort((a, b) {
-            final aCommittedAt =
-                DateTime.tryParse(a.approvedAtUtc ?? a.updatedAtUtc)?.toUtc();
-            final bCommittedAt =
-                DateTime.tryParse(b.approvedAtUtc ?? b.updatedAtUtc)?.toUtc();
-            if (aCommittedAt == null) return 1;
-            if (bCommittedAt == null) return -1;
-            return bCommittedAt.compareTo(aCommittedAt);
-          });
+          ..sort(
+            (a, b) => (b.approvedAtUtc ?? b.updatedAtUtc).compareTo(
+              a.approvedAtUtc ?? a.updatedAtUtc,
+            ),
+          );
     final writesToday =
         committedWrites.where((operation) {
           final committedAt =
@@ -2144,8 +2176,15 @@ class MoltbookRuntimeModule {
             ? null
             : now.difference(lastWriteAt).inMinutes.clamp(0, 1000000);
     return (
-      writesToday: writesToday,
-      minutesSinceLastWrite: minutesSinceLastWrite,
+      writesToday: processed.writesToday + writesToday,
+      minutesSinceLastWrite:
+          minutesSinceLastWrite == null
+              ? processed.minutesSinceLastWrite
+              : processed.minutesSinceLastWrite == null
+              ? minutesSinceLastWrite
+              : minutesSinceLastWrite < processed.minutesSinceLastWrite!
+              ? minutesSinceLastWrite
+              : processed.minutesSinceLastWrite,
     );
   }
 
@@ -2153,7 +2192,7 @@ class MoltbookRuntimeModule {
     String operationId,
   ) async {
     final result = await moltbookPublications.process(operationId);
-    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[result]);
+    await _settleMoltbookOperations(<ExternalEffectOperation>[result]);
     await uiLog.log(
       'moltbook.publication.process',
       'operation=$operationId state=${result.state.wireName} '
@@ -2170,7 +2209,7 @@ class MoltbookRuntimeModule {
       operationId,
       providerReferenceId: providerReferenceId,
     );
-    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[result]);
+    await _settleMoltbookOperations(<ExternalEffectOperation>[result]);
     await uiLog.log(
       'moltbook.publication.reconcile',
       'operation=$operationId state=${result.state.wireName} '
@@ -2179,27 +2218,80 @@ class MoltbookRuntimeModule {
     return result;
   }
 
-  Future<void> _archiveClosedMoltbookDrafts(
-    Iterable<ExternalEffectOperation> operations,
-  ) async {
-    final hashes = <String>{};
-    for (final operation in operations) {
-      final hash =
-          MoltbookPublicationService.succeededPostDraftHash(operation) ??
-          (MoltbookPublicationService.canArchiveTerminalPostDraft(operation)
-              ? MoltbookPublicationService.postDraftHash(operation)
-              : null);
-      if (hash != null) hashes.add(hash);
-    }
-    if (hashes.isNotEmpty) {
-      await moltbookDrafts.deleteAll(hashes);
-    }
-    if (hashes.isNotEmpty) {
-      await uiLog.log(
-        'moltbook.draft.archive',
-        'closed count=${hashes.length}',
+  Future<void> _settleMoltbookOperations(
+    Iterable<ExternalEffectOperation> operations, {
+    String? presentedOperationId,
+    MoltbookPostObservation? displayedPost,
+    Future<void> Function()? presentationAuthorization,
+  }) async {
+    final completed =
+        operations
+            .where(
+              (operation) =>
+                  operation.state.isTerminal &&
+                  (!MoltbookPublicationService.retainsPublicationResult(
+                        operation,
+                      ) ||
+                      operation.operationId == presentedOperationId) &&
+                  !MoltbookPublicationService.requiresReconciliation(operation),
+            )
+            .toList()
+          ..sort((a, b) => a.updatedAtUtc.compareTo(b.updatedAtUtc));
+    for (final operation in completed) {
+      await moltbookPublications.forgetProcessed(
+        operation,
+        displayedPost: displayedPost,
+        beforeDelete: () async {
+          await presentationAuthorization?.call();
+          if (operation.state == ExternalEffectState.cancelled) return;
+          await moltbookFeedCheckpoint.recordProcessedWrite(operation);
+          final hash = MoltbookPublicationService.postDraftHash(operation);
+          if (hash != null) await moltbookDrafts.delete(hash);
+        },
+        afterDelete:
+            () => moltbookFeedCheckpoint.finishProcessedWrite(
+              operation.operationId,
+            ),
       );
     }
+    if (completed.isNotEmpty) {
+      await uiLog.log(
+        'moltbook.publication.complete',
+        'removed count=${completed.length}',
+      );
+    }
+  }
+
+  Future<MoltbookPostObservation> inspectMoltbookPublication(
+    ExternalEffectOperation operation,
+  ) async {
+    final authorize = await pluginHostApi.captureRuntimeAuthorization(
+      pluginId: moltbookAmbassadorPluginId,
+      method: planMoltbookHeartbeatMethod,
+    );
+    final result = await moltbookPublications.observePublicResult(operation);
+    await authorize();
+    return result;
+  }
+
+  Future<void> finishPresentedMoltbookPublication({
+    required ExternalEffectOperation operation,
+    required MoltbookPostObservation displayedPost,
+  }) async {
+    if (!operation.state.isTerminal ||
+        MoltbookPublicationService.requiresReconciliation(operation)) {
+      throw StateError('Publication delivery still requires reconciliation');
+    }
+    final authorize = await pluginHostApi.captureRuntimeAuthorization(
+      pluginId: moltbookAmbassadorPluginId,
+      method: planMoltbookHeartbeatMethod,
+    );
+    await _settleMoltbookOperations(
+      [operation],
+      presentedOperationId: operation.operationId,
+      displayedPost: displayedPost,
+      presentationAuthorization: authorize,
+    );
   }
 
   Future<ExternalEffectOperation> resolveMoltbookPublicationVerificationWithAi({
@@ -2260,7 +2352,7 @@ class MoltbookRuntimeModule {
       operationId: operation.operationId,
       answer: answer,
     );
-    await _archiveClosedMoltbookDrafts(<ExternalEffectOperation>[result]);
+    await _settleMoltbookOperations(<ExternalEffectOperation>[result]);
     await uiLog.log(
       'moltbook.publication.verify.ai',
       'operation=${operation.operationId} state=${result.state.wireName} '
@@ -2271,12 +2363,17 @@ class MoltbookRuntimeModule {
 
   Future<ExternalEffectOperation> cancelMoltbookPublication(
     String operationId,
-  ) => moltbookPublications.cancel(operationId);
+  ) async {
+    final result = await moltbookPublications.cancel(operationId);
+    await _settleMoltbookOperations([result]);
+    return result;
+  }
 
   Future<ExternalEffectOperation> closeMoltbookPublicationWithoutReceipt(
     String operationId,
   ) async {
     final result = await moltbookPublications.closeWithoutReceipt(operationId);
+    await _settleMoltbookOperations([result]);
     await uiLog.log(
       'moltbook.publication.close_without_receipt',
       'operation=$operationId state=${result.state.wireName}',
@@ -2307,7 +2404,7 @@ class MoltbookRuntimeModule {
           'Cancel the active Moltbook publication before deleting its draft',
         );
       }
-      await moltbookPublications.cancel(operation.operationId);
+      await cancelMoltbookPublication(operation.operationId);
     }
     await moltbookDrafts.delete(normalizedHash);
     await uiLog.log(
