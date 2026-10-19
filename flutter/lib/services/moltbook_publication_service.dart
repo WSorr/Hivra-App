@@ -36,18 +36,22 @@ class MoltbookPublicationService {
 
   final ExternalEffectService _effects;
   final Future<MoltbookConnectionBinding?> Function() _loadBinding;
+  final Future<MoltbookPostObservation> Function(String) _observePublicPost;
 
   MoltbookPublicationService({
     required MoltbookConnectionService connection,
     required ExternalEffectService effects,
   }) : _effects = effects,
-       _loadBinding = connection.loadBinding;
+       _loadBinding = connection.loadBinding,
+       _observePublicPost = connection.observePublicPost;
 
   MoltbookPublicationService.withBindingLoader({
     required ExternalEffectService effects,
     required Future<MoltbookConnectionBinding?> Function() loadBinding,
+    required Future<MoltbookPostObservation> Function(String) observePublicPost,
   }) : _effects = effects,
-       _loadBinding = loadBinding;
+       _loadBinding = loadBinding,
+       _observePublicPost = observePublicPost;
 
   Future<ExternalEffectOperation> prepare({
     required MoltbookDraftPreview draft,
@@ -522,8 +526,60 @@ class MoltbookPublicationService {
     return _effects.list(pluginId: moltbookAmbassadorPluginId);
   }
 
+  static bool retainsPublicationResult(ExternalEffectOperation operation) =>
+      isPostPublication(operation) &&
+      !isClosedWithoutReceipt(operation) &&
+      operation.state != ExternalEffectState.cancelled &&
+      (operation.providerReferenceId != null || operation.receipt != null);
+
+  Future<MoltbookPostObservation> observePublicResult(
+    ExternalEffectOperation operation,
+  ) async {
+    _validateMoltbookOperation(operation);
+    final owner = _effects.activeOwnerCapsuleHex;
+    if (operation.ownerCapsuleHex != owner ||
+        !retainsPublicationResult(operation)) {
+      throw StateError('The current publication has no provider reference');
+    }
+    final binding = await _loadBinding();
+    if (binding?.accountId != operation.accountBindingId) {
+      throw StateError('Publication account binding changed');
+    }
+    final current =
+        (await list())
+            .where((item) => item.operationId == operation.operationId)
+            .singleOrNull;
+    if (current?.revision != operation.revision) {
+      throw StateError('Publication changed before public observation');
+    }
+    final payload = decodePayload(operation);
+    final postId =
+        operation.providerReferenceId ?? operation.receipt!.providerReceiptId;
+    final post = await _observePublicPost(postId);
+    _requireSameOwner(owner);
+    if ((await _loadBinding())?.accountId != operation.accountBindingId) {
+      throw StateError(
+        'Publication account binding changed during observation',
+      );
+    }
+    if (post.authorId != operation.accountBindingId ||
+        !post.matchesExactPublication(
+          postId: postId,
+          authorName: payload['account_name'] as String,
+          submoltName: payload['submolt_name'] as String,
+          title: payload['title'] as String,
+          content: payload['content'] as String,
+        )) {
+      throw StateError(
+        'Public post does not match the retained exact publication',
+      );
+    }
+    return post;
+  }
+
   Future<void> forgetProcessed(
     ExternalEffectOperation operation, {
+    MoltbookPostObservation? displayedPost,
     required Future<void> Function() beforeDelete,
     required Future<void> Function() afterDelete,
   }) async {
@@ -538,6 +594,28 @@ class MoltbookPublicationService {
       if (current == null) return;
       if (!current.state.isTerminal || current.revision != operation.revision) {
         throw StateError('Moltbook effect changed before completion');
+      }
+      if (retainsPublicationResult(current)) {
+        if (displayedPost == null) {
+          throw StateError(
+            'Show the public result before completing publication',
+          );
+        }
+        final fresh = await observePublicResult(current);
+        if (fresh.postId != displayedPost.postId ||
+            fresh.title != displayedPost.title ||
+            fresh.content != displayedPost.content ||
+            fresh.verificationStatus != displayedPost.verificationStatus ||
+            fresh.isSpam != displayedPost.isSpam ||
+            fresh.isDeleted != displayedPost.isDeleted) {
+          throw StateError('Public result changed; refresh it before closing');
+        }
+        if (!fresh.isDeleted &&
+            !fresh.isSpam &&
+            !fresh.isVerified &&
+            fresh.verificationStatus != 'failed') {
+          throw StateError('Public moderation is still pending');
+        }
       }
       await beforeDelete();
       _requireSameOwner(owner);
@@ -707,8 +785,12 @@ class MoltbookPublicationService {
 
   static Uri? publishedPostUri(ExternalEffectOperation operation) {
     final receipt = operation.receipt;
-    if (operation.state != ExternalEffectState.succeeded ||
-        receipt == null ||
+    if (receipt != null &&
+        operation.state != ExternalEffectState.succeeded &&
+        operation.providerReferenceId == null) {
+      return null;
+    }
+    if (receipt != null &&
         receipt.providerId != MoltbookConnectionService.providerId) {
       return null;
     }
@@ -722,7 +804,10 @@ class MoltbookPublicationService {
     final postId =
         operation.effectKind == MoltbookExternalEffectAdapter.commentEffectKind
             ? payload['post_id']?.toString().trim() ?? ''
-            : receipt.providerReceiptId.trim();
+            : (operation.providerReferenceId ??
+                    receipt?.providerReceiptId ??
+                    '')
+                .trim();
     if (!RegExp(
       r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
     ).hasMatch(postId)) {

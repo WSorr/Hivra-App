@@ -184,6 +184,16 @@ class MoltbookConnectionService {
     );
   }
 
+  Future<MoltbookPostObservation> observePublicPost(String postId) async {
+    final owner = _activeOwnerHex();
+    if (owner == null) throw StateError('Active Capsule is unavailable');
+    final post = await _observer.observePost(null, postId: postId);
+    if (_activeOwnerHex() != owner) {
+      throw StateError('Capsule changed during public observation');
+    }
+    return post;
+  }
+
   Future<MoltbookHeartbeatObservation> observeHeartbeat({
     Set<String> processedPostIds = const <String>{},
   }) {

@@ -76,35 +76,96 @@ void main() {
     module = buildModule(triggers);
   });
 
-  test('successful verification archives its exact source draft', () async {
-    ai.unlocked = true;
-    ai.verificationAnswer = '50';
-    final challenged = _operation(challenged: true);
-    publications.operations = <ExternalEffectOperation>[challenged];
-    publications.verificationResult = _succeededPostOperation();
-
-    final result = await module.resolveMoltbookPublicationVerificationWithAi(
-      operationId: challenged.operationId,
+  for (final removed in [false, true]) {
+    test(
+      'package replacement/removal during result read preserves the effect: $removed',
+      () async {
+        final operation = _succeededPostOperation();
+        publications.operations = [operation];
+        publications.afterPublicRead = () {
+          if (removed) {
+            heartbeatHost.installed = false;
+          } else {
+            heartbeatHost.packageDigest = 'replacement';
+          }
+        };
+        await expectLater(
+          module.inspectMoltbookPublication(operation),
+          throwsStateError,
+        );
+        expect(publications.operations.single, same(operation));
+        expect(drafts.deletedHashes, isEmpty);
+        expect(publications.processedIds, isEmpty);
+      },
     );
+  }
 
-    expect(result.state, ExternalEffectState.succeeded);
-    expect(ai.verificationSolutionCount, 1);
-    expect(publications.verificationAnswers, <String>['50']);
-    expect(drafts.deletedHashes, <String>{'f' * 64});
-  });
+  test(
+    'a delivery requiring reconciliation cannot be closed as a shown result',
+    () async {
+      final operation = ExternalEffectOperation.fromJson({
+        ..._succeededPostOperation().toJson(),
+        'state': 'terminal_failure',
+        'receipt': null,
+        'last_error_code': 'http_400',
+      });
+      publications.operations = [operation];
+      await expectLater(
+        module.finishPresentedMoltbookPublication(
+          operation: operation,
+          displayedPost: _visiblePost(),
+        ),
+        throwsStateError,
+      );
+      expect(publications.operations.single, same(operation));
+      expect(drafts.deletedHashes, isEmpty);
+    },
+  );
 
-  test('provider-marked spam archives its closed source draft', () async {
-    final draft = _draftPreview('f' * 64);
-    await drafts.save(draft);
-    publications.operations = <ExternalEffectOperation>[
-      _spamRejectedPostOperation(),
-    ];
+  test(
+    'successful verification retains the source and receipt until the result is shown',
+    () async {
+      ai.unlocked = true;
+      ai.verificationAnswer = '50';
+      final challenged = _operation(challenged: true);
+      publications.operations = <ExternalEffectOperation>[challenged];
+      publications.verificationResult = _succeededPostOperation();
 
-    final loaded = await module.loadMoltbookDrafts();
+      final result = await module.resolveMoltbookPublicationVerificationWithAi(
+        operationId: challenged.operationId,
+      );
 
-    expect(loaded, isEmpty);
-    expect(drafts.deletedHashes, <String>{draft.draftHashHex});
-  });
+      expect(result.state, ExternalEffectState.succeeded);
+      expect(ai.verificationSolutionCount, 1);
+      expect(publications.verificationAnswers, <String>['50']);
+      expect(drafts.deletedHashes, isEmpty);
+      final restarted = buildModule(MoltbookCycleTriggerService());
+      expect(await restarted.loadMoltbookPublications(), hasLength(1));
+      await restarted.finishPresentedMoltbookPublication(
+        operation: result,
+        displayedPost: _visiblePost(),
+      );
+      expect(publications.operations, isEmpty);
+      expect(drafts.deletedHashes, <String>{'f' * 64});
+    },
+  );
+
+  test(
+    'provider-marked spam keeps its reference and exact draft for display',
+    () async {
+      final draft = _draftPreview('f' * 64);
+      await drafts.save(draft);
+      publications.operations = <ExternalEffectOperation>[
+        _spamRejectedPostOperation(),
+      ];
+
+      final loaded = await module.loadMoltbookDrafts();
+
+      expect(loaded, hasLength(1));
+      expect(drafts.deletedHashes, isEmpty);
+      expect(publications.operations, hasLength(1));
+    },
+  );
 
   test(
     'cancel prepared effect preserves its authoring draft and frees the slot',
@@ -182,8 +243,8 @@ void main() {
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
       expect(ai.bulletinProposalCount, 1);
       expect(publications.processedPostIds, hasLength(1));
-      expect(publications.operations, isEmpty);
-      expect(drafts.stored, isEmpty);
+      expect(publications.operations, hasLength(1));
+      expect(drafts.stored, hasLength(1));
     },
   );
 
@@ -206,8 +267,8 @@ void main() {
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
       expect(ai.bulletinProposalCount, 1);
       expect(publications.processedPostIds, [prepared.operationId]);
-      expect(publications.operations, isEmpty);
-      expect(drafts.stored, isEmpty);
+      expect(publications.operations, hasLength(1));
+      expect(drafts.stored, hasLength(1));
     },
   );
 
@@ -226,7 +287,7 @@ void main() {
 
       expect(publications.reconciledIds, [interrupted.operationId]);
       expect(publications.processedPostIds, isEmpty);
-      expect(publications.operations, isEmpty);
+      expect(publications.operations, hasLength(1));
       expect(ai.bulletinProposalCount, 0);
     },
   );
@@ -993,13 +1054,18 @@ void main() {
       publications.resolvePostOnRecheck = true;
       publications.leavePostUnresolved = false;
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(publications.operations, hasLength(1));
+      await module.finishPresentedMoltbookPublication(
+        operation: publications.operations.single,
+        displayedPost: _visiblePost(),
+      );
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
 
       expect(ai.bulletinProposalCount, 2);
       expect(publications.postApprovalCount, 2);
       expect(publications.processedPostIds, hasLength(2));
-      expect(publications.operations, isEmpty);
-      expect(drafts.stored, isEmpty);
+      expect(publications.operations, hasLength(1));
+      expect(drafts.stored, hasLength(1));
     },
   );
 
@@ -1080,9 +1146,11 @@ void main() {
       expect(ai.bulletinProposalCount, 1);
       expect(publications.postApprovalCount, 1);
       expect(publications.processedPostIds, hasLength(1));
-      expect(drafts.stored.map((draft) => draft.preview.draftHashHex), <String>[
-        unrelatedDraft.draftHashHex,
-      ]);
+      expect(drafts.stored, hasLength(2));
+      expect(
+        drafts.stored.map((draft) => draft.preview.draftHashHex),
+        contains(unrelatedDraft.draftHashHex),
+      );
       expect((await publicChanges.load()).single.isPending, isFalse);
     },
   );
@@ -1166,7 +1234,7 @@ void main() {
       ]);
       expect(publications.postApprovalCount, 1);
       expect(publications.processedPostIds, hasLength(1));
-      expect(drafts.stored, isEmpty);
+      expect(drafts.stored, hasLength(1));
       final persisted = (await publicChanges.load()).single;
       expect(persisted.sourceId, change.sourceId);
       expect(persisted.isPending, isFalse);
@@ -1311,6 +1379,11 @@ void main() {
       );
       final restarted = buildModule(MoltbookCycleTriggerService());
 
+      for (final completed in publications.operations) {
+        await checkpoint.recordProcessedWrite(completed);
+        await checkpoint.finishProcessedWrite(completed.operationId);
+      }
+      publications.operations.clear();
       final summary = await restarted.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
@@ -1342,7 +1415,7 @@ void main() {
 
       expect(summary.blockedCount, 0);
       expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, isEmpty);
+      expect(drafts.stored, hasLength(1));
       expect(publications.preparedPostDestinations, <String>[
         'my-capsule-notes',
       ]);
@@ -1682,6 +1755,11 @@ void main() {
         ),
       ];
 
+      for (final completed in publications.operations) {
+        await checkpoint.recordProcessedWrite(completed);
+        await checkpoint.finishProcessedWrite(completed.operationId);
+      }
+      publications.operations.clear();
       final summary = await module.runMoltbookCycle();
 
       expect(heartbeatHost.authorizationCount, 1);
@@ -1728,6 +1806,11 @@ void main() {
         facts: const <String>['A later confirmed change remains queued.'],
       );
 
+      for (final completed in publications.operations) {
+        await checkpoint.recordProcessedWrite(completed);
+        await checkpoint.finishProcessedWrite(completed.operationId);
+      }
+      publications.operations.clear();
       final summary = await module.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
@@ -2070,7 +2153,7 @@ void main() {
         MoltbookPublicationService.personFirstRuntimeSubmoltName,
       ]);
       expect(publications.processedPostIds, hasLength(1));
-      expect(drafts.stored, isEmpty);
+      expect(drafts.stored, hasLength(1));
       expect(summary!.blockedCount, 0);
     },
   );
@@ -2710,6 +2793,15 @@ class _PublicRepositorySource implements MoltbookPublicRepositorySourceAdapter {
 }
 
 class _CyclePublications implements MoltbookPublicationService {
+  void Function()? afterPublicRead;
+  @override
+  Future<MoltbookPostObservation> observePublicResult(
+    ExternalEffectOperation operation,
+  ) async {
+    afterPublicRead?.call();
+    return _visiblePost();
+  }
+
   List<ExternalEffectOperation> operations = <ExternalEffectOperation>[];
   final List<String> processedIds = <String>[];
   final List<ExternalEffectOperation> preparedReplies =
@@ -2732,6 +2824,7 @@ class _CyclePublications implements MoltbookPublicationService {
   @override
   Future<void> forgetProcessed(
     ExternalEffectOperation operation, {
+    MoltbookPostObservation? displayedPost,
     required Future<void> Function() beforeDelete,
     required Future<void> Function() afterDelete,
   }) async {
@@ -3394,3 +3487,19 @@ class _MemoryFileStore implements CapsuleFileStore {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
+
+MoltbookPostObservation _visiblePost() => const MoltbookPostObservation(
+  postId: 'post-1',
+  title: 'Public title',
+  content: 'Exact body',
+  authorId: 'agent-1',
+  authorName: 'agent',
+  submoltName: 'general',
+  score: 0,
+  commentCount: 0,
+  verificationStatus: 'verified',
+  isSpam: false,
+  isLocked: false,
+  createdAtUtc: '2026-08-01T00:00:00.000Z',
+  updatedAtUtc: '2026-08-01T00:00:00.000Z',
+);

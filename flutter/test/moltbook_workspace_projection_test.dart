@@ -11,30 +11,105 @@ import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
 import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
 
 void main() {
-  testWidgets('completed effects are absent from the local work queue', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: MoltbookPublicationCard(
-            operations: [_publishedPostOperation()],
-            busy: false,
-            profileUri: Uri.parse(
-              'https://www.moltbook.com/u/hivra_ambassador',
+  for (final status in ['visible', 'spam', 'pending', 'unavailable']) {
+    testWidgets(
+      'last result exposes exact text, link and moderation: $status',
+      (tester) async {
+        var reads = 0;
+        var unavailable = status == 'unavailable';
+        var closed = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: MoltbookPublicationCard(
+                  operations: [_publishedPostOperation()],
+                  busy: false,
+                  profileUri: null,
+                  onOpenPost: (_) async {},
+                  onOpenProfile: (_) async {},
+                  onRecheck: (_) async {},
+                  onCloseWithoutReceipt: (_) async {},
+                  onInspect: (_) async {
+                    reads++;
+                    if (unavailable) {
+                      throw StateError('Public lookup unavailable');
+                    }
+                    return MoltbookPostObservation(
+                      postId: _postId,
+                      title: 'Exact title',
+                      content: 'Exact body',
+                      authorId: 'account-test',
+                      authorName: 'hivra_ambassador',
+                      submoltName: 'person-first-runtime',
+                      score: 0,
+                      commentCount: 0,
+                      verificationStatus:
+                          status == 'pending' ? 'pending' : 'verified',
+                      isSpam: status == 'spam',
+                      isLocked: false,
+                      createdAtUtc: '2026-09-26T18:00:00.000Z',
+                      updatedAtUtc: '2026-09-26T18:00:01.000Z',
+                    );
+                  },
+                  onFinish: (_, shown) async {
+                    expect(shown.postId, _postId);
+                    closed++;
+                  },
+                ),
+              ),
             ),
-            onOpenPost: (_) async {},
-            onOpenProfile: (_) async {},
-            onRecheck: (_) async {},
-            onCloseWithoutReceipt: (_) async {},
           ),
-        ),
-      ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Exact body'), findsWidgets);
+        expect(find.text('Exact title'), findsOneWidget);
+        expect(
+          find.text('https://www.moltbook.com/post/$_postId'),
+          findsOneWidget,
+        );
+        if (status == 'unavailable') {
+          expect(
+            find.textContaining('Public visibility unknown'),
+            findsOneWidget,
+          );
+        } else {
+          expect(find.textContaining('Moderation:'), findsOneWidget);
+        }
+        final close = tester.widget<OutlinedButton>(
+          find.widgetWithText(OutlinedButton, 'Close shown result'),
+        );
+        if (status == 'visible' || status == 'spam') {
+          expect(close.onPressed, isNotNull);
+          await tester.ensureVisible(find.text('Close shown result'));
+          await tester.tap(find.text('Close shown result'));
+          expect(closed, 1);
+        } else {
+          expect(close.onPressed, isNull);
+        }
+        expect(reads, 1);
+        if (status == 'visible') unavailable = true;
+        await tester.ensureVisible(find.text('Check public visibility'));
+        await tester.tap(find.text('Check public visibility'));
+        await tester.pumpAndSettle();
+        expect(reads, 2);
+        if (status == 'visible') {
+          expect(
+            find.textContaining('Public visibility unknown'),
+            findsOneWidget,
+          );
+          expect(
+            tester
+                .widget<OutlinedButton>(
+                  find.widgetWithText(OutlinedButton, 'Close shown result'),
+                )
+                .onPressed,
+            isNull,
+          );
+        }
+      },
     );
-    expect(find.text('Exact body'), findsNothing);
-    expect(find.text('No pending publications'), findsOneWidget);
-    expect(find.text('Open Moltbook profile'), findsOneWidget);
-  });
+  }
 
   testWidgets('a prepared effect can be cancelled without approving it', (
     tester,

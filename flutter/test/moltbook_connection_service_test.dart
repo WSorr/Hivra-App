@@ -63,6 +63,16 @@ void main() {
     },
   );
 
+  test(
+    'public result observation uses no credential or secure-storage read',
+    () async {
+      final post = await service.observePublicPost('own-post-1');
+      expect(post.postId, 'own-post-1');
+      expect(secureStorage.readCount, 0);
+      expect(observer.keys, isEmpty);
+    },
+  );
+
   test('screen-safe binding load does not read secure storage', () async {
     await service.connect('secret-key');
     secureStorage.readCount = 0;
@@ -277,6 +287,15 @@ void main() {
 }
 
 class _FakeObserver implements MoltbookObservePort {
+  @override
+  Future<MoltbookPostObservation> observePost(
+    String? apiKey, {
+    required String postId,
+  }) async {
+    expect(apiKey, isNull);
+    return (await observeConversation('', postId: postId)).post;
+  }
+
   final List<String> keys = <String>[];
   final List<String> homeKeys = <String>[];
   final List<String> feedKeys = <String>[];

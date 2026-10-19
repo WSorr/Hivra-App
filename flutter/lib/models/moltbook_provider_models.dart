@@ -186,6 +186,7 @@ class MoltbookPostObservation {
 
   bool get isVerified => verificationStatus == 'verified';
   final bool isSpam;
+  final bool isDeleted;
   final bool isLocked;
   final String createdAtUtc;
   final String updatedAtUtc;
@@ -201,6 +202,7 @@ class MoltbookPostObservation {
     required this.commentCount,
     required this.verificationStatus,
     required this.isSpam,
+    this.isDeleted = false,
     required this.isLocked,
     required this.createdAtUtc,
     required this.updatedAtUtc,

@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
+import '../models/moltbook_provider_models.dart';
 import '../models/plugin_contract_ids.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'moltbook_connection_service.dart';
@@ -450,7 +451,9 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
               : content == payload.content && title == payload.title;
       if (matches && _isVerifiedPublicPost(post)) {
         final postId = _stringId(post['id'] ?? post['post_id']);
-        if (postId != null) return _success(request, postId);
+        if (postId != null) {
+          return _reconcilePostById(request, apiKey, payload, postId);
+        }
       }
     }
     return _receiptNotObserved();
@@ -462,7 +465,18 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     _MoltbookPostPayload payload,
     String postId,
   ) async {
-    final post = await _provider.observePost(apiKey, postId: postId);
+    final MoltbookPostObservation post;
+    try {
+      // An authenticated read can expose content hidden from everyone else.
+      post = await _provider.observePost(null, postId: postId);
+    } on MoltbookProviderException {
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.unresolved,
+        errorCode: 'public_observation_unavailable',
+        errorMessage:
+            'Public visibility could not be checked; keep the exact effect',
+      );
+    }
     final matches =
         post.authorId == request.accountBindingId &&
         post.matchesExactPublication(
@@ -474,6 +488,14 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         );
     if (!matches) {
       return _receiptNotObserved();
+    }
+    if (post.isDeleted) {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        providerReferenceId: post.postId,
+        errorCode: 'provider_post_deleted',
+        errorMessage: 'Moltbook reports the exact post as deleted',
+      );
     }
     if (post.isSpam) {
       return ExternalEffectAdapterResult(

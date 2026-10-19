@@ -2219,13 +2219,20 @@ class MoltbookRuntimeModule {
   }
 
   Future<void> _settleMoltbookOperations(
-    Iterable<ExternalEffectOperation> operations,
-  ) async {
+    Iterable<ExternalEffectOperation> operations, {
+    String? presentedOperationId,
+    MoltbookPostObservation? displayedPost,
+    Future<void> Function()? presentationAuthorization,
+  }) async {
     final completed =
         operations
             .where(
               (operation) =>
                   operation.state.isTerminal &&
+                  (!MoltbookPublicationService.retainsPublicationResult(
+                        operation,
+                      ) ||
+                      operation.operationId == presentedOperationId) &&
                   !MoltbookPublicationService.requiresReconciliation(operation),
             )
             .toList()
@@ -2233,7 +2240,9 @@ class MoltbookRuntimeModule {
     for (final operation in completed) {
       await moltbookPublications.forgetProcessed(
         operation,
+        displayedPost: displayedPost,
         beforeDelete: () async {
+          await presentationAuthorization?.call();
           if (operation.state == ExternalEffectState.cancelled) return;
           await moltbookFeedCheckpoint.recordProcessedWrite(operation);
           final hash = MoltbookPublicationService.postDraftHash(operation);
@@ -2251,6 +2260,38 @@ class MoltbookRuntimeModule {
         'removed count=${completed.length}',
       );
     }
+  }
+
+  Future<MoltbookPostObservation> inspectMoltbookPublication(
+    ExternalEffectOperation operation,
+  ) async {
+    final authorize = await pluginHostApi.captureRuntimeAuthorization(
+      pluginId: moltbookAmbassadorPluginId,
+      method: planMoltbookHeartbeatMethod,
+    );
+    final result = await moltbookPublications.observePublicResult(operation);
+    await authorize();
+    return result;
+  }
+
+  Future<void> finishPresentedMoltbookPublication({
+    required ExternalEffectOperation operation,
+    required MoltbookPostObservation displayedPost,
+  }) async {
+    if (!operation.state.isTerminal ||
+        MoltbookPublicationService.requiresReconciliation(operation)) {
+      throw StateError('Publication delivery still requires reconciliation');
+    }
+    final authorize = await pluginHostApi.captureRuntimeAuthorization(
+      pluginId: moltbookAmbassadorPluginId,
+      method: planMoltbookHeartbeatMethod,
+    );
+    await _settleMoltbookOperations(
+      [operation],
+      presentedOperationId: operation.operationId,
+      displayedPost: displayedPost,
+      presentationAuthorization: authorize,
+    );
   }
 
   Future<ExternalEffectOperation> resolveMoltbookPublicationVerificationWithAi({

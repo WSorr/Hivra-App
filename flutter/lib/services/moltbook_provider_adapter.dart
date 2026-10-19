@@ -9,6 +9,10 @@ typedef MoltbookHttpSender =
     Future<MoltbookHttpResponse> Function(MoltbookHttpRequest request);
 
 abstract interface class MoltbookObservePort {
+  Future<MoltbookPostObservation> observePost(
+    String? apiKey, {
+    required String postId,
+  });
   Future<MoltbookAccountObservation> observeAccount(String apiKey);
 
   Future<MoltbookHomeObservation> observeHome(String apiKey);
@@ -410,8 +414,9 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     return json;
   }
 
+  @override
   Future<MoltbookPostObservation> observePost(
-    String apiKey, {
+    String? apiKey, {
     required String postId,
   }) async {
     final normalizedId = postId.trim();
@@ -422,9 +427,10 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         retryable: false,
       );
     }
-    final response = await _get(
-      'posts/${Uri.encodeComponent(normalizedId)}',
-      apiKey,
+    final response = await _request(
+      method: 'GET',
+      relativePath: 'posts/${Uri.encodeComponent(normalizedId)}',
+      apiKey: apiKey,
     );
     final json = _decodeObject(response);
     _rejectProviderFailure(json, response);
@@ -547,6 +553,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
       commentCount: _requiredNonNegativeInt(post, 'comment_count'),
       verificationStatus: _requiredString(post, 'verification_status'),
       isSpam: _requiredBool(post, 'is_spam'),
+      isDeleted: _requiredBool(post, 'is_deleted'),
       isLocked: _requiredBool(post, 'is_locked'),
       createdAtUtc: createdAt.toIso8601String(),
       updatedAtUtc: updatedAt.toIso8601String(),
@@ -636,12 +643,17 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
   Future<MoltbookHttpResponse> _request({
     required String method,
     required String relativePath,
-    required String apiKey,
+    required String? apiKey,
     Map<String, dynamic>? body,
     bool decodeProviderFailure = false,
   }) async {
-    final normalizedKey = apiKey.trim();
-    if (normalizedKey.isEmpty || normalizedKey.length > 1024) {
+    final normalizedKey = apiKey?.trim();
+    final publicPostRead =
+        method == 'GET' &&
+        RegExp(r'^posts/[A-Za-z0-9-]{1,256}$').hasMatch(relativePath);
+    if ((normalizedKey == null && !publicPostRead) ||
+        (normalizedKey != null &&
+            (normalizedKey.isEmpty || normalizedKey.length > 1024))) {
       throw const MoltbookProviderException(
         code: 'invalid_credential',
         message: 'Moltbook API key is empty or too large',
@@ -667,7 +679,10 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
           uri: uri,
           headers: <String, String>{
             HttpHeaders.acceptHeader: 'application/json',
-            HttpHeaders.authorizationHeader: 'Bearer $normalizedKey',
+            if (normalizedKey != null)
+              HttpHeaders.authorizationHeader: 'Bearer $normalizedKey',
+            if (normalizedKey == null)
+              HttpHeaders.cacheControlHeader: 'no-cache',
             if (bodyBytes != null)
               HttpHeaders.contentTypeHeader: 'application/json',
           },

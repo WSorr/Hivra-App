@@ -181,18 +181,33 @@ If draft persistence succeeds but the feed marker cannot be written, the item
 remains pending and requires explicit operator resolution; no heuristic may
 adopt a draft by title, bulletin id, category, or text similarity.
 
-A local post draft is authoring state, not publication history. On a known
-provider outcome (verified publication or definite rejection, including spam),
-the composition owner deletes the matching processed draft and then removes
-the complete effect, payload, challenge and receipt from local storage. Local
-cancellation removes only the unsent effect and preserves an authoring draft.
-An explicit local closure abandons the uncertain attempt and deletes its source
-draft through the same settlement owner. It makes no remote change, claims no
-receipt, and does not reset the existing public-change source cursor. A restart
-cannot regenerate that attempted source. Automatic reconciliation never chooses
-local abandonment on the user's behalf.
-An empty effect journal is deleted. Loading the workspace settles pre-existing
-completed records through the same path; uncertain records remain pending.
+A local post draft is authoring state, not publication history. An accepted
+challenge or authenticated provider read is insufficient for a post receipt:
+the adapter must read the exact post without credentials, match its account,
+destination, title and body, and observe verified, not-spam, not-deleted status.
+Missing public evidence remains unresolved and retains the provider reference.
+A profile lookup can locate an id but cannot substitute for this public read.
+
+The last provider-referenced post remains in the existing single effect slot,
+with its exact payload and source draft, even after a successful receipt or a
+known moderation rejection. Loading, reopening and another cycle never erase
+that result or create a competing effect. The current-publication card opens
+the result and shows the exact submitted title/body, provider link and a fresh
+anonymous moderation/visibility observation. Unknown status stays explicit.
+
+Only closing the shown result permits settlement. The publication owner rereads
+the same public post and checks that its exact text and final moderation flags
+still match the displayed evidence before budget accounting and deletion.
+Unavailable, pending, changed or wrong-account evidence preserves the slot.
+This is result acknowledgement, not a second publication approval or a history
+archive. No extra journal, result store or completed-effect list is introduced.
+
+Local cancellation removes only the unsent effect and preserves an authoring
+draft. Explicit abandonment without a receipt remains a distinct local action;
+it claims neither provider absence nor successful publication and does not
+reset the existing source cursor. Automatic cycles never choose it.
+An empty effect journal is deleted after settlement. Completed replies and
+community creation keep their existing settlement rules.
 
 Only aggregate safety usage and source/feed cursors survive completion. A
 transient settlement marker bridges budget accounting and effect deletion so

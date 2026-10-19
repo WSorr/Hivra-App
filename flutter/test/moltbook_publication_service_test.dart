@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,7 @@ import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/external_effect_service.dart';
 import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
 import 'package:hivra_app/services/moltbook_publication_service.dart';
+import 'package:hivra_app/services/moltbook_provider_adapter.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
@@ -658,6 +660,9 @@ void main() {
     late String activeRoot;
     late ExternalEffectService effects;
     late MoltbookPublicationService publications;
+    late Map<String, dynamic> publicPost;
+    late int publicStatus;
+    void Function()? duringPublicRead;
 
     const binding = MoltbookConnectionBinding(
       accountId: 'account-test',
@@ -677,7 +682,42 @@ void main() {
         atomicWrites: const AtomicFileWriteService(),
       );
       effects = _effects(files, () => activeRoot);
-      publications = _publications(effects, binding);
+      publicStatus = 200;
+      duringPublicRead = null;
+      publicPost = {
+        'id': 'receipt-1',
+        'title': 'Exact public title',
+        'content': 'Exact public body.',
+        'author': {'id': binding.accountId, 'name': binding.accountName},
+        'submolt': {'name': 'general'},
+        'score': 0,
+        'comment_count': 0,
+        'verification_status': 'verified',
+        'is_spam': false,
+        'is_deleted': false,
+        'is_locked': false,
+        'created_at': '2026-07-31T18:00:00.000Z',
+        'updated_at': '2026-07-31T18:00:01.000Z',
+      };
+      publications = MoltbookPublicationService.withBindingLoader(
+        effects: effects,
+        loadBinding: () async => binding,
+        observePublicPost:
+            (postId) => MoltbookProviderAdapter(
+              send: (request) async {
+                expect(request.method, 'GET');
+                expect(request.headers.containsKey('authorization'), isFalse);
+                duringPublicRead?.call();
+                return MoltbookHttpResponse(
+                  statusCode: publicStatus,
+                  headers: const {},
+                  bodyBytes: Uint8List.fromList(
+                    utf8.encode(jsonEncode({'post': publicPost})),
+                  ),
+                );
+              },
+            ).observePost(null, postId: postId),
+      );
     });
 
     tearDown(() async {
@@ -694,11 +734,21 @@ void main() {
         );
         await publications.approveAndQueue(prepared);
         final completed = await publications.process(prepared.operationId);
+        await expectLater(
+          publications.forgetProcessed(
+            completed,
+            beforeDelete: () async {},
+            afterDelete: () async {},
+          ),
+          throwsStateError,
+        );
+        final shown = await publications.observePublicResult(completed);
         var before = 0;
         var after = 0;
         await expectLater(
           publications.forgetProcessed(
             completed,
+            displayedPost: shown,
             beforeDelete: () async {
               before++;
               throw StateError('checkpoint unavailable');
@@ -713,6 +763,7 @@ void main() {
         expect(after, 0);
         await publications.forgetProcessed(
           completed,
+          displayedPost: shown,
           beforeDelete: () async {
             before++;
           },
@@ -738,6 +789,61 @@ void main() {
         expect(await restarted.list(), hasLength(1));
       },
     );
+
+    for (final failure in [
+      'unavailable',
+      'spam-changed',
+      'deleted-changed',
+      'wrong-text',
+      'capsule-changed',
+    ]) {
+      test(
+        'presentation cleanup retains the exact result on $failure',
+        () async {
+          final prepared = await publications.prepare(
+            draft: _postDraft('1'),
+            submoltName: 'general',
+          );
+          await publications.approveAndQueue(prepared);
+          final completed = await publications.process(prepared.operationId);
+          final shown = await publications.observePublicResult(completed);
+          switch (failure) {
+            case 'unavailable':
+              publicStatus = 404;
+            case 'spam-changed':
+              publicPost['is_spam'] = true;
+            case 'deleted-changed':
+              publicPost['is_deleted'] = true;
+            case 'wrong-text':
+              publicPost['content'] = 'A different post';
+            case 'capsule-changed':
+              duringPublicRead = () => activeRoot = _ownerB;
+          }
+          var deleted = false;
+          await expectLater(
+            publications.forgetProcessed(
+              completed,
+              displayedPost: shown,
+              beforeDelete: () async {
+                deleted = true;
+              },
+              afterDelete: () async {},
+            ),
+            throwsA(anything),
+          );
+          activeRoot = _ownerA;
+          expect(deleted, isFalse);
+          expect(await publications.list(), hasLength(1));
+          await expectLater(
+            publications.prepare(
+              draft: _postDraft('2', body: 'Another confirmed change.'),
+              submoltName: 'general',
+            ),
+            throwsStateError,
+          );
+        },
+      );
+    }
 
     test('different draft hashes share one exact public post effect', () async {
       final first = await publications.prepare(
@@ -1050,13 +1156,16 @@ void main() {
   });
 }
 
-MoltbookDraftPreview _postDraft(String suffix) {
+MoltbookDraftPreview _postDraft(
+  String suffix, {
+  String body = 'Exact public body.',
+}) {
   return MoltbookDraftPreview(
     bulletinId: 'bulletin-$suffix',
     releaseTag: 'test-$suffix',
     category: 'hivra-development',
     title: 'Exact public title',
-    body: 'Exact public body.',
+    body: body,
     audience: 'public',
     approvalRequired: true,
     safetyFlags: const <String>['reviewed'],
@@ -1137,6 +1246,8 @@ MoltbookPublicationService _publications(
   MoltbookConnectionBinding binding,
 ) {
   return MoltbookPublicationService.withBindingLoader(
+    observePublicPost:
+        (_) async => throw StateError('No public fixture configured'),
     effects: effects,
     loadBinding: () async => binding,
   );

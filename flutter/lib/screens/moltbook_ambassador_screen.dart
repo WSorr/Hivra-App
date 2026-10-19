@@ -1487,6 +1487,30 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _finishPublicationResult(
+    ExternalEffectOperation operation,
+    MoltbookPostObservation displayed,
+  ) async {
+    setState(() => _publicationBusy = true);
+    try {
+      await widget.module.finishPresentedMoltbookPublication(
+        operation: operation,
+        displayedPost: displayed,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      final drafts = await widget.module.loadMoltbookDrafts();
+      if (!mounted) return;
+      setState(() {
+        _publications = publications;
+        _storedDrafts = drafts;
+      });
+    } catch (error) {
+      if (mounted) _showNotice('Result retained: $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
   Future<void> _reconcilePublication(ExternalEffectOperation operation) async {
     final providerReferenceId = operation.providerReferenceId;
     final payload = MoltbookPublicationService.decodePayload(operation);
@@ -2093,6 +2117,14 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       const SizedBox(height: 20),
                       _MoltbookWorkspaceSection(
                         icon: Icons.public_rounded,
+                        key: ValueKey(
+                          _publications.any(
+                            MoltbookPublicationService.retainsPublicationResult,
+                          ),
+                        ),
+                        initiallyExpanded: _publications.any(
+                          MoltbookPublicationService.retainsPublicationResult,
+                        ),
                         title: 'Current publication',
                         subtitle:
                             _publications.isEmpty
@@ -2107,6 +2139,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                   : MoltbookPublicationService.accountProfileUri(
                                     _binding!.accountName,
                                   ),
+                          onInspect: widget.module.inspectMoltbookPublication,
+                          onFinish: _finishPublicationResult,
                           onCancel: _cancelUnsentPublication,
                           onOpenPost: _openPublishedPost,
                           onOpenProfile: _openPublishedPost,
@@ -2409,6 +2443,7 @@ class _MoltbookWorkspaceSection extends StatelessWidget {
   final bool initiallyExpanded;
 
   const _MoltbookWorkspaceSection({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -2893,7 +2928,7 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
   }
 }
 
-class MoltbookPublicationCard extends StatelessWidget {
+class MoltbookPublicationCard extends StatefulWidget {
   final List<ExternalEffectOperation> operations;
   final bool busy;
   final Uri? profileUri;
@@ -2904,12 +2939,19 @@ class MoltbookPublicationCard extends StatelessWidget {
   final Future<void> Function(ExternalEffectOperation operation)
   onCloseWithoutReceipt;
 
+  final Future<MoltbookPostObservation> Function(ExternalEffectOperation)?
+  onInspect;
+  final Future<void> Function(ExternalEffectOperation, MoltbookPostObservation)?
+  onFinish;
+
   const MoltbookPublicationCard({
     super.key,
     required this.operations,
     required this.busy,
     required this.profileUri,
     this.onCancel,
+    this.onInspect,
+    this.onFinish,
     required this.onOpenPost,
     required this.onOpenProfile,
     required this.onRecheck,
@@ -2917,10 +2959,50 @@ class MoltbookPublicationCard extends StatelessWidget {
   });
 
   @override
+  State<MoltbookPublicationCard> createState() =>
+      _MoltbookPublicationCardState();
+}
+
+class _MoltbookPublicationCardState extends State<MoltbookPublicationCard> {
+  String? _inspectionKey;
+  Future<MoltbookPostObservation>? _inspection;
+
+  Future<MoltbookPostObservation>? _inspect(ExternalEffectOperation operation) {
+    if (widget.onInspect == null) return null;
+    final future = Future<MoltbookPostObservation>.sync(
+      () => widget.onInspect!(operation),
+    );
+    // A provider error may arrive before the next frame attaches FutureBuilder.
+    // Keep it available to the builder without an unhandled async error.
+    future.ignore();
+    return future;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final operations = widget.operations;
+    final busy = widget.busy;
+    final profileUri = widget.profileUri;
+    final onCancel = widget.onCancel;
+    final onOpenPost = widget.onOpenPost;
+    final onOpenProfile = widget.onOpenProfile;
+    final onRecheck = widget.onRecheck;
+    final onCloseWithoutReceipt = widget.onCloseWithoutReceipt;
+    final current =
+        operations
+            .where(MoltbookPublicationService.retainsPublicationResult)
+            .lastOrNull;
+    final key =
+        current == null ? null : '${current.operationId}:${current.revision}';
+    if (key != _inspectionKey) {
+      _inspectionKey = key;
+      _inspection = current == null ? null : _inspect(current);
+    }
+
     final actionable = operations
         .where(
           (operation) =>
+              MoltbookPublicationService.retainsPublicationResult(operation) ||
               !operation.state.isTerminal ||
               operation.requiredAction != null ||
               MoltbookPublicationService.requiresReconciliation(operation) ||
@@ -2952,7 +3034,7 @@ class MoltbookPublicationCard extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: () => onOpenProfile(profileUri!),
+                  onPressed: () => onOpenProfile(profileUri),
                   icon: const Icon(Icons.open_in_new),
                   label: const Text('Open Moltbook profile'),
                 ),
@@ -2990,6 +3072,10 @@ class MoltbookPublicationCard extends StatelessWidget {
               final canClose =
                   MoltbookPublicationService.canCloseWithoutReceipt(operation);
               return ExpansionTile(
+                initiallyExpanded:
+                    MoltbookPublicationService.retainsPublicationResult(
+                      operation,
+                    ),
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 12),
                 title: Text(
@@ -3040,7 +3126,7 @@ class MoltbookPublicationCard extends StatelessWidget {
                         if (operation.state == ExternalEffectState.prepared &&
                             onCancel != null) ...[
                           OutlinedButton.icon(
-                            onPressed: busy ? null : () => onCancel!(operation),
+                            onPressed: busy ? null : () => onCancel(operation),
                             icon: const Icon(Icons.cancel_outlined),
                             label: const Text('Cancel prepared effect'),
                           ),
@@ -3065,8 +3151,86 @@ class MoltbookPublicationCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 12),
                         ],
+                        if (MoltbookPublicationService.retainsPublicationResult(
+                          operation,
+                        )) ...[
+                          if (postUri != null)
+                            SelectableText(postUri.toString()),
+                          FutureBuilder<MoltbookPostObservation>(
+                            future:
+                                current?.operationId == operation.operationId
+                                    ? _inspection
+                                    : null,
+                            builder: (context, snapshot) {
+                              final post =
+                                  snapshot.connectionState ==
+                                              ConnectionState.done &&
+                                          !snapshot.hasError
+                                      ? snapshot.data
+                                      : null;
+                              final finalStatus =
+                                  post != null &&
+                                  (post.isVerified ||
+                                      post.isSpam ||
+                                      post.isDeleted ||
+                                      post.verificationStatus == 'failed');
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    post == null
+                                        ? snapshot.hasError
+                                            ? 'Public visibility unknown: ${snapshot.error}'
+                                            : 'Public visibility has not been checked'
+                                        : 'Public visibility: ${post.isVerified && !post.isSpam && !post.isDeleted ? "visible" : "not visible"}\n'
+                                            'Moderation: ${post.verificationStatus} · spam=${post.isSpam} · deleted=${post.isDeleted}',
+                                  ),
+                                  if (widget.onInspect != null)
+                                    OutlinedButton(
+                                      onPressed:
+                                          busy ||
+                                                  current?.operationId !=
+                                                      operation.operationId ||
+                                                  snapshot.connectionState ==
+                                                      ConnectionState.waiting
+                                              ? null
+                                              : () {
+                                                setState(() {
+                                                  _inspection = _inspect(
+                                                    operation,
+                                                  );
+                                                });
+                                              },
+                                      child: const Text(
+                                        'Check public visibility',
+                                      ),
+                                    ),
+                                  if (widget.onFinish != null &&
+                                      operation.state.isTerminal)
+                                    OutlinedButton(
+                                      onPressed:
+                                          busy ||
+                                                  !finalStatus ||
+                                                  MoltbookPublicationService.requiresReconciliation(
+                                                    operation,
+                                                  )
+                                              ? null
+                                              : () => widget.onFinish!(
+                                                operation,
+                                                post,
+                                              ),
+                                      child: const Text('Close shown result'),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (payload['title'] is String)
+                          SelectableText(payload['title'] as String),
                         const Text(
-                          'Exact public text',
+                          'Exact submitted text',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 4),
@@ -3132,7 +3296,7 @@ class MoltbookPublicationCard extends StatelessWidget {
       color: Colors.orange,
     ),
     ExternalEffectState.succeeded => (
-      label: 'Verified receipt has no usable post link',
+      label: 'Provider receipt confirmed; check public visibility',
       icon: Icons.link_off_rounded,
       color: Colors.orange,
     ),
