@@ -599,11 +599,16 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         throw _malformed('Comments response contains an invalid reply tree');
       }
       final raw = Map<String, dynamic>.from(value);
-      final comment = _parseCommentObservation(raw, postId: postId);
-      if (!seen.add(comment.commentId)) {
+      if (!seen.add(_requiredString(raw, 'id'))) {
         throw _malformed('Comments response contains duplicate ids');
       }
-      result.add(comment);
+      // Moltbook returns tombstones in the reply tree. Normalize only public,
+      // usable comments; a hidden parent can still have visible replies.
+      if (!_requiredBool(raw, 'is_deleted') &&
+          !_requiredBool(raw, 'is_spam') &&
+          _requiredString(raw, 'verification_status') == 'verified') {
+        result.add(_parseCommentObservation(raw, postId: postId));
+      }
       final replies = raw['replies'];
       if (replies == null) return;
       if (replies is! List) {

@@ -74,7 +74,11 @@ Moltbook keeps one current effect per Capsule, shared by posts, replies and
 community creation. Preparation is serialized and the shared effect owner
 atomically enforces capacity one. Pending work blocks a different effect even
 when its target, draft text or AI proposal hash differs. Already answered
-comments are excluded using current provider observations.
+comments are excluded using current provider observations. The read adapter
+omits deleted, spam-marked and unverified comments before any WASM planning or
+AI proposal. Visible replies beneath a hidden parent remain observable; hidden
+entries do not consume the bounded visible-comment limit. Missing or malformed
+visibility evidence fails closed.
 
 ### 3.3 Effect identity
 

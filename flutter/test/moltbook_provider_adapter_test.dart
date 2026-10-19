@@ -154,6 +154,9 @@ void main() {
               <String, dynamic>{
                 'id': 'comment-1',
                 'content': 'A useful reply.',
+                'is_deleted': false,
+                'is_spam': false,
+                'verification_status': 'verified',
                 'parent_id': null,
                 'upvotes': 3,
                 'downvotes': 1,
@@ -249,6 +252,9 @@ void main() {
                 <String, dynamic>{
                   'id': 'comment-1',
                   'content': 'Root',
+                  'is_deleted': false,
+                  'is_spam': false,
+                  'verification_status': 'verified',
                   'parent_id': null,
                   'upvotes': 0,
                   'downvotes': 0,
@@ -258,6 +264,9 @@ void main() {
                     <String, dynamic>{
                       'id': 'comment-2',
                       'content': 'Nested',
+                      'is_deleted': false,
+                      'is_spam': false,
+                      'verification_status': 'verified',
                       'parent_id': 'comment-1',
                       'upvotes': 1,
                       'downvotes': 0,
@@ -302,6 +311,89 @@ void main() {
         'comment-2',
       ]);
       expect(result.comments.last.parentCommentId, 'comment-1');
+    },
+  );
+
+  test(
+    'hidden comments do not consume the visible budget or hide live replies',
+    () async {
+      Map<String, dynamic> live(String id, {String? parent}) => {
+        'id': id,
+        'content': 'A live question.',
+        'parent_id': parent,
+        'is_deleted': false,
+        'is_spam': false,
+        'verification_status': 'verified',
+        'upvotes': 0,
+        'downvotes': 0,
+        'created_at': '2026-07-29T10:05:00.000Z',
+        'author': {'id': 'reader', 'name': 'Reader'},
+      };
+      final hidden = <Map<String, dynamic>>[
+        for (var i = 0; i < 25; i++) {'id': 'deleted-$i', 'is_deleted': true},
+        {...live('spam'), 'is_spam': true},
+        {...live('pending'), 'verification_status': 'pending'},
+        {...live('failed'), 'verification_status': 'failed'},
+        {
+          'id': 'deleted-parent',
+          'is_deleted': true,
+          'replies': [live('live-child', parent: 'deleted-parent')],
+        },
+        live('live-root'),
+      ];
+      final adapter = MoltbookProviderAdapter(
+        send:
+            (request) async => _jsonResponse(
+              request.uri.path.endsWith('/comments')
+                  ? {
+                    'post_id': 'post-1',
+                    'sort': 'new',
+                    'comments': hidden,
+                    'has_more': false,
+                  }
+                  : {
+                    'post': {
+                      'id': 'post-1',
+                      'title': 'Post',
+                      'content': 'Body',
+                      'author': {'id': 'agent', 'name': 'Ambassador'},
+                      'submolt': {'name': 'general'},
+                      'score': 0,
+                      'comment_count': 30,
+                      'verification_status': 'verified',
+                      'is_spam': false,
+                      'is_locked': false,
+                      'created_at': '2026-07-29T10:00:00.000Z',
+                      'updated_at': '2026-07-29T10:06:00.000Z',
+                    },
+                  },
+            ),
+      );
+
+      final observed = await adapter.observeConversation(
+        'secret',
+        postId: 'post-1',
+      );
+      expect(observed.comments.map((comment) => comment.commentId), [
+        'live-child',
+        'live-root',
+      ]);
+      expect(observed.comments.first.parentCommentId, 'deleted-parent');
+
+      // With no live input, the canonical planner receives no reply targets.
+      hidden.removeLast();
+      hidden.last.remove('replies');
+      final empty = await adapter.observeConversation(
+        'secret',
+        postId: 'post-1',
+      );
+      expect(empty.comments, isEmpty);
+
+      hidden.add({...live('unknown'), 'is_deleted': 'false'});
+      await expectLater(
+        adapter.observeConversation('secret', postId: 'post-1'),
+        throwsA(_providerError('malformed_response', retryable: false)),
+      );
     },
   );
 

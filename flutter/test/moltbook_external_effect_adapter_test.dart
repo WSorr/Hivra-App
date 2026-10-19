@@ -1215,58 +1215,71 @@ void main() {
     expect(result.receipt, isNull);
   });
 
-  test('reconciles reply only by exact target, author, and content', () async {
-    final adapter = MoltbookExternalEffectAdapter(
-      secretVault: vault,
-      authorize: _allowRequest,
-      provider: MoltbookProviderAdapter(
-        send: (request) async {
-          if (request.uri.path.endsWith('/comments')) {
-            return _jsonResponse(<String, dynamic>{
-              'post_id': 'post-1',
-              'sort': 'new',
-              'comments': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'id': 'comment-2',
-                  'content': 'A bounded reviewed reply.',
-                  'parent_id': 'comment-1',
-                  'upvotes': 0,
-                  'downvotes': 0,
-                  'created_at': '2026-07-29T10:05:00.000Z',
-                  'author': <String, dynamic>{
-                    'id': 'agent-1',
-                    'name': 'HivraAgent',
+  for (final status in ['visible', 'deleted', 'spam', 'pending', 'failed']) {
+    test('reconciles only visible verified reply: $status', () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        authorize: _allowRequest,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            if (request.uri.path.endsWith('/comments')) {
+              return _jsonResponse(<String, dynamic>{
+                'post_id': 'post-1',
+                'sort': 'new',
+                'comments': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'comment-2',
+                    'is_deleted': status == 'deleted',
+                    'is_spam': status == 'spam',
+                    'verification_status':
+                        ['pending', 'failed'].contains(status)
+                            ? status
+                            : 'verified',
+                    'content': 'A bounded reviewed reply.',
+                    'parent_id': 'comment-1',
+                    'upvotes': 0,
+                    'downvotes': 0,
+                    'created_at': '2026-07-29T10:05:00.000Z',
+                    'author': <String, dynamic>{
+                      'id': 'agent-1',
+                      'name': 'HivraAgent',
+                    },
                   },
-                },
-              ],
-              'has_more': false,
+                ],
+                'has_more': false,
+              });
+            }
+            return _jsonResponse(<String, dynamic>{
+              'post': <String, dynamic>{
+                'id': 'post-1',
+                'title': 'Post',
+                'content': 'Body',
+                'author': <String, dynamic>{'id': 'writer', 'name': 'Writer'},
+                'submolt': <String, dynamic>{'name': 'general'},
+                'score': 0,
+                'comment_count': 1,
+                'verification_status': 'verified',
+                'is_spam': false,
+                'is_locked': false,
+                'created_at': '2026-07-29T10:00:00.000Z',
+                'updated_at': '2026-07-29T10:05:00.000Z',
+              },
             });
-          }
-          return _jsonResponse(<String, dynamic>{
-            'post': <String, dynamic>{
-              'id': 'post-1',
-              'title': 'Post',
-              'content': 'Body',
-              'author': <String, dynamic>{'id': 'writer', 'name': 'Writer'},
-              'submolt': <String, dynamic>{'name': 'general'},
-              'score': 0,
-              'comment_count': 1,
-              'verification_status': 'verified',
-              'is_spam': false,
-              'is_locked': false,
-              'created_at': '2026-07-29T10:00:00.000Z',
-              'updated_at': '2026-07-29T10:05:00.000Z',
-            },
-          });
-        },
-      ),
-    );
+          },
+        ),
+      );
 
-    final result = await adapter.reconcile(_commentRequest());
+      final result = await adapter.reconcile(_commentRequest());
 
-    expect(result.status, ExternalEffectAdapterStatus.succeeded);
-    expect(result.receipt?.providerReceiptId, 'comment-2');
-  });
+      if (status == 'visible') {
+        expect(result.status, ExternalEffectAdapterStatus.succeeded);
+        expect(result.receipt?.providerReceiptId, 'comment-2');
+      } else {
+        expect(result.status, ExternalEffectAdapterStatus.unresolved);
+        expect(result.receipt, isNull);
+      }
+    });
+  }
 
   test('credential lookup is bound to originating capsule scope', () async {
     final request = _request(owner: _otherOwner);
