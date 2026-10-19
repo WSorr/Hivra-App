@@ -1,3 +1,5 @@
+import 'plugin_contract_ids.dart';
+
 class WasmPluginRecord {
   final String id;
   final String displayName;
@@ -50,7 +52,7 @@ class WasmPluginRecord {
       sizeBytes: json['sizeBytes'] as int? ?? 0,
       installedAtIso: json['installedAtIso'] as String? ?? '',
       packageKind: json['packageKind'] as String? ?? 'unknown',
-      pluginId: json['pluginId'] as String?,
+      pluginId: canonicalPluginId(json['pluginId'] as String?),
       pluginVersion: json['pluginVersion'] as String?,
       contractKind: json['contractKind'] as String?,
       runtimeAbi: json['runtimeAbi'] as String?,

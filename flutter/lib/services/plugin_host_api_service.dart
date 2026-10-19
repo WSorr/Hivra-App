@@ -60,13 +60,7 @@ class PluginHostApiService {
     final initial = await authorizedBinding();
     return () async {
       final current = await authorizedBinding();
-      if (current.source != initial.source ||
-          current.packageId != initial.packageId ||
-          current.packageDigestHex != initial.packageDigestHex ||
-          current.contractKind != initial.contractKind ||
-          current.runtimeAbi != initial.runtimeAbi ||
-          current.runtimeEntryExport != initial.runtimeEntryExport ||
-          current.runtimeModulePath != initial.runtimeModulePath) {
+      if (!_sameRuntimeBinding(initial, current)) {
         throw StateError('Installed package changed during the action');
       }
     };
@@ -133,7 +127,40 @@ class PluginHostApiService {
         runtimeInvoke: null,
       );
     }
+    if (runtimeBinding.source == 'external_package' &&
+        !_sameRuntimeBinding(
+          runtimeBinding,
+          await _resolveRuntimeBinding(request.pluginId),
+        )) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'runtime_binding_changed',
+        message: 'Installed package changed during its action',
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      );
+    }
     return _executeResolved(request, runtimeBinding, runtimeInvoke);
+  }
+
+  bool _sameRuntimeBinding(
+    PluginRuntimeBinding initial,
+    PluginRuntimeBinding current,
+  ) {
+    final initialCapabilities = initial.capabilities.toSet();
+    final currentCapabilities = current.capabilities.toSet();
+    return current.source == initial.source &&
+        current.packageId == initial.packageId &&
+        current.packageVersion == initial.packageVersion &&
+        current.packageKind == initial.packageKind &&
+        current.packageDigestHex == initial.packageDigestHex &&
+        current.contractKind == initial.contractKind &&
+        current.runtimeAbi == initial.runtimeAbi &&
+        current.runtimeEntryExport == initial.runtimeEntryExport &&
+        current.runtimeModulePath == initial.runtimeModulePath &&
+        initialCapabilities.length == currentCapabilities.length &&
+        currentCapabilities.containsAll(initialCapabilities);
   }
 
   Future<PluginHostApiResponse?> _preflightBeforeRuntime(

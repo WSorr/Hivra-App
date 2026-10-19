@@ -1,4 +1,17 @@
 const String capsuleChatPluginId = 'hivra.contract.capsule-chat.v1';
+
+/// Canonical identity for package admission, registry records and state paths.
+String? canonicalPluginId(String? value) {
+  final normalized = value?.trim().toLowerCase() ?? '';
+  if (normalized.isEmpty) return null;
+  if (!RegExp(r'^[a-z0-9.-]+$').hasMatch(normalized) ||
+      normalized == '.' ||
+      normalized == '..') {
+    throw const FormatException('Plugin id must be a safe identity segment');
+  }
+  return normalized;
+}
+
 const String pluginWorkspaceContractKind = 'plugin_workspace_v1';
 const String pluginWorkspaceMethod = 'workspace';
 const String capsuleChatContractKind = 'capsule_chat';

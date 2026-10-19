@@ -43,6 +43,17 @@ the local catalog path and surfaces a clear error if it is missing too.
   another version atomically replaces the previous package and removes its
   stored archive; registry loading self-heals older cross-version duplicates by
   retaining the newest valid record.
+- Manifest admission, registry reload and Capsule state paths use one trimmed,
+  lowercase plugin identity. It must be one ASCII path segment containing only
+  letters, digits, dots and hyphens. Empty
+  identifiers, dot segments and separators cannot select another state scope.
+  Package installation IDs may change on replacement; the Capsule root plus
+  canonical plugin identity continue to own the opaque state. Replacement does
+  not create or renew execution authority, or copy another scope's credentials
+  or effects. WASM owns changes to its private state shape.
+  After an asynchronous invocation, the host rechecks the exact package binding
+  and capability set before accepting the result. Replacement, removal or
+  revoked grants discard the stale result before state persistence or effects.
 - Zip manifests must declare strict runtime contract:
   - non-empty `contract.kind`
   - non-empty `capabilities` list

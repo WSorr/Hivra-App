@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import 'atomic_file_write_service.dart';
@@ -32,7 +33,7 @@ class WasmPluginRegistryService {
   }
 
   Future<PluginRuntimeBinding> resolveRuntimeBinding(String pluginId) async {
-    final normalizedPluginId = _normalizePluginId(pluginId);
+    final normalizedPluginId = canonicalPluginId(pluginId);
     if (normalizedPluginId == null) {
       return const PluginRuntimeBinding.hostFallback();
     }
@@ -40,7 +41,7 @@ class WasmPluginRegistryService {
     final records = await loadPlugins();
     final pluginsDir = await pluginsDirectory();
     for (final record in records) {
-      final recordPluginId = _normalizePluginId(record.pluginId);
+      final recordPluginId = canonicalPluginId(record.pluginId);
       if (recordPluginId == null) {
         continue;
       }
@@ -274,7 +275,7 @@ class WasmPluginRegistryService {
   }
 
   String? _dedupeKey(WasmPluginRecord record) {
-    final pluginId = _normalizePluginId(record.pluginId);
+    final pluginId = canonicalPluginId(record.pluginId);
     if (pluginId == null) return null;
     return pluginId;
   }
@@ -292,19 +293,14 @@ class WasmPluginRegistryService {
     required List<WasmPluginRecord> existing,
     required String? incomingPluginId,
   }) {
-    final pluginId = _normalizePluginId(incomingPluginId);
+    final pluginId = canonicalPluginId(incomingPluginId);
     if (pluginId == null) {
       return const <WasmPluginRecord>[];
     }
     return existing.where((record) {
-      final recordPluginId = _normalizePluginId(record.pluginId);
+      final recordPluginId = canonicalPluginId(record.pluginId);
       return recordPluginId == pluginId;
     }).toList();
-  }
-
-  String? _normalizePluginId(String? value) {
-    final normalized = value?.trim().toLowerCase() ?? '';
-    return normalized.isEmpty ? null : normalized;
   }
 
   String? _normalizeOptional(String? value) {
