@@ -25,11 +25,8 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
   @override
   bool get requiresExternalRuntime => true;
   @override
-  Set<String> requiredCapabilities(String method) => const {
-    'workspace.render',
-    'workspace.continue',
-    'state.plugin.read_write',
-  };
+  Set<String> requiredCapabilities(String method) =>
+      pluginWorkspaceRequiredCapabilities;
   @override
   PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
   @override
@@ -205,9 +202,8 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
   bool get requiresExternalRuntime => true;
 
   @override
-  Set<String> requiredCapabilities(String method) => const <String>{
-    'consensus_guard.read',
-  };
+  Set<String> requiredCapabilities(String method) =>
+      capsuleChatRequiredCapabilities;
 
   @override
   PluginHostContractResult? preflight(PluginHostApiRequest request) {

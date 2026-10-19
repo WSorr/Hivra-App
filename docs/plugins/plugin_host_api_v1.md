@@ -269,6 +269,8 @@ External execution is fail-closed:
 - package id and kind are required;
 - package bytes must match the resolved digest;
 - contract kind and required method capabilities must match the manifest;
+- specialized Flutter workspaces open only when the installed manifest grants
+  every capability required by that workspace's supported methods;
 - runtime ABI is `hivra_host_abi_v2`;
 - runtime entry export is `hivra_evaluate_v1`;
 - zip module paths cannot traverse parents;
