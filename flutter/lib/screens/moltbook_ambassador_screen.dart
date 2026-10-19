@@ -1413,7 +1413,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
-  Future<void> _cancelQueuedPublication(
+  Future<void> _cancelUnsentPublication(
     ExternalEffectOperation operation,
   ) async {
     final payload = MoltbookPublicationService.decodePayload(operation);
@@ -1422,7 +1422,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       barrierDismissible: false,
       builder:
           (dialogContext) => AlertDialog(
-            title: const Text('Cancel approved publication?'),
+            title: const Text('Cancel unsent publication?'),
             content: SizedBox(
               width: 620,
               child: SingleChildScrollView(
@@ -1454,7 +1454,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Keep queued'),
+                child: const Text('Keep pending'),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
@@ -1474,7 +1474,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       setState(() => _publications = publications);
       _showNotice(
         result.state == ExternalEffectState.cancelled
-            ? 'Approved publication cancelled without delivery'
+            ? 'Unsent publication cancelled; authoring draft preserved'
             : 'Cancellation state: ${result.state.wireName}',
         isError: result.state != ExternalEffectState.cancelled,
       );
@@ -1943,7 +1943,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                         onCancelQueuedEffect:
                             projection.canCancelQueuedEffect &&
                                     queuedPostOperation != null
-                                ? () => _cancelQueuedPublication(
+                                ? () => _cancelUnsentPublication(
                                   queuedPostOperation,
                                 )
                                 : null,
@@ -2107,6 +2107,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                   : MoltbookPublicationService.accountProfileUri(
                                     _binding!.accountName,
                                   ),
+                          onCancel: _cancelUnsentPublication,
                           onOpenPost: _openPublishedPost,
                           onOpenProfile: _openPublishedPost,
                           onRecheck: _reconcilePublication,
@@ -2896,6 +2897,7 @@ class MoltbookPublicationCard extends StatelessWidget {
   final List<ExternalEffectOperation> operations;
   final bool busy;
   final Uri? profileUri;
+  final Future<void> Function(ExternalEffectOperation operation)? onCancel;
   final Future<void> Function(Uri uri) onOpenPost;
   final Future<void> Function(Uri uri) onOpenProfile;
   final Future<void> Function(ExternalEffectOperation operation) onRecheck;
@@ -2907,6 +2909,7 @@ class MoltbookPublicationCard extends StatelessWidget {
     required this.operations,
     required this.busy,
     required this.profileUri,
+    this.onCancel,
     required this.onOpenPost,
     required this.onOpenProfile,
     required this.onRecheck,
@@ -3034,6 +3037,15 @@ class MoltbookPublicationCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (operation.state == ExternalEffectState.prepared &&
+                            onCancel != null) ...[
+                          OutlinedButton.icon(
+                            onPressed: busy ? null : () => onCancel!(operation),
+                            icon: const Icon(Icons.cancel_outlined),
+                            label: const Text('Cancel prepared effect'),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         if (canRecheck) ...[
                           OutlinedButton.icon(
                             onPressed: busy ? null : () => onRecheck(operation),

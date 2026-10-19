@@ -107,6 +107,23 @@ void main() {
   });
 
   test(
+    'cancel prepared effect preserves its authoring draft and frees the slot',
+    () async {
+      final draft = _draftPreview('d' * 64);
+      await drafts.save(draft);
+      final prepared = await publications.prepare(
+        draft: draft,
+        submoltName: 'general',
+      );
+      await module.cancelMoltbookPublication(prepared.operationId);
+      expect(publications.operations, isEmpty);
+      expect(drafts.stored.single.preview.draftHashHex, draft.draftHashHex);
+      expect(publications.processedIds, isEmpty);
+      expect(ai.bulletinProposalCount, 0);
+    },
+  );
+
+  test(
     'explicit abandonment frees the slot without replay after restart',
     () async {
       final change = await publicChanges.record(

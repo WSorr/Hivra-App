@@ -36,6 +36,46 @@ void main() {
     expect(find.text('Open Moltbook profile'), findsOneWidget);
   });
 
+  testWidgets('a prepared effect can be cancelled without approving it', (
+    tester,
+  ) async {
+    final prepared = ExternalEffectOperation.fromJson({
+      ..._publishedPostOperation().toJson(),
+      'state': 'prepared',
+      'receipt': null,
+      'approval_evidence_hash_hex': null,
+      'attempt_count': 0,
+    });
+    var cancelled = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MoltbookPublicationCard(
+              operations: [prepared],
+              busy: false,
+              profileUri: null,
+              onOpenPost: (_) async {},
+              onOpenProfile: (_) async {},
+              onRecheck: (_) async {},
+              onCloseWithoutReceipt: (_) async {},
+              onCancel: (op) async {
+                expect(op.state, ExternalEffectState.prepared);
+                cancelled++;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Post m/person-first-runtime'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Cancel prepared effect'));
+    await tester.tap(find.text('Cancel prepared effect'));
+    expect(cancelled, 1);
+    expect(find.text('Approve exact post'), findsNothing);
+  });
+
   testWidgets(
     'publication counters come from the provider and unavailable is explicit',
     (tester) async {
