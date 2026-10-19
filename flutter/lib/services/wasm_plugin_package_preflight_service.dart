@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 
+import '../models/plugin_contract_ids.dart';
 import 'wasm_plugin_capability_policy_service.dart';
 
 class WasmPluginPackagePreflight {
@@ -99,7 +100,7 @@ class WasmPluginPackagePreflightService {
       throw const FormatException('Unsupported plugin manifest version');
     }
 
-    final pluginId = manifest['plugin_id']?.toString().trim().toLowerCase();
+    final pluginId = canonicalPluginId(manifest['plugin_id']?.toString());
     if (pluginId == null || pluginId.isEmpty) {
       throw const FormatException('Plugin manifest is missing plugin_id');
     }

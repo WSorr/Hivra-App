@@ -401,102 +401,108 @@ void main() {
       );
     },
   );
-  test(
-    'read-only open keeps the workspace visible when recovered VPS credentials are missing',
-    () async {
-      final root = await Directory('/tmp').createTemp('hivra_vps_recovery_');
-      addTearDown(() => root.delete(recursive: true));
-      const owner =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      final files = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
-      );
-      final registry = _Registry();
-      registry.record = WasmPluginRecord.fromJson({
-        ...registry.record.toJson(),
-        'capabilities': [
-          'workspace.render',
-          'workspace.continue',
-          'state.plugin.read_write',
-          'workspace.schedule',
-          'account.connect',
-          'account.snapshot.read',
-        ],
-      });
-      registry.executionBinding =
-          () => PluginRuntimeBinding.externalPackage(
-            packageId: registry.record.id,
-            packageVersion: registry.record.pluginVersion,
-            packageKind: 'zip',
-            packageDigestHex: 'b' * 64,
-            contractKind: pluginWorkspaceContractKind,
-            capabilities: registry.record.capabilities,
-          );
-      final host = PluginHostApiService(
-        handlers: [],
-        resolveRuntimeBinding: registry.resolveRuntimeBinding,
-        resolveRuntimeInvoke:
-            (request, _) async => PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'zip_manifest',
-              moduleDigestHex: 'c' * 64,
-              invokeDigestHex: 'd' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-              semanticResult: {
-                'state': {'opaque': 1},
-                'requests': [
-                  {
-                    'kind': 'account.snapshot.read',
-                    'provider': 'bingx',
-                    'symbol': 'BTC-USDT',
-                    'account_id': 'f' * 64,
-                  },
-                ],
-                'view': {
-                  ...view(),
-                  'schedule': {'action': 'cycle'},
-                  'actions': [
+  for (final pluginId in [
+    'hivra.contract.workspace-test.v1',
+    'HIVRA.CONTRACT.WORKSPACE-TEST.V1',
+  ]) {
+    test(
+      'read-only open keeps the workspace visible without recovered credentials: $pluginId',
+      () async {
+        final root = await Directory('/tmp').createTemp('hivra_vps_recovery_');
+        addTearDown(() => root.delete(recursive: true));
+        const owner =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final files = CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
+        );
+        final registry = _Registry();
+        registry.record = WasmPluginRecord.fromJson({
+          ...registry.record.toJson(),
+          'capabilities': [
+            'workspace.render',
+            'workspace.continue',
+            'state.plugin.read_write',
+            'workspace.schedule',
+            'account.connect',
+            'account.snapshot.read',
+          ],
+        });
+        registry.record = _recordWithPluginId(registry.record, pluginId);
+        registry.executionBinding =
+            () => PluginRuntimeBinding.externalPackage(
+              packageId: registry.record.id,
+              packageVersion: registry.record.pluginVersion,
+              packageKind: 'zip',
+              packageDigestHex: 'b' * 64,
+              contractKind: pluginWorkspaceContractKind,
+              capabilities: registry.record.capabilities,
+            );
+        final host = PluginHostApiService(
+          handlers: [],
+          resolveRuntimeBinding: registry.resolveRuntimeBinding,
+          resolveRuntimeInvoke:
+              (request, _) async => PluginRuntimeInvokeEvidence(
+                mode: 'wasmi_v1',
+                modulePath: 'plugin/module.wasm',
+                moduleSelection: 'zip_manifest',
+                moduleDigestHex: 'c' * 64,
+                invokeDigestHex: 'd' * 64,
+                semanticStatus: PluginHostApiStatus.executed,
+                semanticErrorCode: null,
+                semanticErrorMessage: null,
+                semanticResult: {
+                  'state': {'opaque': 1},
+                  'requests': [
                     {
-                      'id': 'start',
-                      'label': 'Start cycles',
-                      'host': 'workspace.start',
-                    },
-                    {
-                      'id': 'place',
-                      'label': 'Place',
-                      'host': 'bingx.order.submit',
+                      'kind': 'account.snapshot.read',
+                      'provider': 'bingx',
+                      'symbol': 'BTC-USDT',
+                      'account_id': 'f' * 64,
                     },
                   ],
+                  'view': {
+                    ...view(),
+                    'schedule': {'action': 'cycle'},
+                    'actions': [
+                      {
+                        'id': 'start',
+                        'label': 'Start cycles',
+                        'host': 'workspace.start',
+                      },
+                      {
+                        'id': 'place',
+                        'label': 'Place',
+                        'host': 'bingx.order.submit',
+                      },
+                    ],
+                  },
                 },
-              },
-            ),
-      );
-      final runtime = PluginWorkspaceRuntime(
-        registry: registry,
-        pluginHostApi: host,
-        fileStore: files,
-        readActiveCapsuleRootHex: () => owner,
-        readCredentials: ({required owner, required pluginId}) async => null,
-        writeCredentials:
-            ({required owner, required pluginId, required value}) async {},
-        scheduleTimers: false,
-      );
-      final recovered = await runtime.runWorkspaceAction(
-        record: registry.record,
-        action: 'open',
-      );
-      expect(recovered['title'], 'Independent package');
-      expect(recovered['message'], contains('Reconnect your BingX account'));
-      expect(recovered['schedule'], isNull);
-      final actions = (recovered['actions'] as List).cast<Map>();
-      expect(actions.map((a) => a['id']), contains('connect'));
-      expect(actions.map((a) => a['id']), isNot(contains('start')));
-      expect(actions.map((a) => a['id']), isNot(contains('place')));
-    },
-  );
+              ),
+        );
+        final runtime = PluginWorkspaceRuntime(
+          registry: registry,
+          pluginHostApi: host,
+          fileStore: files,
+          readActiveCapsuleRootHex: () => owner,
+          readCredentials: ({required owner, required pluginId}) async => null,
+          writeCredentials:
+              ({required owner, required pluginId, required value}) async {},
+          scheduleTimers: false,
+        );
+        final recovered = await runtime.runWorkspaceAction(
+          record: registry.record,
+          action: 'open',
+        );
+        expect(recovered['title'], 'Independent package');
+        expect(recovered['message'], contains('Reconnect your BingX account'));
+        expect(recovered['schedule'], isNull);
+        final actions = (recovered['actions'] as List).cast<Map>();
+        expect(actions.map((a) => a['id']), contains('connect'));
+        expect(actions.map((a) => a['id']), isNot(contains('start')));
+        expect(actions.map((a) => a['id']), isNot(contains('place')));
+      },
+    );
+  }
   test(
     'Capsule runner assets bind canonical source and exact distributed bytes',
     () async {
@@ -5975,6 +5981,26 @@ class _Registry extends WasmPluginRegistryService {
   @override
   Future<void> removePlugin(String id) async => installed = false;
 }
+
+WasmPluginRecord _recordWithPluginId(
+  WasmPluginRecord source,
+  String pluginId,
+) => WasmPluginRecord(
+  id: source.id,
+  displayName: source.displayName,
+  originalFileName: source.originalFileName,
+  storedFileName: source.storedFileName,
+  sizeBytes: source.sizeBytes,
+  installedAtIso: source.installedAtIso,
+  packageKind: source.packageKind,
+  pluginId: pluginId,
+  pluginVersion: source.pluginVersion,
+  contractKind: source.contractKind,
+  runtimeAbi: source.runtimeAbi,
+  runtimeEntryExport: source.runtimeEntryExport,
+  runtimeModulePath: source.runtimeModulePath,
+  capabilities: source.capabilities,
+);
 
 class _Vault extends Fake implements CapsuleScopedSecretVault {
   final values = <String, String>{};

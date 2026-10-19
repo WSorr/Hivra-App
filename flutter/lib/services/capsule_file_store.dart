@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'atomic_file_write_service.dart';
+import '../models/plugin_contract_ids.dart';
 import 'user_visible_data_directory_service.dart';
 
 class CapsuleFileStore {
@@ -256,8 +257,8 @@ class CapsuleFileStore {
     String pluginId, {
     bool create = false,
   }) async {
-    final normalized = pluginId.trim();
-    if (!RegExp(r'^[a-z0-9.-]+$').hasMatch(normalized)) {
+    final normalized = canonicalPluginId(pluginId);
+    if (normalized == null) {
       throw ArgumentError('Plugin id is not a safe state directory name');
     }
     final dir = Directory('${capsuleDir.path}/plugin_state/$normalized');
