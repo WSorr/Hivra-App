@@ -138,6 +138,28 @@ void main() {
   });
 
   test(
+    'live account statistics use the bound provider without a local copy',
+    () async {
+      await service.connect('secret-key');
+      final account = await service.observeAccount();
+      expect(account.accountId, 'agent-1');
+      final directory = await files.capsuleDirForHex(_rootA);
+      final state = await files.pluginStateDirectory(
+        directory,
+        'hivra.contract.moltbook-ambassador.v1',
+      );
+      final names =
+          await state
+              .list()
+              .map((entry) => entry.path.split('/').last)
+              .toList();
+      expect(names, ['connection.v1.json']);
+      observer.accountId = 'different-account';
+      await expectLater(service.observeAccount(), throwsStateError);
+    },
+  );
+
+  test(
     'home observation uses the bound key without persisting remote data',
     () async {
       await service.connect('secret-key');

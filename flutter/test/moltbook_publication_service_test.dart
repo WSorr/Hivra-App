@@ -15,29 +15,7 @@ import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
-  test('projects a source draft only from a succeeded post effect', () {
-    final succeeded = _operation(
-      state: ExternalEffectState.succeeded,
-      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
-    );
-    final queued = _operation(
-      state: ExternalEffectState.queued,
-      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
-    );
-    final reply = _operation(
-      state: ExternalEffectState.succeeded,
-      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
-    );
-
-    expect(MoltbookPublicationService.succeededPostDraftHash(succeeded), _hash);
-    expect(MoltbookPublicationService.succeededPostDraftHash(queued), isNull);
-    expect(MoltbookPublicationService.succeededPostDraftHash(reply), isNull);
-    expect(MoltbookPublicationService.isPostPublication(queued), isTrue);
-    expect(MoltbookPublicationService.isPostPublication(reply), isFalse);
-  });
-
   const postId = '20e1d392-5f55-4cae-b48a-af3192dc477b';
-
   test('publishedPostUri maps a verified receipt to its public post', () {
     final uri = MoltbookPublicationService.publishedPostUri(
       _operation(
@@ -96,76 +74,82 @@ void main() {
     );
   });
 
-  test('only unresolved publication receives reconciliation priority', () {
-    final unresolved = _operation(
-      state: ExternalEffectState.unresolved,
-      withReceipt: false,
-    );
-    final expiredAction = _operation(
-      state: ExternalEffectState.terminalFailure,
-      lastErrorCode: 'required_action_expired',
-      withReceipt: false,
-    );
-    final expiredVerification = _operation(
-      state: ExternalEffectState.terminalFailure,
-      lastErrorCode: 'verification_expired',
-      withReceipt: false,
-    );
-    final rejectedDelivery = _operation(
-      state: ExternalEffectState.terminalFailure,
-      lastErrorCode: 'http_400',
-      withReceipt: false,
-    );
-    final unrelatedFailure = _operation(
-      state: ExternalEffectState.terminalFailure,
-      lastErrorCode: 'credential_unavailable',
-      withReceipt: false,
-    );
-
-    expect(
-      MoltbookPublicationService.requiresReconciliation(unresolved),
-      isTrue,
-    );
-    for (final failure in <ExternalEffectOperation>[
-      expiredAction,
-      expiredVerification,
-      rejectedDelivery,
-      unrelatedFailure,
-    ]) {
-      expect(
-        MoltbookPublicationService.requiresReconciliation(failure),
-        isFalse,
-      );
-    }
-    for (final errorCode in <String>[
-      'required_action_expired',
-      'verification_expired',
-      'http_400',
-    ]) {
-      final boundFailure = _operation(
-        state: ExternalEffectState.terminalFailure,
-        lastErrorCode: errorCode,
-        providerReferenceId: postId,
+  test(
+    'uncertain delivery and expired verification require reconciliation',
+    () {
+      final unresolved = _operation(
+        state: ExternalEffectState.unresolved,
         withReceipt: false,
       );
+      final expiredAction = _operation(
+        state: ExternalEffectState.terminalFailure,
+        lastErrorCode: 'required_action_expired',
+        withReceipt: false,
+      );
+      final expiredVerification = _operation(
+        state: ExternalEffectState.terminalFailure,
+        lastErrorCode: 'verification_expired',
+        withReceipt: false,
+      );
+      final rejectedDelivery = _operation(
+        state: ExternalEffectState.terminalFailure,
+        lastErrorCode: 'http_400',
+        withReceipt: false,
+      );
+      final unrelatedFailure = _operation(
+        state: ExternalEffectState.terminalFailure,
+        lastErrorCode: 'credential_unavailable',
+        withReceipt: false,
+      );
+
       expect(
-        MoltbookPublicationService.requiresReconciliation(boundFailure),
+        MoltbookPublicationService.requiresReconciliation(unresolved),
+        isTrue,
+      );
+      for (final failure in <ExternalEffectOperation>[
+        expiredAction,
+        expiredVerification,
+        rejectedDelivery,
+      ]) {
+        expect(
+          MoltbookPublicationService.requiresReconciliation(failure),
+          isTrue,
+        );
+      }
+      expect(
+        MoltbookPublicationService.requiresReconciliation(unrelatedFailure),
         isFalse,
       );
+      for (final errorCode in <String>[
+        'required_action_expired',
+        'verification_expired',
+        'http_400',
+      ]) {
+        final boundFailure = _operation(
+          state: ExternalEffectState.terminalFailure,
+          lastErrorCode: errorCode,
+          providerReferenceId: postId,
+          withReceipt: false,
+        );
+        expect(
+          MoltbookPublicationService.requiresReconciliation(boundFailure),
+          isTrue,
+        );
+        expect(
+          MoltbookPublicationService.canManuallyReconcileTerminalFailure(
+            boundFailure,
+          ),
+          isTrue,
+        );
+      }
       expect(
         MoltbookPublicationService.canManuallyReconcileTerminalFailure(
-          boundFailure,
+          expiredVerification,
         ),
         isTrue,
       );
-    }
-    expect(
-      MoltbookPublicationService.canManuallyReconcileTerminalFailure(
-        expiredVerification,
-      ),
-      isTrue,
-    );
-  });
+    },
+  );
 
   test('projects the exact retained post owner for a local draft', () {
     final draft = _postDraft('1');
@@ -244,33 +228,6 @@ void main() {
     expect(MoltbookPublicationService.canCloseWithoutReceipt(spam), isFalse);
   });
 
-  test('terminal post failure archives its local draft without a receipt', () {
-    final expired = _operation(
-      state: ExternalEffectState.terminalFailure,
-      lastErrorCode: 'required_action_expired',
-      withReceipt: false,
-    );
-    final unresolved = _operation(
-      state: ExternalEffectState.unresolved,
-      lastErrorCode: 'verification_required',
-      withReceipt: false,
-    );
-    final succeeded = _operation(state: ExternalEffectState.succeeded);
-
-    expect(
-      MoltbookPublicationService.canArchiveTerminalPostDraft(expired),
-      isTrue,
-    );
-    expect(
-      MoltbookPublicationService.canArchiveTerminalPostDraft(unresolved),
-      isFalse,
-    );
-    expect(
-      MoltbookPublicationService.canArchiveTerminalPostDraft(succeeded),
-      isFalse,
-    );
-  });
-
   test('retains a prepared post whose provider payload has attribution', () {
     final draft = _postDraft('1');
     final prepared = _postOperation(
@@ -346,42 +303,6 @@ void main() {
       }
     },
   );
-
-  test('succeeded exact post seals a duplicate terminal failure', () {
-    final succeeded = _postOperation(
-      operationId: 'moltbook-post-succeeded',
-      state: ExternalEffectState.succeeded,
-      draftHashHex: '1' * 64,
-    );
-    final failedDuplicate = _postOperation(
-      operationId: 'moltbook-post-failed',
-      state: ExternalEffectState.terminalFailure,
-      draftHashHex: '2' * 64,
-      lastErrorCode: 'http_400',
-      withReceipt: false,
-    );
-    final differentPost = _postOperation(
-      operationId: 'moltbook-post-different',
-      state: ExternalEffectState.terminalFailure,
-      draftHashHex: '3' * 64,
-      title: 'Different title',
-      lastErrorCode: 'http_400',
-      withReceipt: false,
-    );
-
-    expect(
-      MoltbookPublicationService.supersededPostFailureIds(
-        <ExternalEffectOperation>[succeeded, failedDuplicate],
-      ),
-      contains(failedDuplicate.operationId),
-    );
-    expect(
-      MoltbookPublicationService.supersededPostFailureIds(
-        <ExternalEffectOperation>[succeeded, differentPost],
-      ),
-      isNot(contains(differentPost.operationId)),
-    );
-  });
 
   test('delegated authorization binds the exact reply effect', () {
     const authorization = MoltbookDelegatedReplyAuthorization(
@@ -762,6 +683,61 @@ void main() {
       if (await home.exists()) await home.delete(recursive: true);
     });
 
+    test(
+      'completion removes the effect; failed cleanup retains it for recovery',
+      () async {
+        final draft = _postDraft('1');
+        final prepared = await publications.prepare(
+          draft: draft,
+          submoltName: 'general',
+        );
+        await publications.approveAndQueue(prepared);
+        final completed = await publications.process(prepared.operationId);
+        var before = 0;
+        var after = 0;
+        await expectLater(
+          publications.forgetProcessed(
+            completed,
+            beforeDelete: () async {
+              before++;
+              throw StateError('checkpoint unavailable');
+            },
+            afterDelete: () async {
+              after++;
+            },
+          ),
+          throwsStateError,
+        );
+        expect(await publications.list(), hasLength(1));
+        expect(after, 0);
+        await publications.forgetProcessed(
+          completed,
+          beforeDelete: () async {
+            before++;
+          },
+          afterDelete: () async {
+            after++;
+          },
+        );
+        expect(await publications.list(), isEmpty);
+        expect(before, 2);
+        expect(after, 1);
+        final restarted = _publications(effects, binding);
+        expect(await restarted.list(), isEmpty);
+        final directory = await files.capsuleDirForHex(_ownerA);
+        expect(
+          await files.readPluginState(
+            directory,
+            moltbookAmbassadorPluginId,
+            'external_effects.v1.json',
+          ),
+          isNull,
+        );
+        await restarted.prepare(draft: _postDraft('2'), submoltName: 'general');
+        expect(await restarted.list(), hasLength(1));
+      },
+    );
+
     test('different draft hashes share one exact public post effect', () async {
       final first = await publications.prepare(
         draft: _postDraft('1'),
@@ -924,16 +900,15 @@ void main() {
         expect(queued.state, ExternalEffectState.queued);
         expect(queued.approvalEvidenceHashHex, expectedEvidence);
 
-        final general = await publications.prepare(
-          draft: _postDraft('3'),
-          submoltName: 'general',
+        await expectLater(
+          publications.prepare(draft: _postDraft('3'), submoltName: 'general'),
+          throwsStateError,
         );
         await expectLater(
           publications.approveBoundedPublicChangeAndQueue(
-            operation: general,
+            operation: operation,
             publicChangeCommitmentHashHex: '9' * 64,
-            primaryCommunity:
-                MoltbookPublicationService.personFirstRuntimeSubmoltName,
+            primaryCommunity: 'general',
           ),
           throwsFormatException,
         );

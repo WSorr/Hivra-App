@@ -106,6 +106,76 @@ void main() {
     expect(drafts.deletedHashes, <String>{draft.draftHashHex});
   });
 
+  test(
+    'restart resumes the existing prepared news effect without another Gemini proposal',
+    () async {
+      ai.unlocked = true;
+      await publicChanges.record(
+        sourceId: 'restart-prepared-news',
+        category: 'hivra',
+        facts: ['The existing news draft survives restart.'],
+      );
+      await module.runMoltbookCycle();
+      final draft = drafts.stored.single.preview;
+      await module.prepareMoltbookPublication(
+        draft: draft,
+        submoltName: configuration.primaryCommunity,
+      );
+      expect(publications.operations, hasLength(1));
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(publications.operations, isEmpty);
+      expect(drafts.stored, isEmpty);
+    },
+  );
+
+  test(
+    'restart processes queued work before considering another news effect',
+    () async {
+      ai.unlocked = true;
+      await publicChanges.record(
+        sourceId: 'restart-queued-news',
+        category: 'hivra',
+        facts: ['The queued news draft survives restart.'],
+      );
+      await module.runMoltbookCycle();
+      final draft = drafts.stored.single.preview;
+      final prepared = await module.prepareMoltbookPublication(
+        draft: draft,
+        submoltName: configuration.primaryCommunity,
+      );
+      await module.approveMoltbookPublication(prepared);
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.processedPostIds, [prepared.operationId]);
+      expect(publications.operations, isEmpty);
+      expect(drafts.stored, isEmpty);
+    },
+  );
+
+  test(
+    'restart reconciles interrupted delivery without sending again',
+    () async {
+      final interrupted = _committedPost(
+        'interrupted-news',
+        DateTime.now().toUtc(),
+        state: ExternalEffectState.delivering,
+      );
+      publications.operations = [interrupted];
+      publications.resolvePostOnRecheck = true;
+
+      await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
+
+      expect(publications.reconciledIds, [interrupted.operationId]);
+      expect(publications.processedPostIds, isEmpty);
+      expect(publications.operations, isEmpty);
+      expect(ai.bulletinProposalCount, 0);
+    },
+  );
+
   test('locked AI cannot submit a Moltbook verification answer', () async {
     final challenged = _operation(challenged: true);
     publications.operations = <ExternalEffectOperation>[challenged];
@@ -133,7 +203,7 @@ void main() {
 
     expect(drafts.deletedHashes, contains(draft.draftHashHex));
     expect(publications.cancelledIds, <String>[operation.operationId]);
-    expect(publications.operations.single.state, ExternalEffectState.cancelled);
+    expect(publications.operations, isEmpty);
   });
 
   test('deleting a draft cannot bypass an approved publication', () async {
@@ -169,7 +239,7 @@ void main() {
 
     expect(loaded, isEmpty);
     expect(publications.cancelledIds, <String>[operation.operationId]);
-    expect(publications.operations.single.state, ExternalEffectState.cancelled);
+    expect(publications.operations, isEmpty);
   });
 
   test(
@@ -433,7 +503,7 @@ void main() {
   );
 
   test(
-    'new repository snapshot removes a draft held by another account effect',
+    'a pending effect from another account stays sealed during observation',
     () async {
       final previousSourceId = 'github-news-v2-${'e' * 40}';
       final previousChange = await publicChanges.record(
@@ -468,7 +538,7 @@ void main() {
 
       await module.runMoltbookCycle();
 
-      expect(drafts.deletedHashes, contains(previousDraft.draftHashHex));
+      expect(drafts.deletedHashes, isEmpty);
     },
   );
 
@@ -794,7 +864,7 @@ void main() {
   );
 
   test(
-    'stale unresolved post does not block a distinct confirmed change',
+    'an unresolved post keeps the single slot and suppresses new AI work',
     () async {
       ai.unlocked = true;
       configuration.approvalMode =
@@ -814,10 +884,10 @@ void main() {
 
       await module.runMoltbookCycle();
 
-      expect(ai.bulletinProposalCount, 2);
-      expect(publications.postApprovalCount, 2);
-      expect(publications.processedPostIds, hasLength(2));
-      expect(publications.operations, hasLength(2));
+      expect(ai.bulletinProposalCount, 1);
+      expect(publications.postApprovalCount, 1);
+      expect(publications.processedPostIds, hasLength(1));
+      expect(publications.operations, hasLength(1));
     },
   );
 
@@ -841,7 +911,7 @@ void main() {
   });
 
   test(
-    'distinct news effect proceeds without resubmitting an older post',
+    'restart preserves an unknown post until its exact receipt is observed',
     () async {
       ai.unlocked = true;
       configuration.approvalMode =
@@ -861,9 +931,9 @@ void main() {
       await buildModule(MoltbookCycleTriggerService()).runMoltbookCycle();
       expect(
         drafts.stored.map((draft) => draft.preview.bulletinId),
-        contains('capsule-change-after-receipt'),
+        isNot(contains('capsule-change-after-receipt')),
       );
-      expect(publications.processedPostIds, hasLength(2));
+      expect(publications.processedPostIds, hasLength(1));
 
       publications.resolvePostOnRecheck = true;
       publications.leavePostUnresolved = false;
@@ -873,32 +943,29 @@ void main() {
       expect(ai.bulletinProposalCount, 2);
       expect(publications.postApprovalCount, 2);
       expect(publications.processedPostIds, hasLength(2));
-      expect(publications.operations, hasLength(2));
+      expect(publications.operations, isEmpty);
       expect(drafts.stored, isEmpty);
     },
   );
 
-  test(
-    'unapproved unrelated preparation does not block bounded news',
-    () async {
-      configuration.approvalMode =
-          MoltbookAmbassadorConfiguration.approvalBounded;
-      publications.operations = <ExternalEffectOperation>[
-        _operationWithState(_operation(), ExternalEffectState.prepared),
-      ];
-      await publicChanges.record(
-        sourceId: 'capsule-change-after-preparation',
-        category: 'hivra',
-        facts: const <String>['A confirmed change is ready for publication.'],
-      );
+  test('an unapproved effect also owns the single publication slot', () async {
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    publications.operations = <ExternalEffectOperation>[
+      _operationWithState(_operation(), ExternalEffectState.prepared),
+    ];
+    await publicChanges.record(
+      sourceId: 'capsule-change-after-preparation',
+      category: 'hivra',
+      facts: const <String>['A confirmed change is ready for publication.'],
+    );
 
-      await module.runMoltbookCycle();
+    await module.runMoltbookCycle();
 
-      expect(publications.postApprovalCount, 1);
-      expect(publications.processedPostIds, hasLength(1));
-      expect(publications.operations, hasLength(2));
-    },
-  );
+    expect(publications.postApprovalCount, 0);
+    expect(publications.processedPostIds, isEmpty);
+    expect(publications.operations, hasLength(1));
+  });
 
   test('provider read failure still prepares a local news draft', () async {
     ai.unlocked = true;
@@ -1192,15 +1259,15 @@ void main() {
       final summary = await restarted.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
-      expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, hasLength(1));
+      expect(ai.bulletinProposalCount, 0);
+      expect(drafts.stored, isEmpty);
       expect(publications.preparedPostDestinations, isEmpty);
       expect(publications.postApprovalCount, 0);
       expect(publications.processedPostIds, isEmpty);
       final retained = (await publicChanges.load()).singleWhere(
         (item) => item.sourceId == change.sourceId,
       );
-      expect(retained.isPending, isFalse);
+      expect(retained.isPending, isTrue);
     },
   );
 
@@ -1583,21 +1650,21 @@ void main() {
           today,
           state: ExternalEffectState.terminalFailure,
           providerReferenceId: 'provider-post-1',
-          lastErrorCode: 'verification_expired',
+          lastErrorCode: 'provider_marked_spam',
         ),
         _committedPost(
           'failed-post-2',
           today.add(const Duration(minutes: 40)),
           state: ExternalEffectState.terminalFailure,
           providerReferenceId: 'provider-post-2',
-          lastErrorCode: 'verification_expired',
+          lastErrorCode: 'provider_marked_spam',
         ),
         _committedPost(
           'failed-post-3',
           today.add(const Duration(minutes: 80)),
           state: ExternalEffectState.terminalFailure,
           providerReferenceId: 'provider-post-3',
-          lastErrorCode: 'verification_expired',
+          lastErrorCode: 'provider_marked_spam',
         ),
       ];
       await publicChanges.record(
@@ -1609,8 +1676,8 @@ void main() {
       final summary = await module.runMoltbookCycle();
 
       expect(summary.blockedCount, 1);
-      expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, hasLength(1));
+      expect(ai.bulletinProposalCount, 0);
+      expect(drafts.stored, isEmpty);
       expect(publications.preparedPostDestinations, isEmpty);
       expect(publications.processedPostIds, isEmpty);
     },
@@ -1878,7 +1945,7 @@ void main() {
   });
 
   test(
-    'configured session replies once before preparing the project news draft',
+    'an assisted reply waits for processing before the next project news draft',
     () async {
       configuration.triggerPolicy =
           MoltbookAmbassadorConfiguration.triggerSession;
@@ -1902,12 +1969,8 @@ void main() {
             .join('\n'),
       );
       expect(ai.proposalCount, 1);
-      expect(ai.bulletinProposalCount, 1);
-      expect(drafts.stored, hasLength(1));
-      expect(
-        drafts.stored.single.preview.bulletinId,
-        'github-news-v2-${'a' * 40}',
-      );
+      expect(ai.bulletinProposalCount, 0);
+      expect(drafts.stored, isEmpty);
       expect(publications.preparedPostDestinations, isEmpty);
       final replyIndex = log.entries.indexWhere(
         (entry) =>
@@ -1920,7 +1983,7 @@ void main() {
             entry.message.startsWith('prepared '),
       );
       expect(replyIndex, greaterThanOrEqualTo(0));
-      expect(newsIndex, greaterThan(replyIndex));
+      expect(newsIndex, -1);
     },
   );
 
@@ -2129,7 +2192,12 @@ class _CycleConnection implements MoltbookConnectionService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
+class _MemoryCheckpoint extends MoltbookFeedCheckpointStore {
+  _MemoryCheckpoint()
+    : super(
+        fileStore: _MemoryFileStore(),
+        readActiveCapsuleRootHex: () => _rootA,
+      );
   MoltbookFeedCheckpoint value = const MoltbookFeedCheckpoint.empty();
   int commitCount = 0;
 
@@ -2139,6 +2207,7 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
   @override
   Future<MoltbookFeedCheckpoint> save(MoltbookFeedCheckpoint checkpoint) async {
     commitCount++;
+    await super.save(checkpoint);
     value = checkpoint;
     return value;
   }
@@ -2606,7 +2675,21 @@ class _CyclePublications implements MoltbookPublicationService {
   bool completeReplies = false;
 
   @override
-  Future<List<ExternalEffectOperation>> list() async => operations;
+  Future<void> forgetProcessed(
+    ExternalEffectOperation operation, {
+    required Future<void> Function() beforeDelete,
+    required Future<void> Function() afterDelete,
+  }) async {
+    if (!operations.any((item) => item.operationId == operation.operationId)) {
+      return;
+    }
+    await beforeDelete();
+    operations.removeWhere((item) => item.operationId == operation.operationId);
+    await afterDelete();
+  }
+
+  @override
+  Future<List<ExternalEffectOperation>> list() async => List.of(operations);
 
   @override
   Future<ExternalEffectOperation> cancel(String operationId) async {
@@ -2776,7 +2859,10 @@ class _CyclePublications implements MoltbookPublicationService {
   }) async {
     verificationResolveCount++;
     verificationAnswers.add(answer);
-    return verificationResult!;
+    final result = verificationResult!;
+    operations.removeWhere((item) => item.operationId == operationId);
+    operations.add(result);
+    return result;
   }
 
   @override
@@ -2952,7 +3038,7 @@ ExternalEffectOperation _committedPost(
   providerId: 'moltbook',
   accountBindingId: 'agent-1',
   effectKind: MoltbookExternalEffectAdapter.postEffectKind,
-  canonicalPayloadJson: '{}',
+  canonicalPayloadJson: '{"source_draft_hash_hex":"${'e' * 64}"}',
   payloadHashHex:
       'abababababababababababababababababababababababababababababababab',
   state: state,
@@ -2966,7 +3052,16 @@ ExternalEffectOperation _committedPost(
   lastErrorMessage: lastErrorCode == null ? null : 'Provider outcome',
   providerReferenceId: providerReferenceId,
   requiredAction: null,
-  receipt: null,
+  receipt:
+      state == ExternalEffectState.succeeded
+          ? ExternalEffectReceipt(
+            operationId: operationId,
+            providerId: 'moltbook',
+            providerReceiptId: 'post-$operationId',
+            evidenceHashHex: 'e' * 64,
+            receivedAtUtc: updated.toIso8601String(),
+          )
+          : null,
 );
 
 class _RecordingDraftStore implements MoltbookDraftStore {

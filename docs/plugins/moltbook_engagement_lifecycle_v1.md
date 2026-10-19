@@ -70,10 +70,11 @@ For one target key:
 - a cancelled or expired target may be reopened only through an explicit
   user action; automatic modes do not reopen it.
 
-Before preparing a new provider effect, the host must scan the existing
-Capsule/plugin external-effect journal by canonical target fields. A matching
-active or succeeded effect blocks creation of another operation. This check is
-mandatory even when the new draft text or AI proposal hash differs.
+Moltbook keeps one current effect per Capsule, shared by posts, replies and
+community creation. Preparation is serialized and the shared effect owner
+atomically enforces capacity one. Pending work blocks a different effect even
+when its target, draft text or AI proposal hash differs. Already answered
+comments are excluded using current provider observations.
 
 ### 3.3 Effect identity
 
@@ -84,8 +85,9 @@ Effects lifecycle. The Moltbook workflow additionally binds that operation to
 
 Editing text is allowed before effect preparation. After preparation, text is
 immutable. Replacing a prepared draft requires explicit cancellation first;
-automatic modes cannot replace it. Cancellation does not erase journal
-history or permit blind provider resubmission after an ambiguous outcome.
+automatic modes cannot replace it. Cancellation of unsent work releases its
+slot. An ambiguous provider outcome retains the current operation and permits
+only reconciliation, never blind resubmission.
 
 ## 4. Aggregate without a second truth store
 
@@ -100,7 +102,9 @@ rebuilt from existing owners:
 | AI prose proposal | untrusted in-memory proposal |
 | exact reply draft and hash | deterministic WASM output |
 | approval/delegation evidence | effect approval metadata |
-| delivery, challenge, retry, receipt | external-effect journal |
+| pending delivery, challenge, reconciliation | single current effect |
+| current publication statistics and moderation | Moltbook read adapter, in memory |
+| local daily/interval safety budgets | isolated plugin checkpoint |
 
 No screen may keep an independent authoritative status. If evidence disagrees,
 the fail-closed external-effect state wins for remote-write progress.
@@ -140,14 +144,13 @@ the ambassador or grants publication authority.
 one exact public-change draft through the existing post effect to the active
 Capsule's configured primary community. The destination is fixed by local
 policy before draft and effect preparation; AI cannot choose or change it.
-An earlier uncertain effect never resubmits its source-bound draft. It does
-not indefinitely block a distinct confirmed change after the bounded write
-interval and daily budget permit another attempt. Queued and delivering
-effects still block new publication; prepared operations do not. Automatic
-rechecks of unresolved effects are reconciliation-only. The user may close an
-eligible unconfirmed attempt locally after a recheck, without a provider write.
-This does not prove absence: the exact publication identity remains retained
-and cannot receive a fresh retry. Independent new posts can continue.
+An uncertain effect retains the single slot until the provider outcome is
+known. No new reply/post effect or AI publication proposal starts while that
+slot is occupied. Approved and queued work resumes with the same identity after
+restart; interrupted delivery reconciles without another POST. Legacy multiple
+pending records are drained through the same path; none may be discarded or
+replaced by selecting the newest record. This migration ends when old pending
+work reaches a definite outcome.
 Publishing to an existing community does not require ownership evidence.
 Provider permissions and community rules still fail closed at delivery. The
 same operation id, exact destination binding, receipt, unresolved state, and
@@ -174,19 +177,25 @@ If draft persistence succeeds but the feed marker cannot be written, the item
 remains pending and requires explicit operator resolution; no heuristic may
 adopt a draft by title, bulletin id, category, or text similarity.
 
-A local post draft is authoring state, not publication history. Once the
-external-effect journal contains a validated `succeeded` post operation bound
-to that draft's `source_draft_hash_hex`, the application composition owner
-must archive the matching draft. Loading the workspace performs the same
-reconciliation for pre-existing data. Failed, cancelled, unresolved, queued,
-reply, malformed, or locally closed-without-receipt operations must not archive
-post drafts.
-Deleting a local draft may cancel only its single matching unapproved
-`prepared` post operation. Approved, queued, delivering, or unresolved work
-requires explicit cancellation, reconciliation, or an eligible local close
-that retains deduplication evidence. Workspace loading repairs a
-legacy missing-draft orphan only when the retained operation is still
-`prepared`; this repair makes no provider request.
+A local post draft is authoring state, not publication history. On a known
+provider outcome (verified publication or definite rejection, including spam),
+the composition owner deletes the matching processed draft and then removes
+the complete effect, payload, challenge and receipt from local storage. Local
+cancellation removes only the unsent effect and preserves an authoring draft.
+An empty effect journal is deleted. Loading the workspace settles pre-existing
+completed records through the same path; uncertain records remain pending.
+
+Only aggregate safety usage and source/feed cursors survive completion. A
+transient settlement marker bridges budget accounting and effect deletion so
+restart cannot double-charge a write; it is cleared after deletion. No text,
+receipt archive, successful-effect counter or completed-effect list is retained.
+Local budgets are not presented as provider statistics. UI account counters come
+from a fresh bound Moltbook read; failure is shown as unavailable.
+
+Deleting a local draft may cancel only its matching unapproved prepared effect.
+Approved, queued, delivering or uncertain work requires the corresponding
+explicit lifecycle action. Workspace loading repairs an orphan only when its
+effect is still prepared; this repair makes no provider request.
 
 ### 4.2 Primary community and optional creation
 
@@ -315,10 +324,10 @@ One cycle executes in this order:
 11. Under Assisted policy, prepare one immutable local effect and stop for exact
     human review. Under explicitly enabled Bounded policy, apply the current
     WASM authorization and host-owned durable budget to that same effect path.
-    A non-terminal publication blocks any new external post effect, not local
-    drafting of a different confirmed change. Local closure does not release
-    the same draft for a fresh publication attempt.
-12. Process authorized effects through the common adapter and record receipts.
+    An occupied effect slot blocks every new external effect. Definite
+    completion releases the slot; local closure of an unknown outcome does not.
+12. Process through the common adapter, observe the result, then settle and
+    remove the completed effect before another may start.
 13. Commit the checkpoint only through the newest safely observed boundary.
 14. Publish a local cycle summary and stop.
 
@@ -385,7 +394,8 @@ Required projections:
 
 - mode: write policy and trigger policy shown separately;
 - current cycle: idle, observing, planning, proposing, delivering, or stopped;
-- summary: read, eligible, proposed, published, challenged, blocked;
+- summary: cycle read/eligible/proposed/challenged/blocked, plus live account
+  post/comment counters from Moltbook;
 - engagement card: target, reason, exact draft, mode, effect state, receipt;
 - for an eligible unconfirmed post, offer `Close unconfirmed attempt`; it
   rechecks first, performs no provider write, and retains deduplication identity;

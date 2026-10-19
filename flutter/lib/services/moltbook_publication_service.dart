@@ -86,7 +86,7 @@ class MoltbookPublicationService {
       title: draft.title,
       content: content,
     );
-    return _withEngagementLock('$ownerHex::post::${binding.accountId}', () async {
+    return _withEngagementLock('$ownerHex::publication', () async {
       _requireSameOwner(ownerHex);
       final operations = await list();
       final operation = retainedPostOperationForDraft(
@@ -140,6 +140,7 @@ class MoltbookPublicationService {
         accountBindingId: binding.accountId,
         effectKind: MoltbookExternalEffectAdapter.effectKind,
         canonicalPayloadJson: canonicalPayload,
+        pendingCapacity: 1,
       );
     });
   }
@@ -182,7 +183,7 @@ class MoltbookPublicationService {
             )
             .toString();
     final operationId = 'moltbook-submolt-$semanticId';
-    return _withEngagementLock('$ownerHex::submolt::$normalizedName', () async {
+    return _withEngagementLock('$ownerHex::publication', () async {
       _requireSameOwner(ownerHex);
       return _effects.prepare(
         operationId: operationId,
@@ -191,6 +192,7 @@ class MoltbookPublicationService {
         accountBindingId: binding.accountId,
         effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
         canonicalPayloadJson: canonicalPayload,
+        pendingCapacity: 1,
       );
     });
   }
@@ -236,7 +238,7 @@ class MoltbookPublicationService {
       'source_draft_hash_hex': draft.draftHashHex,
       'engagement_plan_hash_hex': draft.engagementPlanHashHex,
     });
-    final lockKey = '$ownerHex::$engagementId';
+    final lockKey = '$ownerHex::publication';
     return _withEngagementLock(lockKey, () async {
       _requireSameOwner(ownerHex);
       final matching = await findReplyOperations(
@@ -274,6 +276,7 @@ class MoltbookPublicationService {
         accountBindingId: binding.accountId,
         effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
         canonicalPayloadJson: canonicalPayload,
+        pendingCapacity: 1,
       );
     });
   }
@@ -444,6 +447,12 @@ class MoltbookPublicationService {
   Future<ExternalEffectOperation> process(String operationId) async {
     final operation = await _operationById(operationId);
     await _assertNoReplyConflict(operation);
+    if (operation.state == ExternalEffectState.approved) {
+      await _effects.enqueue(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: operationId,
+      );
+    }
     return _effects.process(
       pluginId: moltbookAmbassadorPluginId,
       operationId: operationId,
@@ -492,32 +501,11 @@ class MoltbookPublicationService {
   }
 
   static bool requiresReconciliation(ExternalEffectOperation operation) {
-    return operation.state == ExternalEffectState.unresolved &&
-        operation.requiredAction == null;
-  }
-
-  static Set<String> supersededPostFailureIds(
-    Iterable<ExternalEffectOperation> operations,
-  ) {
-    final succeededKeys = <String>{};
-    for (final operation in operations) {
-      if (operation.state == ExternalEffectState.succeeded &&
-          operation.receipt != null &&
-          operation.effectKind ==
-              MoltbookExternalEffectAdapter.postEffectKind) {
-        succeededKeys.add(_postEffectKeyForOperation(operation));
-      }
-    }
-    return operations
-        .where(
-          (operation) =>
-              operation.state == ExternalEffectState.terminalFailure &&
-              operation.effectKind ==
-                  MoltbookExternalEffectAdapter.postEffectKind &&
-              succeededKeys.contains(_postEffectKeyForOperation(operation)),
-        )
-        .map((operation) => operation.operationId)
-        .toSet();
+    return ((operation.state == ExternalEffectState.unresolved ||
+                operation.state == ExternalEffectState.delivering) &&
+            operation.requiredAction == null) ||
+        isClosedWithoutReceipt(operation) ||
+        canManuallyReconcileTerminalFailure(operation);
   }
 
   Future<ExternalEffectOperation> resolveVerification({
@@ -533,6 +521,34 @@ class MoltbookPublicationService {
 
   Future<List<ExternalEffectOperation>> list() {
     return _effects.list(pluginId: moltbookAmbassadorPluginId);
+  }
+
+  Future<void> forgetProcessed(
+    ExternalEffectOperation operation, {
+    required Future<void> Function() beforeDelete,
+    required Future<void> Function() afterDelete,
+  }) async {
+    _validateMoltbookOperation(operation);
+    final owner = _effects.activeOwnerCapsuleHex;
+    await _withEngagementLock('$owner::publication', () async {
+      _requireSameOwner(owner);
+      final current =
+          (await list())
+              .where((item) => item.operationId == operation.operationId)
+              .singleOrNull;
+      if (current == null) return;
+      if (!current.state.isTerminal || current.revision != operation.revision) {
+        throw StateError('Moltbook effect changed before completion');
+      }
+      await beforeDelete();
+      _requireSameOwner(owner);
+      await _effects.forgetTerminalOperations(
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: MoltbookConnectionService.providerId,
+        operationIds: {current.operationId},
+      );
+      await afterDelete();
+    });
   }
 
   Future<ExternalEffectOperation> cancel(String operationId) {
@@ -577,21 +593,6 @@ class MoltbookPublicationService {
   ) {
     return isCommunityOperation(operation) &&
         decodePayload(operation)['name'] == communityName;
-  }
-
-  static String? succeededPostDraftHash(ExternalEffectOperation operation) {
-    if (operation.state != ExternalEffectState.succeeded ||
-        operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind) {
-      return null;
-    }
-    return postDraftHash(operation);
-  }
-
-  static bool canArchiveTerminalPostDraft(ExternalEffectOperation operation) {
-    return isPostPublication(operation) &&
-        operation.state == ExternalEffectState.terminalFailure &&
-        operation.receipt == null &&
-        operation.requiredAction == null;
   }
 
   static void _validateCommunityName(String name) {

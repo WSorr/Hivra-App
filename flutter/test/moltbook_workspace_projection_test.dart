@@ -11,88 +11,102 @@ import 'package:hivra_app/screens/moltbook_ambassador_screen.dart';
 import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
 
 void main() {
-  group('Moltbook current post status', () {
-    final operation = _publishedPostOperation();
+  testWidgets('completed effects are absent from the local work queue', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MoltbookPublicationCard(
+            operations: [_publishedPostOperation()],
+            busy: false,
+            profileUri: Uri.parse(
+              'https://www.moltbook.com/u/hivra_ambassador',
+            ),
+            onOpenPost: (_) async {},
+            onOpenProfile: (_) async {},
+            onRecheck: (_) async {},
+            onCloseWithoutReceipt: (_) async {},
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Exact body'), findsNothing);
+    expect(find.text('No pending publications'), findsOneWidget);
+    expect(find.text('Open Moltbook profile'), findsOneWidget);
+  });
 
-    testWidgets('completed publication history is kept on Moltbook', (
-      tester,
-    ) async {
-      var statusChecks = 0;
-      Future<void> pumpHistory(
-        Map<
-          String,
-          ({MoltbookObservedPostStatus status, DateTime checkedAtUtc})
-        >
-        statuses,
-      ) => tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: MoltbookPublicationCard(
-                operations: <ExternalEffectOperation>[operation],
-                busy: false,
-                profileUri: Uri.parse(
-                  'https://www.moltbook.com/u/hivra_ambassador',
+  testWidgets(
+    'publication counters come from the provider and unavailable is explicit',
+    (tester) async {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: null,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: false,
+        hasQueuedEffect: false,
+        hasReplyDraft: false,
+        hasLocalDraft: false,
+        proposedCount: 0,
+        challengedCount: 0,
+        blockedCount: 0,
+      );
+      Future<void> show(MoltbookAccountObservation? account) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: MoltbookWorkflowCard(
+                  projection: projection,
+                  accountObservation: account,
+                  writePolicy: 'bounded_auto',
+                  triggerPolicy: 'on_demand',
+                  busy: false,
+                  onNextAction: () {},
+                  onCancelQueuedEffect: null,
+                  onStop: null,
                 ),
-                observedPostStatuses: statuses,
-                onOpenPost: (_) async {},
-                onOpenProfile: (_) async {},
-                onRecheck: (_) async {},
-                onCheckCurrentPost: (_) async => statusChecks += 1,
-                onCloseWithoutReceipt: (_) async {},
               ),
             ),
           ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await show(
+        const MoltbookAccountObservation(
+          accountId: 'account-test',
+          name: 'agent',
+          description: '',
+          karma: 0,
+          followerCount: 0,
+          followingCount: 0,
+          postsCount: 42,
+          commentsCount: 7,
+          isClaimed: true,
+          isActive: true,
+          rateLimit: MoltbookRateLimitSnapshot(
+            limit: null,
+            remaining: null,
+            resetEpochSeconds: null,
+            retryAfterSeconds: null,
+          ),
         ),
       );
-
-      await pumpHistory({});
-      expect(find.text('No pending publications'), findsOneWidget);
-      expect(find.text('Open Moltbook profile'), findsOneWidget);
-      expect(
-        find.textContaining('completed records are hidden'),
-        findsOneWidget,
-      );
-      expect(statusChecks, 0);
-    });
-
-    test('verified post later marked spam is not treated as visible', () {
-      final post = _observedPost(isSpam: true);
-      expect(post.isVerified, isTrue);
-      expect(
-        moltbookObservedPostStatus(operation, post),
-        MoltbookObservedPostStatus.spam,
-      );
-    });
-
-    test('exact visible post is distinguished from unverified post', () {
-      expect(
-        moltbookObservedPostStatus(operation, _observedPost()),
-        MoltbookObservedPostStatus.visible,
-      );
-      expect(
-        moltbookObservedPostStatus(operation, _observedPost(isVerified: false)),
-        MoltbookObservedPostStatus.unverified,
-      );
-    });
-
-    test('another post or changed text cannot inherit the receipt', () {
-      expect(
-        moltbookObservedPostStatus(
-          operation,
-          _observedPost(postId: '1fc5bedf-1efe-4624-9d8b-b7f01872836d'),
-        ),
-        MoltbookObservedPostStatus.mismatch,
-      );
-      expect(
-        moltbookObservedPostStatus(
-          operation,
-          _observedPost(content: 'Different body'),
-        ),
-        MoltbookObservedPostStatus.mismatch,
-      );
-    });
-  });
+      await tester.tap(find.text('Status and activity'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Posts on Moltbook'), findsOneWidget);
+      expect(find.textContaining('42'), findsOneWidget);
+      await show(null);
+      expect(find.text('Moltbook statistics unavailable'), findsOneWidget);
+      expect(find.textContaining('42'), findsNothing);
+    },
+  );
 
   group('Moltbook AI session status', () {
     test('busy unlock keeps a visible waiting state', () {
@@ -123,7 +137,7 @@ void main() {
   });
 
   group('MoltbookWorkspaceProjection', () {
-    testWidgets('uncertain older publication does not hide a new cycle', (
+    testWidgets('an uncertain publication blocks a second effect', (
       tester,
     ) async {
       final projection = MoltbookWorkspaceProjection.resolve(
@@ -140,7 +154,7 @@ void main() {
         hasReplyDraft: false,
         hasLocalDraft: false,
         proposedCount: 0,
-        publishedCount: 0,
+
         challengedCount: 0,
         blockedCount: 0,
       );
@@ -165,11 +179,11 @@ void main() {
       );
 
       expect(find.text('Recheck publication'), findsOneWidget);
-      expect(find.text('Run one cycle'), findsOneWidget);
-      await tester.tap(find.text('Run one cycle'));
+      expect(find.text('Run one cycle'), findsNothing);
+      await tester.tap(find.text('Recheck publication'));
       await tester.pump();
-      expect(cycles, 1);
-      expect(rechecks, 0);
+      expect(cycles, 0);
+      expect(rechecks, 1);
     });
 
     test('gives an active effect priority over every new proposal path', () {
@@ -187,7 +201,7 @@ void main() {
         hasReplyDraft: true,
         hasLocalDraft: true,
         proposedCount: 2,
-        publishedCount: 1,
+
         challengedCount: 0,
         blockedCount: 0,
       );
@@ -196,7 +210,7 @@ void main() {
       expect(projection.canCancelQueuedEffect, isFalse);
     });
 
-    test('older unresolved history does not hide a new local draft', () {
+    test('an unresolved effect takes priority over a new local draft', () {
       final projection = MoltbookWorkspaceProjection.resolve(
         connected: true,
         enabled: true,
@@ -211,12 +225,12 @@ void main() {
         hasReplyDraft: false,
         hasLocalDraft: true,
         proposedCount: 1,
-        publishedCount: 1,
+
         challengedCount: 0,
         blockedCount: 1,
       );
 
-      expect(projection.nextAction, MoltbookWorkspaceNextAction.reviewDraft);
+      expect(projection.nextAction, MoltbookWorkspaceNextAction.reconcile);
     });
 
     testWidgets('queued publication exposes independent cancel action', (
@@ -236,7 +250,7 @@ void main() {
         hasReplyDraft: false,
         hasLocalDraft: true,
         proposedCount: 1,
-        publishedCount: 1,
+
         challengedCount: 0,
         blockedCount: 0,
       );
@@ -285,7 +299,7 @@ void main() {
         hasReplyDraft: true,
         hasLocalDraft: true,
         proposedCount: 1,
-        publishedCount: 0,
+
         challengedCount: 1,
         blockedCount: 0,
       );
@@ -309,7 +323,7 @@ void main() {
         hasReplyDraft: true,
         hasLocalDraft: false,
         proposedCount: 1,
-        publishedCount: 0,
+
         challengedCount: 0,
         blockedCount: 0,
       );
@@ -333,7 +347,7 @@ void main() {
         hasReplyDraft: false,
         hasLocalDraft: true,
         proposedCount: 1,
-        publishedCount: 10,
+
         challengedCount: 0,
         blockedCount: 1,
       );
@@ -381,7 +395,7 @@ void main() {
         hasReplyDraft: false,
         hasLocalDraft: false,
         proposedCount: 0,
-        publishedCount: 4,
+
         challengedCount: 1,
         blockedCount: 2,
       );
@@ -391,7 +405,6 @@ void main() {
       expect(projection.readCount, 24);
       expect(projection.eligibleCount, 3);
       expect(projection.proposedCount, 0);
-      expect(projection.publishedCount, 4);
       expect(projection.challengedCount, 1);
       expect(projection.blockedCount, 2);
     });
@@ -413,7 +426,7 @@ void main() {
         hasReplyDraft: false,
         hasLocalDraft: false,
         proposedCount: 0,
-        publishedCount: 0,
+
         challengedCount: 0,
         blockedCount: 0,
       );
@@ -461,7 +474,7 @@ void main() {
           hasReplyDraft: false,
           hasLocalDraft: false,
           proposedCount: 0,
-          publishedCount: 0,
+
           challengedCount: 0,
           blockedCount: 0,
         );
@@ -510,24 +523,3 @@ ExternalEffectOperation _publishedPostOperation() {
     ),
   );
 }
-
-MoltbookPostObservation _observedPost({
-  String postId = _postId,
-  String content = 'Exact body',
-  bool isVerified = true,
-  bool isSpam = false,
-}) => MoltbookPostObservation(
-  postId: postId,
-  title: 'Exact title',
-  content: content,
-  authorId: 'account-test',
-  authorName: 'hivra_ambassador',
-  submoltName: 'person-first-runtime',
-  score: 0,
-  commentCount: 0,
-  isVerified: isVerified,
-  isSpam: isSpam,
-  isLocked: false,
-  createdAtUtc: '2026-09-26T18:00:00.000Z',
-  updatedAtUtc: '2026-09-26T18:00:01.000Z',
-);

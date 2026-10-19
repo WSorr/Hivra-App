@@ -152,6 +152,17 @@ class MoltbookConnectionService {
     return _withBoundCredential(_observer.observeHome);
   }
 
+  Future<MoltbookAccountObservation> observeAccount() {
+    return _withBoundCredential((apiKey) async {
+      final observation = await _observer.observeAccount(apiKey);
+      final binding = await loadBinding();
+      if (observation.accountId != binding?.accountId) {
+        throw StateError('Moltbook credential resolved to another account');
+      }
+      return observation;
+    });
+  }
+
   Future<MoltbookFeedObservation> observeFeed({
     String sort = 'new',
     int limit = 15,

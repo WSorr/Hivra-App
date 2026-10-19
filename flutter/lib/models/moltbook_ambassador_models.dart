@@ -962,7 +962,6 @@ class MoltbookWorkspaceProjection {
   final int readCount;
   final int eligibleCount;
   final int proposedCount;
-  final int publishedCount;
   final int challengedCount;
   final int blockedCount;
 
@@ -972,7 +971,6 @@ class MoltbookWorkspaceProjection {
     required this.readCount,
     required this.eligibleCount,
     required this.proposedCount,
-    required this.publishedCount,
     required this.challengedCount,
     required this.blockedCount,
   });
@@ -994,14 +992,10 @@ class MoltbookWorkspaceProjection {
     required bool hasReplyDraft,
     required bool hasLocalDraft,
     required int proposedCount,
-    required int publishedCount,
     required int challengedCount,
     required int blockedCount,
   }) {
-    if (proposedCount < 0 ||
-        publishedCount < 0 ||
-        challengedCount < 0 ||
-        blockedCount < 0) {
+    if (proposedCount < 0 || challengedCount < 0 || blockedCount < 0) {
       throw ArgumentError('Moltbook workspace counts must be non-negative');
     }
 
@@ -1028,14 +1022,6 @@ class MoltbookWorkspaceProjection {
     )) {
       (false, _, _, _, _, _, _) => MoltbookWorkspaceNextAction.connect,
       (_, true, _, _, _, _, _) => MoltbookWorkspaceNextAction.verify,
-      // A queued effect is still active and must be reconciled before any
-      // newer proposal path. An older unresolved record without a queued
-      // effect remains history when a new local draft is ready.
-      (_, _, true, true, _, _, _) => MoltbookWorkspaceNextAction.reconcile,
-      (_, _, true, false, true, _, true) =>
-        MoltbookWorkspaceNextAction.reviewReply,
-      (_, _, true, false, false, true, true) =>
-        MoltbookWorkspaceNextAction.reviewDraft,
       (_, _, true, _, _, _, _) => MoltbookWorkspaceNextAction.reconcile,
       (_, _, _, _, _, _, false) => MoltbookWorkspaceNextAction.none,
       (_, _, _, true, _, _, _) => MoltbookWorkspaceNextAction.publish,
@@ -1050,7 +1036,6 @@ class MoltbookWorkspaceProjection {
       readCount: cycleSummary?.inspectedCount ?? 0,
       eligibleCount: cycleSummary?.candidateCount ?? 0,
       proposedCount: proposedCount,
-      publishedCount: publishedCount,
       challengedCount: challengedCount,
       blockedCount: blockedCount,
     );

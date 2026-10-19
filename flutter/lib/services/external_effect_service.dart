@@ -45,6 +45,7 @@ class ExternalEffectService {
     required String accountBindingId,
     required String effectKind,
     required String canonicalPayloadJson,
+    int? pendingCapacity,
   }) {
     final ownerHex = _requireActiveOwner();
     _validateCanonicalPayload(canonicalPayloadJson);
@@ -83,6 +84,12 @@ class ExternalEffectService {
           );
         }
         return existing;
+      }
+      if (pendingCapacity != null &&
+          (pendingCapacity < 1 || operations.length >= pendingCapacity)) {
+        throw StateError(
+          'Complete the current external effect before preparing another',
+        );
       }
       _pruneTerminalOperations(operations);
       if (operations.length >= _maxJournalOperations) {
@@ -440,6 +447,18 @@ class ExternalEffectService {
       );
     }
     if (current.state == ExternalEffectState.terminalFailure) {
+      if (result.status == ExternalEffectAdapterStatus.terminalFailure &&
+          current.providerReferenceId != null &&
+          result.providerReferenceId == current.providerReferenceId) {
+        return _applyAdapterResult(
+          ownerHex,
+          pluginId,
+          operationId,
+          result,
+          expectedState: current.state,
+          expectedRevision: current.revision,
+        );
+      }
       return current;
     }
     return _applyAdapterResult(
@@ -795,6 +814,7 @@ class ExternalEffectService {
             return _copy(
               current,
               state: ExternalEffectState.terminalFailure,
+              providerReferenceId: result.providerReferenceId,
               lastErrorCode: result.errorCode ?? 'terminal_failure',
               lastErrorMessage: _boundedError(
                 result.errorMessage ?? 'Provider rejected the effect',
@@ -953,6 +973,14 @@ class ExternalEffectService {
       ownerHex,
       create: true,
     );
+    if (operations.isEmpty) {
+      await _fileStore.deletePluginState(
+        capsuleDir,
+        pluginId,
+        _journalFileName,
+      );
+      return;
+    }
     final payload = <String, dynamic>{
       'schema_version': _journalSchemaVersion,
       'owner_capsule_hex': ownerHex,
