@@ -903,8 +903,9 @@ require_absent "$CAPSULE_SECRET_VAULT" "dart:io|File\\(|Directory\\(" \
   "capsule-scoped secret vault has no plaintext filesystem fallback"
 require_present "$CAPSULE_PERSISTENCE" "_secretVault\\.deleteCapsules\\(keysToDelete\\)" \
   "Capsule deletion cleans every Capsule-scoped plugin secret"
-require_present "$PLUGIN_RUNTIME_MODULE" "_secretVault\\.deletePlugin\\(pluginId\\)" \
-  "plugin removal cleans its secrets across Capsules"
+# Runtime-scoped uninstall semantics are exercised by the mandatory Flutter
+# suite (vault, file-store and workspace lifecycle tests). A call-text assertion
+# here previously required an unbounded deletion from the shared Keychain.
 require_absent "$WASM_PLUGINS_SCREEN" "services/wasm_plugin_(registry|source_catalog)_service\\.dart" \
   "wasm plugins screen imports plugin DTOs from model boundary"
 require_absent "$SCREENS" "services/capsule_chat_delivery_service\\.dart" \

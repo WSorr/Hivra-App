@@ -46,6 +46,10 @@ provider effects merely because a WASM call succeeds.
     through credential ports; Flutter, Chat and Moltbook are not dependencies
     of the executor. Installed-package bindings are resolved by the existing
     registry, not reconstructed independently by each host.
+    Uninstall removes secrets only for Capsule directories owned by that
+    runtime root, including inactive Capsules. Sharing the macOS Keychain
+    between installations does not authorize deleting another runtime's
+    Capsule credentials; an empty runtime owns no secret cleanup scope.
   - Root output may declare `resume_action` with a bounded action ID, alongside
     one or more permitted reads. After all evidence is admitted through the
     public provider continuations (`market`, `account`, `order`, `restore_entry`),

@@ -63,6 +63,32 @@ void main() {
     }
   });
 
+  test('plugin cleanup returns only runtime-owned capsule scopes', () async {
+    const plugin = 'hivra.contract.cleanup.v1';
+    final otherOwner = 'b' * 64;
+    final first = await store.capsuleDirForHex(capsuleHex, create: true);
+    await store.capsuleDirForHex(otherOwner, create: true);
+    await store.writePluginState(first, plugin, 'workspace.v1.json', '{}');
+    final root = await store.capsulesRoot();
+    final unrelated = Directory('${root.path}/not-a-capsule');
+    await unrelated.create();
+    final marker = File('${unrelated.path}/keep');
+    await marker.writeAsString('untouched');
+    final external = await Directory.systemTemp.createTemp('hivra_foreign_');
+    addTearDown(() => external.delete(recursive: true));
+    await Link('${root.path}/${'c' * 64}').create(external.path);
+
+    final owners = await store.deletePluginStateFromAllCapsules(plugin);
+
+    expect(owners, {capsuleHex, otherOwner});
+    expect(
+      await store.readPluginState(first, plugin, 'workspace.v1.json'),
+      isNull,
+    );
+    expect(await marker.readAsString(), 'untouched');
+    expect(await external.list().isEmpty, isTrue);
+  });
+
   test('readState returns null when state file is missing', () async {
     final dir = await store.capsuleDirForHex(capsuleHex, create: true);
 

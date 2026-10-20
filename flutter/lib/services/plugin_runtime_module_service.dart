@@ -145,14 +145,14 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     if (pluginId != null && pluginId.isNotEmpty) {
       stopWorkspaceScheduling(pluginId: pluginId);
       await drainWorkspaceActions(pluginId);
-      await _secretVault.deletePlugin(pluginId);
-      await _fileStore.deletePluginStateFromAllCapsules(
+      final owners = await _fileStore.deletePluginStateFromAllCapsules(
         pluginId,
         preserveFileNames: const {
           'external_effects.v1.json',
           'workspace-execution.v1.json',
         },
       );
+      await _secretVault.deletePlugin(pluginId, capsuleHexes: owners);
     }
   }
 

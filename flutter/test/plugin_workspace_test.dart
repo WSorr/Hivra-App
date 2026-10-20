@@ -5174,8 +5174,19 @@ void main() {
       expect(vault.values, retained);
       revokeAccountDuringRead = false;
       accountGrant = true;
+      final foreignOwner = 'f' * 64;
+      await vault.saveSecret(
+        capsuleHex: foreignOwner,
+        pluginId: registry.record.pluginId!,
+        providerId: 'bingx',
+        accountId: 'foreign-runtime',
+        secretName: 'credentials',
+        secretValue: 'foreign-secret',
+      );
       await module().removePlugin(registry.record);
-      expect(vault.values, isEmpty);
+      expect(vault.values.length, 1);
+      expect(vault.values.values.single, 'foreign-secret');
+      expect(vault.values.keys.single, startsWith('$foreignOwner/'));
     },
   );
   test('package workspace requires grants and actual WASM evidence', () async {
@@ -6046,8 +6057,13 @@ class _Vault extends Fake implements CapsuleScopedSecretVault {
   }
 
   @override
-  Future<void> deletePlugin(String pluginId) async =>
-      values.removeWhere((k, v) => k.split('/')[1] == pluginId);
+  Future<void> deletePlugin(
+    String pluginId, {
+    required Set<String> capsuleHexes,
+  }) async => values.removeWhere(
+    (k, v) =>
+        k.split('/')[1] == pluginId && capsuleHexes.contains(k.split('/')[0]),
+  );
 }
 
 class _Manual extends Fake implements ManualConsensusCheckService {}
