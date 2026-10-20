@@ -127,9 +127,17 @@ class CapsuleScopedSecretVault {
     });
   }
 
-  Future<void> deletePlugin(String pluginId) {
+  Future<void> deletePlugin(
+    String pluginId, {
+    required Set<String> capsuleHexes,
+  }) {
     final normalized = _identifier('plugin_id', pluginId);
-    return _removeWhere((entry) => entry.pluginId == normalized);
+    final owners = capsuleHexes.map(_capsuleHex).toSet();
+    if (owners.isEmpty) return Future<void>.value();
+    return _removeWhere(
+      (entry) =>
+          entry.pluginId == normalized && owners.contains(entry.capsuleHex),
+    );
   }
 
   Future<void> deleteCapsule(String capsuleHex) {

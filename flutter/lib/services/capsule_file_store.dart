@@ -380,12 +380,13 @@ class CapsuleFileStore {
     }
   }
 
-  Future<void> deletePluginStateFromAllCapsules(
+  Future<Set<String>> deletePluginStateFromAllCapsules(
     String pluginId, {
     Set<String> preserveFileNames = const {},
   }) async {
     final root = await capsulesRoot();
-    if (!await root.exists()) return;
+    if (!await root.exists()) return <String>{};
+    final owners = <String>{};
     final capsuleDirs =
         await root
             .list(followLinks: false)
@@ -393,6 +394,9 @@ class CapsuleFileStore {
             .cast<Directory>()
             .toList();
     for (final capsuleDir in capsuleDirs) {
+      final owner = capsuleDir.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) continue;
+      owners.add(owner);
       final stateDir = await pluginStateDirectory(capsuleDir, pluginId);
       if (await stateDir.exists()) {
         if (preserveFileNames.isEmpty) {
@@ -412,6 +416,7 @@ class CapsuleFileStore {
         }
       }
     }
+    return owners;
   }
 
   Future<void> clearPersisted(

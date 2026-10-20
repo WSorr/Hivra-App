@@ -170,7 +170,9 @@ Acceptance uses the existing validation ladder:
    not interpret a package's old or new private state shape;
 3. state, grants, effects and credentials do not cross Capsule or plugin scopes;
    a replacement does not create or renew execution authority, and a removed or
-   superseded package cannot continue an action;
+   superseded package cannot continue an action. Uninstall credential cleanup
+   is limited to the current runtime root's Capsule owners even when multiple
+   installations share the macOS Keychain;
 4. source tests and gates pass on the integrated source; both exact packaged
    artifacts bind that source and its matching runner;
 5. backup/recovery, update, Capsule switching, invitations, Chat continuity and

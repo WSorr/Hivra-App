@@ -88,16 +88,37 @@ void main() {
     expect(await _load(vault, capsuleB, pluginA, 'account-b'), 'key-b');
   });
 
-  test('deleting a plugin removes its scopes from every capsule', () async {
+  test('plugin removal is limited to capsules owned by this runtime', () async {
     await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
     await _save(vault, capsuleB, pluginA, 'account-b', 'key-b');
     await _save(vault, capsuleA, pluginB, 'account-c', 'key-c');
 
-    await vault.deletePlugin(pluginA);
+    await vault.deletePlugin(pluginA, capsuleHexes: {capsuleA});
 
     expect(await _load(vault, capsuleA, pluginA, 'account-a'), isNull);
-    expect(await _load(vault, capsuleB, pluginA, 'account-b'), isNull);
+    expect(await _load(vault, capsuleB, pluginA, 'account-b'), 'key-b');
     expect(await _load(vault, capsuleA, pluginB, 'account-c'), 'key-c');
+  });
+
+  test(
+    'plugin removal without runtime capsules does not touch Keychain',
+    () async {
+      await _save(vault, capsuleB, pluginA, 'account-b', 'key-b');
+      final before = Map<String, String>.from(storage.values);
+      await vault.deletePlugin(pluginA, capsuleHexes: {});
+      expect(storage.values, before);
+      expect(await _load(vault, capsuleB, pluginA, 'account-b'), 'key-b');
+    },
+  );
+
+  test('plugin removal covers inactive capsules in the same runtime', () async {
+    await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
+    await _save(vault, capsuleB, pluginA, 'account-b', 'key-b');
+    await _save(vault, capsuleB, pluginB, 'account-c', 'key-c');
+    await vault.deletePlugin(pluginA, capsuleHexes: {capsuleA, capsuleB});
+    expect(await _load(vault, capsuleA, pluginA, 'account-a'), isNull);
+    expect(await _load(vault, capsuleB, pluginA, 'account-b'), isNull);
+    expect(await _load(vault, capsuleB, pluginB, 'account-c'), 'key-c');
   });
 
   test('fails closed on malformed persisted vault', () async {
