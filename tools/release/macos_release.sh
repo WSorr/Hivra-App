@@ -240,6 +240,7 @@ source_tree_dirty=no
 flutter_build_name=$FLUTTER_BUILD_NAME
 flutter_build_number=$FLUTTER_BUILD_NUMBER
 channel=$CHANNEL
+pre_release_expected=$([ "$CHANNEL" = "test" ] && echo "yes" || echo "no")
 signed=$SIGNED
 notarized=$NOTARIZED
 codesign_identity=${CODESIGN_IDENTITY:-none}
