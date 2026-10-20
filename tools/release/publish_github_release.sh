@@ -101,7 +101,8 @@ require_signoff_artifact_sha() {
 }
 
 self_test() {
-  local test_dir artifact artifact_copy artifact_sha
+  local test_dir artifact artifact_copy artifact_sha metadata source_commit platform
+  local metadata_channel prerelease signed notarized expected actual
   test_dir="$(mktemp -d)"
   artifact="$test_dir/hivra_app-v-selftest-macos-universal.zip"
   artifact_copy="$test_dir/hivra_app-v-selftest-macos-other.zip"
@@ -129,7 +130,60 @@ self_test() {
     die "artifact name mutation was accepted"
   fi
 
-  rm -f "$artifact" "$artifact_copy" "$MANUAL_SIGNOFF_LOG"
+  metadata="$test_dir/RELEASE-METADATA.txt"
+  source_commit="$(git -C "$ROOT" rev-parse HEAD)"
+  cd "$ROOT"
+  # Exercise the publication validator, including unsigned test artifacts and
+  # Android metadata without macOS-specific signing evidence.
+  while read -r platform CHANNEL metadata_channel prerelease signed notarized expected; do
+    cat > "$metadata" <<EOF
+version=$VERSION
+source_commit=$source_commit
+source_tree_dirty=no
+EOF
+    if [ "$metadata_channel" != - ]; then
+      printf 'channel=%s\n' "$metadata_channel" >> "$metadata"
+    fi
+    if [ "$prerelease" != - ]; then
+      printf 'pre_release_expected=%s\n' "$prerelease" >> "$metadata"
+    fi
+    if [ "$platform" = macOS ]; then
+      printf 'signed=%s\nnotarized=%s\n' "$signed" "$notarized" >> "$metadata"
+    fi
+    actual=reject
+    if (verify_release_metadata "$metadata" "$platform" >/dev/null 2>&1); then
+      actual=accept
+    fi
+    [ "$actual" = "$expected" ] ||
+      die "metadata case $platform/$CHANNEL/$metadata_channel/$prerelease/$signed/$notarized: expected $expected, got $actual"
+  done <<'EOF'
+macOS test test yes no no accept
+macOS test test yes yes no accept
+macOS test test yes yes yes accept
+macOS public public no yes yes accept
+Android test test yes - - accept
+Android public public no - - accept
+macOS test public yes no no reject
+macOS public test no yes yes reject
+Android test public yes - - reject
+Android public test no - - reject
+macOS test wrong yes no no reject
+Android public wrong no - - reject
+macOS test - yes no no reject
+Android public - no - - reject
+macOS test test no no no reject
+macOS public public yes yes yes reject
+Android test test no - - reject
+Android public public yes - - reject
+macOS test test - no no reject
+Android public public - - - reject
+macOS public public no no yes reject
+macOS public public no yes no reject
+macOS public public no - yes reject
+macOS public public no yes - reject
+EOF
+
+  rm -f "$artifact" "$artifact_copy" "$MANUAL_SIGNOFF_LOG" "$metadata"
   rmdir "$test_dir"
   echo "PASS release-publication: self-test"
 }
@@ -174,10 +228,13 @@ verify_release_metadata() {
   local version
   local source_commit
   local source_tree_dirty
+  local metadata_channel expected_prerelease
 
   version="$(metadata_value "$file" version)"
   source_commit="$(metadata_value "$file" source_commit)"
   source_tree_dirty="$(metadata_value "$file" source_tree_dirty)"
+  metadata_channel="$(metadata_value "$file" channel)"
+  expected_prerelease="$([ "$CHANNEL" = test ] && echo yes || echo no)"
 
   [ "$version" = "$VERSION" ] ||
     die "$platform metadata version is ${version:-missing}, expected $VERSION"
@@ -185,6 +242,16 @@ verify_release_metadata() {
     die "$platform metadata source_commit is missing or invalid: ${source_commit:-missing}"
   [ "$source_tree_dirty" = "no" ] ||
     die "$platform metadata source_tree_dirty must be no"
+  [ "$metadata_channel" = "$CHANNEL" ] ||
+    die "$platform metadata channel is ${metadata_channel:-missing}, expected $CHANNEL"
+  [ "$(metadata_value "$file" pre_release_expected)" = "$expected_prerelease" ] ||
+    die "$platform metadata prerelease policy does not match $CHANNEL channel"
+  if [ "$platform" = macOS ] && [ "$CHANNEL" = public ]; then
+    [ "$(metadata_value "$file" signed)" = yes ] ||
+      die "public macOS metadata must record signed=yes"
+    [ "$(metadata_value "$file" notarized)" = yes ] ||
+      die "public macOS metadata must record notarized=yes"
+  fi
   require_release_only_changes_after_build "$source_commit"
 }
 

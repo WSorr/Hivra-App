@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-19
+Status date: 2026-10-20
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -102,8 +102,9 @@ green repository gate.
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Protected `main` includes package/VPS recovery from PR #369 and the
-  last-result Moltbook lifecycle from PR #370. Read Git for the current commit.
+- Protected `main` includes package/VPS recovery, the last-result Moltbook
+  lifecycle, replacement/reopen/restart and manifest capability admission.
+  Read Git for the current commit.
 - The latest published prerelease is `v1.0.4-test1`, built from `bfe6945`.
   No `v1.0.4-test2` release is published; any new candidate requires the
   current source commit and matching canonical runner.
@@ -155,10 +156,11 @@ provider evidence.
 
 ## Selected Product Outcome
 
-Close the maintained 1.x Capsule package-replacement boundary, without adding
-another host, state store, workflow or demonstration-plugin feature. Supported
-package versions must be replaceable without rebuilding Capsule; new platform
-capabilities still require their explicit host contract.
+Complete one consistent macOS/Android test candidate of maintained 1.x Capsule,
+including package replacement and the existing User Lifetime Safety Pack on
+isolated data. Do not add another host, state store, workflow or demonstration
+feature. Supported package versions must remain replaceable without rebuilding
+Capsule; new platform capabilities still require their explicit host contract.
 
 Acceptance uses the existing validation ladder:
 
@@ -169,11 +171,18 @@ Acceptance uses the existing validation ladder:
 3. state, grants, effects and credentials do not cross Capsule or plugin scopes;
    a replacement does not create or renew execution authority, and a removed or
    superseded package cannot continue an action;
-4. the existing source tests and gates pass, followed by one clean exact packaged
-   replacement/reopen/restart smoke on an isolated runtime.
+4. source tests and gates pass on the integrated source; both exact packaged
+   artifacts bind that source and its matching runner;
+5. backup/recovery, update, Capsule switching, invitations, Chat continuity and
+   replacement/removal/reopen/restart use the existing platform and User Lifetime
+   checklists. Record observed evidence and unsupported cases without treating
+   a prior artifact's focused smoke as acceptance of the final pair.
 
-Stop this scope when that boundary is proven. A new Moltbook publication or live
-trade is not evidence of package replaceability and is not part of this smoke.
+Stop this scope when the candidate's supported journeys are proven or a concrete
+blocker is identified. A new Moltbook publication or live trade is not evidence
+of Capsule safety and is not part of this smoke. Unsigned test distribution
+remains intentional; public signing and autonomous-trading evidence are not
+claimed by this test candidate.
 Existing manual release signoff and security/financial boundaries still apply;
 source tests alone do not authorize a release.
 
