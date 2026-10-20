@@ -7,6 +7,7 @@ import android.provider.DocumentsContract
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.util.PathUtils
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -25,7 +26,9 @@ class MainActivity : FlutterActivity() {
                 } else {
                     try {
                         val source = File(requireNotNull(call.argument<String>("sourcePath"))).canonicalFile
-                        require(source.isFile && source.path.startsWith(cacheDir.canonicalPath + File.separator))
+                        // Match the cache-dir-path used by Dart Directory.systemTemp.
+                        val cache = File(PathUtils.getCacheDirectory(this)).canonicalFile
+                        require(source.isFile && source.path.startsWith(cache.path + File.separator))
                         val name = requireNotNull(call.argument<String>("suggestedName"))
                         require(name.endsWith(".json") && !name.contains('/') && !name.contains('\\'))
                         backupSave = BackupSave(source, result)
