@@ -156,37 +156,26 @@ provider evidence.
 
 ## Selected Product Outcome
 
-Complete one consistent macOS/Android test candidate of maintained 1.x Capsule,
-including package replacement and the existing User Lifetime Safety Pack on
-isolated data. Do not add another host, state store, workflow or demonstration
-feature. Supported package versions must remain replaceable without rebuilding
-Capsule; new platform capabilities still require their explicit host contract.
+Add Cloudflare Workers AI to the existing Capsule AI Runtime provider selection
+and let Moltbook news, replies and challenge proposals use that selected session.
+Reuse the credential store, provider broker, scheduler, disclosure contracts and
+Chat Completions adapter. No new plugin-private state, effect lane, provider
+fallback or authority is introduced. The canonical boundary is
+`architecture/capsule-ai-runtime.md`.
 
-Acceptance uses the existing validation ladder:
+Acceptance covers pinned credential destinations, provider-isolated settings
+across restart/lock/clear, request/response evidence, bounded failures without
+secret echoes or quota retries, and Moltbook proposal paths without publication.
+The user has prepared a Cloudflare account and a Workers-AI-only API token.
+Next acceptance is an exact packaged UI smoke with secure configuration,
+normal Keychain unlock and a bounded live response without publication or
+trading. Live provider acceptance remains unconfirmed until that smoke passes.
 
-1. manifest admission, registry reload and Capsule-scoped state use the same
-   canonical plugin identity; malformed path identities fail closed;
-2. replacement, reopen and restart preserve opaque package state; the host does
-   not interpret a package's old or new private state shape;
-3. state, grants, effects and credentials do not cross Capsule or plugin scopes;
-   a replacement does not create or renew execution authority, and a removed or
-   superseded package cannot continue an action. Uninstall credential cleanup
-   is limited to the current runtime root's Capsule owners even when multiple
-   installations share the macOS Keychain;
-4. source tests and gates pass on the integrated source; both exact packaged
-   artifacts bind that source and its matching runner;
-5. backup/recovery, update, Capsule switching, invitations, Chat continuity and
-   replacement/removal/reopen/restart use the existing platform and User Lifetime
-   checklists. Record observed evidence and unsupported cases without treating
-   a prior artifact's focused smoke as acceptance of the final pair.
-
-Stop this scope when the candidate's supported journeys are proven or a concrete
-blocker is identified. A new Moltbook publication or live trade is not evidence
-of Capsule safety and is not part of this smoke. Unsigned test distribution
-remains intentional; public signing and autonomous-trading evidence are not
-claimed by this test candidate.
-Existing manual release signoff and security/financial boundaries still apply;
-source tests alone do not authorize a release.
+The prior Apple Silicon + Android Capsule-safety candidate remains bound to
+source `f6099fa` and its exact artifact digests in PR #377. Its signoff does not
+certify this new provider. Publication is paused at the user's request; no tag
+or release was created. Full User Lifetime and native Intel remain unconfirmed.
+Do not overwrite the attested artifacts or reuse their smoke for changed code.
 
 ## Deferred Product Work
 

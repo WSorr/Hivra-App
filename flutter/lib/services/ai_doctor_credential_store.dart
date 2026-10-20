@@ -13,6 +13,10 @@ class AiDoctorCredentialStore {
 
   static const String _openAiApiKeyKey = 'hivra.ai_doctor.openai.api_key.v1';
   static const String _geminiApiKeyKey = 'hivra.ai_doctor.gemini.api_key.v1';
+  static const String _cloudflareApiKeyKey =
+      'hivra.ai_doctor.cloudflare.api_key.v1';
+  static const String _cloudflareBaseUrlKey =
+      'hivra.ai_doctor.cloudflare.base_url.v1';
   static const String _localOpenAiApiKeyKey =
       'hivra.ai_doctor.local_openai.api_key.v1';
   static const String _localOpenAiBaseUrlKey =
@@ -123,6 +127,12 @@ class AiDoctorCredentialStore {
     if (key == null) {
       throw ArgumentError('${provider.label} does not support base URL');
     }
+    if (provider == InferenceProviderKind.cloudflareWorkersAi) {
+      OpenAiChatCompletionsInferenceProviderAdapter.chatCompletionsEndpoint(
+        provider,
+        normalized,
+      );
+    }
     try {
       await _secureStorage.write(key: key, value: normalized);
       final stored = await _secureStorage.read(key: key);
@@ -229,7 +239,7 @@ class AiDoctorCredentialStore {
         (_sessionApiKeys[provider]?.isNotEmpty != true)) {
       return false;
     }
-    if (provider == InferenceProviderKind.localOpenAiCompatible &&
+    if (provider.requiresBaseUrl &&
         (_sessionBaseUrls[provider]?.isNotEmpty != true)) {
       return false;
     }
@@ -252,8 +262,7 @@ class AiDoctorCredentialStore {
       );
     }
     final baseUrl = await loadBaseUrl(provider);
-    if (provider == InferenceProviderKind.localOpenAiCompatible &&
-        (baseUrl == null || baseUrl.isEmpty)) {
+    if (provider.requiresBaseUrl && (baseUrl == null || baseUrl.isEmpty)) {
       throw StateError(
         '${provider.label} base URL is not saved. Configure it in Capsule Analyst.',
       );
@@ -315,6 +324,7 @@ class AiDoctorCredentialStore {
     return switch (provider) {
       InferenceProviderKind.openAi => _openAiApiKeyKey,
       InferenceProviderKind.gemini => _geminiApiKeyKey,
+      InferenceProviderKind.cloudflareWorkersAi => _cloudflareApiKeyKey,
       InferenceProviderKind.localOpenAiCompatible => _localOpenAiApiKeyKey,
     };
   }
@@ -337,6 +347,7 @@ class AiDoctorCredentialStore {
     return switch (provider) {
       InferenceProviderKind.openAi => null,
       InferenceProviderKind.gemini => null,
+      InferenceProviderKind.cloudflareWorkersAi => _cloudflareBaseUrlKey,
       InferenceProviderKind.localOpenAiCompatible => _localOpenAiBaseUrlKey,
     };
   }

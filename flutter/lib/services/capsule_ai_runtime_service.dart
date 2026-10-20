@@ -201,6 +201,8 @@ abstract class CapsuleInferenceRuntime {
 
   String? get sessionProviderLabel;
 
+  String? get sessionProviderId;
+
   Future<void> savePreferredProviderId(String providerId);
 
   Future<String?> loadPreferredProviderId();
@@ -261,6 +263,10 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   @override
   String? get sessionProviderLabel =>
       _credentialStore.sessionPreferredProvider?.label;
+
+  @override
+  String? get sessionProviderId =>
+      _credentialStore.sessionPreferredProvider?.id;
 
   @override
   Future<void> savePreferredProviderId(String providerId) async {

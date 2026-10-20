@@ -29,6 +29,7 @@ Capsule Host Runtime
        `-- provider adapters
             |-- Gemini
             |-- OpenAI
+            |-- Cloudflare Workers AI
             `-- local OpenAI-compatible model
 ```
 
@@ -105,6 +106,15 @@ A result contains at least:
 Provider-native request, response, token, safety, and billing DTOs remain
 inside their adapters. A global `AiDto` layer and pass-through feature wrappers
 are forbidden.
+
+Cloudflare Workers AI and local models share the Chat Completions adapter.
+Cloudflare configuration uses an Account ID and a provider-isolated API token
+in the existing credential store. Its requests are restricted to the official
+HTTPS account endpoint without redirects; provider error bodies are not shown
+or logged. The local provider retains its configured endpoint and optional key.
+No automatic provider fallback is permitted on quota, capacity, or auth failure.
+Setup and current free-plan limits are owned by the [Cloudflare REST guide](https://developers.cloudflare.com/workers-ai/get-started/rest-api/)
+and [pricing documentation](https://developers.cloudflare.com/workers-ai/platform/pricing/).
 
 ### 4.1 Frozen 1.x Contract V1
 
@@ -184,6 +194,12 @@ The process lease prevents repeated Keychain reads; it is not a global
 capability grant. Capability and disclosure checks still run for every request.
 An explicit one-shot provider unlock changes only the process session. It does
 not silently rewrite the persisted preferred-provider choice.
+
+Moltbook unlocks the configured preferred provider through this same broker.
+News, replies, and numeric-challenge proposals bind the active session's stable
+provider id before inference, including bounded repair attempts. Changing or
+locking that session cannot silently reroute an in-flight proposal to Gemini
+or another provider. Package policy and external-effect authority are unchanged.
 
 ## 7. Determinism And Persistence
 

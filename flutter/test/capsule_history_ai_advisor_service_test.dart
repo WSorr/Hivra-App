@@ -74,6 +74,9 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
 
   @override
   String? get sessionProviderLabel => 'OpenAI';
+
+  @override
+  String? get sessionProviderId => 'openai';
   int unlockCount = 0;
   String? preferredProviderId;
 

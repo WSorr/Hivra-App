@@ -891,7 +891,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       SelectableText(payload['content'].toString()),
                       const SizedBox(height: 16),
                       const Text(
-                        'Gemini proposed this text from bounded public conversation data, and WASM bound it to the selected thread. Nothing has been published. Approving creates a permanent public external effect.',
+                        'The selected AI provider proposed this text from bounded public conversation data, and WASM bound it to the selected thread. Nothing has been published. Approving creates a permanent public external effect.',
                         style: TextStyle(
                           color: Colors.orange,
                           fontWeight: FontWeight.w700,
@@ -1176,9 +1176,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         );
         _draftPreview = null;
       });
-      _showNotice(
-        'Gemini proposed the next confirmed Capsule change for review',
-      );
+      _showNotice('AI proposed the next confirmed Capsule change for review');
     } catch (error) {
       if (mounted) {
         _showNotice('Could not propose queued change: $error', isError: true);
@@ -1727,7 +1725,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       Text('Expires: ${action.expiresAtUtc}'),
                       const SizedBox(height: 14),
                       const Text(
-                        'Gemini receives only the challenge text. It cannot access the Moltbook credential, verification token, or publication effect.',
+                        'The selected AI provider receives only the challenge text. It cannot access the Moltbook credential, verification token, or publication effect.',
                       ),
                     ],
                   ),
@@ -1740,7 +1738,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Solve with Gemini'),
+                  child: const Text('Solve with AI'),
                 ),
               ],
             ),
@@ -2229,7 +2227,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Approval mode',
                                 helperText:
-                                    'Bounded may publish one exact confirmed change to the selected primary community and nested replies: at most 3 replies per UTC day, 30 minutes apart. Unlocked Gemini may solve an exact numeric provider challenge without receiving publication authority.',
+                                    'Bounded may publish one exact confirmed change to the selected primary community and nested replies: at most 3 replies per UTC day, 30 minutes apart. The unlocked AI provider may solve an exact numeric provider challenge without receiving publication authority.',
                               ),
                               items: const [
                                 DropdownMenuItem(
@@ -2510,8 +2508,8 @@ class MoltbookWorkflowCard extends StatelessWidget {
       ),
       MoltbookWorkspaceNextAction.verify => (
         'Next: solve the challenged publication',
-        'Gemini can solve the numeric prompt without receiving credentials or publication authority.',
-        'Solve with Gemini',
+        'The selected AI provider can solve the numeric prompt without receiving credentials or publication authority.',
+        'Solve with AI',
         Icons.verified_user_outlined,
       ),
       MoltbookWorkspaceNextAction.reconcile => (
@@ -3267,7 +3265,7 @@ class _MoltbookPublicationCardState extends State<MoltbookPublicationCard> {
 }) {
   if (operation.requiredAction != null) {
     return (
-      label: 'Action required: solve verification with Gemini',
+      label: 'Action required: solve verification with AI',
       icon: Icons.verified_user_outlined,
       color: Colors.orange,
     );
@@ -3469,7 +3467,7 @@ class _MoltbookDraftCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Record confirmed public facts in this Capsule. Gemini receives only the next queued item; the proposal stays local and cannot publish.',
+                    'Record confirmed public facts in this Capsule. The selected AI provider receives only the next queued item; the proposal stays local and cannot publish.',
                     style: TextStyle(color: Color(0xFFA9C7C4), height: 1.35),
                   ),
                   const SizedBox(height: 12),

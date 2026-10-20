@@ -344,7 +344,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/inference_provider_adapter.dart` (`InferenceProviderAdapter`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/inference_provider_adapter.dart` (`OpenAiResponsesInferenceProviderAdapter`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/inference_provider_adapter.dart` (`GeminiGenerateContentInferenceProviderAdapter`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/inference_provider_adapter.dart` (`LocalOpenAiCompatibleInferenceProviderAdapter`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/inference_provider_adapter.dart` (`OpenAiChatCompletionsInferenceProviderAdapter`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/invitation_actions_service.dart` (`InvitationActionsService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/invitation_delivery_service.dart` (`InvitationDeliveryService`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/invitation_intent_handler.dart` (`InvitationIntentHandler`) — rule `registry`

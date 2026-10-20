@@ -19,6 +19,11 @@ enum InferenceProviderKind {
     defaultModel: 'gemini-3.8-flash',
     requiresApiKey: true,
   ),
+  cloudflareWorkersAi(
+    id: 'cloudflare_workers_ai',
+    label: 'Cloudflare Workers AI',
+    defaultModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  ),
   localOpenAiCompatible(
     id: 'local_openai_compatible',
     label: 'Local OpenAI-compatible',
@@ -30,6 +35,9 @@ enum InferenceProviderKind {
   final String label;
   final String defaultModel;
   final bool requiresApiKey;
+
+  bool get requiresBaseUrl =>
+      this == localOpenAiCompatible || this == cloudflareWorkersAi;
 
   const InferenceProviderKind({
     required this.id,
@@ -287,19 +295,22 @@ class GeminiGenerateContentInferenceProviderAdapter
   }
 }
 
-class LocalOpenAiCompatibleInferenceProviderAdapter
+class OpenAiChatCompletionsInferenceProviderAdapter
     implements InferenceProviderAdapter {
+  @override
+  final InferenceProviderKind provider;
   final Duration timeout;
   final InferenceHttpClientFactory _clientFactory;
 
-  LocalOpenAiCompatibleInferenceProviderAdapter({
+  OpenAiChatCompletionsInferenceProviderAdapter({
+    this.provider = InferenceProviderKind.localOpenAiCompatible,
     this.timeout = const Duration(seconds: 60),
     InferenceHttpClientFactory? clientFactory,
-  }) : _clientFactory = clientFactory ?? HttpClient.new;
-
-  @override
-  InferenceProviderKind get provider =>
-      InferenceProviderKind.localOpenAiCompatible;
+  }) : assert(
+         provider == InferenceProviderKind.localOpenAiCompatible ||
+             provider == InferenceProviderKind.cloudflareWorkersAi,
+       ),
+       _clientFactory = clientFactory ?? HttpClient.new;
 
   @override
   Future<InferenceProviderResponse> ask({
@@ -310,14 +321,18 @@ class LocalOpenAiCompatibleInferenceProviderAdapter
   }) async {
     final normalizedModel = model.trim();
     if (normalizedModel.isEmpty) {
-      throw ArgumentError('Local OpenAI-compatible model is empty');
+      throw ArgumentError('${provider.label} model is empty');
     }
-    final endpoint = _chatCompletionsEndpoint(baseUrl);
+    final normalizedKey = apiKey.trim();
+    if (provider.requiresApiKey && normalizedKey.isEmpty) {
+      throw ArgumentError('${provider.label} API token is empty');
+    }
+    final endpoint = chatCompletionsEndpoint(provider, baseUrl);
     final client = _clientFactory();
     try {
       final request = await client.postUrl(endpoint).timeout(timeout);
+      request.followRedirects = false;
       request.headers.contentType = ContentType.json;
-      final normalizedKey = apiKey.trim();
       if (normalizedKey.isNotEmpty) {
         request.headers.set(
           HttpHeaders.authorizationHeader,
@@ -332,10 +347,26 @@ class LocalOpenAiCompatibleInferenceProviderAdapter
             <String, String>{'role': 'user', 'content': prompt.inputJson},
           ],
           'stream': false,
+          if (provider == InferenceProviderKind.cloudflareWorkersAi) ...{
+            'max_tokens': 2048,
+            'options': <String, bool>{'rejectIfBusy': true},
+          },
         }),
       );
       final response = await request.close().timeout(timeout);
       final body = await utf8.decodeStream(response).timeout(timeout);
+      if (provider == InferenceProviderKind.cloudflareWorkersAi &&
+          (response.statusCode < 200 || response.statusCode >= 300)) {
+        // Provider errors may echo credentials or input. Never surface them.
+        throw StateError(switch (response.statusCode) {
+          401 || 403 =>
+            'Cloudflare Workers AI access denied. Check the API token, Account ID and model access.',
+          429 =>
+            'Cloudflare Workers AI quota or rate limit reached. Check the dashboard before retrying.',
+          _ =>
+            'Cloudflare Workers AI request failed (HTTP ${response.statusCode}).',
+        });
+      }
       final decoded = jsonDecode(body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final message =
@@ -353,27 +384,59 @@ class LocalOpenAiCompatibleInferenceProviderAdapter
       );
     } on TimeoutException {
       throw StateError('AI provider request timed out');
+    } on FormatException {
+      throw StateError('${provider.label} returned an invalid response');
     } finally {
       client.close(force: true);
     }
   }
 
-  static Uri _chatCompletionsEndpoint(String? baseUrl) {
+  static String cloudflareBaseUrlForAccount(String accountId) {
+    final account = accountId.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(account)) {
+      throw ArgumentError(
+        'Cloudflare Account ID must contain 32 hexadecimal characters',
+      );
+    }
+    return 'https://api.cloudflare.com/client/v4/accounts/$account/ai';
+  }
+
+  static Uri chatCompletionsEndpoint(
+    InferenceProviderKind provider,
+    String? baseUrl,
+  ) {
     final normalized = baseUrl?.trim();
     if (normalized == null || normalized.isEmpty) {
-      throw ArgumentError('Local OpenAI-compatible base URL is empty');
+      throw ArgumentError('${provider.label} endpoint is not saved');
     }
     final base = Uri.tryParse(normalized);
     if (base == null || !base.hasScheme || base.host.isEmpty) {
-      throw ArgumentError('Local OpenAI-compatible base URL is invalid');
+      throw ArgumentError('${provider.label} base URL is invalid');
     }
     if (base.scheme != 'http' && base.scheme != 'https') {
-      throw ArgumentError('Local OpenAI-compatible base URL must use HTTP(S)');
+      throw ArgumentError('${provider.label} base URL must use HTTP(S)');
     }
     final cleanPath =
         base.path.endsWith('/')
             ? base.path.substring(0, base.path.length - 1)
             : base.path;
+    if (provider == InferenceProviderKind.cloudflareWorkersAi &&
+        (base.scheme != 'https' ||
+            base.host != 'api.cloudflare.com' ||
+            base.port != 443 ||
+            base.userInfo.isNotEmpty ||
+            base.hasQuery ||
+            base.hasFragment ||
+            !RegExp(
+              r'^/client/v4/accounts/[0-9a-f]{32}/ai$',
+            ).hasMatch(cleanPath))) {
+      throw ArgumentError(
+        'Cloudflare Workers AI requires its official HTTPS account endpoint',
+      );
+    }
+    if (!provider.requiresBaseUrl) {
+      throw ArgumentError('${provider.label} does not use Chat Completions');
+    }
     return base.replace(path: '$cleanPath/v1/chat/completions');
   }
 
@@ -408,8 +471,9 @@ InferenceProviderAdapter inferenceProviderAdapterFor(
     InferenceProviderKind.openAi => OpenAiResponsesInferenceProviderAdapter(),
     InferenceProviderKind.gemini =>
       GeminiGenerateContentInferenceProviderAdapter(),
-    InferenceProviderKind.localOpenAiCompatible =>
-      LocalOpenAiCompatibleInferenceProviderAdapter(),
+    InferenceProviderKind.localOpenAiCompatible ||
+    InferenceProviderKind.cloudflareWorkersAi =>
+      OpenAiChatCompletionsInferenceProviderAdapter(provider: provider),
   };
 }
 

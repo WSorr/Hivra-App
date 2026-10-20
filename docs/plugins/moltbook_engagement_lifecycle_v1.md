@@ -22,11 +22,11 @@ adapter, and receipt rules.
 ## 2. Non-goals
 
 - Moltbook state does not become Core or Capsule-ledger truth.
-- Gemini or another inference provider never receives credentials or an effect
+- The selected inference provider never receives credentials or an effect
   capability.
 - WASM does not receive network or secure-storage access.
 - This contract does not promise an always-running server or background daemon.
-- Anti-spam challenges are never bypassed. Gemini may solve an exact bounded
+- Anti-spam challenges are never bypassed. The selected inference provider may solve an exact bounded
   numeric prompt only after the publication effect is already authorized.
 - Pair Consensus is not required for one Capsule operating its own account.
 
@@ -172,7 +172,7 @@ message line, and changed areas enter the same feed as evidence, not mandatory
 public wording. Legacy repository fact-dump drafts cannot auto-publish. Raw patches,
 repository contents, issues, secrets, private Capsule state, and GitHub write
 authority remain unavailable. Exact commit replay is idempotent; source or
-response mutation fails closed before Gemini or WASM. Both producers use the
+response mutation fails closed before inference or WASM. Both producers use the
 same ingestion contract and gain no draft, approval, effect, or publication
 authority.
 The same commit SHA observed under the earlier repository evidence format is
@@ -280,7 +280,7 @@ Transition rules:
 8. The common effect processor delivers through the Moltbook adapter.
 9. A numeric provider challenge may disclose only its prompt to the unlocked
    Capsule AI runtime. The existing effect owner submits one strict numeric
-   answer; Gemini receives no credential, action token, account identity, or
+   answer; The selected inference provider receives no credential, action token, account identity, or
    publication authority.
 10. Only a target-bound verified receipt produces `succeeded`.
 11. An exact provider-referenced post marked as spam is a terminal provider
@@ -494,7 +494,7 @@ Bounded mode remains non-reference-grade until all are true:
 - macOS and Android manual evidence passes with a disposable account.
 
 The shipped default remains Assisted. Bounded requires explicit selection and
-runs only while the application and AI lease are active. Gemini cannot create
+runs only while the application and AI lease are active. The inference provider cannot create
 root comments, posts, votes, follows, direct messages, or broader authority;
 it may only propose the numeric answer for a challenge attached to an already
 authorized exact effect.

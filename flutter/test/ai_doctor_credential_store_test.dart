@@ -158,6 +158,78 @@ void main() {
       expect(secureStorage.values, isEmpty);
     });
 
+    test(
+      'Cloudflare account and token survive restart independently of Gemini',
+      () async {
+        const provider = InferenceProviderKind.cloudflareWorkersAi;
+        const url =
+            'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai';
+        final secureStorage = _FakeSecureStorage();
+        final writer = buildStore(secureStorage);
+        await writer.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+        await writer.saveApiKey(provider, 'cloudflare-test-token');
+        expect(writer.isPreferredProviderUnlocked, isFalse);
+        await expectLater(
+          writer.unlockPreferredProviderSession(),
+          throwsStateError,
+        );
+        await writer.saveBaseUrl(provider, url);
+        writer.lockSession();
+
+        final restarted = buildStore(secureStorage);
+        expect(await restarted.loadPreferredProvider(), provider);
+        expect(restarted.isPreferredProviderUnlocked, isFalse);
+        await restarted.unlockPreferredProviderSession();
+        expect(restarted.sessionApiKey(provider), 'cloudflare-test-token');
+        expect(restarted.sessionBaseUrl(provider), url);
+        expect(restarted.isPreferredProviderUnlocked, isTrue);
+        final preferenceRoot = await directories.rootDirectory();
+        final preference =
+            await File(
+              '${preferenceRoot.path}/ai_provider_preference.v1.json',
+            ).readAsString();
+        expect(preference, contains('cloudflare_workers_ai'));
+        expect(preference, isNot(contains('cloudflare-test-token')));
+        expect(preference, isNot(contains(url)));
+        restarted.lockSession();
+        expect(restarted.sessionApiKey(provider), isNull);
+        expect(restarted.sessionBaseUrl(provider), isNull);
+
+        await restarted.clearApiKey(provider);
+        await restarted.clearBaseUrl(provider);
+        expect(await restarted.loadApiKey(provider), isNull);
+        expect(await restarted.loadBaseUrl(provider), isNull);
+        expect(
+          await restarted.loadApiKey(InferenceProviderKind.gemini),
+          'gemini-key',
+        );
+        final root = await directories.rootDirectory();
+        final config =
+            await File('${root.path}/ai_provider_preference.v1.json').exists();
+        expect(config, isFalse);
+      },
+    );
+
+    test(
+      'Cloudflare rejects credential destinations outside its pinned account endpoint',
+      () async {
+        final secureStorage = _FakeSecureStorage();
+        final store = buildStore(secureStorage);
+        await expectLater(
+          store.saveBaseUrl(
+            InferenceProviderKind.cloudflareWorkersAi,
+            'https://example.com',
+          ),
+          throwsArgumentError,
+        );
+        expect(secureStorage.values, isEmpty);
+        expect(
+          store.sessionBaseUrl(InferenceProviderKind.cloudflareWorkersAi),
+          isNull,
+        );
+      },
+    );
+
     test('unlocks provider once and reuses the in-memory session', () async {
       final secureStorage = _FakeSecureStorage();
       final writer = buildStore(secureStorage);
