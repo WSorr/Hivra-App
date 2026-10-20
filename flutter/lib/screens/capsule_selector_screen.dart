@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/capsule_selector_service.dart';
 import '../services/hivra_file_picker_service.dart';
-import '../services/temporary_backup_share_service.dart';
+import '../services/backup_file_export_service.dart';
 import '../services/ui_event_log_service.dart';
 import 'main_screen.dart';
 import 'first_launch_screen.dart';
@@ -29,8 +29,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   late final CapsuleSelectorService _service =
       widget.service ?? CapsuleSelectorService();
   late final UiEventLogService _uiLog = widget.uiLog;
-  final TemporaryBackupShareService _backupShare =
-      TemporaryBackupShareService();
+  final BackupFileExportService _backupFiles = BackupFileExportService();
   List<CapsuleSelectorItem> _capsules = [];
   bool _isLoading = true;
   String? _selectingCapsuleHex;
@@ -212,40 +211,17 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
 
   Future<void> _exportCapsule(CapsuleSelectorItem capsule) async {
     try {
-      if (Platform.isMacOS || Platform.isAndroid) {
-        final shared = await _backupShare.share(
-          exportToPath:
-              (path) => _service.exportCapsuleBackupToPath(
-                capsule.publicKeyHex,
-                path,
-              ),
-        );
-        if (!shared) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Export failed')));
-        }
-        return;
-      }
-
-      final folder = await HivraFilePickerService.selectDirectory(
-        confirmButtonText: 'Save Here',
-      );
-      if (folder == null || folder.isEmpty) return;
-
-      final targetPath =
-          '$folder/capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json';
-
-      final path = await _service.exportCapsuleBackupToPath(
-        capsule.publicKeyHex,
-        targetPath,
+      final path = await _backupFiles.save(
+        exportToPath:
+            (path) =>
+                _service.exportCapsuleBackupToPath(capsule.publicKeyHex, path),
+        isCurrent: () => mounted,
       );
       if (path == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Export failed')));
+        ).showSnackBar(const SnackBar(content: Text('Backup save canceled')));
         return;
       }
       if (!mounted) return;

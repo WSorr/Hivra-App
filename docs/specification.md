@@ -526,15 +526,20 @@ Storage:
   authenticated associated data; Ledger bytes and Capsule metadata remain
   inside the ciphertext.
 - `CapsuleBackupCodec` is the sole backup wire-format owner and
-  `CapsulePersistenceService` is the sole backup filesystem writer. Screens
-  MUST NOT serialize, encrypt, decrypt, or persist backup payloads directly.
+  `CapsulePersistenceService` is the sole backup payload writer.
+  `BackupFileExportService` owns file export and sharing for both the seed
+  screen and Capsule selector. Android Save Backup MUST use the system
+  document-creation dialog and copy only the already encrypted export to the
+  selected document; it MUST NOT depend on an installed Share receiver or
+  request broad storage access. Screens and platform adapters MUST NOT
+  serialize, encrypt, decrypt, or reinterpret backup payloads.
 - An envelope recognized as v2 MUST fail closed on an unsupported suite,
   malformed field, wrong seed, or authentication failure. It MUST NOT fall
   back to v1 or raw-Ledger parsing after v2 recognition.
 - Plaintext `capsule-backup.v1.json` remains an internal per-Capsule recovery
   snapshot and read-only import compatibility format. New user-visible exports
   MUST NOT emit v1 or raw Ledger JSON.
-- Temporary files created for a system share sheet MUST have one lifecycle
+- Temporary files created for document delivery or a system share sheet MUST have one lifecycle
   owner and MUST be deleted in `finally` after success, cancellation, export
   failure, or share failure. A temporary share path MUST NOT be retained as a
   user-visible saved-backup location.

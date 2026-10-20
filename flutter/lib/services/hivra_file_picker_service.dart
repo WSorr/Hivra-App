@@ -1,9 +1,20 @@
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart';
 
 class HivraFilePickerService {
   const HivraFilePickerService._();
+
+  static const _documents = MethodChannel('hivra/file_documents');
+
+  static Future<String?> saveExistingJsonDocument({
+    required String sourcePath,
+    required String suggestedName,
+  }) => _documents.invokeMethod<String>('saveJsonDocument', {
+    'sourcePath': sourcePath,
+    'suggestedName': suggestedName,
+  });
 
   static const String androidDownloadsDocumentUri =
       'content://com.android.externalstorage.documents/document/primary%3ADownload';
@@ -25,13 +36,6 @@ class HivraFilePickerService {
       acceptedTypeGroups: const [
         XTypeGroup(label: 'WASM plugin packages', extensions: ['zip']),
       ],
-    );
-  }
-
-  static Future<String?> selectDirectory({required String confirmButtonText}) {
-    return getDirectoryPath(
-      initialDirectory: initialDirectoryFor(isAndroid: Platform.isAndroid),
-      confirmButtonText: confirmButtonText,
     );
   }
 

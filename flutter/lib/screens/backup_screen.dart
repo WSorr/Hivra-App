@@ -3,8 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/backup_service.dart';
-import '../services/hivra_file_picker_service.dart';
-import '../services/temporary_backup_share_service.dart';
+import '../services/backup_file_export_service.dart';
 
 class BackupScreen extends StatefulWidget {
   final Uint8List seed;
@@ -26,8 +25,7 @@ class BackupScreen extends StatefulWidget {
 
 class _BackupScreenState extends State<BackupScreen> {
   late final BackupService _backup = widget.service ?? BackupService();
-  final TemporaryBackupShareService _backupShare =
-      TemporaryBackupShareService();
+  final BackupFileExportService _backupFiles = BackupFileExportService();
   String? _mnemonic;
   String? _backupPath;
   bool _isSavingBackup = false;
@@ -63,39 +61,23 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _exportBackup() async {
     if (_isSavingBackup) return;
 
-    if (Platform.isAndroid) {
-      await _shareBackup();
-      return;
-    }
-
     setState(() {
       _isSavingBackup = true;
     });
     try {
-      final targetPath = await HivraFilePickerService.saveJsonDocument(
-        suggestedName:
-            'capsule-backup-${DateTime.now().millisecondsSinceEpoch}.json',
-        confirmButtonText: 'Save Backup',
+      final path = await _backupFiles.save(
+        exportToPath:
+            (path) => _backup.exportBackupEnvelopeToPath(path, widget.seed),
+        isCurrent: () => mounted,
       );
       if (!mounted) return;
-      if (targetPath == null || targetPath.isEmpty) {
+      if (path == null || path.isEmpty) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Backup save canceled')));
         return;
       }
 
-      final path = await _backup.exportBackupEnvelopeToPath(
-        targetPath,
-        widget.seed,
-      );
-      if (!mounted) return;
-      if (path == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to export capsule backup')),
-        );
-        return;
-      }
       setState(() {
         _backupPath = path;
       });
@@ -138,16 +120,10 @@ class _BackupScreenState extends State<BackupScreen> {
       setState(() {
         _isSavingBackup = true;
       });
-      final shared = await _backupShare.share(
+      await _backupFiles.share(
         exportToPath:
             (path) => _backup.exportBackupEnvelopeToPath(path, widget.seed),
       );
-      if (!mounted) return;
-      if (!shared) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to prepare capsule backup')),
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -187,9 +163,6 @@ class _BackupScreenState extends State<BackupScreen> {
     }
 
     final words = _mnemonic!.split(' ');
-    final backupActionLabel =
-        Platform.isAndroid ? 'Share Backup' : 'Save Backup';
-    final backupActionIcon = Platform.isAndroid ? Icons.share : Icons.save;
 
     return Scaffold(
       appBar: AppBar(
@@ -216,9 +189,7 @@ class _BackupScreenState extends State<BackupScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              Platform.isAndroid
-                  ? 'On Android, backup export currently uses the system share sheet.'
-                  : 'Save a backup file in addition to storing the seed phrase securely.',
+              'Save a backup file in addition to storing the seed phrase securely.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey),
             ),
@@ -276,22 +247,18 @@ class _BackupScreenState extends State<BackupScreen> {
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                            : Icon(backupActionIcon),
-                    label: Text(
-                      _isSavingBackup ? 'Saving...' : backupActionLabel,
-                    ),
+                            : const Icon(Icons.save),
+                    label: Text(_isSavingBackup ? 'Saving...' : 'Save Backup'),
                   ),
                 ),
-                if (!Platform.isAndroid) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _isSavingBackup ? null : _shareBackup,
-                      icon: const Icon(Icons.share),
-                      label: const Text('Share'),
-                    ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isSavingBackup ? null : _shareBackup,
+                    icon: const Icon(Icons.share),
+                    label: const Text('Share'),
                   ),
-                ],
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(

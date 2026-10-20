@@ -137,6 +137,22 @@ void main() {
     expect(runtime.exports, ['/chosen/capsule.json']);
   });
 
+  testWidgets('Save and Share remain usable on a narrow phone screen', (
+    tester,
+  ) async {
+    await showBackup(tester);
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save Backup'));
+    await tester.pumpAndSettle();
+    expect(find.text('Share'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Save Backup'));
+    await tester.pumpAndSettle();
+    expect(dialogs, hasLength(1));
+    expect(runtime.exports, isEmpty);
+  });
+
   testWidgets('picker failure does not export and allows retry', (
     tester,
   ) async {

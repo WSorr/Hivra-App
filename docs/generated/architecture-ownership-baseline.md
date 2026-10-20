@@ -307,6 +307,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPOSITION_SUPPORT` — `flutter/lib/services/ai_tooling_module_service.dart` (`AiToolingModule`) — rule `composition_root`
 - `CAPABILITY_OWNER` — `flutter/lib/services/app_runtime_service.dart` (`AppRuntimeService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/atomic_file_write_service.dart` (`AtomicFileWriteService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/backup_file_export_service.dart` (`BackupFileExportService`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/backup_service.dart` (`BackupService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_market_data_adapter.dart` (`BingxMarketDataAdapter`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_address_service.dart` (`CapsuleAddressService`) — rule `registry`
@@ -382,7 +383,6 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `REGISTERED_EVIDENCE` — `flutter/lib/services/relationship_projection_service.dart` (`RelationshipProjectionService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/relationship_service.dart` (`RelationshipService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/settings_service.dart` (`SettingsService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/temporary_backup_share_service.dart` (`TemporaryBackupShareService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/transport_health_policy_service.dart` (`TransportHealthPolicyService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_event_log_service.dart` (`UiEventLogService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_feedback_service.dart` (`UiFeedbackService`) — rule `current_flutter_service_support`

@@ -38,6 +38,11 @@ docs/checklists/release-manual-signoff-log.md
 - [ ] Export a user-visible Capsule backup and confirm the JSON identifies
       `hivra.capsule_backup` version `2` without visible Ledger `owner` or
       `events` fields.
+- [ ] On Android, Save Backup opens the system document-creation dialog without
+      requiring a Share receiver. Cancel leaves no saved-success claim; save
+      creates a file that remains available after Hivra restarts and can be
+      selected for authenticated recovery. Capsule selector Export Backup uses
+      the same save flow.
 - [ ] Recover with the matching seed and encrypted backup; confirm owner and
       Ledger history match the source Capsule.
 - [ ] Confirm a wrong seed or modified ciphertext fails without importing any
