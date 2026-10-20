@@ -31,6 +31,9 @@ Hivra.
   unavailable.
 - `publish_github_release.sh`: the only approved GitHub Release publication
   path; binds tag, source commit, metadata, artifact digests, and signoff.
+  Metadata must match the requested channel and prerelease policy; public
+  macOS metadata must confirm signing and notarization. Unsigned test builds
+  remain permitted.
 
 ## Gate ownership
 

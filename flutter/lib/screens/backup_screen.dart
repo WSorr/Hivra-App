@@ -10,12 +10,14 @@ class BackupScreen extends StatefulWidget {
   final Uint8List seed;
   final bool isNewWallet;
   final bool isGenesis;
+  final BackupService? service;
 
   const BackupScreen({
     super.key,
     required this.seed,
     this.isNewWallet = true,
     this.isGenesis = false,
+    this.service,
   });
 
   @override
@@ -23,7 +25,7 @@ class BackupScreen extends StatefulWidget {
 }
 
 class _BackupScreenState extends State<BackupScreen> {
-  final BackupService _backup = BackupService();
+  late final BackupService _backup = widget.service ?? BackupService();
   final TemporaryBackupShareService _backupShare =
       TemporaryBackupShareService();
   String? _mnemonic;
@@ -61,31 +63,26 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _exportBackup() async {
     if (_isSavingBackup) return;
 
-    if (Platform.isMacOS || Platform.isAndroid) {
+    if (Platform.isAndroid) {
       await _shareBackup();
       return;
     }
 
+    setState(() {
+      _isSavingBackup = true;
+    });
     try {
-      final folder = await HivraFilePickerService.selectDirectory(
-        confirmButtonText: 'Save Here',
+      final targetPath = await HivraFilePickerService.saveJsonDocument(
+        suggestedName:
+            'capsule-backup-${DateTime.now().millisecondsSinceEpoch}.json',
+        confirmButtonText: 'Save Backup',
       );
-      if (folder == null || folder.isEmpty) {
-        if (!mounted) return;
+      if (!mounted) return;
+      if (targetPath == null || targetPath.isEmpty) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Backup save canceled')));
         return;
-      }
-
-      final fileName =
-          'capsule-backup-${DateTime.now().toIso8601String()}.json';
-      final targetPath = '$folder/$fileName';
-
-      if (mounted) {
-        setState(() {
-          _isSavingBackup = true;
-        });
       }
 
       final path = await _backup.exportBackupEnvelopeToPath(
@@ -289,7 +286,7 @@ class _BackupScreenState extends State<BackupScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _shareBackup,
+                      onPressed: _isSavingBackup ? null : _shareBackup,
                       icon: const Icon(Icons.share),
                       label: const Text('Share'),
                     ),
