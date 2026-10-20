@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/capsule_selector_runtime.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
@@ -102,11 +103,21 @@ class _DeletionRuntime implements CapsuleSelectorRuntime {
 
 class _ScreenService extends CapsuleSelectorService {
   final List<CapsuleSelectorItem> items;
+  final exports = <(String, String)>[];
 
   _ScreenService(this.items) : super(_ActivationRuntime());
 
   @override
   Future<List<CapsuleSelectorItem>> loadCapsules() async => items;
+
+  @override
+  Future<String?> exportCapsuleBackupToPath(
+    String capsuleHex,
+    String path,
+  ) async {
+    exports.add((capsuleHex, path));
+    return path;
+  }
 }
 
 class _NoopUiLog implements UiEventLogService {
@@ -372,29 +383,29 @@ void main() {
   });
 
   test('activation timeout returns a retryable error', () async {
-      final activation = Completer<void>();
-      final log = _NoopUiLog();
-      final service = CapsuleSelectorService(
-        _ActivationRuntime(activationCompleter: activation),
-        log,
-        null,
-        const Duration(milliseconds: 1),
-      );
+    final activation = Completer<void>();
+    final log = _NoopUiLog();
+    final service = CapsuleSelectorService(
+      _ActivationRuntime(activationCompleter: activation),
+      log,
+      null,
+      const Duration(milliseconds: 1),
+    );
 
-      final result = service.activateCapsule('aa');
-      await expectLater(result, throwsA(isA<StateError>()));
-      expect(
-        log.entries,
-        contains((
-          source: 'capsule.selector.service',
-          message: 'activate.timeout aa seconds=0',
-        )),
-      );
+    final result = service.activateCapsule('aa');
+    await expectLater(result, throwsA(isA<StateError>()));
+    expect(
+      log.entries,
+      contains((
+        source: 'capsule.selector.service',
+        message: 'activate.timeout aa seconds=0',
+      )),
+    );
 
-      activation.complete();
-      await Future<void>.delayed(Duration.zero);
-      expect(await service.activateCapsule('aa'), isTrue);
-    });
+    activation.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(await service.activateCapsule('aa'), isTrue);
+  });
 
   test('deleting a capsule clears its process chat projection', () async {
     const capsuleHex =
@@ -463,6 +474,58 @@ void main() {
       expect(inbox.loadMessages(capsuleHex), hasLength(1));
     },
   );
+
+  for (final canceled in [false, true]) {
+    testWidgets('selector export uses Save Backup (canceled: $canceled)', (
+      tester,
+    ) async {
+      const channel = MethodChannel('plugins.flutter.io/file_selector');
+      var dialogs = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'getSavePath');
+            dialogs++;
+            return canceled ? null : '/chosen/backup.json';
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final capsuleHex = List.filled(32, 'aa').join();
+      final service = _ScreenService([
+        _item(
+          pubKeyHex: capsuleHex,
+          displayKeyText: 'h1capsule',
+          network: 'NESTE',
+          ledgerVersion: 1,
+          lastActive: DateTime.utc(2026, 10, 20),
+        ),
+      ]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CapsuleSelectorScreen(
+            autoSelectSingle: false,
+            service: service,
+            uiLog: _NoopUiLog(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Capsule actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Export Backup'));
+      await tester.pumpAndSettle();
+      expect(dialogs, 1);
+      expect(
+        service.exports,
+        canceled ? isEmpty : [(capsuleHex, '/chosen/backup.json')],
+      );
+      expect(
+        find.textContaining('Exported:'),
+        canceled ? findsNothing : findsOneWidget,
+      );
+    });
+  }
 
   testWidgets('exposes capsule actions without a long press', (tester) async {
     final now = DateTime.utc(2026, 8, 31, 12);

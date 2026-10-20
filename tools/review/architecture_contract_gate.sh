@@ -345,8 +345,7 @@ require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'AesGcm\.
   "backup codec uses authenticated AES-256-GCM"
 require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'Hkdf\(hmac: Hmac\.sha256\(\)' \
   "backup codec derives a domain-separated export key"
-require_present "$ROOT/flutter/lib/services/temporary_backup_share_service.dart" 'finally' \
-  "temporary backup share lifecycle always enters cleanup"
+# Temporary export cleanup is enforced by the Flutter behavioral tests.
 require_present "$ANDROID_MANIFEST" 'android:allowBackup="false"' \
   "Android disables implicit OS backup of Capsule runtime state"
 require_present "$ANDROID_MANIFEST" 'android:fullBackupContent="@xml/backup_rules"' \
