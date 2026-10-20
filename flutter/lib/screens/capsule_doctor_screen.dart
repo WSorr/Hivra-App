@@ -239,9 +239,10 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
       setState(() {
         _provider = provider;
         _modelController.text = provider.defaultModel;
-        if (provider == InferenceProviderKind.localOpenAiCompatible) {
-          _baseUrlController.text = 'http://127.0.0.1:11434';
-        }
+        _baseUrlController.text =
+            provider == InferenceProviderKind.localOpenAiCompatible
+                ? 'http://127.0.0.1:11434'
+                : '';
       });
       await _refreshApiKeyStatus(provider);
     } catch (error) {
@@ -294,18 +295,30 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
 
   Future<void> _saveProviderSettings() async {
     await _run(() async {
-      if (_provider.requiresApiKey ||
-          _apiKeyController.text.trim().isNotEmpty) {
+      if (_provider == InferenceProviderKind.cloudflareWorkersAi &&
+          _baseUrlController.text.trim().isEmpty &&
+          !_apiKeyConfigured) {
+        throw ArgumentError(
+          'Enter the Cloudflare Account ID before saving a new token',
+        );
+      }
+      if (_provider.requiresBaseUrl &&
+          _baseUrlController.text.trim().isNotEmpty) {
+        final baseUrl =
+            _provider == InferenceProviderKind.cloudflareWorkersAi
+                ? OpenAiChatCompletionsInferenceProviderAdapter.cloudflareBaseUrlForAccount(
+                  _baseUrlController.text,
+                )
+                : _baseUrlController.text;
+        await widget.chatService.saveProviderBaseUrl(_provider.id, baseUrl);
+      }
+      if (_apiKeyController.text.trim().isNotEmpty) {
         await widget.chatService.saveProviderApiKey(
           _provider.id,
           _apiKeyController.text,
         );
-      }
-      if (_provider == InferenceProviderKind.localOpenAiCompatible) {
-        await widget.chatService.saveProviderBaseUrl(
-          _provider.id,
-          _baseUrlController.text,
-        );
+      } else if (_provider.requiresApiKey && !_apiKeyConfigured) {
+        throw ArgumentError('${_provider.label} API token is not saved');
       }
       await _uiLog.log(
         'ai_capsule_analyst',
@@ -482,11 +495,15 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                         setState(() {
                           _provider = provider;
                           _modelController.text = provider.defaultModel;
-                          if (provider ==
-                              InferenceProviderKind.localOpenAiCompatible) {
-                            _baseUrlController.text = 'http://127.0.0.1:11434';
-                          }
+                          _baseUrlController.text =
+                              provider ==
+                                      InferenceProviderKind
+                                          .localOpenAiCompatible
+                                  ? 'http://127.0.0.1:11434'
+                                  : '';
+                          _apiKeyController.clear();
                           _error = null;
+                          _apiKeyConfigured = false;
                           _apiKeyStatusKnown = false;
                           _apiKeyStatusError = null;
                         });
@@ -505,24 +522,40 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                       },
             ),
             const SizedBox(height: 12),
-            if (_provider == InferenceProviderKind.localOpenAiCompatible) ...[
+            if (_provider.requiresBaseUrl) ...[
               TextField(
                 controller: _baseUrlController,
-                decoration: const InputDecoration(
-                  labelText: 'Local OpenAI-compatible base URL',
+                decoration: InputDecoration(
+                  labelText:
+                      _provider == InferenceProviderKind.cloudflareWorkersAi
+                          ? 'Cloudflare Account ID'
+                          : 'Local OpenAI-compatible base URL',
                   helperText:
-                      'Example: http://127.0.0.1:11434. The app calls /v1/chat/completions.',
-                  border: OutlineInputBorder(),
+                      _provider == InferenceProviderKind.cloudflareWorkersAi
+                          ? '32-character Account ID from Workers AI → Use REST API. Leave blank to keep the saved account.'
+                          : 'Example: http://127.0.0.1:11434. The app calls /v1/chat/completions.',
+                  border: const OutlineInputBorder(),
                 ),
               ),
+              if (_provider == InferenceProviderKind.cloudflareWorkersAi)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Workers Free includes 10,000 Neurons/day, resetting at 00:00 UTC. Some models require payment. Use a Workers AI API token; account billing applies.',
+                  ),
+                ),
               const SizedBox(height: 12),
             ],
             TextField(
               controller: _apiKeyController,
               obscureText: _provider.requiresApiKey,
+              autocorrect: false,
+              enableSuggestions: false,
               decoration: InputDecoration(
                 labelText:
-                    _provider.requiresApiKey
+                    _provider == InferenceProviderKind.cloudflareWorkersAi
+                        ? '${_provider.label} API token'
+                        : _provider.requiresApiKey
                         ? '${_provider.label} API key'
                         : '${_provider.label} optional API key',
                 helperText:

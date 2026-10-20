@@ -2324,7 +2324,9 @@ class MoltbookRuntimeModule {
     if (!eligible) return operation;
     if (!moltbookPublicBulletinAi.isSessionUnlocked) {
       if (requireUnlocked) {
-        throw StateError('Unlock Gemini before solving Moltbook verification');
+        throw StateError(
+          'Unlock the selected AI provider before solving Moltbook verification',
+        );
       }
       return operation;
     }

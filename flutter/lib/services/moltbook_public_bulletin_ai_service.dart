@@ -5,8 +5,6 @@ import '../models/moltbook_provider_models.dart';
 import 'capsule_ai_runtime_service.dart';
 
 class MoltbookPublicBulletinAiService {
-  static const String geminiProviderId = 'gemini';
-  static const String geminiProviderLabel = 'Gemini';
   static const String canonicalProductAnchor =
       'Hivra is a local-first runtime for user-owned Capsules. A Capsule can '
       'operate independently, keep its own ledger, run isolated WASM drones, '
@@ -39,25 +37,33 @@ class MoltbookPublicBulletinAiService {
   MoltbookPublicBulletinAiService({required CapsuleInferenceRuntime runtime})
     : _runtime = runtime;
 
-  bool get isSessionUnlocked =>
-      _runtime.isProviderSessionUnlocked &&
-      _runtime.sessionProviderLabel == geminiProviderLabel;
+  bool get isSessionUnlocked => _runtime.isProviderSessionUnlocked;
 
   String? get sessionProviderLabel =>
-      isSessionUnlocked ? geminiProviderLabel : null;
+      isSessionUnlocked ? _runtime.sessionProviderLabel : null;
 
   Future<String> unlockSession() async {
-    await _runtime.unlockProviderSession(geminiProviderId);
-    if (!isSessionUnlocked) {
-      throw StateError(
-        '$geminiProviderLabel session did not become available for Moltbook',
-      );
+    await _runtime.unlockPreferredProviderSession();
+    final label = sessionProviderLabel;
+    if (!isSessionUnlocked || label == null) {
+      throw StateError('AI session did not become available for Moltbook');
     }
-    return geminiProviderLabel;
+    return label;
   }
 
   void lockSession() {
     _runtime.lockProviderSession();
+  }
+
+  String _requireSessionProviderId() {
+    final provider = _runtime.sessionProviderId;
+    if (!isSessionUnlocked || provider == null) {
+      throw const CapsuleInferenceFailure(
+        CapsuleInferenceFailureCode.sessionLocked,
+        'Unlock the selected AI provider before preparing a Moltbook proposal',
+      );
+    }
+    return provider;
   }
 
   Future<MoltbookPublicBulletinProposal> propose({
@@ -113,6 +119,7 @@ class MoltbookPublicBulletinAiService {
       },
     };
     final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    final providerId = _requireSessionProviderId();
     Future<MoltbookPublicBulletinProposal> inferAndParse(int attempt) async {
       final response = await _runtime.infer(
         CapsuleInferenceRequestV1.create(
@@ -127,7 +134,7 @@ class MoltbookPublicBulletinAiService {
           proposalSchemaId: publicBulletinProposalSchemaId,
           proposalSchemaVersion: 1,
           providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
-          providerId: geminiProviderId,
+          providerId: providerId,
           cancellationScope:
               '$publicBulletinCapabilityId:$capsuleRootHex:$attempt',
           instructions: attempt == 0 ? _instructions : _repairInstructions,
@@ -233,6 +240,7 @@ class MoltbookPublicBulletinAiService {
       },
     };
     final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    final providerId = _requireSessionProviderId();
     final targetScope =
         '${engagementPlan.targetPostId}:${targetCommentId ?? "root"}';
     final response = await _runtime.infer(
@@ -249,7 +257,7 @@ class MoltbookPublicBulletinAiService {
         proposalSchemaId: replyProposalSchemaId,
         proposalSchemaVersion: 1,
         providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
-        providerId: geminiProviderId,
+        providerId: providerId,
         cancellationScope: '$replyCapabilityId:$capsuleRootHex:$targetScope',
         instructions: _replyInstructions,
         input: input,
@@ -279,6 +287,7 @@ class MoltbookPublicBulletinAiService {
       throw ArgumentError('Moltbook verification operation is invalid');
     }
     final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    final providerId = _requireSessionProviderId();
     final normalizedChallenge = _normalizeNumericChallenge(normalizedPrompt);
 
     Future<String> inferAndParse(int attempt) async {
@@ -294,7 +303,7 @@ class MoltbookPublicBulletinAiService {
           proposalSchemaId: verificationProposalSchemaId,
           proposalSchemaVersion: 1,
           providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
-          providerId: geminiProviderId,
+          providerId: providerId,
           cancellationScope:
               '$verificationCapabilityId:$capsuleRootHex:$normalizedOperationId:$attempt',
           instructions: _verificationInstructions,

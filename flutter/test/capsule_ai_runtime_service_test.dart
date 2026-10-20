@@ -90,6 +90,49 @@ void main() {
     expect(adapterCreated, isFalse);
   });
 
+  test(
+    'Cloudflare uses the shared runtime lease and fails closed after provider switching',
+    () async {
+      const provider = InferenceProviderKind.cloudflareWorkersAi;
+      final store = _SessionCredentialStore();
+      final adapter = _RecordingAdapter(
+        adapterProvider: provider,
+        responseProvider: provider,
+      );
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) => adapter,
+      );
+      await runtime.unlockProviderSession(provider.id);
+      final request = _request(
+        providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+        providerId: provider.id,
+      );
+      final result = await runtime.infer(request);
+      expect(runtime.sessionProviderId, provider.id);
+      expect(runtime.sessionProviderLabel, provider.label);
+      expect(adapter.apiKey, '${provider.id}-key');
+      expect(result.model, provider.defaultModel);
+      expect(result.providerId, provider.id);
+
+      await runtime.unlockProviderSession('gemini');
+      await expectLater(
+        runtime.infer(request),
+        throwsA(
+          isA<CapsuleInferenceFailure>().having(
+            (e) => e.code,
+            'code',
+            CapsuleInferenceFailureCode.sessionLocked,
+          ),
+        ),
+      );
+      expect(adapter.callCount, 1);
+      runtime.lockProviderSession();
+      expect(runtime.sessionProviderId, isNull);
+    },
+  );
+
   test('request for another Capsule fails before provider dispatch', () async {
     var adapterCreated = false;
     final runtime = CapsuleAiRuntimeService(

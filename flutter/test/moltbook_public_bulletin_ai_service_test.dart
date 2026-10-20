@@ -73,10 +73,7 @@ void main() {
       MoltbookPublicBulletinAiService.publicBulletinProposalSchemaId,
     );
     expect(request.providerPolicy, CapsuleInferenceProviderPolicyV1.explicit);
-    expect(
-      request.providerId,
-      MoltbookPublicBulletinAiService.geminiProviderId,
-    );
+    expect(request.providerId, 'gemini');
     expect(request.modelPolicy, CapsuleInferenceModelPolicyV1.providerDefault);
     expect(request.disclosedSectionIds, <String>[
       'constraints',
@@ -651,15 +648,97 @@ void main() {
     expect(service.sessionProviderLabel, 'Gemini');
     service.lockSession();
     expect(service.isSessionUnlocked, isFalse);
-    expect(runtime.operations, <String>['unlock:gemini', 'lock']);
+    expect(runtime.operations, <String>['unlock:preferred', 'lock']);
   });
 
-  test('Moltbook session is locked when another provider is active', () {
+  test('Moltbook shares the selected provider session', () {
     final runtime = _RecordingRuntime(providerLabel: 'OpenAI', unlocked: true);
     final service = MoltbookPublicBulletinAiService(runtime: runtime);
 
-    expect(service.isSessionUnlocked, isFalse);
-    expect(service.sessionProviderLabel, isNull);
+    expect(service.isSessionUnlocked, isTrue);
+    expect(service.sessionProviderLabel, 'OpenAI');
+  });
+
+  test(
+    'Cloudflare prepares news, replies and verification through the same selected session',
+    () async {
+      final runtime = _RecordingRuntime(
+        providerLabel: 'Cloudflare Workers AI',
+        unlocked: false,
+        responseTexts: [
+          '{"title":"Chat survives restart","body":"Capsule Chat now resumes after restart, so people can continue their conversation."}',
+          '{"body":"The journal keeps delivery evidence separate from Capsule truth.","grounding_points":["A timeout is not a failure receipt."]}',
+          '{"left_operand":"25","operator":"+","right_operand":"10","answer":"35.00"}',
+        ],
+      );
+      final service = MoltbookPublicBulletinAiService(runtime: runtime);
+      expect(await service.unlockSession(), 'Cloudflare Workers AI');
+      final news = await service.propose(
+        sourceNotes: 'Capsule Chat now resumes after restart.',
+        category: 'general',
+        personaSummary: 'Explain Hivra factually.',
+      );
+      expect(news.providerLabel, 'Cloudflare Workers AI');
+      final reply = await service.proposeReply(
+        conversation: _conversation(),
+        engagementPlan: _engagementPlan(),
+        personaSummary: 'Explain Hivra factually.',
+      );
+      expect(reply.providerLabel, 'Cloudflare Workers AI');
+      expect(
+        await service.solveNumericVerification(
+          prompt:
+              'A lobster swims 25 meters and then 10 more. What is the total?',
+          operationId: 'op-cloudflare',
+        ),
+        '35.00',
+      );
+      expect(runtime.requests, hasLength(3));
+      expect(
+        runtime.requests.every(
+          (r) =>
+              r.providerId == 'cloudflare_workers_ai' &&
+              r.providerPolicy == CapsuleInferenceProviderPolicyV1.explicit,
+        ),
+        isTrue,
+      );
+      expect(runtime.operations, [
+        'unlock:preferred',
+        'infer',
+        'infer',
+        'infer',
+      ]);
+      service.lockSession();
+      await expectLater(
+        service.solveNumericVerification(
+          prompt: '25 plus 10?',
+          operationId: 'op-locked',
+        ),
+        throwsA(isA<CapsuleInferenceFailure>()),
+      );
+      expect(runtime.requests, hasLength(3));
+    },
+  );
+
+  test('bounded news repair stays bound to Cloudflare', () async {
+    final runtime = _RecordingRuntime(
+      providerLabel: 'Cloudflare Workers AI',
+      responseTexts: [
+        'invalid proposal',
+        '{"title":"Chat survives restart","body":"Capsule Chat now resumes after restart, so people can continue their conversation."}',
+      ],
+    );
+    final service = MoltbookPublicBulletinAiService(runtime: runtime);
+    await service.propose(
+      sourceNotes: 'Capsule Chat now resumes after restart.',
+      category: 'general',
+      personaSummary: 'Explain facts.',
+    );
+    expect(runtime.requests, hasLength(2));
+    expect(
+      runtime.requests.map((r) => r.providerId),
+      everyElement('cloudflare_workers_ai'),
+    );
   });
 }
 
@@ -673,6 +752,7 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   final String providerLabel;
   final List<String> operations = <String>[];
   CapsuleInferenceRequestV1? request;
+  final requests = <CapsuleInferenceRequestV1>[];
   int _responseIndex = 0;
   bool unlocked;
 
@@ -692,6 +772,16 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
 
   @override
   String? get sessionProviderLabel => unlocked ? providerLabel : null;
+
+  @override
+  String? get sessionProviderId =>
+      !unlocked
+          ? null
+          : switch (providerLabel) {
+            'Cloudflare Workers AI' => 'cloudflare_workers_ai',
+            'OpenAI' => 'openai',
+            _ => 'gemini',
+          };
 
   @override
   Future<void> unlockPreferredProviderSession() async {
@@ -716,6 +806,7 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
     CapsuleInferenceRequestV1 request,
   ) async {
     this.request = request;
+    requests.add(request);
     operations.add('infer');
     if (error != null) throw error!;
     final response =
@@ -728,9 +819,9 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
       proposalSchemaId: request.proposalSchemaId,
       proposalSchemaVersion: request.proposalSchemaVersion,
       proposalText: response,
-      providerId: 'gemini',
-      providerLabel: 'Gemini',
-      model: 'gemini-test',
+      providerId: sessionProviderId!,
+      providerLabel: providerLabel,
+      model: '${sessionProviderId!}-test',
       responseHashHex:
           'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       elapsedMilliseconds: 1,
