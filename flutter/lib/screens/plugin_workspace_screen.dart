@@ -13,6 +13,7 @@ typedef PluginWorkspaceAction =
 /// Displays bounded package-owned fields, actions and evidence. This shell
 /// does not know which product or strategy produced them.
 class PluginWorkspaceScreen extends StatefulWidget {
+  final List<String> capabilities;
   final PluginWorkspaceAction runWorkspaceAction;
   final Future<List<String>> Function(String fieldId)? readFieldOptions;
   final Future<Map<String, dynamic>> Function({
@@ -32,6 +33,7 @@ class PluginWorkspaceScreen extends StatefulWidget {
 
   const PluginWorkspaceScreen({
     super.key,
+    this.capabilities = const [],
     required this.runWorkspaceAction,
     this.readFieldOptions,
     this.configureExecution,
@@ -53,6 +55,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   bool _choosing = false;
   Timer? _refresh;
   AppLifecycleState? _appState;
+
+  bool get _supportsExecution =>
+      widget.capabilities.contains('workspace.schedule');
 
   @override
   void initState() {
@@ -83,6 +88,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     if (mounted &&
         _appState == AppLifecycleState.resumed &&
         ModalRoute.of(context)?.isCurrent == true &&
+        _supportsExecution &&
         _view?['execution'] != null &&
         !_busy &&
         !_choosing &&
@@ -299,7 +305,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       });
       _refresh?.cancel();
       _refresh = null;
-      if (view['execution'] != null) {
+      if (_supportsExecution && view['execution'] != null) {
         final remote = view['host_connection']?['target'] == 'vps';
         _refresh = Timer.periodic(
           Duration(seconds: remote ? 60 : 15),
@@ -779,11 +785,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          if (widget.connectVps != null) ...[
+          if (view != null &&
+              _supportsExecution &&
+              widget.connectVps != null) ...[
             Text(
               _view?['host_connection']?['target'] == 'vps'
                   ? 'VPS ${_view?["host_connection"]?["host"] ?? ""}: $health'
-                  : 'Trade online: this app must remain open.',
+                  : 'Local execution: keep this app open for scheduled cycles.',
             ),
             Wrap(
               spacing: 12,
@@ -793,8 +801,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                   child: const Text('Connect VPS'),
                 ),
                 TextButton(
-                  onPressed: _busy || _choosing ? null : _useOnline,
-                  child: const Text('Trade online'),
+                  onPressed:
+                      _busy || _choosing || widget.useOnline == null
+                          ? null
+                          : _useOnline,
+                  child: const Text('Use local execution'),
                 ),
               ],
             ),
@@ -815,7 +826,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               child: const Text('Retry opening plugin'),
             ),
           if (view != null) ...[
-            if (view['execution'] is Map)
+            if (_supportsExecution && view['execution'] is Map)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
@@ -836,7 +847,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             if ((view['fields'] as List).any(
                   (raw) => (raw as Map)['advanced'] == true,
                 ) ||
-                (widget.connectVps != null &&
+                (_supportsExecution &&
+                    widget.connectVps != null &&
                     widget.useOnline != null &&
                     view['host_connection']?['installed'] == true))
               ExpansionTile(
@@ -845,7 +857,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                 children: [
                   for (final raw in view['fields'] as List)
                     if ((raw as Map)['advanced'] == true) _field(raw),
-                  if (widget.connectVps != null &&
+                  if (_supportsExecution &&
+                      widget.connectVps != null &&
                       widget.useOnline != null &&
                       view['host_connection']?['installed'] == true)
                     TextButton(
@@ -862,23 +875,24 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               runSpacing: 12,
               children: [
                 for (final raw in view['actions'] as List)
-                  FilledButton(
-                    key: ValueKey('plugin-action-${(raw as Map)['id']}'),
-                    onPressed:
-                        raw['host'] == 'workspace.stop'
-                            ? () => _run(raw['id'] as String)
-                            : _busy ||
-                                _choosing ||
-                                (_edited && raw['host'] == 'bingx.order.submit')
-                            ? null
-                            : () => _run(raw['id'] as String),
-                    child: Text(
-                      raw['host'] == 'workspace.start' &&
-                              view['host_connection']?['target'] == 'vps'
-                          ? 'Start VPS cycles'
-                          : raw['label'] as String,
+                  if (_supportsExecution ||
+                      !const {
+                        'workspace.start',
+                        'workspace.stop',
+                      }.contains((raw as Map)['host']))
+                    FilledButton(
+                      key: ValueKey('plugin-action-${(raw as Map)['id']}'),
+                      onPressed:
+                          raw['host'] == 'workspace.stop'
+                              ? () => _run(raw['id'] as String)
+                              : _busy ||
+                                  _choosing ||
+                                  (_edited &&
+                                      raw['host'] == 'bingx.order.submit')
+                              ? null
+                              : () => _run(raw['id'] as String),
+                      child: Text(raw['label'] as String),
                     ),
-                  ),
               ],
             ),
             const SizedBox(height: 20),

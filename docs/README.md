@@ -53,7 +53,7 @@ release row to make it current.
 | Transport delivery and receipts | `architecture/transport-delivery-lifecycle.md` |
 | External effects | `architecture/external-effect-lifecycle.md` |
 | Plugin installation, replacement and removal recovery | `architecture/plugin-package-lifecycle.md` |
-| Plugin host API and package-owned workspace recovery | `plugins/plugin_host_api_v1.md` |
+| Plugin host API and package-owned workspace UI/recovery | `plugins/plugin_host_api_v1.md` |
 | Capsule-scoped secrets | `architecture/capsule-scoped-secret-lifecycle.md` |
 | Capsule AI Runtime, credential availability and session unlock | `architecture/capsule-ai-runtime.md` |
 | AI proposal boundary | `architecture/ai-proposal-boundary.md` |

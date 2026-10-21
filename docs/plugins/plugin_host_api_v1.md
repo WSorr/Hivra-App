@@ -35,6 +35,12 @@ provider effects merely because a WASM call succeeds.
     it does not implement package business logic. Fields marked `advanced`
     and calculation evidence are collapsed by default; status and errors
     remain visible.
+    The shell receives the installed manifest capabilities with the workspace
+    binding. Executor selection, runtime update, execution status and public
+    Start/Stop controls require `workspace.schedule`; available host callbacks
+    or saved connection metadata do not opt a package into these controls.
+    Action labels always come from the package, including on a VPS. Host-owned
+    authorization dialogs still explain the exact financial scope separately.
   - State is at most 32 KiB and is persisted through the existing
     Capsule/plugin file store. One action is serialized per Capsule/plugin;
     Capsule and installed-package identity are checked before continuations.

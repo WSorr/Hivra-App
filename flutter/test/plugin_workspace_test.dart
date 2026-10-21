@@ -2120,6 +2120,123 @@ void main() {
     },
   );
 
+  for (final scheduled in [false, true]) {
+    testWidgets(
+      'workspace tools follow the package schedule capability: $scheduled',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final opening = Completer<Map<String, dynamic>>();
+        final actions = <String>[];
+        var hostCalls = 0;
+        final data = {
+          ...view(),
+          'fields': [
+            {
+              'id': 'opaque_option',
+              'label': 'Package option',
+              'type': 'text',
+              'value': 'package value',
+              'advanced': true,
+            },
+          ],
+          'host_connection': {
+            'target': 'vps',
+            'host': 'example.invalid',
+            'installed': true,
+            'health': 'not_started',
+          },
+          'execution': {
+            'allow_new_entries': false,
+            'mode': 'vps',
+            'expires_at_ms': 2000000000000,
+          },
+          'actions': [
+            {'id': 'start', 'label': 'Package inspection'},
+            {
+              'id': 'authorize',
+              'label': 'Package schedule label',
+              'host': 'workspace.start',
+            },
+            {
+              'id': 'halt',
+              'label': 'Package stop label',
+              'host': 'workspace.stop',
+            },
+          ],
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              capabilities: [
+                'workspace.render',
+                if (scheduled) 'workspace.schedule',
+              ],
+              runWorkspaceAction: (
+                action,
+                settings, {
+                credentials,
+                approvedOrder,
+              }) async {
+                actions.add(action);
+                return action == 'open' ? await opening.future : data;
+              },
+              connectVps:
+                  ({
+                    required host,
+                    required port,
+                    required password,
+                    required trustPeer,
+                  }) async => hostCalls++,
+              useOnline: () async => hostCalls++,
+              configureExecution: ({
+                required enabled,
+                approvedScope,
+                settings = const {},
+              }) async {
+                hostCalls++;
+                return data;
+              },
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(find.text('Connect VPS'), findsNothing);
+        opening.complete(data);
+        await tester.pumpAndSettle();
+        for (final label in [
+          'Connect VPS',
+          'Use local execution',
+          'Package schedule label',
+          'Package stop label',
+        ]) {
+          expect(find.text(label), scheduled ? findsOneWidget : findsNothing);
+        }
+        expect(find.text('Start VPS cycles'), findsNothing);
+        expect(find.text('Trade online'), findsNothing);
+        expect(
+          find.textContaining('New entries stopped or expired'),
+          scheduled ? findsOneWidget : findsNothing,
+        );
+        await tester.tap(find.text('Package inspection'));
+        await tester.pumpAndSettle();
+        expect(actions, ['open', 'start']);
+        expect(hostCalls, 0);
+        await tester.tap(find.text('Advanced settings'));
+        await tester.pumpAndSettle();
+        expect(find.text('Package option'), findsOneWidget);
+        expect(
+          find.text('Update VPS runtime'),
+          scheduled ? findsOneWidget : findsNothing,
+        );
+        await tester.pumpWidget(const SizedBox());
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final remote in [true, false]) {
     testWidgets(
       '${remote ? "VPS" : "Local"} status refresh is visible-only and independent of execution',
@@ -2135,6 +2252,7 @@ void main() {
           MaterialApp(
             navigatorKey: navigator,
             home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
               runWorkspaceAction: (
                 action,
                 settings, {
@@ -2241,6 +2359,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
             runWorkspaceAction: (
               action,
               settings, {
@@ -2328,6 +2447,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
             runWorkspaceAction:
                 (action, settings, {credentials, approvedOrder}) async =>
                     shown(),
@@ -2387,6 +2507,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
               runWorkspaceAction:
                   (action, settings, {credentials, approvedOrder}) async =>
                       shown(),
@@ -2457,7 +2578,9 @@ void main() {
         }
         if (failure != 'return') {
           expect(
-            find.text('Trade online: this app must remain open.'),
+            find.text(
+              'Local execution: keep this app open for scheduled cycles.',
+            ),
             findsOneWidget,
           );
         }
@@ -2498,6 +2621,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
           runWorkspaceAction: (
             action,
             settings, {
