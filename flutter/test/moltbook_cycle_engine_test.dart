@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +19,7 @@ import 'package:hivra_app/services/moltbook_draft_store.dart';
 import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
 import 'package:hivra_app/services/moltbook_feed_checkpoint_store.dart';
 import 'package:hivra_app/services/moltbook_publication_service.dart';
+import 'package:hivra_app/services/moltbook_provider_adapter.dart';
 import 'package:hivra_app/services/moltbook_public_bulletin_ai_service.dart';
 import 'package:hivra_app/services/moltbook_public_change_feed_store.dart';
 import 'package:hivra_app/services/moltbook_public_repository_source_adapter.dart';
@@ -75,6 +77,303 @@ void main() {
     triggers = MoltbookCycleTriggerService();
     module = buildModule(triggers);
   });
+
+  Map<String, dynamic> publicComment(
+    String id, {
+    String status = 'verified',
+    bool deleted = false,
+    bool spam = false,
+    String authorId = 'reader',
+    String? parentId,
+  }) => {
+    'id': id,
+    'content': 'A public question: $id',
+    'parent_id': parentId,
+    'verification_status': status,
+    'is_deleted': deleted,
+    'is_spam': spam,
+    'upvotes': 0,
+    'downvotes': 0,
+    'created_at': '2026-08-01T00:04:00.000Z',
+    'author': {'id': authorId, 'name': authorId},
+  };
+
+  void observePublicComments(
+    List<Map<String, dynamic>> comments, {
+    Map<String, dynamic> postOverrides = const {},
+  }) {
+    connection.conversationObserver = MoltbookProviderAdapter(
+      send:
+          (request) async => MoltbookHttpResponse(
+            statusCode: 200,
+            headers: const {},
+            bodyBytes: Uint8List.fromList(
+              utf8.encode(
+                jsonEncode(
+                  request.uri.path.endsWith('/comments')
+                      ? {
+                        'post_id': 'post-1',
+                        'sort': 'new',
+                        'comments': comments,
+                        'has_more': false,
+                      }
+                      : {
+                        'post': {
+                          'id': 'post-1',
+                          'title': 'Post post-1',
+                          'content': 'Public content',
+                          'author': {'id': 'agent-1', 'name': 'Hivra Agent'},
+                          'submolt': {'name': 'hivra'},
+                          'score': 0,
+                          'comment_count': comments.length,
+                          'verification_status': 'verified',
+                          'is_spam': false,
+                          'is_deleted': false,
+                          'is_locked': false,
+                          'created_at': '2026-08-01T00:00:00.000Z',
+                          'updated_at': '2026-08-01T00:05:00.000Z',
+                          ...postOverrides,
+                        },
+                      },
+                ),
+              ),
+            ),
+          ),
+    );
+  }
+
+  for (final status in ['pending', 'failed', 'deleted', 'spam']) {
+    test('known $status comments never reach AI in a cycle', () async {
+      heartbeatHost.engagementAction = 'reply_draft';
+      connection.feedIds = ['post-1'];
+      observePublicComments([
+        publicComment(
+          'comment-1',
+          status: status,
+          deleted: status == 'deleted',
+          spam: status == 'spam',
+        ),
+      ]);
+      await module.runMoltbookCycle();
+      expect(ai.proposalCount, 0);
+      expect(publications.preparedReplies, isEmpty);
+      expect(publications.processedIds, isEmpty);
+    });
+
+    test('reply target becoming $status is rejected before AI', () async {
+      heartbeatHost.engagementAction = 'reply_draft';
+      final comments = [publicComment('comment-1')];
+      observePublicComments(comments);
+      final conversation = await connection.observeConversation('post-1');
+      final plan = await module.planMoltbookEngagement(
+        conversation: conversation,
+        selectionKind: 'own_activity',
+      );
+      comments[0] = publicComment(
+        'comment-1',
+        status: status,
+        deleted: status == 'deleted',
+        spam: status == 'spam',
+      );
+
+      await expectLater(
+        module.proposeMoltbookReply(
+          conversation: conversation,
+          engagementPlan: plan,
+        ),
+        throwsStateError,
+      );
+
+      expect(ai.proposalCount, 0);
+      expect(publications.preparedReplies, isEmpty);
+      expect(publications.processedIds, isEmpty);
+    });
+  }
+
+  for (final path in ['UI', 'cycle']) {
+    test('$path planning omits invalid, answered and closed targets', () async {
+      heartbeatHost.engagementAction = 'reply_draft';
+      final comments = [
+        publicComment('pending', status: 'pending'),
+        publicComment('failed', status: 'failed'),
+        publicComment('deleted', deleted: true),
+        publicComment('spam', spam: true),
+        publicComment('answered'),
+        publicComment('answer', authorId: 'agent-1', parentId: 'answered'),
+        publicComment('closed'),
+        publicComment('available'),
+      ];
+      observePublicComments(comments);
+      publications.unavailableCommentIds.add('closed');
+      if (path == 'UI') {
+        final conversation = await connection.observeConversation('post-1');
+        final plan = await module.planMoltbookEngagement(
+          conversation: conversation,
+          selectionKind: 'own_activity',
+        );
+        expect(plan.targetCommentId, 'available');
+        await module.proposeMoltbookReply(
+          conversation: conversation,
+          engagementPlan: plan,
+        );
+        expect(publications.preparedReplies, isEmpty);
+      } else {
+        connection.feedIds = ['post-1'];
+        await module.runMoltbookCycle();
+        expect(publications.preparedReplies, hasLength(1));
+      }
+      expect(ai.proposalCount, 1);
+      expect(ai.lastReplyConversation!.comments.map((c) => c.commentId), [
+        'available',
+      ]);
+    });
+  }
+
+  for (final field in [
+    'verification_status',
+    'is_spam',
+    'is_deleted',
+    'is_locked',
+  ]) {
+    test(
+      'post losing eligibility before inference consumes no AI: $field',
+      () async {
+        heartbeatHost.engagementAction = 'reply_draft';
+        final post = <String, dynamic>{};
+        observePublicComments([
+          publicComment('comment-1'),
+        ], postOverrides: post);
+        final conversation = await connection.observeConversation('post-1');
+        final plan = await module.planMoltbookEngagement(
+          conversation: conversation,
+          selectionKind: 'own_activity',
+        );
+        post[field] = field == 'verification_status' ? 'pending' : true;
+        await expectLater(
+          module.proposeMoltbookReply(
+            conversation: conversation,
+            engagementPlan: plan,
+          ),
+          throwsStateError,
+        );
+        expect(ai.proposalCount, 0);
+      },
+    );
+  }
+  for (final status in ['pending', 'failed']) {
+    test(
+      'an unverified account reply does not close a verified target: $status',
+      () async {
+        heartbeatHost.engagementAction = 'reply_draft';
+        observePublicComments([
+          publicComment('comment-1'),
+          publicComment(
+            'answer',
+            status: status,
+            authorId: 'agent-1',
+            parentId: 'comment-1',
+          ),
+        ]);
+        final conversation = await connection.observeConversation('post-1');
+        final plan = await module.planMoltbookEngagement(
+          conversation: conversation,
+          selectionKind: 'own_activity',
+        );
+        await module.proposeMoltbookReply(
+          conversation: conversation,
+          engagementPlan: plan,
+        );
+        expect(plan.targetCommentId, 'comment-1');
+        expect(ai.proposalCount, 1);
+        expect(ai.lastReplyConversation!.comments.map((c) => c.commentId), [
+          'comment-1',
+        ]);
+      },
+    );
+  }
+
+  for (final field in ['content', 'author', 'parent_id']) {
+    test('changed target $field requires review before AI', () async {
+      heartbeatHost.engagementAction = 'reply_draft';
+      final comments = [publicComment('comment-1')];
+      observePublicComments(comments);
+      final conversation = await connection.observeConversation('post-1');
+      final plan = await module.planMoltbookEngagement(
+        conversation: conversation,
+        selectionKind: 'own_activity',
+      );
+      comments.single[field] =
+          field == 'author'
+              ? {'id': 'different-reader', 'name': 'Different reader'}
+              : 'Changed';
+      await expectLater(
+        module.proposeMoltbookReply(
+          conversation: conversation,
+          engagementPlan: plan,
+        ),
+        throwsStateError,
+      );
+      expect(ai.proposalCount, 0);
+    });
+  }
+
+  for (final state in ['answered', 'closed', 'removed']) {
+    test('reply target $state after planning consumes no AI', () async {
+      heartbeatHost.engagementAction = 'reply_draft';
+      final conversation = await connection.observeConversation('post-1');
+      final plan = await module.planMoltbookEngagement(
+        conversation: conversation,
+        selectionKind: 'own_activity',
+      );
+      if (state == 'answered') {
+        connection.accountReplyParentIds.add('comment-1');
+      }
+      if (state == 'closed') {
+        publications.unavailableCommentIds.add('comment-1');
+      }
+      if (state == 'removed') connection.commentIds.clear();
+
+      await expectLater(
+        module.proposeMoltbookReply(
+          conversation: conversation,
+          engagementPlan: plan,
+        ),
+        throwsStateError,
+      );
+
+      expect(ai.proposalCount, 0);
+      expect(publications.preparedReplies, isEmpty);
+    });
+  }
+
+  for (final change in ['package', 'removal', 'capsule', 'account', 'stop']) {
+    test('$change during reply re-observation prevents AI', () async {
+      heartbeatHost.engagementAction = 'reply_draft';
+      final conversation = await connection.observeConversation('post-1');
+      final plan = await module.planMoltbookEngagement(
+        conversation: conversation,
+        selectionKind: 'own_activity',
+      );
+      connection.afterConversationObservation = () {
+        if (change == 'package') heartbeatHost.packageDigest = 'replacement';
+        if (change == 'removal') heartbeatHost.installed = false;
+        if (change == 'capsule') activeRoot = _rootB;
+        if (change == 'account') connection.accountId = 'another-account';
+        if (change == 'stop') module.stopMoltbookCycles();
+      };
+
+      await expectLater(
+        module.proposeMoltbookReply(
+          conversation: conversation,
+          engagementPlan: plan,
+        ),
+        throwsStateError,
+      );
+
+      expect(ai.proposalCount, 0);
+      expect(publications.preparedReplies, isEmpty);
+    });
+  }
 
   for (final removed in [false, true]) {
     test(
@@ -1913,6 +2212,7 @@ void main() {
       expect(connection.observedConversationPostIds, <String>[
         'post-1',
         'post-2',
+        'post-2', // Fresh provider evidence before AI.
       ]);
       expect(heartbeatHost.authorizedTargetCommentIds, <String>['comment-1']);
       expect(publications.delegatedApprovalCount, 1);
@@ -2233,6 +2533,8 @@ class _CycleConnection implements MoltbookConnectionService {
   Future<void>? observationGate;
   Object? observationError;
   void Function()? afterObserve;
+  MoltbookObservePort? conversationObserver;
+  void Function()? afterConversationObservation;
   final List<Set<String>> processedSnapshots = <Set<String>>[];
 
   @override
@@ -2279,6 +2581,16 @@ class _CycleConnection implements MoltbookConnectionService {
     String postId,
   ) async {
     observedConversationPostIds.add(postId);
+    final observer = conversationObserver;
+    if (observer != null) {
+      final result = await observer.observeConversation(
+        'test-key',
+        postId: postId,
+      );
+      afterConversationObservation?.call();
+      return result;
+    }
+    afterConversationObservation?.call();
     return MoltbookConversationObservation(
       post: MoltbookPostObservation(
         postId: postId,
@@ -2589,9 +2901,10 @@ class _HeartbeatHost implements PluginHostApiService {
     final observedAt = request.args['observed_at_utc'] as String;
     final post = request.args['post'] as Map<String, dynamic>;
     final comments = request.args['comments'] as List<dynamic>;
-    final action =
+    var action =
         engagementActionsByPostId[post['post_id'] as String] ??
         engagementAction;
+    if (action == 'reply_draft' && comments.isEmpty) action = 'no_action';
     final targetCommentId =
         action == 'reply_draft' && comments.isNotEmpty
             ? (comments.first as Map<String, dynamic>)['comment_id'] as String
@@ -3377,6 +3690,7 @@ ExternalEffectOperation _operationWithState(
 
 class _CycleAi implements MoltbookPublicBulletinAiService {
   int proposalCount = 0;
+  MoltbookConversationObservation? lastReplyConversation;
   int bulletinProposalCount = 0;
   int verificationSolutionCount = 0;
   Object? error;
@@ -3444,6 +3758,7 @@ class _CycleAi implements MoltbookPublicBulletinAiService {
     required String personaSummary,
   }) async {
     proposalCount++;
+    lastReplyConversation = conversation;
     final failure = error;
     if (failure != null) throw failure;
     afterProposal?.call();

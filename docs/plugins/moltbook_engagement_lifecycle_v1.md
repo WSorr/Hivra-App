@@ -80,6 +80,15 @@ AI proposal. Visible replies beneath a hidden parent remain observable; hidden
 entries do not consume the bounded visible-comment limit. Missing or malformed
 visibility evidence fails closed.
 
+Manual review and automatic cycles share the same host filtering of answered
+or locally closed targets before WASM selects a reply. Before requesting AI
+prose, the runtime rereads the selected conversation through that read adapter
+and applies the same filter again. A target that disappeared, lost public
+eligibility, changed its text or author, or received a confirmed account reply
+is rejected before inference. The observation remains bound to the captured
+Capsule, account and installed package; no new private package state or local
+comment history is introduced.
+
 ### 3.3 Effect identity
 
 An external-effect operation represents one frozen exact outbound payload.

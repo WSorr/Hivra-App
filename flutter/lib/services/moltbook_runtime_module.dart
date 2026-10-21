@@ -718,6 +718,7 @@ class MoltbookRuntimeModule {
     required MoltbookConversationObservation conversation,
     required String selectionKind,
   }) async {
+    final cycleEpoch = _moltbookCycleEpoch;
     if (!const <String>{
       'own_activity',
       'feed_candidate',
@@ -741,6 +742,20 @@ class MoltbookRuntimeModule {
     if (ownerHex == null || ownerHex.length != 64) {
       throw StateError('Active capsule identity is unavailable');
     }
+    final authorize = await pluginHostApi.captureRuntimeAuthorization(
+      pluginId: moltbookAmbassadorPluginId,
+      method: planMoltbookEngagementMethod,
+    );
+    conversation = await _availableMoltbookReplyConversation(
+      conversation,
+      binding.accountId,
+    );
+    await _ensureMoltbookActionScope(
+      ownerHex,
+      binding.accountId,
+      cycleEpoch: cycleEpoch,
+      authorization: authorize,
+    );
     final observedAtUtc = DateTime.now().toUtc().toIso8601String();
     await uiLog.log(
       'moltbook.engagement.plan',
@@ -782,11 +797,12 @@ class MoltbookRuntimeModule {
         },
       ),
     );
-    if (!_isStillOwnedBy(ownerHex)) {
-      throw StateError(
-        'Engagement plan discarded because the active capsule changed',
-      );
-    }
+    await _ensureMoltbookActionScope(
+      ownerHex,
+      binding.accountId,
+      cycleEpoch: cycleEpoch,
+      authorization: authorize,
+    );
     final result = response.result;
     if (response.status != PluginHostApiStatus.executed || result == null) {
       throw StateError(
@@ -802,10 +818,53 @@ class MoltbookRuntimeModule {
     return plan;
   }
 
+  Future<MoltbookConversationObservation> _availableMoltbookReplyConversation(
+    MoltbookConversationObservation conversation,
+    String accountBindingId,
+  ) async {
+    final answered =
+        conversation.comments
+            .where(
+              (comment) =>
+                  comment.authorId == accountBindingId &&
+                  comment.parentCommentId != null,
+            )
+            .map((comment) => comment.parentCommentId!)
+            .toSet();
+    final available = <MoltbookCommentObservation>[];
+    for (final comment in conversation.comments) {
+      if (comment.authorId == accountBindingId ||
+          answered.contains(comment.commentId) ||
+          await moltbookPublications.isReplyTargetUnavailable(
+            accountBindingId: accountBindingId,
+            postId: conversation.post.postId,
+            parentCommentId: comment.commentId,
+          )) {
+        continue;
+      }
+      available.add(comment);
+    }
+    if (available.length != conversation.comments.length) {
+      await uiLog.log(
+        'moltbook.cycle.targets',
+        'post=${conversation.post.postId} '
+            'available=${available.length} '
+            'excluded=${conversation.comments.length - available.length}',
+      );
+    }
+    return MoltbookConversationObservation(
+      post: conversation.post,
+      comments: available,
+      hasMoreComments: conversation.hasMoreComments,
+      rateLimit: conversation.rateLimit,
+    );
+  }
+
   Future<MoltbookReplyProposal> proposeMoltbookReply({
     required MoltbookConversationObservation conversation,
     required MoltbookEngagementPlan engagementPlan,
   }) async {
+    final cycleEpoch = _moltbookCycleEpoch;
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
       throw StateError('Moltbook Ambassador is disabled');
@@ -814,22 +873,67 @@ class MoltbookRuntimeModule {
     if (ownerHex == null || ownerHex.length != 64) {
       throw StateError('Active capsule identity is unavailable');
     }
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null || !binding.isClaimed || !binding.isActive) {
+      throw StateError('Active Moltbook account binding is unavailable');
+    }
+    final authorize = await pluginHostApi.captureRuntimeAuthorization(
+      pluginId: moltbookAmbassadorPluginId,
+      method: planMoltbookEngagementMethod,
+    );
     await uiLog.log(
       'moltbook.reply.propose',
       'start post=${engagementPlan.targetPostId} '
           'comment=${engagementPlan.targetCommentId ?? "root"}',
     );
     try {
+      // Only the provider adapter admits verified, non-deleted, non-spam
+      // comments. Re-observe instead of trusting a plan's older UI snapshot.
+      final current = await _availableMoltbookReplyConversation(
+        await observeMoltbookConversation(engagementPlan.targetPostId),
+        binding.accountId,
+      );
+      await _ensureMoltbookActionScope(
+        ownerHex,
+        binding.accountId,
+        cycleEpoch: cycleEpoch,
+        authorization: authorize,
+      );
+      final targetId = engagementPlan.targetCommentId;
+      final previousTarget =
+          conversation.comments
+              .where((comment) => comment.commentId == targetId)
+              .firstOrNull;
+      final currentTarget =
+          current.comments
+              .where((comment) => comment.commentId == targetId)
+              .firstOrNull;
+      if (!current.post.isVerified ||
+          current.post.isSpam ||
+          current.post.isDeleted ||
+          current.post.isLocked ||
+          (targetId != null &&
+              (previousTarget == null ||
+                  currentTarget == null ||
+                  previousTarget.authorId != currentTarget.authorId ||
+                  previousTarget.content != currentTarget.content ||
+                  previousTarget.parentCommentId !=
+                      currentTarget.parentCommentId))) {
+        throw StateError(
+          'Moltbook reply target is no longer available; review the conversation again',
+        );
+      }
       final proposal = await moltbookPublicBulletinAi.proposeReply(
-        conversation: conversation,
+        conversation: current,
         engagementPlan: engagementPlan,
         personaSummary: configuration.personaSummary,
       );
-      if (!_isStillOwnedBy(ownerHex)) {
-        throw StateError(
-          'Reply proposal discarded because the active capsule changed',
-        );
-      }
+      await _ensureMoltbookActionScope(
+        ownerHex,
+        binding.accountId,
+        cycleEpoch: cycleEpoch,
+        authorization: authorize,
+      );
       await uiLog.log(
         'moltbook.reply.propose',
         'success provider=${proposal.providerLabel} '
@@ -1443,48 +1547,8 @@ class MoltbookRuntimeModule {
           accountBindingId,
           cycleEpoch: cycleEpoch,
         );
-        final publiclyAnsweredCommentIds =
-            observedConversation.comments
-                .where(
-                  (comment) =>
-                      comment.authorId == accountBindingId &&
-                      comment.parentCommentId != null,
-                )
-                .map((comment) => comment.parentCommentId!)
-                .toSet();
-        final availableComments = <MoltbookCommentObservation>[];
-        for (final comment in observedConversation.comments) {
-          final unavailable =
-              comment.authorId == accountBindingId ||
-              publiclyAnsweredCommentIds.contains(comment.commentId) ||
-              await moltbookPublications.isReplyTargetUnavailable(
-                accountBindingId: accountBindingId,
-                postId: observedConversation.post.postId,
-                parentCommentId: comment.commentId,
-              );
-          await _ensureMoltbookCycleScope(
-            ownerHex,
-            accountBindingId,
-            cycleEpoch: cycleEpoch,
-          );
-          if (!unavailable) availableComments.add(comment);
-        }
-        if (availableComments.length != observedConversation.comments.length) {
-          await uiLog.log(
-            'moltbook.cycle.targets',
-            'post=${observedConversation.post.postId} '
-                'available=${availableComments.length} '
-                'excluded=${observedConversation.comments.length - availableComments.length}',
-          );
-        }
-        final conversation = MoltbookConversationObservation(
-          post: observedConversation.post,
-          comments: availableComments,
-          hasMoreComments: observedConversation.hasMoreComments,
-          rateLimit: observedConversation.rateLimit,
-        );
         final engagementPlan = await planMoltbookEngagement(
-          conversation: conversation,
+          conversation: observedConversation,
           selectionKind: selectionKind,
         );
         await _ensureMoltbookCycleScope(
@@ -1513,7 +1577,7 @@ class MoltbookRuntimeModule {
               MoltbookAmbassadorConfiguration.approvalBounded,
             }.contains(configuration.approvalMode)) {
               final proposal = await proposeMoltbookReply(
-                conversation: conversation,
+                conversation: observedConversation,
                 engagementPlan: engagementPlan,
               );
               await _ensureMoltbookCycleScope(
