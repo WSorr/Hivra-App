@@ -19,6 +19,15 @@ provider effects merely because a WASM call succeeds.
 
 - `hivra.contract.capsule-chat.v1`
   - `post_capsule_chat_message`
+  - Successful WASM preparation does not authorize a later transport call.
+    The existing runtime authorization capture pins the installed package and
+    peer-scoped preflight. Chat delivery requires that authorization and an
+    explicit owner Capsule; it rechecks them inside the shared FFI queue,
+    immediately before starting the send worker. Replacement, removal, lost
+    capability/consensus or a Capsule change while queued refuses dispatch.
+    A refused queued attempt is failed, not transport-accepted or ambiguous;
+    it is not retried. Package changes after worker admission do not revoke
+    a network operation that has already started.
 - `hivra.contract.moltbook-ambassador.v1`
   - `prepare_moltbook_draft`
   - `plan_moltbook_heartbeat`

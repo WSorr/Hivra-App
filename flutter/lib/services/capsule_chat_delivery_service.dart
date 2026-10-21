@@ -222,7 +222,9 @@ class CapsuleChatDeliveryService {
     required String envelopeHashHex,
     required String messageText,
     required String createdAtUtc,
+    required Future<void> Function() authorize,
   }) async {
+    await authorize();
     await recordOutgoingMessage(
       capsuleRootHex: capsuleRootHex,
       peerHex: peerHex,
@@ -235,6 +237,7 @@ class CapsuleChatDeliveryService {
       peerHex: peerHex,
       canonicalEnvelopeJson: canonicalEnvelopeJson,
       expectedCapsuleRootHex: capsuleRootHex,
+      authorize: authorize,
     );
     try {
       await updateOutgoingMessageState(
@@ -249,10 +252,11 @@ class CapsuleChatDeliveryService {
   Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelope({
     required String peerHex,
     required String canonicalEnvelopeJson,
-    String? expectedCapsuleRootHex,
+    required String expectedCapsuleRootHex,
+    required Future<void> Function() authorize,
   }) async {
-    final expectedOwner = expectedCapsuleRootHex?.trim().toLowerCase();
-    if (expectedOwner != null && _localCapsuleRootHex() != expectedOwner) {
+    final expectedOwner = expectedCapsuleRootHex.trim().toLowerCase();
+    if (_localCapsuleRootHex() != expectedOwner) {
       return const CapsuleChatDeliverySendResult(
         isSuccess: false,
         blockedByConsensus: false,
@@ -306,7 +310,7 @@ class CapsuleChatDeliveryService {
     }
     final bootstrapOwner =
         bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase();
-    if (expectedOwner != null && bootstrapOwner != expectedOwner) {
+    if (bootstrapOwner != expectedOwner) {
       return const CapsuleChatDeliverySendResult(
         isSuccess: false,
         blockedByConsensus: false,
@@ -316,7 +320,30 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    Future<Map<String, Object?>> runWorker() {
+    Future<Map<String, Object?>> runWorker() async {
+      // Queue admission can outlive a Capsule or package. Recheck at the
+      // existing dispatch point, after all queued work and awaited reads.
+      if (_localCapsuleRootHex() != expectedOwner) {
+        return {
+          'result': -2004,
+          'lastError': 'Active capsule changed before chat delivery',
+        };
+      }
+      try {
+        await authorize();
+      } catch (_) {
+        return {
+          'result': -2005,
+          'lastError':
+              'Chat authorization changed before delivery; reopen Chat',
+        };
+      }
+      if (_localCapsuleRootHex() != expectedOwner) {
+        return {
+          'result': -2004,
+          'lastError': 'Active capsule changed before chat delivery',
+        };
+      }
       return _sendWorkerRunner(<String, Object?>{
         ...bootstrap,
         'toPubkey': peerBytes,

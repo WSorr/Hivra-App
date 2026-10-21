@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,6 +10,10 @@ import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/ffi/ledger_view_runtime.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/models/consensus_models.dart';
+import 'package:hivra_app/models/plugin_contract_ids.dart';
+import 'package:hivra_app/models/plugin_host_api_models.dart';
+import 'package:hivra_app/services/plugin_contract_handlers.dart';
+import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
@@ -18,6 +23,7 @@ import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
 import 'package:hivra_app/services/capsule_delivery_inbox_store.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/capsule_ffi_worker_queue.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/transport_health_policy_service.dart';
@@ -1184,7 +1190,9 @@ void main() {
       );
 
       final result = await service.sendCanonicalEnvelope(
+        authorize: () async {},
         peerHex: peerRootHex,
+        expectedCapsuleRootHex: localRootHex,
         canonicalEnvelopeJson: '{"message_text":"hello"}',
       );
 
@@ -1242,7 +1250,9 @@ void main() {
       );
 
       final result = await service.sendCanonicalEnvelope(
+        authorize: () async {},
         peerHex: peerRootHex,
+        expectedCapsuleRootHex: localRootHex,
         canonicalEnvelopeJson: '{"message_text":"hello"}',
       );
 
@@ -1320,6 +1330,7 @@ void main() {
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
     final accepted = await service.sendCanonicalEnvelopeWithTimeline(
+      authorize: () async {},
       capsuleRootHex: localRootHex,
       peerHex: peerRootHex,
       canonicalEnvelopeJson: '{"message_text":"accepted"}',
@@ -1329,12 +1340,26 @@ void main() {
     );
     nextCode = -1003;
     final ambiguous = await service.sendCanonicalEnvelopeWithTimeline(
+      authorize: () async {},
       capsuleRootHex: localRootHex,
       peerHex: peerRootHex,
       canonicalEnvelopeJson: '{"message_text":"ambiguous"}',
       envelopeHashHex: ambiguousHash,
       messageText: 'ambiguous',
       createdAtUtc: '2026-08-13T10:00:01.000Z',
+    );
+
+    await expectLater(
+      service.sendCanonicalEnvelopeWithTimeline(
+        authorize: () async => throw StateError('Package removed'),
+        capsuleRootHex: localRootHex,
+        peerHex: peerRootHex,
+        canonicalEnvelopeJson: '{"message_text":"not authorized"}',
+        envelopeHashHex: 'c' * 64,
+        messageText: 'not authorized',
+        createdAtUtc: '2026-08-13T10:00:02.000Z',
+      ),
+      throwsStateError,
     );
 
     expect(accepted.isSuccess, isTrue);
@@ -1349,6 +1374,7 @@ void main() {
       for (final message in restartedStore.loadMessages(localRootHex))
         message.id: message,
     };
+    expect(byId.containsKey('c' * 64), false);
     expect(
       byId[acceptedHash]?.deliveryState,
       CapsuleChatMessageDeliveryState.transportAccepted,
@@ -1425,7 +1451,9 @@ void main() {
       );
 
       final result = await service.sendCanonicalEnvelope(
+        authorize: () async {},
         peerHex: peerRootHex,
+        expectedCapsuleRootHex: localRootHex,
         canonicalEnvelopeJson: '{"message_text":"hello"}',
       );
 
@@ -1480,7 +1508,9 @@ void main() {
     );
 
     final result = await service.sendCanonicalEnvelope(
+      authorize: () async {},
       peerHex: peerRootHex,
+      expectedCapsuleRootHex: localRootHex,
       canonicalEnvelopeJson: '{"message_text":"hello"}',
     );
 
@@ -1534,15 +1564,158 @@ void main() {
     );
 
     final result = await service.sendCanonicalEnvelope(
+      authorize: () async {},
       peerHex: peerRootHex,
-      canonicalEnvelopeJson: '{"message_text":"hello"}',
       expectedCapsuleRootHex: localRootHex,
+      canonicalEnvelopeJson: '{"message_text":"hello"}',
     );
 
     expect(result.isSuccess, isFalse);
     expect(result.code, -2004);
     expect(sendCalls, 0);
   });
+
+  for (final change in [
+    'none',
+    'remove',
+    'replace',
+    'digest',
+    'revoke',
+    'consensus',
+    'capsule',
+    'capsule_during_authorization',
+  ]) {
+    test('queued chat rechecks dispatch authority: $change', () async {
+      const owner =
+          '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+      const peer =
+          '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+      var changed = false;
+      final host = PluginHostApiService(
+        handlers: [
+          CapsuleChatPluginContractHandler(
+            readSignable:
+                (_) => ConsensusSignableResult(
+                  preview: ConsensusPreview(
+                    peerHex: peer,
+                    peerLabel: 'peer',
+                    invitationCount: 1,
+                    relationshipCount: 1,
+                    hashHex: owner,
+                    canonicalJson: '{}',
+                    blockingFacts: const [],
+                  ),
+                  blockingFacts:
+                      changed && change == 'consensus'
+                          ? const [
+                            ConsensusBlockingFact(
+                              code: 'pair_attestation_missing',
+                            ),
+                          ]
+                          : const [],
+                ),
+          ),
+        ],
+        resolveRuntimeBinding: (_) async {
+          if (changed && change == 'remove') {
+            return const PluginRuntimeBinding.hostFallback();
+          }
+          return PluginRuntimeBinding.externalPackage(
+            packageId:
+                changed && change == 'replace' ? 'replacement' : 'original',
+            packageVersion: '1',
+            packageKind: 'zip',
+            packageDigestHex:
+                changed && change == 'digest' ? 'b' * 64 : 'a' * 64,
+            contractKind: capsuleChatContractKind,
+            capabilities:
+                changed && change == 'revoke'
+                    ? const ['content.draft.prepare']
+                    : const ['consensus_guard.read', 'content.draft.prepare'],
+          );
+        },
+      );
+      final authorize = await host.captureRuntimeAuthorization(
+        pluginId: capsuleChatPluginId,
+        method: postCapsuleChatMethod,
+        args: {'peer_hex': peer},
+      );
+      final key = _hexToBytes(owner);
+      final queue = CapsuleFfiWorkerQueue();
+      final release = Completer<void>();
+      final queued = Completer<void>();
+      final hold = queue.run(owner, () => release.future);
+      var sends = 0;
+      final service = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: key,
+          workerBootstrap: const {'activeCapsuleHex': owner},
+        ),
+        manualChecks: _FakeManualConsensusCheckService([
+          const ManualConsensusCheck(
+            peerHex: peer,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex: owner,
+            canonicalJson: '{}',
+            blockingFacts: [],
+          ),
+        ]),
+        listTrustedCards: () async {
+          queued.complete();
+          return const [
+            CapsuleAddressCard(
+              rootKey:
+                  'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
+              rootHex: peer,
+              nostrNpub:
+                  'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
+              nostrHex:
+                  'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627',
+            ),
+          ];
+        },
+        workerQueue: queue,
+        sendWorkerRunner: (_) async {
+          sends++;
+          return {'result': 0};
+        },
+      );
+      final pending = service.sendCanonicalEnvelope(
+        authorize: () async {
+          await authorize();
+          if (change == 'capsule_during_authorization') {
+            key.fillRange(0, key.length, 7);
+          }
+        },
+        peerHex: peer,
+        expectedCapsuleRootHex: owner,
+        canonicalEnvelopeJson: '{"message_text":"never dispatched"}',
+      );
+      await queued.future;
+      // Let bootstrap admission complete while the shared worker queue is held.
+      await Future<void>.delayed(Duration.zero);
+      changed = true;
+      if (change == 'capsule') key.fillRange(0, key.length, 7);
+      release.complete();
+      await hold;
+      final result = await pending;
+      expect(sends, change == 'none' ? 1 : 0);
+      expect(result.isSuccess, change == 'none');
+      expect(
+        result.code,
+        change == 'none'
+            ? 0
+            : change.startsWith('capsule')
+            ? -2004
+            : -2005,
+      );
+      if (change != 'none') {
+        expect(result.errorMessage, isNot(contains('a' * 64)));
+      }
+    });
+  }
 
   test('chat send requires pair attestation when guard is available', () async {
     const peerRootHex =
@@ -1583,7 +1756,9 @@ void main() {
     );
 
     final result = await service.sendCanonicalEnvelope(
+      authorize: () async {},
       peerHex: peerRootHex,
+      expectedCapsuleRootHex: localRootHex,
       canonicalEnvelopeJson: '{"message_text":"hello"}',
     );
 

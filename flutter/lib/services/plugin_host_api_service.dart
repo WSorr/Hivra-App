@@ -39,12 +39,13 @@ class PluginHostApiService {
   Future<Future<void> Function()> captureRuntimeAuthorization({
     required String pluginId,
     required String method,
+    Map<String, dynamic> args = const {},
   }) async {
     final request = PluginHostApiRequest(
       schemaVersion: schemaVersion,
       pluginId: pluginId,
       method: method,
-      args: const {},
+      args: Map<String, dynamic>.unmodifiable(args),
     );
     Future<PluginRuntimeBinding> authorizedBinding() async {
       final binding =
@@ -53,6 +54,12 @@ class PluginHostApiService {
       if (_validateRuntimeBindingShape(binding) != null ||
           await _preflightBeforeRuntime(request, binding) != null) {
         throw StateError('Installed package authorization is unavailable');
+      }
+      final current =
+          await _resolveRuntimeBinding?.call(pluginId) ??
+          const PluginRuntimeBinding.hostFallback();
+      if (!_sameRuntimeBinding(binding, current)) {
+        throw StateError('Installed package changed during authorization');
       }
       return binding;
     }

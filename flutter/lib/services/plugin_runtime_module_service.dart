@@ -525,6 +525,19 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       );
     }
 
+    final Future<void> Function() authorize;
+    try {
+      authorize = await pluginHostApi.captureRuntimeAuthorization(
+        pluginId: capsuleChatPluginId,
+        method: postCapsuleChatMethod,
+        args: {'peer_hex': normalizedPeer},
+      );
+    } catch (_) {
+      return const PluginChatSendResult(
+        status: PluginChatSendStatus.rejected,
+        message: 'Chat package authorization is unavailable; reopen Chat',
+      );
+    }
     final createdAtUtc = DateTime.now().toUtc().toIso8601String();
     final response = await pluginHostApi.executeWithRuntimeHook(
       PluginHostApiRequest(
@@ -572,6 +585,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
             envelopeHashHex: envelopeHash,
             messageText: canonicalMessageText,
             createdAtUtc: canonicalCreatedAtUtc,
+            authorize: authorize,
           );
         } catch (error) {
           await uiLog.log(
@@ -581,7 +595,8 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           return const PluginChatSendResult(
             status: PluginChatSendStatus.failed,
             message:
-                'Message was not sent because Chat history could not be saved',
+                'Message was not sent because Chat authorization or history '
+                'could not be verified. Reopen Chat before retrying.',
           );
         }
         if (!delivery.isSuccess) {

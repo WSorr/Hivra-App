@@ -161,15 +161,15 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The selected bounded repair removes unconditional trading UI from the generic
-workspace. The installed manifest's existing `workspace.schedule` capability
-opts a package into host executor controls; callbacks and saved connection
-metadata do not select its product UI. WASM owns action labels on local and VPS
-targets. Existing financial confirmations, grants and effect paths remain the
-host boundary. A replacement without scheduling must retain its private state
-and package actions through reopen/restart without inherited executor controls.
-Focused tests, repository gates and exact Mac/APK smoke on isolated data must
-prove this boundary before acceptance.
+The selected bounded repair closes delayed Chat dispatch after package or
+Capsule changes. WASM prepares the envelope; the existing host authorization
+capture pins the package and peer-scoped preflight. Delivery requires explicit
+owner/authorization and rechecks both inside the shared FFI worker queue before
+dispatch. Replacement, removal, capability/consensus loss or Capsule switching
+while queued must cause zero transport calls, with no retry or false receipt.
+Tests prove delayed admission deterministically without a network send; exact
+Mac/APK smoke on isolated data checks package rejection/replacement and
+reopen/restart without publishing a new Chat message.
 
 The bounded Capsule-safety regression is complete on the exact `f48218d`
 Mac/APK artifacts: native backup save, authenticated recovery into empty runtime
