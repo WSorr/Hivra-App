@@ -52,7 +52,7 @@ release row to make it current.
 | --- | --- |
 | Transport delivery and receipts | `architecture/transport-delivery-lifecycle.md` |
 | External effects | `architecture/external-effect-lifecycle.md` |
-| Plugin package installation | `architecture/plugin-package-lifecycle.md` |
+| Plugin installation, replacement and removal recovery | `architecture/plugin-package-lifecycle.md` |
 | Plugin host API | `plugins/plugin_host_api_v1.md` |
 | Capsule-scoped secrets | `architecture/capsule-scoped-secret-lifecycle.md` |
 | Capsule AI Runtime | `architecture/capsule-ai-runtime.md` |

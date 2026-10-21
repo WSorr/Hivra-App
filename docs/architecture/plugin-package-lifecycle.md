@@ -42,14 +42,23 @@ is recovery work and cannot roll back or invalidate the committed record.
   candidate and preserves the previous active record and package.
 - An update atomically replaces the active record for the same `plugin_id`.
   Superseded package deletion occurs only after the new registry is durable.
+- The application module returns any assigned VPS authority and restores its
+  opaque checkpoint before activating a replacement. A transport failure keeps
+  the previous registration and retained state available for retry.
 
 ## Remove
 
-- Capsule-scoped secret and plugin-state cleanup remains owned by the
-  application module and must complete before package deregistration.
+- The application module requires an authenticated VPS return and runner-removal
+  acknowledgement before deregistration. It never treats an unreadable old grant
+  as proof that remote authority has ended.
 - Package removal first commits the registry without the selected record.
 - Physical package deletion follows the commit. An interruption can leave an
   orphaned file, but never a registry pointer to a deliberately deleted file.
+- The application module then stops scheduling, drains admitted actions and
+  clears Capsule-scoped secrets and private plugin state. The canonical effect
+  journal and ended execution grant remain retained by their existing owners.
+- The UI displays pending cleanup and a safe failure; it does not report success
+  before the module completes or display raw provider/Keychain exceptions.
 
 ## Recovery
 
@@ -64,6 +73,13 @@ Every serialized load repairs the managed directory:
 
 This recovery is idempotent. Package or temporary-file cleanup may be retried
 after restart without changing the committed registry result.
+
+A lost VPS return acknowledgement can outlive a package update. The host may
+read an old grant only for authenticated retirement; that does not admit package
+execution. If the server rebound an ended grant to new package bytes, accepting
+its return also requires the original handoff identity and the stored immutable
+checkpoint digest. Opaque workspace state and effect evidence are restored
+without interpreting plugin-private fields, and the local grant remains ended.
 
 ## Failure Invariants
 

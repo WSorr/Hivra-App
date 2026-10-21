@@ -33,6 +33,12 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   bool _loadingSourceCatalog = true;
   bool _installing = false;
   Set<String> _installingSourceEntryIds = <String>{};
+  WasmPluginRecord? _removingPlugin;
+  String? _removalError;
+  bool get _packageBusy =>
+      _installing ||
+      _installingSourceEntryIds.isNotEmpty ||
+      _removingPlugin != null;
 
   static const List<_BoundaryRule> _boundaryRules = <_BoundaryRule>[
     _BoundaryRule(
@@ -107,6 +113,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<void> _installPlugin() async {
+    if (_packageBusy) return;
     final file = await HivraFilePickerService.openPluginPackage();
     if (file == null) return;
     await _module.uiLog.log(
@@ -175,13 +182,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<void> _removePlugin(WasmPluginRecord record) async {
+    if (_packageBusy) return;
     final confirmed =
         await showDialog<bool>(
           context: context,
           builder:
               (context) => AlertDialog(
                 title: const Text('Remove plugin'),
-                content: Text('Remove ${record.displayName} from this device?'),
+                content: Text(
+                  'Remove ${record.displayName}, its local settings and secrets '
+                  'from all Capsules on this device? Any assigned VPS must '
+                  'return authority before its runner is removed.',
+                ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
@@ -195,18 +207,35 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               ),
         ) ??
         false;
-    if (!confirmed) return;
-
-    await _module.removePlugin(record);
-    await _reload();
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Removed ${record.displayName}')));
+    if (!confirmed || !mounted || _packageBusy) return;
+    setState(() {
+      _removingPlugin = record;
+      _removalError = null;
+    });
+    try {
+      await _module.removePlugin(record);
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Removed ${record.displayName}')));
+    } catch (_) {
+      // Provider/Keychain exceptions can contain credentials. Keep the failure
+      // visible without rendering or logging their raw payload.
+      if (!mounted) return;
+      setState(() {
+        _removalError =
+            'Removal did not complete. Check Keychain access and '
+            'the assigned VPS, then retry.';
+      });
+      await _reload();
+    } finally {
+      if (mounted) setState(() => _removingPlugin = null);
+    }
   }
 
   Future<void> _installFromSource(WasmPluginSourceCatalogEntry entry) async {
-    if (_installingSourceEntryIds.contains(entry.id)) return;
+    if (_packageBusy) return;
     await _module.uiLog.log(
       'plugin.source.install.start',
       'id=${entry.id} plugin=${entry.pluginId} version=${entry.version}',
@@ -310,10 +339,17 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                     _InstalledSection(
                       loading: _loading,
                       installing: _installing,
+                      busy: _packageBusy,
+                      removingName: _removingPlugin?.displayName,
+                      removalError: _removalError,
                       installed: _installed,
                       onInstallPressed: _installPlugin,
                       onRemovePressed: _removePlugin,
-                      onOpenWorkspacePressed: widget.onOpenWorkspacePressed,
+                      onOpenWorkspacePressed:
+                          (record) =>
+                              _packageBusy
+                                  ? null
+                                  : widget.onOpenWorkspacePressed(record),
                     ),
                     const SizedBox(height: 16),
                     _SourceCatalogSection(
@@ -326,6 +362,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                           const <WasmPluginSourceCatalogEntry>[],
                       installed: _installed,
                       installingEntryIds: _installingSourceEntryIds,
+                      packageBusy: _packageBusy,
                       onRefreshPressed: _reloadSourceCatalog,
                       onInstallPressed: _installFromSource,
                     ),
@@ -503,11 +540,11 @@ class _AdvancedPluginTools extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF12161D),
+    return Material(
+      color: const Color(0xFF12161D),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF292F38)),
+        side: const BorderSide(color: Color(0xFF292F38)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Theme(
@@ -534,6 +571,9 @@ class _AdvancedPluginTools extends StatelessWidget {
 class _InstalledSection extends StatelessWidget {
   final bool loading;
   final bool installing;
+  final bool busy;
+  final String? removingName;
+  final String? removalError;
   final List<WasmPluginRecord> installed;
   final Future<void> Function() onInstallPressed;
   final Future<void> Function(WasmPluginRecord record) onRemovePressed;
@@ -542,6 +582,9 @@ class _InstalledSection extends StatelessWidget {
   const _InstalledSection({
     required this.loading,
     required this.installing,
+    required this.busy,
+    required this.removingName,
+    required this.removalError,
     required this.installed,
     required this.onInstallPressed,
     required this.onRemovePressed,
@@ -577,7 +620,7 @@ class _InstalledSection extends StatelessWidget {
                 ],
               );
               final action = FilledButton.icon(
-                onPressed: installing ? null : onInstallPressed,
+                onPressed: busy ? null : onInstallPressed,
                 icon:
                     installing
                         ? const SizedBox(
@@ -609,6 +652,18 @@ class _InstalledSection extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
+          if (removingName != null) ...[
+            const LinearProgressIndicator(),
+            Text('Removing $removingName. Waiting for secure cleanup…'),
+            const SizedBox(height: 12),
+          ],
+          if (removalError != null) ...[
+            Text(
+              removalError!,
+              style: const TextStyle(color: Color(0xFFFFA4A4)),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (loading)
             const Center(child: CircularProgressIndicator())
           else if (installed.isEmpty)
@@ -621,7 +676,8 @@ class _InstalledSection extends StatelessWidget {
                       .map(
                         (record) => _InstalledPluginTile(
                           record: record,
-                          onRemovePressed: () => onRemovePressed(record),
+                          onRemovePressed:
+                              busy ? null : () => onRemovePressed(record),
                           onOpenWorkspacePressed: onOpenWorkspacePressed(
                             record,
                           ),
@@ -643,6 +699,7 @@ class _SourceCatalogSection extends StatelessWidget {
   final List<WasmPluginSourceCatalogEntry> entries;
   final List<WasmPluginRecord> installed;
   final Set<String> installingEntryIds;
+  final bool packageBusy;
   final Future<void> Function() onRefreshPressed;
   final Future<void> Function(WasmPluginSourceCatalogEntry entry)
   onInstallPressed;
@@ -655,6 +712,7 @@ class _SourceCatalogSection extends StatelessWidget {
     required this.entries,
     required this.installed,
     required this.installingEntryIds,
+    required this.packageBusy,
     required this.onRefreshPressed,
     required this.onInstallPressed,
   });
@@ -763,7 +821,8 @@ class _SourceCatalogSection extends StatelessWidget {
                       entry: entry,
                       busy: busy,
                       installed: installedAlready,
-                      onInstallPressed: () => onInstallPressed(entry),
+                      onInstallPressed:
+                          packageBusy ? null : () => onInstallPressed(entry),
                     );
                   }).toList(),
             ),
@@ -824,7 +883,7 @@ class _CatalogEntryTile extends StatelessWidget {
   final WasmPluginSourceCatalogEntry entry;
   final bool busy;
   final bool installed;
-  final VoidCallback onInstallPressed;
+  final VoidCallback? onInstallPressed;
 
   const _CatalogEntryTile({
     required this.entry,
@@ -923,7 +982,7 @@ class _CatalogEntryTile extends StatelessWidget {
 
 class _InstalledPluginTile extends StatelessWidget {
   final WasmPluginRecord record;
-  final Future<void> Function() onRemovePressed;
+  final Future<void> Function()? onRemovePressed;
   final VoidCallback? onOpenWorkspacePressed;
 
   const _InstalledPluginTile({
@@ -954,11 +1013,11 @@ class _InstalledPluginTile extends StatelessWidget {
     final ready =
         !isZipPackage || (abiMatches && entryMatches && capabilitiesMatch);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF171B23),
+    return Material(
+      color: const Color(0xFF171B23),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2B323D)),
+        side: const BorderSide(color: Color(0xFF2B323D)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
