@@ -161,13 +161,13 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The current bounded repair is downloaded-release package removal and replacement
-with retained VPS authority. Live read-only diagnosis found an ended server
-grant rebound to current package bytes while the local Capsule retained the
-original handoff; its immutable checkpoint digest still matched. The fix must
-complete authenticated recovery without renewing execution, keep failed removal
-visible, and preserve package replacement. Source tests and gates precede a new
-exact-artifact smoke; the published test2 bytes do not contain this repair.
+The selected bounded repair is Analyst provider-key availability and recovery.
+The existing credential owner performs a metadata-only presence check; status
+must not read or unlock a secret. The UI must accept a delayed result for its
+current provider, reject stale completions after selection changes, and offer
+retry after a real storage failure. Focused tests and repository gates precede
+an exact packaged check; the current published test2 and the prior test3
+artifacts do not contain this repair.
 
 The bounded Capsule-safety regression is complete on the exact `f48218d`
 Mac/APK artifacts: native backup save, authenticated recovery into empty runtime

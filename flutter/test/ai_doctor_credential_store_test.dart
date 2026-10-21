@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,22 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
   final Map<String, int> readCounts = <String, int>{};
+  int presenceChecks = 0;
+  Future<bool> Function(String)? checkPresence;
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    presenceChecks++;
+    return checkPresence?.call(key) ?? Future.value(values.containsKey(key));
+  }
 
   @override
   Future<void> write({
@@ -268,7 +285,49 @@ void main() {
           restartedProcess.sessionApiKey(InferenceProviderKind.gemini),
           isNull,
         );
-        expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
+        expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 0);
+        expect(secureStorage.presenceChecks, 1);
+      },
+    );
+
+    test(
+      'presence checks share only pending metadata lookups and remain locked',
+      () async {
+        final storage = _FakeSecureStorage();
+        final store = buildStore(storage);
+        final pending = Completer<bool>();
+        storage.checkPresence = (_) => pending.future;
+        final first = store.hasApiKey(InferenceProviderKind.gemini);
+        final second = store.hasApiKey(InferenceProviderKind.gemini);
+        expect(storage.presenceChecks, 1);
+        expect(storage.readCounts, isEmpty);
+        pending.complete(true);
+        expect(await first, true);
+        expect(await second, true);
+        expect(store.isPreferredProviderUnlocked, false);
+        expect(store.sessionApiKey(InferenceProviderKind.gemini), isNull);
+        storage.checkPresence = (_) async => false;
+        expect(await store.hasApiKey(InferenceProviderKind.gemini), false);
+        expect(storage.presenceChecks, 2);
+        expect(storage.readCounts, isEmpty);
+      },
+    );
+
+    test(
+      'failed metadata lookup can retry without reading a credential',
+      () async {
+        final storage = _FakeSecureStorage();
+        final store = buildStore(storage);
+        storage.checkPresence = (_) async => throw StateError('denied');
+        await expectLater(
+          store.hasApiKey(InferenceProviderKind.gemini),
+          throwsStateError,
+        );
+        storage.checkPresence = (_) async => true;
+        expect(await store.hasApiKey(InferenceProviderKind.gemini), true);
+        expect(storage.presenceChecks, 2);
+        expect(storage.readCounts, isEmpty);
+        expect(store.isPreferredProviderUnlocked, false);
       },
     );
 

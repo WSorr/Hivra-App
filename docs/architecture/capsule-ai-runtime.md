@@ -195,6 +195,14 @@ capability grant. Capability and disclosure checks still run for every request.
 An explicit one-shot provider unlock changes only the process session. It does
 not silently rewrite the persisted preferred-provider choice.
 
+Provider-key availability is a metadata lookup through the same credential
+owner. It must not read secret bytes, unlock the process lease, or call a
+provider. Concurrent availability checks share the pending lookup without
+persisting another copy of credential state. The Analyst UI accepts delayed
+completion only for its current selection, offers an explicit retry after a
+real storage failure, and never turns an arbitrary UI deadline into a missing
+key. Saving, clearing or asking waits until that selection's status is known.
+
 Moltbook unlocks the configured preferred provider through this same broker.
 News, replies, and numeric-challenge proposals bind the active session's stable
 provider id before inference, including bounded repair attempts. Changing or
