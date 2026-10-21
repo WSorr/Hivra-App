@@ -582,6 +582,7 @@ class WorkspaceRunner {
         final control = await runtime.readWorkspaceExecution(
           record,
           enforceHost: false,
+          allowRemoteRecoveryBinding: true,
         );
         if (control != null &&
             (control['executor'] != 'local' ||

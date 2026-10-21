@@ -1384,14 +1384,19 @@ class PluginWorkspaceRuntime {
         control['package_id'] == record.id &&
         binding.packageId == record.id &&
         control['package_digest'] == binding.packageDigestHex;
+    final remoteAuthority =
+        control['executor'] == 'vps' ||
+        (executionHost == 'vps' &&
+            control['executor'] == 'local' &&
+            control['expires_at_ms'] == 0 &&
+            control['allow_new_entries'] == false);
     if ((!packageMatches &&
-            !(allowRemoteRecoveryBinding &&
-                !enforceHost &&
-                control['executor'] == 'vps')) ||
+            !(allowRemoteRecoveryBinding && !enforceHost && remoteAuthority)) ||
         !binding.capabilities.contains('workspace.schedule')) {
       // A replaced package may not execute a stale local grant. A VPS grant
-      // is exposed here only to the authenticated return path, which rebinds
-      // the sealed checkpoint to the currently installed package.
+      // and its sealed return receipt remain readable only for authenticated
+      // retirement. The original digest and opaque state are not rewritten;
+      // ordinary execution still requires the current package binding.
       return null;
     }
     return Map<String, dynamic>.from(control);
@@ -1562,15 +1567,7 @@ class PluginWorkspaceRuntime {
     );
     // The immutable custody checkpoint never changes. Entry revocation can
     // travel with its source grant, but cannot restore state or renew authority.
-    final immutable = {
-      ...checkpoint,
-      'execution':
-          {...checkpoint['execution'] as Map}
-            ..remove('allow_new_entries')
-            ..remove('revision'),
-    };
-    final digest =
-        sha256.convert(utf8.encode(_canonical(immutable))).toString();
+    final digest = _handoffDigest(checkpoint);
     final incoming = Map<String, dynamic>.from(checkpoint['execution'] as Map);
     if (incoming['executor_id'] != executionIdentity) {
       throw StateError('Checkpoint belongs to another VPS');
@@ -1708,7 +1705,12 @@ class PluginWorkspaceRuntime {
     await _serialize(
       '$key::execution',
       () => _withWorkspaceLease(owner, record, () async {
-        final control = await _readExecution(record, owner, enforceHost: false);
+        final control = await _readExecution(
+          record,
+          owner,
+          enforceHost: false,
+          allowRemoteRecoveryBinding: true,
+        );
         if (control == null) throw StateError('No workspace to return');
         if (control['executor'] == 'vps' &&
             control['executor_id'] != executionIdentity) {
@@ -1736,7 +1738,12 @@ class PluginWorkspaceRuntime {
     return _serialize(
       key,
       () => _withWorkspaceLease(owner, record, () async {
-        final control = await _readExecution(record, owner, enforceHost: false);
+        final control = await _readExecution(
+          record,
+          owner,
+          enforceHost: false,
+          allowRemoteRecoveryBinding: true,
+        );
         if (control == null ||
             control['executor'] != 'local' ||
             control['expires_at_ms'] != 0 ||
@@ -1813,9 +1820,30 @@ class PluginWorkspaceRuntime {
         if (control == null ||
             control['executor'] != 'vps' ||
             control['executor_id'] != executorId ||
-            control['handoff_id'] != incoming['handoff_id'] ||
-            control['package_digest'] != checkpoint['package_digest']) {
+            control['handoff_id'] == null ||
+            control['handoff_id'] != incoming['handoff_id']) {
           throw StateError('Return does not match the assigned workspace');
+        }
+        final directory = await _fileStore.capsuleDirForHex(owner);
+        if (control['package_digest'] != checkpoint['package_digest'] &&
+            incoming['handoff_digest'] !=
+                _handoffDigest({
+                  'owner': owner,
+                  'plugin_id': record.pluginId,
+                  'package_digest': control['package_digest'],
+                  'execution': control,
+                  'workspace': await _fileStore.readPluginState(
+                    directory,
+                    record.pluginId!,
+                    'workspace.v1.json',
+                  ),
+                  'effects': await _fileStore.readPluginState(
+                    directory,
+                    record.pluginId!,
+                    'external_effects.v1.json',
+                  ),
+                })) {
+          throw StateError('Return does not prove the original handoff');
         }
         final binding = await registry.resolveRuntimeBinding(record.pluginId!);
         if (binding.packageId != record.id ||
@@ -1831,10 +1859,6 @@ class PluginWorkspaceRuntime {
               }
               ..remove('handoff_id')
               ..remove('handoff_digest');
-        final directory = await _fileStore.capsuleDirForHex(
-          owner,
-          create: true,
-        );
         if (ownerCapsuleHex == null && !_isStillOwnedBy(owner)) {
           throw StateError('Active Capsule changed during return');
         }
@@ -1864,6 +1888,17 @@ class PluginWorkspaceRuntime {
         }, replaceSealed: true);
       }),
     );
+  }
+
+  static String _handoffDigest(Map<String, dynamic> checkpoint) {
+    final immutable = {
+      ...checkpoint,
+      'execution':
+          {...checkpoint['execution'] as Map}
+            ..remove('allow_new_entries')
+            ..remove('revision'),
+    };
+    return sha256.convert(utf8.encode(_canonical(immutable))).toString();
   }
 
   static void _validateCheckpoint(

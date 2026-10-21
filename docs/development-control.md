@@ -161,6 +161,14 @@ provider evidence.
 
 ## Selected Product Outcome
 
+The current bounded repair is downloaded-release package removal and replacement
+with retained VPS authority. Live read-only diagnosis found an ended server
+grant rebound to current package bytes while the local Capsule retained the
+original handoff; its immutable checkpoint digest still matched. The fix must
+complete authenticated recovery without renewing execution, keep failed removal
+visible, and preserve package replacement. Source tests and gates precede a new
+exact-artifact smoke; the published test2 bytes do not contain this repair.
+
 The bounded Capsule-safety regression is complete on the exact `f48218d`
 Mac/APK artifacts: native backup save, authenticated recovery into empty runtime
 data on macOS and Android, rejection of valid wrong seeds and changed encrypted

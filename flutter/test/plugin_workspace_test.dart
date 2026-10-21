@@ -10,6 +10,7 @@ import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/plugin_workspace_screen.dart';
+import 'package:hivra_app/screens/wasm_plugins_screen.dart';
 import 'package:hivra_app/services/bingx_market_data_adapter.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
@@ -34,6 +35,85 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  testWidgets('package removal shows progress and a safe retryable failure', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final module = _PluginScreenModule();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WasmPluginsScreen(
+          module: module,
+          onOpenWorkspacePressed: (_) => () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Remove plugin'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+    expect(module.removalCalls, 0);
+    Future<void> confirm() async {
+      await tester.tap(find.byTooltip('Remove plugin'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Remove'));
+      await tester.pump();
+    }
+
+    await confirm();
+    expect(module.removalCalls, 1);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is IconButton && widget.tooltip == 'Remove plugin',
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.ancestor(
+              of: find.text('Add package'),
+              matching: find.byWidgetPredicate(
+                (widget) => widget is FilledButton,
+              ),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    const sensitive = 'Bearer test-provider-secret private-key-material';
+    module.removal.completeError(StateError(sensitive));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(module.registry.installed, true);
+    expect(find.textContaining('Removal did not complete'), findsOneWidget);
+    expect(find.textContaining(sensitive), findsNothing);
+    expect(
+      module.uiLog.messages.any((message) => message.contains(sensitive)),
+      false,
+    );
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    module.removal = Completer<void>();
+    await confirm();
+    expect(module.removalCalls, 2);
+    module.registry.installed = false;
+    module.removal.complete();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Remove plugin'), findsNothing);
+    expect(find.textContaining('Removal did not complete'), findsNothing);
+    expect(find.text('Removed Workspace'), findsOneWidget);
+  });
+
   test(
     'Capsule routes opaque workspace authority through one remote executor and returns before uninstall',
     () async {
@@ -57,13 +137,15 @@ void main() {
       final package = File('${root.path}/fixture.zip');
       await package.writeAsBytes([0, 97, 115, 109, 1, 0, 0, 0]);
       final digest = sha256.convert(await package.readAsBytes()).toString();
+      var serverDigest = digest;
       for (final registry in [localRegistry, serverRegistry]) {
         registry.executionBinding =
             () => PluginRuntimeBinding.externalPackage(
               packageId: registry.record.id,
               packageVersion: registry.record.pluginVersion,
               packageKind: 'zip',
-              packageDigestHex: digest,
+              packageDigestHex:
+                  identical(registry, serverRegistry) ? serverDigest : digest,
               packageFilePath: package.path,
               contractKind: pluginWorkspaceContractKind,
               capabilities: const [
@@ -392,6 +474,104 @@ void main() {
         ))!['allow_new_entries'],
         false,
       );
+      await module.setWorkspaceExecution(
+        record: localRegistry.record,
+        enabled: true,
+        approvedScope: scope,
+      );
+      await package.writeAsBytes([0, 97, 115, 109, 1, 0, 0, 0, 1]);
+      final upgradedDigest =
+          sha256.convert(await package.readAsBytes()).toString();
+      serverDigest = upgradedDigest;
+      serverBinding['package_digest'] = upgradedDigest;
+      connection['package_digest'] = upgradedDigest;
+      // Reproduce an upgrade retained by a downloaded release: the acknowledged
+      // server package is newer, but the frozen handoff still belongs to the old
+      // bytes. Neither an opaque-state rewrite nor automatic execution is safe.
+      await localFiles.writePluginState(
+        await localFiles.capsuleDirForHex(ownerHex),
+        localRegistry.record.pluginId!,
+        PluginWorkspaceRemoteService.connectionFile,
+        jsonEncode(connection),
+      );
+      await expectLater(
+        runner.dispatch({...serverBinding, 'command': 'forget'}),
+        throwsStateError,
+        reason: 'An unrecognized old grant is not proof of ended authority',
+      );
+      await expectLater(
+        serverRuntime.runScheduledWorkspaceCycle(serverRegistry.record),
+        throwsStateError,
+      );
+      localRegistry.executionBinding =
+          () => PluginRuntimeBinding.externalPackage(
+            packageId: localRegistry.record.id,
+            packageVersion: localRegistry.record.pluginVersion,
+            packageKind: 'zip',
+            packageDigestHex: upgradedDigest,
+            packageFilePath: package.path,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: [
+              ...localRegistry.record.capabilities,
+              'workspace.schedule',
+            ],
+          );
+      // Return was durable, but its acknowledgement was lost. A subsequent
+      // installation rebinds only the ended server grant to the new bytes.
+      final ended = await serverRuntime.returnWorkspaceToLocal(
+        serverRegistry.record,
+      );
+      final serverDirectory = await serverFiles.capsuleDirForHex(ownerHex);
+      await serverFiles.writePluginState(
+        serverDirectory,
+        serverRegistry.record.pluginId!,
+        'workspace-execution.v1.json',
+        jsonEncode({
+          ...ended['execution'] as Map,
+          'package_digest': upgradedDigest,
+        }),
+      );
+      final returned = await runner.dispatch({
+        ...serverBinding,
+        'command': 'return',
+      });
+      expect(returned['checkpoint']['package_digest'], upgradedDigest);
+      for (final mutation in [
+        {'handoff_id': 'b' * 64},
+        {'handoff_digest': 'b' * 64},
+        {'executor': 'vps', 'executor_id': 'f' * 64},
+        {'allow_new_entries': true},
+      ]) {
+        await expectLater(
+          module.restoreWorkspaceFromVps(
+            record: localRegistry.record,
+            executorId: connection['executor_id'] as String,
+            checkpoint: {
+              ...returned['checkpoint'] as Map<String, dynamic>,
+              'execution': {
+                ...returned['checkpoint']['execution'] as Map,
+                ...mutation,
+              },
+            },
+          ),
+          throwsStateError,
+        );
+      }
+      offline = true;
+      await expectLater(
+        module.removePlugin(localRegistry.record),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(localRegistry.installed, true);
+      expect(
+        await localFiles.readPluginState(
+          await localFiles.capsuleDirForHex(ownerHex),
+          localRegistry.record.pluginId!,
+          'workspace.v1.json',
+        ),
+        isNotNull,
+      );
+      offline = false;
       await module.removePlugin(localRegistry.record);
       expect(localRegistry.installed, false);
       expect(serverRegistry.installed, false);
@@ -5949,6 +6129,44 @@ Map<String, dynamic> view() => {
     ['105.5'],
   ],
 };
+
+class _PluginScreenModule extends Fake implements PluginRuntimeModule {
+  @override
+  final _Registry registry = _Registry();
+  @override
+  final _EmptyCatalog sourceCatalog = _EmptyCatalog();
+  @override
+  final _ScreenLog uiLog = _ScreenLog();
+  var removal = Completer<void>();
+  var removalCalls = 0;
+  @override
+  Future<void> removePlugin(WasmPluginRecord record) {
+    removalCalls++;
+    return removal.future;
+  }
+}
+
+class _EmptyCatalog extends Fake implements WasmPluginSourceCatalogService {
+  @override
+  Future<WasmPluginSourceCatalog> fetchCatalogWithFallback({
+    String primaryCatalogUrl = WasmPluginSourceCatalogService.defaultCatalogUrl,
+    String secondaryCatalogUrl =
+        WasmPluginSourceCatalogService.fallbackCatalogUrl,
+    String? localCatalogPathOverride,
+  }) async => const WasmPluginSourceCatalog(
+    sourceId: 'fixture',
+    sourceName: 'Fixture',
+    fetchedAtIso: '',
+    entries: [],
+  );
+}
+
+class _ScreenLog extends Fake implements UiEventLogService {
+  final messages = <String>[];
+  @override
+  Future<void> log(String source, String message) async =>
+      messages.add(message);
+}
 
 class _Registry extends WasmPluginRegistryService {
   PluginRuntimeBinding Function()? executionBinding;
