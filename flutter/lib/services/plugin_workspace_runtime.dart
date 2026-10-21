@@ -569,29 +569,19 @@ class PluginWorkspaceRuntime {
                   request['scope'] == 'durable'),
         ) &&
         await _readCredentials(owner: owner, pluginId: pluginId) == null) {
+      // Revalidate through the same invocation boundary after the vault read:
+      // replacement/removal or a Capsule switch cannot return the old view.
+      output = await invoke('open');
       final view = Map<String, dynamic>.from(output['view'] as Map);
       view.remove('schedule');
       final actions =
           (view['actions'] as List? ?? const []).where((raw) {
             final action = raw as Map;
-            final id = action['id'];
             final host = action['host'];
-            return id != 'start' &&
-                id != 'stop' &&
-                id != 'list_orders' &&
-                host != 'bingx.order.submit' &&
+            return host != 'bingx.order.submit' &&
                 host != 'workspace.start' &&
                 host != 'workspace.stop';
           }).toList();
-      if (!actions.any(
-        (raw) => (raw as Map)['host'] == 'bingx.account.connect',
-      )) {
-        actions.insert(0, {
-          'id': 'connect',
-          'label': 'Reconnect account',
-          'host': 'bingx.account.connect',
-        });
-      }
       view['actions'] = actions;
       view['message'] =
           '${view['message'] ?? ''}\nReconnect your BingX account to refresh VPS observations. No trading action is enabled.';
