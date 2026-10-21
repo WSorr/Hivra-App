@@ -108,11 +108,12 @@ green repository gate.
 - Protected `main` includes package/VPS recovery, the last-result Moltbook
   lifecycle, replacement/reopen/restart and manifest capability admission.
   Read Git for the current commit.
-- The latest published prerelease is `v1.0.4-test2`, with runtime source
-  `f48218d` and its matching canonical runner. The release tag adds only the
-  digest-bound manual signoff; ZIP/APK bytes are the exact smoke-tested artifacts.
-  It is an unsigned test release for the confirmed Apple Silicon + Android matrix;
-  Intel and the complete User Lifetime qualification remain unconfirmed.
+- The latest published prerelease is `v1.0.4-test3`, with runtime source
+  `6660392` and its matching canonical runner. Its tag adds only digest-bound
+  manual signoff; ZIP/APK bytes are the exact smoke-tested artifacts. It is an
+  unsigned test release for Apple Silicon and local macOS Android Emulator
+  (API 36, arm64). Intel, other Android runtime combinations and the complete
+  User Lifetime qualification remain unconfirmed.
 - Capsule selection bounds delayed Keychain activation to 30 seconds and keeps
   late completion owned by the original activation.
 - External WASM package source and package releases belong to `hivra-plugins`.
@@ -161,46 +162,49 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The selected bounded repair closes delayed Chat dispatch after package or
-Capsule changes. WASM prepares the envelope; the existing host authorization
-capture pins the package and peer-scoped preflight. Delivery requires explicit
-owner/authorization and rechecks both inside the shared FFI worker queue before
-dispatch. Replacement, removal, capability/consensus loss or Capsule switching
-while queued must cause zero transport calls, with no retry or false receipt.
-Tests prove delayed admission deterministically without a network send; exact
-Mac/APK smoke on isolated data checks package rejection/replacement and
-reopen/restart without publishing a new Chat message.
+The bounded Capsule/package release outcome is complete in `v1.0.4-test3`.
+Real Chat, Moltbook and Jack packages were installed/opened, removed through the
+product, kept absent through restart, then reinstalled/opened from the canonical
+catalog on both exact platforms. Unrelated package state and Capsule truth were
+preserved; deleted Moltbook drafts did not return. New two-way Chat after
+reinstallation survived restart exactly once. Replacement with a different
+private state shape retained opaque state through reopen/restart, and missing
+required capabilities blocked workspace admission.
 
-The bounded Capsule-safety regression is complete on the exact `f48218d`
-Mac/APK artifacts: native backup save, authenticated recovery into empty runtime
-data on macOS and Android, rejection of valid wrong seeds and changed encrypted
-backups without partial Capsules, and package replacement with reopen/restart.
-The real Redmi retained bidirectional Chat once after cold restart; macOS also
-rejected a replacement missing its required workspace capability. New signed
-contact cards supported invitation send/accept in both directions between Mac
-and isolated Android, including terminal receipts, Capsule switching and cold
-restart without reviving the resolved invitations. Production Capsule files
-remained unchanged. Runtime code and artifact bytes did not change.
+The same artifacts passed native encrypted backup export, authenticated
+empty-data recovery, negative imports, scoped Capsule switching and invitation
+send/accept in both directions, with terminal receipts retained after restart.
+Android used isolated local macOS emulators, cold boots without snapshots and a
+separate initially empty userdata root. Working Capsule files remained unchanged.
+The exact digests, per-platform observations and limits have one owner:
+`checklists/release-manual-signoff-log.md`.
 
-This qualifies the bounded Apple Silicon + Android test matrix, not the full
-User Lifetime journey. Native Intel, a separate macOS user and the complete
-long-term migration/lifetime pack remain unconfirmed. Keep those limits explicit
-in test signoff; do not mark the full User Lifetime journey PASS.
+Main CI can be run on demand through the existing repository workflow when
+GitHub misses a push event; it executes the same checks and runner builder.
+The final runtime source main run passed before publication. The host now binds
+queued Chat dispatch to captured package/peer authority and the active Capsule;
+replacement, removal or lost authorization before worker dispatch fails closed.
+Package recovery commands and workspace execution controls follow the installed
+contract rather than package-private host interpretation.
 
-Cloudflare Workers AI acceptance is complete for the bounded provider scope:
-live Analyst responses and secure configuration across restart on macOS and
-the real Redmi, plus a macOS Moltbook proposal carried into a reviewed WASM
-draft without publication. Live Moltbook challenge/reply effects were not
-exercised. The existing AI Runtime owns the selected provider; no new effect
-lane, fallback or plugin-private state was added. Its canonical boundary is
-`architecture/capsule-ai-runtime.md`.
+Local Analyst redaction, read-only package audit and normal Keychain session
+unlock/lock passed on macOS. Cloudflare configuration survived restart and plugin
+removal/reinstallation; no token re-entry was needed. The existing AI Runtime
+remains the provider owner, under `architecture/capsule-ai-runtime.md`.
+Earlier live Cloudflare evidence does not certify new live effects on test3.
 
-The current test signoff in `checklists/release-manual-signoff-log.md` owns the
-published `f48218d` artifact digests. The earlier PR #377, closed as superseded, attests `f6099fa` bytes
-and does not replace the published signoff. This control-file update follows
-publication; it does not change or recertify the release artifacts. Future
-runtime changes require their own exact-artifact smoke before publication.
-Do not overwrite the attested artifacts or reuse their smoke for changed code.
+Live automatic Moltbook publication/challenge/reply was not qualified because
+isolated Capsules had no connected Moltbook account. Jack public live
+market-data reached a WASM observation preview on both artifacts; no order or
+VPS mutation was performed. Do not promote these observations into a live
+publication, trading or VPS teardown claim.
+
+This closes the bounded unsigned test matrix, not full User Lifetime or a
+permanently frozen host ABI. Native Intel, a separate macOS user, long-term
+migration/lifetime, other Android runtime combinations and the open Jack evidence
+remain unconfirmed. Future runtime changes need a new exact-artifact smoke;
+package changes within supported contracts must remain independently replaceable.
+Do not overwrite attested artifacts or reuse their smoke for changed code.
 
 ## Deferred Product Work
 
