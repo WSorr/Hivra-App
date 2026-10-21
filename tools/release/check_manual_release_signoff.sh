@@ -160,9 +160,9 @@ self_test() {
 | Build Tag | Date (UTC) | Platform | Artifact | Artifact SHA-256 | Manual Smoke | Trading READY/BLOCKED | Trading Risk Rejection | Trading Provider Receipt | Trading Restart Reconciliation | Trading Duplicate Suppression | Moltbook Smoke | User Lifetime | AI Surface | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | v-selftest | 2026-01-01T00:00:00Z | macOS | hivra_app-v-selftest-macos-universal.zip | 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PASS | PASS | codex | live Moltbook smoke intentionally skipped |
-| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PASS | N/A | codex | live Moltbook smoke intentionally skipped |
+| v-selftest | 2026-01-01T00:00:01Z | Android | hivra_app-v-selftest-android-universal.apk | fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PASS | N/A | codex | macOS-hosted Android Emulator API 36 arm64-v8a; exact APK manually exercised; live Moltbook smoke intentionally skipped |
 | v-test-deferred | 2026-01-01T00:00:02Z | macOS | hivra_app-v-test-deferred-macos-universal.zip | 3333333333333333333333333333333333333333333333333333333333333333 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PENDING | PASS | codex | full User Lifetime is reserved for public release |
-| v-test-deferred | 2026-01-01T00:00:03Z | Android | hivra_app-v-test-deferred-android-universal.apk | 4444444444444444444444444444444444444444444444444444444444444444 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PENDING | N/A | codex | full User Lifetime is reserved for public release |
+| v-test-deferred | 2026-01-01T00:00:03Z | Android | hivra_app-v-test-deferred-android-universal.apk | 4444444444444444444444444444444444444444444444444444444444444444 | PASS | N/A | N/A | N/A | N/A | N/A | N/A | PENDING | N/A | codex | isolated macOS-hosted Android Emulator, cold boot and empty-userdata recovery; full User Lifetime is reserved for public release |
 | v-invalid | 2026-01-01T00:00:02Z | macOS | hivra_app-v-invalid-macos-universal.zip | 1111111111111111111111111111111111111111111111111111111111111111 | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID | codex | invalidated historical evidence |
 | v-retired | 2026-01-01T00:00:03Z | macOS | hivra_app-v-retired-macos-universal.zip | 2222222222222222222222222222222222222222222222222222222222222222 | PASS | PASS | PASS | PASS | PASS | codex | retired broad Trading Smoke layout |
 EOF
@@ -224,22 +224,29 @@ EOF
     die "self-test expected retired broad Trading Smoke layout to fail"
   fi
 
-  local field mutated
-  for field in 7 13 14 15; do
-    mutated="$(mktemp)"
-    awk -F'|' -v OFS='|' -v field="$field" '
-      $2 ~ /^[[:space:]]*v-selftest[[:space:]]*$/ &&
-      $4 ~ /^[[:space:]]*macOS[[:space:]]*$/ { $field = " INVALID " }
-      { print }
-    ' "$tmp" > "$mutated"
-    if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
-      --build-tag v-selftest \
-      --platform macOS \
-      --channel public >/dev/null 2>&1; then
-      rm -f "$tmp" "$mutated"
-      die "self-test expected required field $field mutation to fail"
-    fi
-    rm -f "$mutated"
+  # Emulator evidence satisfies Android signoff; required behavior statuses
+  # still fail closed on both platforms regardless of the test environment.
+  local field mutated platform
+  for platform in macOS Android; do
+    for field in 7 13 14 15; do
+      mutated="$(mktemp)"
+      awk -F'|' -v OFS='|' -v field="$field" -v platform="$platform" '
+        $2 ~ /^[[:space:]]*v-selftest[[:space:]]*$/ {
+          target = $4
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", target)
+          if (target == platform) { $field = " INVALID " }
+        }
+        { print }
+      ' "$tmp" > "$mutated"
+      if HIVRA_MANUAL_SIGNOFF_LOG="$mutated" bash "$0" \
+        --build-tag v-selftest \
+        --platform "$platform" \
+        --channel public >/dev/null 2>&1; then
+        rm -f "$tmp" "$mutated"
+        die "self-test expected $platform required field $field mutation to fail"
+      fi
+      rm -f "$mutated"
+    done
   done
 
   mutated="$(mktemp)"

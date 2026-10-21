@@ -9,6 +9,21 @@ Publishing is blocked until this checklist is reflected in
 tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform Android --channel <test|public>
 ```
 
+## Validation Environment
+
+Run Android packaged validation locally in Android Emulator on macOS. A physical
+phone or tablet is optional diagnostic evidence, never a release prerequisite.
+Use an isolated AVD and the exact release APK; do not substitute a debug build,
+modify runtime files by hand, or reuse the working Capsule. Record APK SHA-256,
+API level, ABI and the tested journeys in the existing signoff Notes.
+
+Use cold boot without snapshot restore for restart checks and a separate empty
+userdata root for clean install/recovery. Keep the existing backup/recovery,
+capability admission, replacement/reopen/restart, invitation, Capsule switching,
+Chat and secure-storage checks on this environment. For an Android API behavior
+change, use the matching API image; untested APIs/ABIs remain explicit limits.
+Emulator execution does not waive any behavior or test/public channel gate.
+
 ## Build
 
 - [ ] `tools/toolchain/verify_environment.sh --full` passes against the checked-in baseline.
@@ -22,7 +37,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 
 ## Verification
 
-- [ ] APK installs on a clean Android device.
+- [ ] APK installs on a clean local Android Emulator using the environment above.
 - [ ] APK install verification used the packaged release artifact (not only a local debug/build-tree install).
 - [ ] The published APK is the exact artifact used for smoke; a rebuild requires a new digest-bound smoke/signoff.
 - [ ] App launches and reaches first interactive screen.

@@ -29,6 +29,9 @@ After completing this checklist, record the result in:
 docs/checklists/release-manual-signoff-log.md
 ```
 
+For Android, use the local macOS emulator environment defined in
+`release-android.md`; a connected tablet is not required.
+
 ## Capsule Basics
 
 - [ ] Create a new genesis capsule.
@@ -51,8 +54,8 @@ docs/checklists/release-manual-signoff-log.md
 - [ ] On Android, confirm a fresh install/profile starts without any Capsule
       restored by OS backup or device transfer; Capsule state appears only
       after explicit seed + authenticated v2 backup recovery.
-- [ ] On Android, complete explicit recovery in a fresh secondary profile and
-      confirm seed persistence uses that profile's app-private path.
+- [ ] On Android, complete explicit recovery in a separate clean AVD userdata
+      root and confirm seed persistence uses that runtime's app-private path.
 
 ## Invitation Flow
 

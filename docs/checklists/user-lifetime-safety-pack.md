@@ -12,7 +12,8 @@ second journey checklist.
 ## Scope
 
 - [ ] Test includes one main capsule and one peer capsule (max two capsules in scope).
-- [ ] Test starts from clean local state for this release candidate.
+- [ ] Test starts from clean local state for this release candidate; Android
+      uses the local emulator environment defined in `release-android.md`.
 - [ ] The exact packaged macOS and Android artifacts, source commit, build tag,
       and clean-source metadata are recorded before the journey begins.
 
