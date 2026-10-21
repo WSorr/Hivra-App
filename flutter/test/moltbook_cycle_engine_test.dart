@@ -2371,6 +2371,7 @@ class _HeartbeatHost implements PluginHostApiService {
   Future<Future<void> Function()> captureRuntimeAuthorization({
     required String pluginId,
     required String method,
+    Map<String, dynamic> args = const {},
   }) async {
     if (!installed) throw StateError('Installed package is unavailable');
     final capturedDigest = packageDigest;

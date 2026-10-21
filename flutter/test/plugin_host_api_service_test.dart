@@ -78,6 +78,52 @@ void main() {
       expect(response.result?['message_text'], 'hello');
     });
 
+    for (final initialCapture in [true, false]) {
+      test(
+        'Chat authorization rejects replacement during consensus await: $initialCapture',
+        () async {
+          var replaceDuringRead = initialCapture;
+          var replaced = false;
+          final host = PluginHostApiService(
+            handlers: [
+              CapsuleChatPluginContractHandler(
+                readSignable: _signable,
+                readAttestedSignable: (peer) async {
+                  if (replaceDuringRead) replaced = true;
+                  return _signable(peer);
+                },
+              ),
+            ],
+            resolveRuntimeBinding:
+                (_) async => PluginRuntimeBinding.externalPackage(
+                  packageId: replaced ? 'replacement' : 'original',
+                  packageVersion: '1',
+                  packageKind: 'zip',
+                  packageDigestHex: 'a' * 64,
+                  contractKind: capsuleChatContractKind,
+                  capabilities: const [
+                    'consensus_guard.read',
+                    'content.draft.prepare',
+                  ],
+                ),
+          );
+          Future<Future<void> Function()> capture() =>
+              host.captureRuntimeAuthorization(
+                pluginId: capsuleChatPluginId,
+                method: postCapsuleChatMethod,
+                args: {'peer_hex': _peerHex},
+              );
+          if (initialCapture) {
+            await expectLater(capture(), throwsStateError);
+          } else {
+            final authorize = await capture();
+            replaceDuringRead = true;
+            await expectLater(authorize(), throwsStateError);
+          }
+        },
+      );
+    }
+
     for (final change in ['remove', 'replace', 'raw', 'revoke', 'reorder']) {
       test(
         'runtime result respects package authority after await: $change',
