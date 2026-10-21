@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-20
+Status date: 2026-10-21
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -59,6 +59,9 @@ Tests prove semantics; they do not prove product acceptance. Never call a
 build a release candidate before its source, runner, artifact digest, and smoke
 evidence are bound together.
 
+Android packaged validation follows `checklists/release-android.md`, which owns
+the local macOS emulator environment and evidence requirements.
+
 ### 6. Upgrade dependencies and tooling as one controlled unit
 
 An upgrade must record the previous and new versions, why the change is needed,
@@ -105,9 +108,11 @@ green repository gate.
 - Protected `main` includes package/VPS recovery, the last-result Moltbook
   lifecycle, replacement/reopen/restart and manifest capability admission.
   Read Git for the current commit.
-- The latest published prerelease is `v1.0.4-test1`, built from `bfe6945`.
-  No `v1.0.4-test2` release is published; any new candidate requires the
-  current source commit and matching canonical runner.
+- The latest published prerelease is `v1.0.4-test2`, with runtime source
+  `f48218d` and its matching canonical runner. The release tag adds only the
+  digest-bound manual signoff; ZIP/APK bytes are the exact smoke-tested artifacts.
+  It is an unsigned test release for the confirmed Apple Silicon + Android matrix;
+  Intel and the complete User Lifetime qualification remain unconfirmed.
 - Capsule selection bounds delayed Keychain activation to 30 seconds and keeps
   late completion owned by the original activation.
 - External WASM package source and package releases belong to `hivra-plugins`.
@@ -156,25 +161,35 @@ provider evidence.
 
 ## Selected Product Outcome
 
-Add Cloudflare Workers AI to the existing Capsule AI Runtime provider selection
-and let Moltbook news, replies and challenge proposals use that selected session.
-Reuse the credential store, provider broker, scheduler, disclosure contracts and
-Chat Completions adapter. No new plugin-private state, effect lane, provider
-fallback or authority is introduced. The canonical boundary is
+The bounded Capsule-safety regression is complete on the exact `f48218d`
+Mac/APK artifacts: native backup save, authenticated recovery into empty runtime
+data on macOS and Android, rejection of valid wrong seeds and changed encrypted
+backups without partial Capsules, and package replacement with reopen/restart.
+The real Redmi retained bidirectional Chat once after cold restart; macOS also
+rejected a replacement missing its required workspace capability. New signed
+contact cards supported invitation send/accept in both directions between Mac
+and isolated Android, including terminal receipts, Capsule switching and cold
+restart without reviving the resolved invitations. Production Capsule files
+remained unchanged. Runtime code and artifact bytes did not change.
+
+This qualifies the bounded Apple Silicon + Android test matrix, not the full
+User Lifetime journey. Native Intel, a separate macOS user and the complete
+long-term migration/lifetime pack remain unconfirmed. Keep those limits explicit
+in test signoff; do not mark the full User Lifetime journey PASS.
+
+Cloudflare Workers AI acceptance is complete for the bounded provider scope:
+live Analyst responses and secure configuration across restart on macOS and
+the real Redmi, plus a macOS Moltbook proposal carried into a reviewed WASM
+draft without publication. Live Moltbook challenge/reply effects were not
+exercised. The existing AI Runtime owns the selected provider; no new effect
+lane, fallback or plugin-private state was added. Its canonical boundary is
 `architecture/capsule-ai-runtime.md`.
 
-Acceptance covers pinned credential destinations, provider-isolated settings
-across restart/lock/clear, request/response evidence, bounded failures without
-secret echoes or quota retries, and Moltbook proposal paths without publication.
-The user has prepared a Cloudflare account and a Workers-AI-only API token.
-Next acceptance is an exact packaged UI smoke with secure configuration,
-normal Keychain unlock and a bounded live response without publication or
-trading. Live provider acceptance remains unconfirmed until that smoke passes.
-
-The prior Apple Silicon + Android Capsule-safety candidate remains bound to
-source `f6099fa` and its exact artifact digests in PR #377. Its signoff does not
-certify this new provider. Publication is paused at the user's request; no tag
-or release was created. Full User Lifetime and native Intel remain unconfirmed.
+The current test signoff in `checklists/release-manual-signoff-log.md` owns the
+published `f48218d` artifact digests. The earlier PR #377, closed as superseded, attests `f6099fa` bytes
+and does not replace the published signoff. This control-file update follows
+publication; it does not change or recertify the release artifacts. Future
+runtime changes require their own exact-artifact smoke before publication.
 Do not overwrite the attested artifacts or reuse their smoke for changed code.
 
 ## Deferred Product Work

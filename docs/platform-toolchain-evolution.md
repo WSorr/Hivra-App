@@ -227,8 +227,8 @@ Goal:
 Rules:
 - AGP, Gradle, and Kotlin are treated as a compatibility set, never as three
   unrelated dependency bumps;
-- Android API behavior changes require an Android 16 targeted-behavior smoke on
-  a physical device or emulator before publication;
+- Android API behavior changes require targeted-behavior smoke on the matching
+  API emulator image using `checklists/release-android.md` before publication;
 - AGP 9 is a separate migration proposal, because Flutter requires the
   built-in Kotlin transition for AGP 9+. It is not a routine patch update;
 - public Android distribution remains blocked until the artifact is signed by
