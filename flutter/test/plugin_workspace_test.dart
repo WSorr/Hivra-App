@@ -581,17 +581,25 @@ void main() {
       );
     },
   );
-  for (final pluginId in [
-    'hivra.contract.workspace-test.v1',
-    'HIVRA.CONTRACT.WORKSPACE-TEST.V1',
+  for (final (pluginId, privateAction, declaresRecovery, change) in [
+    ('hivra.contract.workspace-test.v1', 'start', true, 'none'),
+    ('HIVRA.CONTRACT.WORKSPACE-TEST.V1', 'stop', true, 'none'),
+    ('hivra.contract.workspace-test.v1', 'list_orders', true, 'none'),
+    ('hivra.contract.workspace-test.v1', 'start', false, 'none'),
+    ('hivra.contract.workspace-test.v1', 'start', true, 'remove'),
+    ('hivra.contract.workspace-test.v1', 'start', true, 'replace'),
+    ('hivra.contract.workspace-test.v1', 'start', true, 'capsule'),
+    ('hivra.contract.workspace-test.v1', 'start', true, 'digest'),
   ]) {
     test(
-      'read-only open keeps the workspace visible without recovered credentials: $pluginId',
+      'credential recovery preserves package commands and binding: $pluginId $privateAction $declaresRecovery $change',
       () async {
         final root = await Directory('/tmp').createTemp('hivra_vps_recovery_');
         addTearDown(() => root.delete(recursive: true));
         const owner =
             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        String? active = owner;
+        var digest = 'b' * 64;
         final files = CapsuleFileStore(
           dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
         );
@@ -613,7 +621,7 @@ void main() {
               packageId: registry.record.id,
               packageVersion: registry.record.pluginVersion,
               packageKind: 'zip',
-              packageDigestHex: 'b' * 64,
+              packageDigestHex: digest,
               contractKind: pluginWorkspaceContractKind,
               capabilities: registry.record.capabilities,
             );
@@ -633,21 +641,32 @@ void main() {
                 semanticResult: {
                   'state': {'opaque': 1},
                   'requests': [
-                    {
-                      'kind': 'account.snapshot.read',
-                      'provider': 'bingx',
-                      'symbol': 'BTC-USDT',
-                      'account_id': 'f' * 64,
-                    },
+                    if (request.args['action'] == 'open')
+                      {
+                        'kind': 'account.snapshot.read',
+                        'provider': 'bingx',
+                        'symbol': 'BTC-USDT',
+                        'account_id': 'f' * 64,
+                      },
                   ],
                   'view': {
                     ...view(),
                     'schedule': {'action': 'cycle'},
                     'actions': [
+                      if (declaresRecovery)
+                        {
+                          'id': 'restore_broker_binding',
+                          'label': 'Package-owned reconnect',
+                          'host': 'bingx.account.connect',
+                        },
+                      {'id': privateAction, 'label': 'Package-owned action'},
                       {
-                        'id': 'start',
+                        'id': 'enable_cycles',
                         'label': 'Start cycles',
-                        'host': 'workspace.start',
+                        'host':
+                            privateAction == 'stop'
+                                ? 'workspace.stop'
+                                : 'workspace.start',
                       },
                       {
                         'id': 'place',
@@ -663,23 +682,54 @@ void main() {
           registry: registry,
           pluginHostApi: host,
           fileStore: files,
-          readActiveCapsuleRootHex: () => owner,
-          readCredentials: ({required owner, required pluginId}) async => null,
+          readActiveCapsuleRootHex: () => active,
+          readCredentials: ({required owner, required pluginId}) async {
+            switch (change) {
+              case 'remove':
+                registry.installed = false;
+              case 'replace':
+                registry.record = WasmPluginRecord.fromJson({
+                  ...registry.record.toJson(),
+                  'id': 'replacement-package',
+                });
+              case 'capsule':
+                active = 'e' * 64;
+              case 'digest':
+                digest = 'e' * 64;
+            }
+            return null;
+          },
           writeCredentials:
               ({required owner, required pluginId, required value}) async {},
           scheduleTimers: false,
         );
-        final recovered = await runtime.runWorkspaceAction(
+        final pending = runtime.runWorkspaceAction(
           record: registry.record,
           action: 'open',
         );
+        if (change != 'none') {
+          await expectLater(pending, throwsStateError);
+          return;
+        }
+        final recovered = await pending;
         expect(recovered['title'], 'Independent package');
         expect(recovered['message'], contains('Reconnect your BingX account'));
         expect(recovered['schedule'], isNull);
         final actions = (recovered['actions'] as List).cast<Map>();
-        expect(actions.map((a) => a['id']), contains('connect'));
-        expect(actions.map((a) => a['id']), isNot(contains('start')));
-        expect(actions.map((a) => a['id']), isNot(contains('place')));
+        expect(actions, [
+          if (declaresRecovery)
+            {
+              'id': 'restore_broker_binding',
+              'label': 'Package-owned reconnect',
+              'host': 'bingx.account.connect',
+            },
+          {'id': privateAction, 'label': 'Package-owned action'},
+        ]);
+        final continued = await runtime.runWorkspaceAction(
+          record: registry.record,
+          action: privateAction,
+        );
+        expect(continued['title'], 'Independent package');
       },
     );
   }

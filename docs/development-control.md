@@ -161,13 +161,14 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The selected bounded repair is Analyst provider-key availability and recovery.
-The existing credential owner performs a metadata-only presence check; status
-must not read or unlock a secret. The UI must accept a delayed result for its
-current provider, reject stale completions after selection changes, and offer
-retry after a real storage failure. Focused tests and repository gates precede
-an exact packaged check; the current published test2 and the prior test3
-artifacts do not contain this repair.
+The selected bounded repair removes host-owned private recovery commands from
+plugin workspaces. When host credentials are unavailable, WASM still owns its
+action IDs, labels and recovery entry point; the host restricts only public
+financial/execution actions and revalidates the Capsule/package binding after
+the credential read. Replacement packages with different commands must remain
+usable through reopen and restart without host reconstruction of their scenario.
+Focused regression tests, repository gates and an exact packaged smoke on
+isolated data must prove this boundary before acceptance.
 
 The bounded Capsule-safety regression is complete on the exact `f48218d`
 Mac/APK artifacts: native backup save, authenticated recovery into empty runtime

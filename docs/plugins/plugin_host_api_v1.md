@@ -41,6 +41,13 @@ provider effects merely because a WASM call succeeds.
     State internals are opaque to the host: the package owns account, strategy,
     and managed-order interpretation. Provider scope comes from explicit
     capability requests, not private state field names.
+    Missing host credentials do not transfer recovery decisions to the host:
+    a read-only presentation retains package action IDs and labels, including
+    any package-declared account connection action. The host never invents a
+    private reconnect command or suppresses commands by their names. It may
+    withhold public financial/execution host actions and scheduling until fresh
+    evidence is available. The Capsule/package binding is revalidated after
+    awaiting the credential store before returning that presentation.
     `PluginWorkspaceRuntime` owns the same invocation, persistence and effect
     path in app and headless hosts. The app module supplies its scoped vault
     through credential ports; Flutter, Chat and Moltbook are not dependencies
