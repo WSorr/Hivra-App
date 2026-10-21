@@ -580,6 +580,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           MaterialPageRoute<void>(
             builder:
                 (_) => PluginWorkspaceScreen(
+                  capabilities: record.capabilities,
                   connectVps:
                       ({
                         required host,

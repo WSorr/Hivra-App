@@ -161,14 +161,15 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The selected bounded repair removes host-owned private recovery commands from
-plugin workspaces. When host credentials are unavailable, WASM still owns its
-action IDs, labels and recovery entry point; the host restricts only public
-financial/execution actions and revalidates the Capsule/package binding after
-the credential read. Replacement packages with different commands must remain
-usable through reopen and restart without host reconstruction of their scenario.
-Focused regression tests, repository gates and an exact packaged smoke on
-isolated data must prove this boundary before acceptance.
+The selected bounded repair removes unconditional trading UI from the generic
+workspace. The installed manifest's existing `workspace.schedule` capability
+opts a package into host executor controls; callbacks and saved connection
+metadata do not select its product UI. WASM owns action labels on local and VPS
+targets. Existing financial confirmations, grants and effect paths remain the
+host boundary. A replacement without scheduling must retain its private state
+and package actions through reopen/restart without inherited executor controls.
+Focused tests, repository gates and exact Mac/APK smoke on isolated data must
+prove this boundary before acceptance.
 
 The bounded Capsule-safety regression is complete on the exact `f48218d`
 Mac/APK artifacts: native backup save, authenticated recovery into empty runtime
