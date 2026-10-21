@@ -33,6 +33,7 @@ class AiDoctorCredentialStore {
       <InferenceProviderKind, String>{};
   final Map<InferenceProviderKind, String> _sessionBaseUrls =
       <InferenceProviderKind, String>{};
+  final Map<InferenceProviderKind, Future<bool>> _presenceChecks = {};
   InferenceProviderKind? _cachedPreferredProvider;
   InferenceProviderKind? _sessionPreferredProvider;
 
@@ -91,17 +92,20 @@ class AiDoctorCredentialStore {
     }
   }
 
-  Future<bool> hasApiKey(InferenceProviderKind provider) async {
+  Future<bool> hasApiKey(InferenceProviderKind provider) {
     final cached = _sessionApiKeys[provider];
-    if (cached != null && cached.isNotEmpty) return true;
-    final key = _keyForProvider(provider);
-    try {
-      // Check presence without copying the secret into the unlocked session.
-      final stored = await _secureStorage.read(key: key);
-      return stored?.trim().isNotEmpty == true;
-    } catch (error) {
-      throw _secureCredentialStorageError(error);
-    }
+    if (cached != null && cached.isNotEmpty) return Future.value(true);
+    return _presenceChecks.putIfAbsent(provider, () async {
+      try {
+        // Metadata lookup only. The native Darwin implementation explicitly
+        // disables kSecReturnData; status must not read or unlock the secret.
+        return await _secureStorage.containsKey(key: _keyForProvider(provider));
+      } catch (error) {
+        throw _secureCredentialStorageError(error);
+      } finally {
+        _presenceChecks.remove(provider);
+      }
+    });
   }
 
   Future<void> clearApiKey(InferenceProviderKind provider) async {

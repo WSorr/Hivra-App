@@ -55,7 +55,7 @@ release row to make it current.
 | Plugin installation, replacement and removal recovery | `architecture/plugin-package-lifecycle.md` |
 | Plugin host API | `plugins/plugin_host_api_v1.md` |
 | Capsule-scoped secrets | `architecture/capsule-scoped-secret-lifecycle.md` |
-| Capsule AI Runtime | `architecture/capsule-ai-runtime.md` |
+| Capsule AI Runtime, credential availability and session unlock | `architecture/capsule-ai-runtime.md` |
 | AI proposal boundary | `architecture/ai-proposal-boundary.md` |
 | Continuous Ledger v5 | `architecture/continuous-ledger-protocol-v5.md` |
 | Identity migration | `identity-decoupling-migration.md` |

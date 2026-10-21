@@ -1,10 +1,176 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_capsule_inspection_service.dart';
 import 'package:hivra_app/services/ai_doctor_chat_service.dart';
 import 'package:hivra_app/services/ai_doctor_prompt_service.dart';
 import 'package:hivra_app/services/capsule_ai_runtime_service.dart';
+import 'package:hivra_app/services/inference_provider_adapter.dart';
+import 'package:hivra_app/widgets/ai_diagnostics/provider_widgets.dart';
 
 void main() {
+  Future<void> showCard(WidgetTester tester, _RecordingRuntime runtime) async {
+    tester.view.physicalSize = const Size(1400, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: AiDoctorChatCard(
+              snapshot: _snapshot(),
+              chatService: AiDoctorChatService(runtime: runtime),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
+  Future<void> selectProvider(WidgetTester tester, String label) async {
+    await tester.tap(
+      find.byType(DropdownButtonFormField<InferenceProviderKind>),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label).last);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'Analyst accepts delayed storage status without an invented timeout',
+    (tester) async {
+      final pending = Completer<bool>();
+      final runtime = _RecordingRuntime(preferredProviderId: 'gemini')
+        ..readPresence = (_) => pending.future;
+      await showCard(tester, runtime);
+      await tester.pump(const Duration(seconds: 40));
+      expect(find.text('Checking secure storage…'), findsOneWidget);
+      expect(find.textContaining('not saved.'), findsNothing);
+      expect(find.text('Retry secure storage check'), findsNothing);
+      await tester.tap(find.text('Ask AI Analyst'));
+      expect(runtime.operations, isEmpty);
+      expect(runtime.presenceCalls, ['gemini']);
+      pending.complete(true);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Gemini API key is saved in secure storage.'),
+        findsOneWidget,
+      );
+      expect(runtime.operations, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'Analyst retries a real status failure without displaying raw secret data',
+    (tester) async {
+      const secret = 'Bearer private-test-key';
+      final runtime = _RecordingRuntime(preferredProviderId: 'gemini')
+        ..readPresence = (_) async => throw StateError(secret);
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      expect(find.textContaining(secret), findsNothing);
+      expect(find.text('Retry secure storage check'), findsOneWidget);
+      final pending = Completer<bool>();
+      runtime.readPresence = (_) => pending.future;
+      await tester.tap(find.text('Retry secure storage check'));
+      await tester.pump();
+      expect(find.text('Checking secure storage…'), findsOneWidget);
+      expect(find.text('Retry secure storage check'), findsNothing);
+      pending.complete(false);
+      await tester.pumpAndSettle();
+      expect(find.text('Gemini API key is not saved.'), findsOneWidget);
+      expect(runtime.presenceCalls, ['gemini', 'gemini']);
+      expect(runtime.operations, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'provider-preference failure recovers through the same Retry action',
+    (tester) async {
+      final runtime =
+          _RecordingRuntime()
+            ..readPreferred =
+                () async => throw StateError('private preference failure');
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      expect(find.text('Checking secure storage…'), findsNothing);
+      expect(find.textContaining('private preference failure'), findsNothing);
+      expect(find.text('Retry secure storage check'), findsOneWidget);
+      runtime.readPreferred = () async => 'gemini';
+      await tester.tap(find.text('Retry secure storage check'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Gemini API key is saved in secure storage.'),
+        findsOneWidget,
+      );
+      expect(runtime.presenceCalls, ['gemini']);
+      expect(runtime.operations, isEmpty);
+    },
+  );
+
+  testWidgets('switching away and back rejects earlier status completions', (
+    tester,
+  ) async {
+    final first = Completer<bool>();
+    final latest = Completer<bool>();
+    final other = Completer<bool>();
+    var reads = 0;
+    final runtime = _RecordingRuntime(preferredProviderId: 'openai')
+      ..readPresence = (id) {
+        if (id == 'gemini') return other.future;
+        return ++reads == 1 ? first.future : latest.future;
+      };
+    await showCard(tester, runtime);
+    await selectProvider(tester, 'Gemini');
+    await selectProvider(tester, 'OpenAI');
+    latest.complete(false);
+    await tester.pumpAndSettle();
+    first.complete(true);
+    other.completeError(StateError('outdated failure'));
+    await tester.pumpAndSettle();
+    expect(find.text('OpenAI API key is not saved.'), findsOneWidget);
+    expect(
+      find.text('OpenAI API key is saved in secure storage.'),
+      findsNothing,
+    );
+    expect(find.text('Retry secure storage check'), findsNothing);
+  });
+
+  testWidgets(
+    'late preferred provider cannot replace an explicit user selection',
+    (tester) async {
+      final preferred = Completer<String?>();
+      final runtime =
+          _RecordingRuntime()..readPreferred = () => preferred.future;
+      await showCard(tester, runtime);
+      await selectProvider(tester, 'Gemini');
+      preferred.complete('openai');
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Gemini API key is saved in secure storage.'),
+        findsOneWidget,
+      );
+      expect(runtime.presenceCalls, ['gemini']);
+    },
+  );
+
+  testWidgets('leaving Analyst safely discards a pending status completion', (
+    tester,
+  ) async {
+    final pending = Completer<bool>();
+    final runtime = _RecordingRuntime(preferredProviderId: 'gemini')
+      ..readPresence = (_) => pending.future;
+    await showCard(tester, runtime);
+    await tester.pumpWidget(const SizedBox());
+    pending.completeError(StateError('late storage failure'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(runtime.operations, isEmpty);
+  });
+
   group('AiDoctorChatService', () {
     test(
       'routes selected redacted disclosure through Capsule AI Runtime',
@@ -139,6 +305,9 @@ const _capsuleRoot =
 class _RecordingRuntime implements CapsuleInferenceRuntime {
   String? preferredProviderId;
   final Object? error;
+  Future<bool> Function(String)? readPresence;
+  Future<String?> Function()? readPreferred;
+  final presenceCalls = <String>[];
   final List<String> operations = <String>[];
   final List<String> configuration = <String>[];
   CapsuleInferenceRequestV1? request;
@@ -158,7 +327,8 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   String requireActiveCapsuleRootHex() => _capsuleRoot;
 
   @override
-  Future<String?> loadPreferredProviderId() async => preferredProviderId;
+  Future<String?> loadPreferredProviderId() async =>
+      readPreferred != null ? await readPreferred!() : preferredProviderId;
 
   @override
   Future<void> savePreferredProviderId(String providerId) async {
@@ -172,7 +342,10 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   }
 
   @override
-  Future<bool> hasProviderApiKey(String providerId) async => true;
+  Future<bool> hasProviderApiKey(String providerId) async {
+    presenceCalls.add(providerId);
+    return readPresence != null ? await readPresence!(providerId) : true;
+  }
 
   @override
   Future<void> clearProviderApiKey(String providerId) async {
