@@ -1,5 +1,38 @@
 use super::*;
 
+// The persisted v1 format is bincode 1.x's little-endian, fixed-width layout.
+// This bounds allocation while admitting the existing 32 MiB payload budget
+// plus quarantine policies, tombstones and record metadata. Do not use wincode's
+// smaller default preallocation budget or introduce a new wire format here.
+#[cfg(feature = "capsule-host")]
+pub(crate) fn capsule_binary_config() -> impl wincode::config::Config {
+    wincode::config::Configuration::default()
+        .with_preallocation_size_limit::<{ 64 * 1024 * 1024 }>()
+        .with_deserialization_size_limit::<{ 64 * 1024 * 1024 }>()
+}
+
+#[cfg(all(test, feature = "capsule-host"))]
+mod binary_tests {
+    use super::*;
+
+    #[test]
+    fn malformed_lengths_and_option_tags_fail_before_allocation() {
+        for length in [u64::MAX, 64 * 1024 * 1024 + 1] {
+            let bytes = length.to_le_bytes();
+            assert!(
+                wincode::config::deserialize::<Vec<u8>, _>(&bytes, capsule_binary_config())
+                    .is_err()
+            );
+            assert!(
+                wincode::config::deserialize::<String, _>(&bytes, capsule_binary_config()).is_err()
+            );
+        }
+        assert!(
+            wincode::config::deserialize::<Option<u64>, _>(&[2], capsule_binary_config()).is_err()
+        );
+    }
+}
+
 /// Structure for returning serialized bytes
 #[repr(C)]
 pub struct FfiBytes {

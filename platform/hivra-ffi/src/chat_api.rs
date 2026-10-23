@@ -1,4 +1,5 @@
 use super::*;
+use crate::ffi_support::capsule_binary_config;
 use hivra_keystore::{open_chat_handoff_snapshot, seal_chat_handoff_snapshot};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
@@ -16,7 +17,7 @@ const CHAT_HANDOFF_FILE: &str = "chat_handoff.v1.bin";
 const CHAT_HANDOFF_TEMP_FILE: &str = ".chat_handoff.v1.tmp";
 static CHAT_HANDOFF_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 pub(crate) struct QueuedChatMessage {
     event_id: String,
     from_hex: String,
@@ -25,7 +26,7 @@ pub(crate) struct QueuedChatMessage {
     timestamp_ms: u64,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct ChatHandoffSnapshotV1 {
     schema_version: u16,
     capsule_id: String,
@@ -183,7 +184,8 @@ fn load_chat_handoff(
     let plaintext = open_chat_handoff_snapshot(seed, aad.as_bytes(), &sealed)
         .map_err(|_| "authentication failed".to_string())?;
     let snapshot: ChatHandoffSnapshotV1 =
-        bincode::deserialize(&plaintext).map_err(|_| "snapshot corrupt".to_string())?;
+        wincode::config::deserialize(&plaintext, capsule_binary_config())
+            .map_err(|_| "snapshot corrupt".to_string())?;
     if snapshot.schema_version != CHAT_HANDOFF_SCHEMA_VERSION
         || snapshot.capsule_id != capsule_id
         || snapshot.network != capsule_state.network
@@ -200,7 +202,8 @@ fn write_chat_handoff(snapshot: &ChatHandoffSnapshotV1, seed: &Seed) -> Result<(
     let path = chat_handoff_path(&snapshot.capsule_id)?;
     let parent = path.parent().ok_or_else(|| "invalid path".to_string())?;
     fs::create_dir_all(parent).map_err(|_| "directory create failed".to_string())?;
-    let plaintext = bincode::serialize(snapshot).map_err(|_| "serialize failed".to_string())?;
+    let plaintext = wincode::config::serialize(snapshot, capsule_binary_config())
+        .map_err(|_| "serialize failed".to_string())?;
     if plaintext.len() > CHAT_HANDOFF_MAX_PLAINTEXT_BYTES {
         return Err("snapshot capacity exhausted".to_string());
     }
@@ -258,7 +261,7 @@ fn persist_chat_handoff(
         let evicted = snapshot.records.remove(0);
         append_chat_tombstones(&mut snapshot, std::iter::once(evicted.event_id));
     }
-    while bincode::serialized_size(&snapshot).unwrap_or(u64::MAX)
+    while wincode::config::serialized_size(&snapshot, capsule_binary_config()).unwrap_or(u64::MAX)
         > CHAT_HANDOFF_MAX_PLAINTEXT_BYTES as u64
     {
         if snapshot.records.len() <= 1 {
@@ -329,7 +332,102 @@ fn acknowledge_chat_handoff(
 #[cfg(test)]
 mod ingress_tests {
     use super::*;
+    use crate::tests::legacy_binary_fixture;
     use tempfile::tempdir;
+
+    #[test]
+    fn truncated_legacy_chat_snapshot_fails_closed() {
+        let bytes = legacy_binary_fixture("chat");
+        for end in 0..bytes.len() {
+            assert!(
+                wincode::config::deserialize::<ChatHandoffSnapshotV1, _>(
+                    &bytes[..end],
+                    capsule_binary_config()
+                )
+                .is_err(),
+                "accepted truncated snapshot at {end}"
+            );
+        }
+    }
+
+    #[test]
+    fn old_chat_bytes_and_encrypted_handoff_survive_reopen_and_ack() {
+        let _guard = crate::inbound_quarantine::TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        crate::inbound_quarantine::set_application_storage_root(root.path()).unwrap();
+        let bytes = legacy_binary_fixture("chat");
+        let snapshot: ChatHandoffSnapshotV1 =
+            wincode::config::deserialize(&bytes, capsule_binary_config()).unwrap();
+        assert_eq!(
+            snapshot.records[0].payload_json,
+            "{\"text\":\"\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442} 🦀\"}"
+        );
+        assert_eq!(snapshot.records[0].timestamp_ms, 65537);
+        assert_eq!(snapshot.tombstones, ["event-consumed"]);
+        assert_eq!(
+            wincode::config::serialize(&snapshot, capsule_binary_config()).unwrap(),
+            bytes
+        );
+        assert_eq!(
+            wincode::config::serialized_size(&snapshot, capsule_binary_config()).unwrap(),
+            bytes.len() as u64
+        );
+
+        let capsule = state(200, 1);
+        let endpoint = [201; 32];
+        let seed = Seed::new([199; 32]);
+        let path = chat_handoff_path(&snapshot.capsule_id).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let sealed = legacy_binary_fixture("chat_sealed");
+        fs::write(&path, &sealed).unwrap();
+        let reopened = load_chat_handoff(&capsule, endpoint, &seed).unwrap();
+        // Reading an old file does not migrate or rewrite it.
+        assert_eq!(fs::read(&path).unwrap(), sealed);
+        write_chat_handoff(&reopened, &seed).unwrap();
+        let aad = chat_handoff_aad(&snapshot.capsule_id, 1, &snapshot.transport_endpoint);
+        assert_eq!(
+            open_chat_handoff_snapshot(&seed, aad.as_bytes(), &fs::read(&path).unwrap()).unwrap(),
+            bytes
+        );
+        let record = reopened.records[0].clone();
+        persist_chat_handoff(&capsule, endpoint, &seed, record.clone()).unwrap();
+        assert_eq!(
+            list_chat_handoff(&capsule, endpoint, &seed).unwrap().len(),
+            1
+        );
+        acknowledge_chat_handoff(&capsule, endpoint, &seed, &[record.event_id.clone()]).unwrap();
+        persist_chat_handoff(&capsule, endpoint, &seed, record).unwrap();
+        assert!(list_chat_handoff(&capsule, endpoint, &seed)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn chat_codec_admits_existing_budget_and_rejects_oversize_without_rewrite() {
+        let _guard = crate::inbound_quarantine::TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        crate::inbound_quarantine::set_application_storage_root(root.path()).unwrap();
+        let capsule = state(200, 1);
+        let seed = Seed::new([199; 32]);
+        let mut snapshot: ChatHandoffSnapshotV1 =
+            wincode::config::deserialize(&legacy_binary_fixture("chat"), capsule_binary_config())
+                .unwrap();
+        snapshot.records[0].payload_json = "x".repeat(CHAT_HANDOFF_MAX_PLAINTEXT_BYTES - 1024);
+        write_chat_handoff(&snapshot, &seed).unwrap();
+        assert_eq!(
+            load_chat_handoff(&capsule, [201; 32], &seed)
+                .unwrap()
+                .records[0]
+                .payload_json
+                .len(),
+            CHAT_HANDOFF_MAX_PLAINTEXT_BYTES - 1024
+        );
+        let path = chat_handoff_path(&snapshot.capsule_id).unwrap();
+        let before = fs::read(&path).unwrap();
+        snapshot.records[0].payload_json.push_str(&"x".repeat(2048));
+        assert!(write_chat_handoff(&snapshot, &seed).is_err());
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
 
     fn state(capsule: u8, network: u8) -> CapsuleState {
         CapsuleState {

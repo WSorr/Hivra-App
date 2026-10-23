@@ -98,26 +98,6 @@ mod tests {
     use crate::{Signature, StarterId, StarterKind, Timestamp};
 
     #[test]
-    fn test_capsule_state_serialization() {
-        let state = CapsuleState {
-            public_key: [1; 32],
-            capsule_type: 0,
-            network: 0,
-            slots: [None, None, None, None, None],
-            ledger_hash: 42,
-            ledger_head_commitment: None,
-            relationships_count: 0,
-            version: 1,
-            starter_kinds: [None, None, None, None, None],
-        };
-
-        let serialized = bincode::serialize(&state).unwrap();
-        let deserialized: CapsuleState = bincode::deserialize(&serialized).unwrap();
-
-        assert_eq!(state, deserialized);
-    }
-
-    #[test]
     fn counts_only_active_relationships() {
         let owner = PubKey::from([1u8; 32]);
         let mut ledger = Ledger::new(owner);

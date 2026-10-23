@@ -684,25 +684,11 @@ pub trait CryptoProvider {
 
 ### 4.3 Incoming Event Validation
 
-```rust
-fn validate_incoming_event(
-    &self,
-    raw_bytes: &[u8],
-    pubkey: &PubKey,
-    signature: &Signature,
-) -> Result<ValidatedEvent, Error> {
-    // 1. Crypto verification (CryptoProvider)
-    self.crypto.verify(raw_bytes, pubkey.as_bytes(), signature.as_bytes())?;
-
-    // 2. Deserialize into domain event (binary format)
-    let event: DomainEvent = bincode::deserialize(raw_bytes)?;
-
-    // 3. Structural validation (domain rules)
-    event.validate_structure()?;
-
-    Ok(ValidatedEvent::from(event))
-}
-```
+Incoming event validation authenticates the canonical event bytes through the
+CryptoProvider, decodes the declared event format, and applies structural domain
+validation before admission. This order does not select a transport or storage
+codec: transport envelopes and persisted snapshots keep their own existing
+formats and authentication boundaries.
 
 ---
 
@@ -1490,7 +1476,7 @@ Rules:
 ### 10.1 Rules
 
 - All structures are encoded only in binary.
-- Allowed formats: bincode (recommended), postcard.
+- Binary codec: wincode, preserving the existing bincode 1.x wire layouts.
 - JSON is forbidden inside Core.
 - Encoding: little-endian, fixed-length integers.
 

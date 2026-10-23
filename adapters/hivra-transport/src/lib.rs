@@ -196,7 +196,9 @@ pub struct DeliveryReceipt {
 }
 
 /// Cryptographic proof for a Core event transported between capsules.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead,
+)]
 pub struct DomainEventProof {
     /// Version of the signed Core event. Missing on legacy envelopes means
     /// protocol v4 so old delivery records remain readable.

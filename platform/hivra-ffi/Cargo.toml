@@ -19,7 +19,7 @@ hivra-transport = { path = "../../adapters/hivra-transport", optional = true }
 nostr-sdk = { version = "0.45.4", optional = true }
 futures = { version = "0.3", optional = true }
 rand = { version = "0.8", optional = true }
-bincode = { version = "1.3", optional = true }
+wincode = { version = "=0.6.3", features = ["derive"], optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 bip39 = { version = "2.0", default-features = false, features = ["std"], optional = true }
 zeroize = { version = "1.7", optional = true }
@@ -35,6 +35,6 @@ default = ["capsule-host"]
 capsule-host = [
     "dep:hivra-keystore", "dep:hivra-core", "dep:hivra-engine",
     "dep:hivra-ed25519-crypto", "dep:hivra-nostr-crypto", "dep:hivra-transport",
-    "dep:nostr-sdk", "dep:futures", "dep:rand", "dep:bincode", "dep:serde",
+    "dep:nostr-sdk", "dep:futures", "dep:rand", "dep:wincode", "dep:serde",
     "dep:bip39", "dep:zeroize", "dep:sha2", "dep:serde_json",
 ]

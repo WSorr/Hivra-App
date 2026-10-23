@@ -162,22 +162,22 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The active maintenance scope replaces Wasmi 0.38.0 with 0.41.3 to remove its
-unmaintained `paste` dependency through the upstream runtime. The existing
-`hivra-wasm-runtime::invoke_json` remains the single execution owner; the ABI
-and resource contract in `plugins/plugin_host_api_v1.md` remain unchanged.
-The runtime keeps binary-only modules and 32-bit memory, explicitly excluding
-the newer memory64 and custom-page-size proposals. No package-private state,
-provider decision, C ABI, Ledger or storage migration belongs to this scope.
+The active maintenance scope replaces unmaintained bincode 1.3.3 with wincode
+0.6.3 while preserving the existing little-endian, fixed-width v1 binary format.
+The FFI projection, encrypted Chat handoff and inbound quarantine remain owned
+by their existing paths. Frozen bytes from the old codec cover the FFI layout,
+optional envelope proof, Chat and both current/Pass15 quarantine snapshots.
+There is no file/schema/crypto migration or additional reader fallback. Core no
+longer carries a production codec dependency solely for a roundtrip test; binary
+compatibility is tested at the existing FFI boundary instead.
 
-Only the Wasmi dependency family and its required transitive replacements
-change; bincode and the compiler/platform pins remain unchanged. Automated
-acceptance covers entry signatures, module/input/output bounds, imports,
-memory growth, fuel exhaustion during start and evaluation, and replacement
-modules with different opaque state shapes. Exact packaged acceptance remains
-pending a clean approved source and matching runner: verify existing packages
-and replacement/reopen/restart on isolated macOS and Android data. Existing
-release artifacts and their attestations remain unchanged.
+Only wincode and its required transitive additions change; existing third-party
+lock entries and compiler/platform pins remain unchanged. Automated acceptance
+must preserve size accounting, retry, tombstones and sender charges, accept the
+existing Chat payload budget, and reject malformed lengths and corrupt inputs.
+Exact packaged acceptance remains pending a clean approved source and matching
+runner: upgrade an isolated old Capsule, then verify invitations and two-way
+Chat through reconnect/restart. Existing release artifacts remain unchanged.
 
 The bounded Capsule/package release outcome is complete in `v1.0.4-test3`.
 Real Chat, Moltbook and Jack packages were installed/opened, removed through the
