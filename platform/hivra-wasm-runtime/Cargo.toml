@@ -6,7 +6,7 @@ license.workspace = true
 description = "Deterministic sandboxed WASM runtime for Hivra plugin ABI"
 
 [dependencies]
-wasmi = "=0.38.0"
+wasmi = { version = "=0.41.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 wat = "1"
