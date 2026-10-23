@@ -212,6 +212,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   Future<void> _exportCapsule(CapsuleSelectorItem capsule) async {
     try {
       final path = await _backupFiles.save(
+        capsuleId: capsule.publicKeyHex,
         exportToPath:
             (path) =>
                 _service.exportCapsuleBackupToPath(capsule.publicKeyHex, path),

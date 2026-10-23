@@ -39,13 +39,18 @@ For Android, use the local macOS emulator environment defined in
 - [ ] Switch between capsules successfully.
 - [ ] Capsule selector shows expected summaries.
 - [ ] Export a user-visible Capsule backup and confirm the JSON identifies
-      `hivra.capsule_backup` version `2` without visible Ledger `owner` or
+      `hivra.capsule_backup` version `3` without visible Ledger `owner` or
       `events` fields.
 - [ ] On Android, Save Backup opens the system document-creation dialog without
       requiring a Share receiver. Cancel leaves no saved-success claim; save
       creates a file that remains available after Hivra restarts and can be
       selected for authenticated recovery. Capsule selector Export Backup uses
       the same save flow.
+- [ ] Confirm saved/shared names contain the public Capsule ID and UTC date.
+- [ ] Recover v3 into empty isolated data; reopen and restart Chat and a replaced
+      package with a different private state shape. Verify opaque state, packages
+      and durable receipts survive, no vault credentials are exported, no prior
+      execution lease resumes, and an existing Capsule/package conflict is untouched.
 - [ ] Recover with the matching seed and encrypted backup; confirm owner and
       Ledger history match the source Capsule.
 - [ ] Confirm a wrong seed or modified ciphertext fails without importing any
@@ -53,7 +58,7 @@ For Android, use the local macOS emulator environment defined in
       share success or cancellation.
 - [ ] On Android, confirm a fresh install/profile starts without any Capsule
       restored by OS backup or device transfer; Capsule state appears only
-      after explicit seed + authenticated v2 backup recovery.
+      after explicit seed + authenticated v2/v3 backup recovery.
 - [ ] On Android, complete explicit recovery in a separate clean AVD userdata
       root and confirm seed persistence uses that runtime's app-private path.
 

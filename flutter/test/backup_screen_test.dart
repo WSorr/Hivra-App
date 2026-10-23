@@ -15,6 +15,9 @@ class _BackupRuntime implements BackupRuntime {
   Future<String?> Function(String, Uint8List)? export;
 
   @override
+  String? capsulePublicKeyHex() => 'a' * 64;
+
+  @override
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24}) =>
       List.filled(wordCount, 'test').join(' ');
 
@@ -88,6 +91,7 @@ void main() {
     final envelope =
         (await tester.runAsync(
           () => CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+            files: {},
             ledgerJson: ledger,
             seed: seed,
             isGenesis: true,

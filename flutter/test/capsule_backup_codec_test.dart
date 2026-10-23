@@ -135,7 +135,7 @@ void main() {
     });
   });
 
-  group('CapsuleBackupCodec encrypted v2', () {
+  group('CapsuleBackupCodec encrypted v3', () {
     final seed = Uint8List.fromList(List<int>.generate(32, (index) => index));
     final ledger = jsonEncode(<String, dynamic>{
       'owner': List<int>.filled(32, 0x42),
@@ -144,6 +144,7 @@ void main() {
 
     test('round-trips authenticated ledger and hides plaintext', () async {
       final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+        files: {},
         ledgerJson: ledger,
         seed: seed,
         isGenesis: true,
@@ -161,6 +162,7 @@ void main() {
 
     test('rejects wrong seed without plaintext fallback', () async {
       final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+        files: {},
         ledgerJson: ledger,
         seed: seed,
       );
@@ -175,6 +177,7 @@ void main() {
 
     test('rejects tampered suite and ciphertext', () async {
       final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+        files: {},
         ledgerJson: ledger,
         seed: seed,
       );

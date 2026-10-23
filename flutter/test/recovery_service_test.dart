@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:io';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +22,13 @@ class _FakeRecoveryRuntime implements RecoveryRuntime {
 
   int createCapsuleErrorCalls = 0;
   int importLedgerCalls = 0;
+
+  String? importedCompleteBackup;
+  @override
+  Future<bool> importCompleteBackup(String raw, Uint8List seed) async {
+    importedCompleteBackup = raw;
+    return true;
+  }
 
   @override
   bool validateMnemonic(String phrase) => validateResult;
@@ -62,6 +70,31 @@ class _FakeRecoveryRuntime implements RecoveryRuntime {
 }
 
 void main() {
+  test(
+    'complete recovery uses the same full import owner without ledger-only fallback',
+    () async {
+      final runtime = _FakeRecoveryRuntime();
+      final raw = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+        ledgerJson: jsonEncode({'owner': List.filled(32, 1), 'events': []}),
+        seed: runtime.seed,
+        files: {
+          'plugin_state/hivra.test.v1/workspace.v1.json': base64Encode(
+            utf8.encode('{"opaque":7}'),
+          ),
+        },
+        packages: {},
+      );
+      final result = await RecoveryService(
+        runtime,
+      ).recover(phrase: 'public test', selectedBackupJson: raw);
+      expect(result.isSuccess, true);
+      expect(runtime.importedCompleteBackup, raw);
+      expect(runtime.createCapsuleErrorCalls, 0);
+      expect(runtime.importLedgerCalls, 0);
+      expect(runtime.persistedSeed, isNull);
+    },
+  );
+
   test(
     'recover rejects selected backup when owner mismatches runtime capsule',
     () async {
@@ -110,18 +143,16 @@ void main() {
   test('recover decrypts v2 backup with mnemonic-derived seed', () async {
     final runtime =
         _FakeRecoveryRuntime()
-          ..runtimeOwner = Uint8List.fromList(List<int>.filled(32, 0x11));
+          ..seed = Uint8List.fromList(List<int>.filled(32, 7))
+          ..runtimeOwner = Uint8List.fromList(List<int>.filled(32, 7));
     final service = RecoveryService(runtime);
     final ledger = jsonEncode(<String, dynamic>{
-      'owner': List<int>.filled(32, 0x11),
+      'owner': List<int>.filled(32, 7),
       'events': <Object>[],
     });
     runtime.exportedLedger = ledger;
-    final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
-      ledgerJson: ledger,
-      seed: runtime.seed,
-    );
-
+    final backup =
+        await File('test/fixtures/capsule_backup_v2.json').readAsString();
     final result = await service.recover(
       phrase: 'alpha beta gamma',
       selectedBackupJson: backup,

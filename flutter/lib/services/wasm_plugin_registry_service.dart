@@ -217,6 +217,91 @@ class WasmPluginRegistryService {
     return _serialized(() => _removePluginUnlocked(id));
   }
 
+  Future<Map<String, String>> snapshotForBackup() => _serialized(() async {
+    final records = await _loadPluginsUnlocked(failClosed: true);
+    final dir = await pluginsDirectory();
+    final packages = <String, String>{};
+    var size = 0;
+    for (final record in records) {
+      if (record.packageKind != 'zip' || record.pluginId == null) {
+        throw StateError('Remove unsupported legacy packages before backup');
+      }
+      final file = _storedFile(dir, record);
+      final bytes = await file.readAsBytes();
+      size += bytes.length;
+      if (size > 32 * 1024 * 1024 || packages.length >= 64) {
+        throw StateError('Installed packages exceed the backup limit');
+      }
+      packages[record.pluginId!] = base64Encode(bytes);
+    }
+    return packages;
+  });
+
+  /// Reuse normal package admission. Recovery may add missing packages but
+  /// never replaces a package used by another Capsule with an older snapshot.
+  Future<T> withBackupPackages<T>(
+    Map<String, String> packages,
+    Future<T> Function() restore,
+  ) => _serialized(() async {
+    final original = await _loadPluginsUnlocked(failClosed: true);
+    final dir = await pluginsDirectory();
+    final stage = await Directory.systemTemp.createTemp(
+      'hivra-backup-packages-',
+    );
+    final incoming = <File>[];
+    final installed = <WasmPluginRecord>[];
+    try {
+      var total = 0;
+      if (packages.length > 64) {
+        throw const FormatException('Too many backup packages');
+      }
+      for (final entry in packages.entries) {
+        if (canonicalPluginId(entry.key) != entry.key) {
+          throw const FormatException('Invalid backup package identity');
+        }
+        final bytes = base64Decode(entry.value);
+        total += bytes.length;
+        if (bytes.length > 8 * 1024 * 1024 || total > 32 * 1024 * 1024) {
+          throw const FormatException('Backup packages exceed the size limit');
+        }
+        final file = File('${stage.path}/${entry.key}.zip');
+        await file.writeAsBytes(bytes, flush: true);
+        final inspected = await _preflight.inspect(file);
+        if (inspected.pluginId != entry.key) {
+          throw const FormatException('Invalid backup package identity');
+        }
+        final current = original.where((r) => r.pluginId == entry.key);
+        if (current.isNotEmpty) {
+          final currentBytes =
+              await _storedFile(dir, current.single).readAsBytes();
+          if (sha256.convert(currentBytes) != sha256.convert(bytes)) {
+            throw StateError(
+              'A different version of ${entry.key} is installed',
+            );
+          }
+        } else {
+          incoming.add(file);
+        }
+      }
+      for (final file in incoming) {
+        installed.add(await _installPluginFromFileUnlocked(file));
+      }
+      return await restore();
+    } catch (_) {
+      if (installed.isNotEmpty) {
+        await _writeRegistry(original);
+        await _deleteStoredFilesForRecords(installed);
+      }
+      rethrow;
+    } finally {
+      try {
+        await stage.delete(recursive: true);
+      } on FileSystemException {
+        // Public package bytes only; no decrypted Capsule files or credentials.
+      }
+    }
+  });
+
   Future<void> _removePluginUnlocked(String id) async {
     final records = await _loadPluginsUnlocked(failClosed: true);
     final kept = <WasmPluginRecord>[];

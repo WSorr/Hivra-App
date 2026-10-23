@@ -8,6 +8,8 @@ class BackupService {
   BackupService([BackupRuntime? runtime])
     : _runtime = runtime ?? HivraBackupRuntime();
 
+  String? capsulePublicKeyHex() => _runtime.capsulePublicKeyHex();
+
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24}) {
     return _runtime.mnemonicFromSeed(seed, wordCount: wordCount);
   }

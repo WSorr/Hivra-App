@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum ExternalEffectState {
   prepared,
   approved,
@@ -497,4 +499,82 @@ void _validateUtc(String field, String value) {
   if (parsed == null || !parsed.isUtc) {
     throw FormatException('$field must be an ISO-8601 UTC timestamp');
   }
+}
+
+void validateWorkspaceExecutionControl(
+  dynamic control,
+  String owner,
+  String pluginId,
+) {
+  if (control is! Map ||
+      control['version'] != 1 ||
+      control['owner'] != owner ||
+      control['plugin_id'] != pluginId ||
+      control['revision'] is! int ||
+      control['revision'] <= 0 ||
+      control['allow_new_entries'] is! bool ||
+      control['expires_at_ms'] is! int ||
+      control['settings'] is! Map ||
+      control['scope'] is! Map ||
+      control['package_id'] is! String ||
+      (control['package_id'] as String).isEmpty ||
+      (control['package_id'] as String).length > 128 ||
+      control['package_digest'] is! String ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(control['package_digest']) ||
+      !{'local', 'vps'}.contains(control['executor'] ?? 'local') ||
+      (control['executor'] == 'vps' &&
+          (control['executor_id'] is! String ||
+              !RegExp(r'^[0-9a-f]{64}$').hasMatch(control['executor_id']))) ||
+      ['handoff_id', 'handoff_digest'].any(
+        (key) =>
+            control[key] != null &&
+            (control[key] is! String ||
+                !RegExp(r'^[0-9a-f]{64}$').hasMatch(control[key])),
+      )) {
+    throw StateError(
+      'Execution grant is unreadable; no cycle or effect admitted',
+    );
+  }
+  final settings = control['settings'] as Map;
+  if (settings.length > 8 ||
+      utf8.encode(jsonEncode(settings)).length > 2048 ||
+      settings.values.any((v) => v is! String && v is! num)) {
+    throw StateError('Execution settings are invalid');
+  }
+  validateWorkspaceExecutionSchedule(
+    Map<String, dynamic>.from(control['scope'] as Map),
+  );
+}
+
+void validateWorkspaceExecutionSchedule(Map<String, dynamic> scope) {
+  if (scope.length != 6 ||
+      scope['account_id'] is! String ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(scope['account_id']) ||
+      scope['symbol'] is! String ||
+      (scope['symbol'] as String).length > 64 ||
+      !RegExp(r'^[A-Z0-9]+-USDT$').hasMatch(scope['symbol']) ||
+      scope['action'] is! String ||
+      !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(scope['action']) ||
+      scope['interval_seconds'] is! int ||
+      scope['interval_seconds'] < 30 ||
+      scope['interval_seconds'] > 3600 ||
+      scope['max_margin'] is! num ||
+      !scope['max_margin'].isFinite ||
+      scope['max_margin'] <= 0 ||
+      scope['max_stop_percent'] is! num ||
+      !scope['max_stop_percent'].isFinite ||
+      scope['max_stop_percent'] <= 0 ||
+      scope['max_stop_percent'] > 100) {
+    throw StateError('Invalid bounded execution scope');
+  }
+}
+
+/// Recovery retains remote custody and evidence, never a live permission lease.
+Map<String, dynamic> sealWorkspaceExecutionForRecovery(
+  Map<String, dynamic> control,
+  String owner,
+  String pluginId,
+) {
+  validateWorkspaceExecutionControl(control, owner, pluginId);
+  return {...control, 'expires_at_ms': 0, 'allow_new_entries': false};
 }

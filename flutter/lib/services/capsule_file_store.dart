@@ -315,6 +315,93 @@ class CapsuleFileStore {
     if (await file.exists()) await file.delete();
   }
 
+  /// Host persistence paths only. Package payloads remain opaque; vaults,
+  /// seeds, locks, projections and caches are never traversed for export.
+  static bool isBackupPath(String path) {
+    if (<String>{
+      deliveryOutboxFileName,
+      chatDeferredInboxFileName,
+      chatTimelineFileName,
+      chatReadStateFileName,
+      pairConsensusAttestationsFileName,
+      contactLabelsFileName,
+    }.contains(path)) {
+      return true;
+    }
+    final parts = path.split('/');
+    if (parts.any((p) => p == '.' || p == '..' || p.isEmpty)) return false;
+    if (parts.length == 3 && parts[0] == 'plugin_state') {
+      return RegExp(r'^[a-z0-9][a-z0-9.-]*$').hasMatch(parts[1]) &&
+          RegExp(r'^[a-z0-9][a-z0-9._-]*$').hasMatch(parts[2]) &&
+          !parts[2].contains('.tmp.');
+    }
+    return path == 'capability_state/chat/chat_handoff.v1.bin' ||
+        RegExp(
+          r'^transport_quarantine/[0-9]+/[a-z0-9_-]+/nostr/inbound_quarantine\.v1\.bin$',
+        ).hasMatch(path);
+  }
+
+  Future<Map<String, String>> snapshotForBackup(Directory capsuleDir) async {
+    final snapshot = <String, String>{};
+    final kind = await FileSystemEntity.type(
+      capsuleDir.path,
+      followLinks: false,
+    );
+    if (kind == FileSystemEntityType.notFound) return snapshot;
+    if (kind != FileSystemEntityType.directory) {
+      throw StateError('Backup Capsule must be a regular directory');
+    }
+    var bytes = 0;
+    await for (final entry in capsuleDir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      final path = entry.path.substring(capsuleDir.path.length + 1);
+      if (entry is Link &&
+          (isBackupPath(path) ||
+              {
+                'plugin_state',
+                'capability_state',
+                'transport_quarantine',
+              }.contains(path.split('/').first))) {
+        throw StateError('Backup cannot follow symbolic links');
+      }
+      if (!isBackupPath(path)) continue;
+      if (entry is! File) {
+        throw StateError('Backup source is not a regular file');
+      }
+      final length = await entry.length();
+      bytes += length;
+      if (bytes > 64 * 1024 * 1024 || snapshot.length >= 1024) {
+        throw StateError('Capsule state exceeds the backup limit');
+      }
+      snapshot[path] = base64Encode(await entry.readAsBytes());
+    }
+    return snapshot;
+  }
+
+  /// Validate before staging. In particular, an authenticated backup is not
+  /// permission to write arbitrary paths or restore device credentials.
+  static Map<String, List<int>> decodeBackupFiles(Map<String, String> files) {
+    final decoded = <String, List<int>>{};
+    var total = 0;
+    if (files.length > 1024) {
+      throw const FormatException('Too many backup files');
+    }
+    for (final entry in files.entries) {
+      if (!isBackupPath(entry.key)) {
+        throw const FormatException('Invalid backup path');
+      }
+      final bytes = base64Decode(entry.value);
+      total += bytes.length;
+      if (total > 64 * 1024 * 1024) {
+        throw const FormatException('Backup state is too large');
+      }
+      decoded[entry.key] = bytes;
+    }
+    return decoded;
+  }
+
   /// The caller holds the workspace lease. An unused workspace is published
   /// atomically; a sealed workspace stays non-executable until authority is
   /// written last. Interrupted returns remain remotely assigned and retryable.

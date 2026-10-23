@@ -264,6 +264,11 @@ typedef HivraProjectHistoryViewV1Dart =
       Pointer<Pointer<Int8>> outJson,
     );
 
+typedef HivraValidateBackupLedgerC =
+    Int32 Function(Pointer<Int8>, Pointer<Uint8>);
+typedef HivraValidateBackupLedgerDart =
+    int Function(Pointer<Int8>, Pointer<Uint8>);
+
 typedef HivraImportLedgerC = Int32 Function(Pointer<Int8> json);
 typedef HivraImportLedgerDart = int Function(Pointer<Int8> json);
 
@@ -1572,6 +1577,24 @@ class HivraBindings {
       calloc.free(entryPtr);
       calloc.free(inputPtr);
       calloc.free(outPtr);
+    }
+  }
+
+  bool validateBackupLedger(String json, Uint8List seed) {
+    if (seed.length != 32) return false;
+    final jsonPtr = json.toNativeUtf8();
+    final seedPtr = calloc<Uint8>(32);
+    try {
+      seedPtr.asTypedList(32).setAll(0, seed);
+      final validate = _lib.lookupFunction<
+        HivraValidateBackupLedgerC,
+        HivraValidateBackupLedgerDart
+      >('hivra_validate_backup_ledger_v1');
+      return validate(jsonPtr.cast<Int8>(), seedPtr) == 0;
+    } finally {
+      seedPtr.asTypedList(32).fillRange(0, 32, 0);
+      calloc.free(seedPtr);
+      calloc.free(jsonPtr);
     }
   }
 

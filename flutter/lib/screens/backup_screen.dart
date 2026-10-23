@@ -66,6 +66,7 @@ class _BackupScreenState extends State<BackupScreen> {
     });
     try {
       final path = await _backupFiles.save(
+        capsuleId: _backup.capsulePublicKeyHex() ?? '',
         exportToPath:
             (path) => _backup.exportBackupEnvelopeToPath(path, widget.seed),
         isCurrent: () => mounted,
@@ -121,6 +122,7 @@ class _BackupScreenState extends State<BackupScreen> {
         _isSavingBackup = true;
       });
       await _backupFiles.share(
+        capsuleId: _backup.capsulePublicKeyHex() ?? '',
         exportToPath:
             (path) => _backup.exportBackupEnvelopeToPath(path, widget.seed),
       );
@@ -189,7 +191,9 @@ class _BackupScreenState extends State<BackupScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Save a backup file in addition to storing the seed phrase securely.',
+              'Save an encrypted backup of your Capsule, Chat and plugin state. '
+              'Keep the seed phrase separately. API tokens and VPS keys stay in '
+              'secure storage; reconnect accounts after recovery.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey),
             ),

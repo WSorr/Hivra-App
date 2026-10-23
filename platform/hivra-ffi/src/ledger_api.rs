@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime_support::{build_engine_for_ledger, validate_imported_ledger};
 
 #[derive(serde::Deserialize)]
 struct HistoryViewRequestV1 {
@@ -235,6 +236,45 @@ pub unsafe extern "C" fn hivra_project_history_view_v1(
         }
         Err(_) => -4,
     }
+}
+
+/// Validate an authenticated recovery payload without changing runtime or
+/// accessing platform credentials. Uses the same Ledger validators as import.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_validate_backup_ledger_v1(
+    json_ptr: *const c_char,
+    seed_ptr: *const u8,
+) -> i32 {
+    if json_ptr.is_null() || seed_ptr.is_null() {
+        return -1;
+    }
+    let Ok(json) = CStr::from_ptr(json_ptr).to_str() else {
+        return -2;
+    };
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(std::slice::from_raw_parts(seed_ptr, 32));
+    let seed = Seed(bytes);
+    let Ok(ledger) = parse_ledger_json(json) else {
+        return -3;
+    };
+    let Ok(root) = derive_root_public_key(&seed) else {
+        return -3;
+    };
+    let Ok(nostr) = derive_nostr_public_key(&seed) else {
+        return -3;
+    };
+    if ledger.owner() != &PubKey::from(root) && ledger.owner() != &PubKey::from(nostr) {
+        return -3;
+    }
+    if validate_imported_ledger(&ledger, ledger.owner(), true).is_err() {
+        return -3;
+    }
+    if ledger.is_continuous_v5()
+        && build_engine_for_ledger(&seed, &ledger).verify_ledger_v5(&ledger).is_err()
+    {
+        return -3;
+    }
+    0
 }
 
 /// Import a ledger from JSON and replace the runtime ledger
