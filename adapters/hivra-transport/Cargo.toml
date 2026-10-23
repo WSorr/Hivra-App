@@ -10,11 +10,15 @@ description = "Transport layer for Hivra"
 crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
-nostr-sdk = "0.36"
+nostr-sdk = "0.45.4"
+nostr = { version = "0.45.5", default-features = false, features = ["nip44"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
+
+[dev-dependencies]
+nostr-sdk = { version = "0.45.4", features = ["local-relay"] }
 
 [features]
 default = ["std"]

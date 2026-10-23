@@ -1,4 +1,5 @@
 use super::*;
+use nostr_sdk::prelude::FinalizeEventAsync;
 
 fn sign_root_digest32(seed: &Seed, message: &[u8; 32]) -> Result<[u8; 64], &'static str> {
     let privkey = derive_root_keypair(seed).map_err(|_| "root key derivation failed")?;
@@ -171,7 +172,7 @@ pub unsafe extern "C" fn hivra_nostr_send_prepared_self_check() -> i32 {
     };
 
     match transport.prepare_event(&message, |builder| {
-        block_on(builder.sign(&keys)).map_err(|_| TransportError::EncodingFailed)
+        block_on(builder.finalize_async(&keys)).map_err(|_| TransportError::EncodingFailed)
     }) {
         Ok(_) => 0,
         Err(_) => -5,

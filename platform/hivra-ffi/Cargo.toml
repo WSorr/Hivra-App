@@ -16,7 +16,7 @@ hivra-engine = { path = "../../engine/hivra-engine", optional = true }
 hivra-ed25519-crypto = { path = "../../adapters/hivra-ed25519-crypto", optional = true }
 hivra-nostr-crypto = { path = "../../adapters/hivra-nostr-crypto", optional = true }
 hivra-transport = { path = "../../adapters/hivra-transport", optional = true }
-nostr-sdk = { version = "0.36", optional = true }
+nostr-sdk = { version = "0.45.4", optional = true }
 futures = { version = "0.3", optional = true }
 rand = { version = "0.8", optional = true }
 bincode = { version = "1.3", optional = true }

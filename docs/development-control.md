@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-21
+Status date: 2026-10-23
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -161,6 +161,22 @@ package/executor path and replace one of the open evidence items with actual
 provider evidence.
 
 ## Selected Product Outcome
+
+The active maintenance scope is the Nostr/TLS security migration, preserving
+Chat and invitation wire formats and their existing ingress/outbox owners.
+The candidate replaces Nostr SDK 0.36.0 with 0.45.4 (Nostr 0.45.5), rustls
+0.23.37 with 0.23.46, rustls-webpki 0.103.9 with 0.103.16 and the resolved
+webpki-roots 1.0.6 with 1.0.10; rand 0.8.5/0.9.2 move to their patched
+0.8.6/0.9.3 branches.
+Compiler/platform pins in `toolchains/hivra-baseline.conf` remain unchanged;
+this is a dependency migration, not activation of a new toolchain matrix.
+Old authenticated NIP-44 vectors, the prior outbound plaintext limit and
+70 KiB relay ingress event cap are preserved. Transport checks cover relay
+authentication, acknowledgement, read failure, retry and reconnect. No Ledger schema, C ABI or storage migration
+is selected. This candidate has no packaged acceptance yet: after a clean
+approved source and matching runner exist, verify invitation/accept, two-way
+Chat, reconnect and restart on exact macOS and Android packages using isolated
+data. Existing release artifacts and their attestations remain unchanged.
 
 The bounded Capsule/package release outcome is complete in `v1.0.4-test3`.
 Real Chat, Moltbook and Jack packages were installed/opened, removed through the

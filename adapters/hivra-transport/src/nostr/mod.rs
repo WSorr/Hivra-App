@@ -7,9 +7,9 @@ use crate::{
 };
 use futures::future::join_all;
 use futures::stream::{FuturesUnordered, StreamExt};
-use nostr_sdk::nips::nip44;
 use nostr_sdk::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::future::IntoFuture;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -24,6 +24,10 @@ const RECEIVE_LIMIT: usize = 2048;
 const RECEIVE_LOOKBACK_SECS: u64 = 7 * 24 * 60 * 60;
 const RECEIVE_FUTURE_SKEW_SECS: u64 = 5 * 60;
 const RECEIVE_SEEN_CAPACITY: usize = 2048;
+// Keep outbound NIP-44 framing readable by existing 0.36 clients.
+const MAX_NIP44_PLAINTEXT_BYTES: usize = u16::MAX as usize;
+// Preserve the SDK 0.36 ingress cap before event verification/decryption.
+const MAX_RELAY_EVENT_BYTES: u32 = 70 * 1024;
 // JSON byte arrays plus encrypted base64 framing are substantially larger than
 // the opaque Hivra payload. Reject pathological wire content before decrypt.
 const MAX_NOSTR_EVENT_CONTENT_BYTES: usize = MAX_DELIVERY_ENVELOPE_PAYLOAD_BYTES * 8;
@@ -57,13 +61,13 @@ fn prioritize_read_relay_urls(mut relay_urls: Vec<String>) -> Vec<String> {
 }
 
 fn has_exact_recipient_tag(event: &Event, recipient: PublicKey) -> bool {
-    let mut raw_recipient_tags = event.tags.filter(TagKind::p());
+    let mut raw_recipient_tags = event.tags.iter().filter(|tag| tag.kind() == "p");
     if raw_recipient_tags.next().is_none() || raw_recipient_tags.next().is_some() {
         return false;
     }
 
     let mut recipients = event.tags.public_keys();
-    recipients.next().copied() == Some(recipient) && recipients.next().is_none()
+    recipients.next() == Some(recipient) && recipients.next().is_none()
 }
 
 fn extract_auth_challenge(reason: &str) -> Option<String> {
@@ -214,19 +218,29 @@ impl NostrTransport {
         config: &NostrConfig,
         keys: &Keys,
     ) -> Result<Client, TransportError> {
-        let client = Client::new(keys.clone());
-        client.automatic_authentication(true);
+        let client = Client::builder()
+            .authenticator(SignerAuthenticator::new(keys.clone()))
+            .relay_limits(RelayLimits {
+                events: RelayEventLimits {
+                    max_size: Some(MAX_RELAY_EVENT_BYTES),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .build();
 
         for relay_url in &config.relays {
             eprintln!("[Nostr] Adding relay: {}", relay_url);
-            runtime.block_on(client.add_relay(relay_url)).map_err(|e| {
-                eprintln!("[Nostr] Failed to add relay {}: {:?}", relay_url, e);
-                TransportError::ConnectionFailed
-            })?;
+            runtime
+                .block_on(client.add_relay(relay_url).into_future())
+                .map_err(|e| {
+                    eprintln!("[Nostr] Failed to add relay {}: {:?}", relay_url, e);
+                    TransportError::ConnectionFailed
+                })?;
         }
 
         eprintln!("[Nostr] Connecting to relays...");
-        runtime.block_on(client.connect());
+        runtime.block_on(client.connect().into_future());
 
         // Connection establishment continues in the client runtime. Send and
         // receive each apply their own operation budget, so merely creating a
@@ -241,7 +255,7 @@ impl NostrTransport {
         deadline: Instant,
     ) -> bool {
         loop {
-            let relays = runtime.block_on(client.relays());
+            let relays = runtime.block_on(client.relays().into_future());
             let connected = relays
                 .values()
                 .any(|relay| matches!(relay.status(), RelayStatus::Connected));
@@ -254,14 +268,14 @@ impl NostrTransport {
                 return false;
             }
 
-            runtime.block_on(client.connect());
+            runtime.block_on(client.connect().into_future());
             thread::sleep(Duration::from_millis(CONNECT_POLL_MS));
         }
     }
 
     fn connected_relay_count(runtime: &Runtime, client: &Client) -> usize {
         runtime
-            .block_on(client.relays())
+            .block_on(client.relays().into_future())
             .values()
             .filter(|relay| matches!(relay.status(), RelayStatus::Connected))
             .count()
@@ -270,7 +284,7 @@ impl NostrTransport {
     fn configured_relay_urls(&self) -> Vec<String> {
         let relay_urls = self
             .runtime
-            .block_on(self.client.relays())
+            .block_on(self.client.relays().into_future())
             .into_values()
             .map(|relay| relay.url().to_string())
             .collect();
@@ -292,7 +306,7 @@ impl NostrTransport {
             if Instant::now() >= deadline {
                 return connected > 0;
             }
-            self.runtime.block_on(self.client.connect());
+            self.runtime.block_on(self.client.connect().into_future());
             thread::sleep(Duration::from_millis(CONNECT_POLL_MS));
         }
     }
@@ -319,6 +333,11 @@ impl NostrTransport {
     pub fn serialize_message(&self, envelope: &DeliveryEnvelope) -> Result<String, TransportError> {
         let plaintext =
             serde_json::to_string(envelope).map_err(|_| TransportError::EncodingFailed)?;
+        // Newer codecs support extended lengths; emitting them would silently
+        // break delivery to existing Capsule versions. Preserve the old bound.
+        if plaintext.len() > MAX_NIP44_PLAINTEXT_BYTES {
+            return Err(TransportError::EncodingFailed);
+        }
         let recipient =
             PublicKey::from_slice(&envelope.to).map_err(|_| TransportError::InvalidKey)?;
         nip44::encrypt(
@@ -350,7 +369,7 @@ impl NostrTransport {
     ) -> Result<EventBuilder, TransportError> {
         let content = self.serialize_message(envelope)?;
         let tags = self.message_tags(envelope)?;
-        Ok(EventBuilder::new(APP_EVENT_KIND, content, tags))
+        Ok(EventBuilder::new(APP_EVENT_KIND, content).tags(tags))
     }
 
     fn build_signed_event(&self, content: String, tags: Vec<Tag>) -> Result<Event, TransportError> {
@@ -360,7 +379,11 @@ impl NostrTransport {
         );
 
         self.runtime
-            .block_on(EventBuilder::new(APP_EVENT_KIND, content, tags).sign(&self.keys))
+            .block_on(
+                EventBuilder::new(APP_EVENT_KIND, content)
+                    .tags(tags)
+                    .finalize_async(&self.keys),
+            )
             .map_err(|e| {
                 eprintln!("[Nostr] Signing failed: {:?}", e);
                 TransportError::EncodingFailed
@@ -430,7 +453,7 @@ impl NostrTransport {
             );
             return Err(TransportError::ConnectionFailed);
         }
-        let relays = self.runtime.block_on(self.client.relays());
+        let relays = self.runtime.block_on(self.client.relays().into_future());
         let connected_relays: Vec<_> = relays
             .into_values()
             .filter(|relay| matches!(relay.status(), RelayStatus::Connected))
@@ -452,7 +475,10 @@ impl NostrTransport {
                 let relay_url = relay.url().to_string();
                 let event = event.clone();
                 pending.push(async move {
-                    let result = time::timeout(per_relay_timeout, relay.send_event(event)).await;
+                    let result = time::timeout(per_relay_timeout, async {
+                        relay.send_event(&event).wait_for_ok(true).await
+                    })
+                    .await;
                     (relay_url, result)
                 });
             }
@@ -462,10 +488,10 @@ impl NostrTransport {
             let mut failure_details: Vec<String> = Vec::new();
             while let Some((relay_url, result)) = pending.next().await {
                 match result {
-                    Ok(Ok(event_id)) => {
+                    Ok(Ok(output)) => {
                         accepted_relays += 1;
                         if first_accept.is_none() {
-                            first_accept = Some((relay_url, event_id.to_hex()));
+                            first_accept = Some((relay_url, output.id().to_hex()));
                         }
                     }
                     Err(_) => {
@@ -576,7 +602,7 @@ impl NostrTransport {
             return Ok(batch);
         }
 
-        let query_now = Timestamp::now().as_u64();
+        let query_now = Timestamp::now().as_secs();
         let relay_urls = self.configured_relay_urls();
         if relay_urls.is_empty() {
             return Err(TransportError::ReceiveFailed);
@@ -606,7 +632,7 @@ impl NostrTransport {
             let candidate = fetch
                 .events
                 .iter()
-                .map(|event| event.created_at.as_u64())
+                .map(|event| event.created_at.as_secs())
                 .max()
                 .map(|max_timestamp| {
                     next_receive_cursor(
@@ -880,7 +906,7 @@ impl NostrTransport {
 
     fn receive_since_for_relay(&self, relay_url: &str) -> u64 {
         let initial = Timestamp::now()
-            .as_u64()
+            .as_secs()
             .saturating_sub(RECEIVE_LOOKBACK_SECS);
         self.receive_since_by_relay
             .lock()
@@ -892,7 +918,7 @@ impl NostrTransport {
         if let Ok(mut cursors) = self.receive_since_by_relay.lock() {
             let current = cursors.get(relay_url).copied().unwrap_or_else(|| {
                 Timestamp::now()
-                    .as_u64()
+                    .as_secs()
                     .saturating_sub(RECEIVE_LOOKBACK_SECS)
             });
             cursors.insert(relay_url.to_string(), current.max(candidate));
@@ -921,18 +947,28 @@ impl NostrTransport {
             })
             .collect();
 
-        // `fetch_events_from` stops at the first EOSE within its relay set.
-        // Run one request per replica concurrently so a busy relay cannot hide
-        // an invitation retained by another relay, without multiplying the UI
-        // wait budget by the number of relays.
+        // Each replica must reach its own EOSE. Concurrent requests prevent a
+        // busy relay from hiding an invitation retained by another replica,
+        // without multiplying the UI wait budget by the number of relays.
         let client = self.client.clone();
         let results = self.runtime.block_on(async move {
             join_all(requests.into_iter().map(|(relay_url, filter)| {
                 let client = client.clone();
                 async move {
-                    let result = client
-                        .fetch_events_from(vec![relay_url.clone()], vec![filter], Some(timeout))
-                        .await;
+                    // Fetch the configured relay directly: the SDK's aggregate
+                    // client fetch logs per-relay errors and returns an empty set.
+                    // Hivra must retain that failure for receive health/retry.
+                    let result = async {
+                        let relay = client.relay(&relay_url).await?.ok_or_else(|| {
+                            nostr_sdk::error::Error::other("configured relay not found")
+                        })?;
+                        relay
+                            .fetch_events(vec![filter])
+                            .timeout(timeout)
+                            .max_events(RECEIVE_LIMIT)
+                            .await
+                    }
+                    .await;
                     (relay_url, result)
                 }
             }))
@@ -945,7 +981,7 @@ impl NostrTransport {
         for (relay_url, result) in results {
             match result {
                 Ok(relay_events) => {
-                    let relay_events = relay_events.to_vec();
+                    let relay_events: Vec<_> = relay_events.into_iter().collect();
                     relay_diagnostics.push(format!("{relay_url}={}", relay_events.len()));
                     successful_reads += 1;
                     relay_fetches.push(RelayFetch {
@@ -980,7 +1016,10 @@ impl Transport for NostrTransport {
     }
 
     fn is_connected(&self) -> bool {
-        !self.runtime.block_on(self.client.relays()).is_empty()
+        !self
+            .runtime
+            .block_on(self.client.relays().into_future())
+            .is_empty()
     }
 
     fn name(&self) -> &'static str {
@@ -1229,12 +1268,9 @@ mod tests {
         let event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    APP_EVENT_KIND,
-                    content,
-                    [Tag::public_key(receiver.public_key)],
-                )
-                .sign(&attacker_keys),
+                EventBuilder::new(APP_EVENT_KIND, content)
+                    .tags([Tag::public_key(receiver.public_key)])
+                    .finalize_async(&attacker_keys),
             )
             .expect("signed event");
 
@@ -1280,12 +1316,9 @@ mod tests {
         let event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    APP_EVENT_KIND,
-                    content,
-                    [Tag::public_key(receiver.public_key)],
-                )
-                .sign(&sender_keys),
+                EventBuilder::new(APP_EVENT_KIND, content)
+                    .tags([Tag::public_key(receiver.public_key)])
+                    .finalize_async(&sender_keys),
             )
             .expect("signed event");
 
@@ -1331,12 +1364,9 @@ mod tests {
         let event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    APP_EVENT_KIND,
-                    content,
-                    [Tag::public_key(receiver.public_key)],
-                )
-                .sign(&sender_keys),
+                EventBuilder::new(APP_EVENT_KIND, content)
+                    .tags([Tag::public_key(receiver.public_key)])
+                    .finalize_async(&sender_keys),
             )
             .expect("signed event");
 
@@ -1429,12 +1459,9 @@ mod tests {
         let event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    APP_EVENT_KIND,
-                    tampered_content,
-                    [Tag::public_key(receiver.public_key)],
-                )
-                .sign(&sender_keys),
+                EventBuilder::new(APP_EVENT_KIND, tampered_content)
+                    .tags([Tag::public_key(receiver.public_key)])
+                    .finalize_async(&sender_keys),
             )
             .expect("signed tampered event");
 
@@ -1525,15 +1552,12 @@ mod tests {
         let event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    APP_EVENT_KIND,
-                    content,
-                    [
+                EventBuilder::new(APP_EVENT_KIND, content)
+                    .tags([
                         Tag::public_key(receiver.public_key),
                         Tag::public_key(other_keys.public_key()),
-                    ],
-                )
-                .sign(&sender_keys),
+                    ])
+                    .finalize_async(&sender_keys),
             )
             .expect("signed event");
 
@@ -1577,16 +1601,13 @@ mod tests {
         )
         .expect("encrypt");
         let malformed_recipient =
-            Tag::parse(&["p", "not-a-public-key"]).expect("raw malformed recipient tag");
+            Tag::parse(["p", "not-a-public-key"]).expect("raw malformed recipient tag");
         let event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    APP_EVENT_KIND,
-                    content,
-                    [Tag::public_key(receiver.public_key), malformed_recipient],
-                )
-                .sign(&sender_keys),
+                EventBuilder::new(APP_EVENT_KIND, content)
+                    .tags([Tag::public_key(receiver.public_key), malformed_recipient])
+                    .finalize_async(&sender_keys),
             )
             .expect("signed event");
 
@@ -1615,23 +1636,17 @@ mod tests {
         let legacy_event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    Kind::Custom(4),
-                    legacy_content,
-                    [Tag::public_key(receiver.public_key)],
-                )
-                .sign(&sender_keys),
+                EventBuilder::new(Kind::Custom(4), legacy_content)
+                    .tags([Tag::public_key(receiver.public_key)])
+                    .finalize_async(&sender_keys),
             )
             .expect("signed kind-four event");
         let downgrade_event = receiver
             .runtime
             .block_on(
-                EventBuilder::new(
-                    APP_EVENT_KIND,
-                    legacy_content,
-                    [Tag::public_key(receiver.public_key)],
-                )
-                .sign(&sender_keys),
+                EventBuilder::new(APP_EVENT_KIND, legacy_content)
+                    .tags([Tag::public_key(receiver.public_key)])
+                    .finalize_async(&sender_keys),
             )
             .expect("signed downgrade event");
 
@@ -1643,5 +1658,272 @@ mod tests {
             receiver.decode_event(downgrade_event),
             Err(TransportError::DecodingFailed),
         );
+    }
+
+    #[test]
+    fn previous_sdk_chat_and_invitation_wire_vectors_remain_compatible() {
+        // Generated by nostr-sdk 0.36.0 before the upgrade, with public test keys.
+        // The adapter keeps payload/proof opaque; Core/Chat validate their semantics.
+        let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../tests/fixtures/nostr-036-envelopes.json"
+        ))
+        .expect("public wire vectors");
+        let sender = Keys::new(SecretKey::from_slice(&[41; 32]).unwrap());
+        let receiver = ingress_test_transport(42);
+        for vector in vectors {
+            let envelope: DeliveryEnvelope =
+                serde_json::from_value(vector["envelope"].clone()).unwrap();
+            let event: Event = serde_json::from_value(vector["event"].clone()).unwrap();
+            assert_eq!(receiver.decode_event(event.clone()), Ok(envelope.clone()));
+            let nonce: [u8; 32] = serde_json::from_value(vector["nonce"].clone()).unwrap();
+            let content = nip44::encrypt_with_nonce(
+                sender.secret_key(),
+                &receiver.public_key,
+                serde_json::to_vec(&envelope).unwrap(),
+                nip44::Nonce::V2(nonce),
+            )
+            .unwrap();
+            // Same nonce/JSON yields the exact old ciphertext, not just a new-code roundtrip.
+            assert_eq!(content, event.content);
+            let current = EventBuilder::new(APP_EVENT_KIND, content)
+                .tag(Tag::public_key(receiver.public_key))
+                .custom_created_at(event.created_at)
+                .finalize(&sender)
+                .unwrap();
+            assert_eq!(current.id, event.id);
+        }
+    }
+
+    #[test]
+    fn outbound_envelopes_keep_the_previous_nip44_plaintext_limit() {
+        let sender = ingress_test_transport(52);
+        let receiver = ingress_test_transport(53);
+        let mut envelope = DeliveryEnvelope {
+            schema_version: 1,
+            from: sender.public_key_bytes(),
+            to: receiver.public_key_bytes(),
+            kind: 4097,
+            payload: vec![1; 32_000],
+            timestamp: 1,
+            correlation_id: None,
+            domain_event: None,
+        };
+        assert!(serde_json::to_vec(&envelope).unwrap().len() < MAX_NIP44_PLAINTEXT_BYTES);
+        let event = sender.encode_message(envelope.clone()).unwrap();
+        assert_eq!(receiver.decode_event(event), Ok(envelope.clone()));
+        envelope.payload.resize(33_000, 1);
+        assert!(serde_json::to_vec(&envelope).unwrap().len() > MAX_NIP44_PLAINTEXT_BYTES);
+        assert_eq!(
+            sender.serialize_message(&envelope),
+            Err(TransportError::EncodingFailed)
+        );
+    }
+
+    #[test]
+    fn authenticated_short_nip44_payloads_fail_without_panicking() {
+        let sender = Keys::new(SecretKey::from_slice(&[43; 32]).unwrap());
+        let receiver = ingress_test_transport(44);
+        // Public fixtures: v2 | nonce 0x42*32 | zero/one ciphertext byte | valid HMAC.
+        // The old decrypt could panic after authenticating these participant-made frames.
+        for content in ["AkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCUQXZoqy54CyoWl5YW02FW8BBYqpQjC1cPWFa7QTHliU=",
+            "AkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCAIXRRW7jku/PZqDwkdF9JbSTEl4KvzTG+3RC+cGzKMvz"] {
+            let event = EventBuilder::new(APP_EVENT_KIND, content)
+                .tag(Tag::public_key(receiver.public_key))
+                .finalize(&sender)
+                .unwrap();
+            assert_eq!(receiver.decode_event(event), Err(TransportError::DecodingFailed));
+        }
+    }
+
+    #[test]
+    fn oversized_signed_wire_content_is_rejected_before_decrypt() {
+        let sender = Keys::new(SecretKey::from_slice(&[45; 32]).unwrap());
+        let receiver = ingress_test_transport(46);
+        let content = "A".repeat(MAX_NOSTR_EVENT_CONTENT_BYTES + 1);
+        let event = EventBuilder::new(APP_EVENT_KIND, content)
+            .tag(Tag::public_key(receiver.public_key))
+            .finalize(&sender)
+            .unwrap();
+        assert_eq!(
+            receiver.decode_event(event),
+            Err(TransportError::InvalidMessage)
+        );
+    }
+
+    #[test]
+    fn authenticated_relay_preserves_envelopes_receipts_retry_and_reconnect() {
+        let relay_runtime = NostrTransport::build_runtime().unwrap();
+        let relay = LocalRelay::builder()
+            .nip42(LocalRelayBuilderNip42::read_and_write())
+            .build();
+        relay_runtime.block_on(relay.run()).unwrap();
+        let relay_url = relay_runtime.block_on(relay.url()).to_string();
+        let config = NostrConfig {
+            relays: vec![relay_url.clone()],
+            ephemeral: true,
+            timeout: 3,
+            publish_timeout: 3,
+        };
+        let sender = NostrTransport::new(config.clone(), &[47; 32]).unwrap();
+        let receiver = NostrTransport::new(config.clone(), &[48; 32]).unwrap();
+        let mut envelopes = Vec::new();
+        for kind in [2, 4097] {
+            let envelope = DeliveryEnvelope {
+                schema_version: 1,
+                from: sender.public_key_bytes(),
+                to: receiver.public_key_bytes(),
+                kind,
+                payload: format!("public test envelope {kind}").into_bytes(),
+                timestamp: Timestamp::now().as_secs(),
+                correlation_id: Some([kind as u8; 32]),
+                domain_event: None,
+            };
+            let receipt = sender.send_with_receipt(envelope.clone()).unwrap();
+            assert_eq!(receipt.accepted_by, relay_url);
+            assert_eq!(receipt.message_kind, kind);
+            assert_eq!(receipt.recipient, envelope.to);
+            assert_eq!(receipt.envelope_id.len(), 64);
+            envelopes.push(envelope);
+        }
+        let batch = receiver.receive_batch_with_timeout(3).unwrap();
+        assert_eq!(batch.items.len(), 2);
+        assert_eq!(receiver.receive_batch_with_timeout(3).unwrap(), batch);
+        // A transient failure must remain retryable through the existing handoff.
+        receiver
+            .resolve_receive_batch(
+                batch.batch_id,
+                batch
+                    .items
+                    .iter()
+                    .map(|item| InboundDeliveryResolution {
+                        event_id: item.event_id.clone(),
+                        disposition: InboundDeliveryDisposition::Retry,
+                    })
+                    .collect(),
+            )
+            .unwrap();
+        assert_eq!(
+            receiver.receive_batch_with_timeout(3).unwrap().items,
+            batch.items
+        );
+        // A new transport reconnects and fetches unresolved history from the relay.
+        drop(receiver);
+        let receiver = NostrTransport::new(config, &[48; 32]).unwrap();
+        let batch = receiver.receive_batch_with_timeout(3).unwrap();
+        assert_eq!(batch.items.len(), 2);
+        for item in &batch.items {
+            let InboundDeliveryPayload::Envelope(envelope) = &item.payload else {
+                panic!("valid envelope was rejected");
+            };
+            assert!(envelopes.contains(envelope));
+        }
+        receiver
+            .resolve_receive_batch(
+                batch.batch_id,
+                batch
+                    .items
+                    .iter()
+                    .map(|item| InboundDeliveryResolution {
+                        event_id: item.event_id.clone(),
+                        disposition: InboundDeliveryDisposition::Consumed,
+                    })
+                    .collect(),
+            )
+            .unwrap();
+        assert!(receiver
+            .receive_batch_with_timeout(3)
+            .unwrap()
+            .items
+            .is_empty());
+        relay.shutdown();
+    }
+
+    #[test]
+    fn relay_ingress_keeps_the_previous_event_size_limit() {
+        let relay_runtime = NostrTransport::build_runtime().unwrap();
+        let relay = LocalRelay::builder().max_event_size(100 * 1024).build();
+        relay_runtime.block_on(relay.run()).unwrap();
+        let relay_url = relay_runtime.block_on(relay.url()).to_string();
+        let receiver = NostrTransport::new(
+            NostrConfig {
+                relays: vec![relay_url],
+                ephemeral: true,
+                timeout: 3,
+                publish_timeout: 3,
+            },
+            &[54; 32],
+        )
+        .unwrap();
+        let sender = Keys::new(SecretKey::from_slice(&[55; 32]).unwrap());
+        let event = EventBuilder::new(APP_EVENT_KIND, "A".repeat(MAX_RELAY_EVENT_BYTES as usize))
+            .tag(Tag::public_key(receiver.public_key))
+            .finalize(&sender)
+            .unwrap();
+        relay_runtime.block_on(relay.add_event(event)).unwrap();
+        // The relay accepts the event, but the host must reject it before even
+        // handing its malformed NIP-44 body to the adapter/domain ingress.
+        assert!(receiver
+            .receive_batch_with_timeout(3)
+            .unwrap()
+            .items
+            .is_empty());
+        relay.shutdown();
+    }
+
+    #[test]
+    fn relay_rejection_never_becomes_a_delivery_receipt_or_successful_read() {
+        let relay_runtime = NostrTransport::build_runtime().unwrap();
+        let relay = LocalRelay::builder()
+            .blacklist_kinds(&[APP_EVENT_KIND])
+            .query_policy(RejectQuery)
+            .build();
+        relay_runtime.block_on(relay.run()).unwrap();
+        let relay_url = relay_runtime.block_on(relay.url()).to_string();
+        let sender = NostrTransport::new(
+            NostrConfig {
+                relays: vec![relay_url.clone()],
+                ephemeral: true,
+                timeout: 3,
+                publish_timeout: 3,
+            },
+            &[51; 32],
+        )
+        .unwrap();
+        let envelope = DeliveryEnvelope {
+            schema_version: 1,
+            from: sender.public_key_bytes(),
+            to: sender.public_key_bytes(),
+            kind: 4097,
+            payload: b"public rejected envelope".to_vec(),
+            timestamp: Timestamp::now().as_secs(),
+            correlation_id: None,
+            domain_event: None,
+        };
+        assert!(sender.send_with_receipt(envelope).is_err());
+        let (fetches, successful, diagnostics) = sender.fetch_events_from_relays(
+            vec![relay_url],
+            Timestamp::now().as_secs(),
+            Duration::from_secs(3),
+        );
+        assert!(fetches.is_empty());
+        assert_eq!(successful, 0);
+        assert!(diagnostics[0].contains("error:"));
+        relay.shutdown();
+    }
+
+    #[derive(Debug)]
+    struct RejectQuery;
+
+    impl QueryPolicy for RejectQuery {
+        fn admit_query<'a>(
+            &'a self,
+            _: &'a mut Filter,
+            _: &'a std::net::SocketAddr,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = QueryPolicyResult> + Send + 'a>>
+        {
+            Box::pin(async {
+                QueryPolicyResult::reject(MachineReadablePrefix::Blocked, "test rejection")
+            })
+        }
     }
 }
