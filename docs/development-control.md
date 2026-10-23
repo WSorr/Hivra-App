@@ -108,8 +108,8 @@ green repository gate.
 - Protected `main` includes package/VPS recovery, the last-result Moltbook
   lifecycle, replacement/reopen/restart and manifest capability admission.
   Read Git for the current commit.
-- The latest published prerelease is `v1.0.4-test3`, with runtime source
-  `6660392` and its matching canonical runner. Its tag adds only digest-bound
+- The latest published prerelease is `v1.0.5-test1`, with runtime source
+  `21ae7b5` and its matching canonical runner. Its tag adds only digest-bound
   manual signoff; ZIP/APK bytes are the exact smoke-tested artifacts. It is an
   unsigned test release for Apple Silicon and local macOS Android Emulator
   (API 36, arm64). Intel, other Android runtime combinations and the complete
@@ -162,62 +162,39 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The active maintenance outcome is complete authenticated Capsule backup and
-recovery through the existing codec/persistence/file-delivery owners: readable
-public ID + UTC date names, durable Capsule state and opaque package state,
-normal ZIP package admission, no platform credential export, no stale workspace
-execution renewal and no overwrite of an existing Capsule. The canonical wire
-and safety contract remains in `specification.md`. Acceptance uses isolated data
-for full restore/reopen/restart, package replacement, authentication/path/package
-rejection and failure rollback. Exact packaged acceptance is pending a clean
-approved source and matching runner; existing attested artifacts are unchanged.
+The bounded Capsule/package maintenance outcome is complete in
+`v1.0.5-test1`. Authenticated v3 backup/recovery uses the existing
+codec/persistence/file-delivery owners, with public Capsule ID + UTC filenames,
+durable Capsule/Chat state, opaque package state and installed ZIPs. Recovery
+uses normal package admission, excludes platform credentials and other Capsules,
+does not overwrite existing Capsules, and does not renew workspace execution
+leases. The maintained wire and safety contract belongs to `specification.md`.
 
-The preceding dependency outcome (wincode 0.6.3 with frozen bincode 1.3.3 byte
-compatibility, no storage migration) is retained in the current Git base. This
-backup pass does not change dependencies, toolchain pins or its source scope.
+The release includes the completed dependency updates: Nostr/TLS, anyhow
+1.0.103, wasmi 0.41.3 without paste and wincode 0.6.3 with frozen bincode 1.3.3
+byte compatibility. No Capsule storage migration was introduced.
 
-The bounded Capsule/package release outcome is complete in `v1.0.4-test3`.
-Real Chat, Moltbook and Jack packages were installed/opened, removed through the
-product, kept absent through restart, then reinstalled/opened from the canonical
-catalog on both exact platforms. Unrelated package state and Capsule truth were
-preserved; deleted Moltbook drafts did not return. New two-way Chat after
-reinstallation survived restart exactly once. Replacement with a different
-private state shape retained opaque state through reopen/restart, and missing
-required capabilities blocked workspace admission.
-
-The same artifacts passed native encrypted backup export, authenticated
-empty-data recovery, negative imports, scoped Capsule switching and invitation
-send/accept in both directions, with terminal receipts retained after restart.
-Android used isolated local macOS emulators, cold boots without snapshots and a
-separate initially empty userdata root. Working Capsule files remained unchanged.
-The exact digests, per-platform observations and limits have one owner:
+Exact packaged acceptance covered existing-data update, native backup and
+empty-runtime recovery, authentication rejection, invitations in both directions,
+scoped Capsule switching, bidirectional Chat, package installation/removal and
+reinstallation, required-capability rejection, replacement/reopen and cold
+restart. Cross-platform recovery preserved Ledger, encrypted Chat, opaque state
+and package digests. Working Capsule files remained unchanged. Per-platform
+observations, artifact digests, runner binding and limits have one owner:
 `checklists/release-manual-signoff-log.md`.
 
-Main CI can be run on demand through the existing repository workflow when
-GitHub misses a push event; it executes the same checks and runner builder.
-The final runtime source main run passed before publication. The host now binds
-queued Chat dispatch to captured package/peer authority and the active Capsule;
-replacement, removal or lost authorization before worker dispatch fails closed.
-Package recovery commands and workspace execution controls follow the installed
-contract rather than package-private host interpretation.
+Local Analyst diagnostics, redacted clipboard/outbound preview and read-only
+package audit passed on macOS without a model request. The existing AI Runtime
+remains the provider owner under `architecture/capsule-ai-runtime.md`.
+Live Moltbook publication/challenge/reply and Jack trading/VPS effects were not
+qualified in this isolated release acceptance. Earlier live evidence does not
+certify new effects on these artifacts.
 
-Local Analyst redaction, read-only package audit and normal Keychain session
-unlock/lock passed on macOS. Cloudflare configuration survived restart and plugin
-removal/reinstallation; no token re-entry was needed. The existing AI Runtime
-remains the provider owner, under `architecture/capsule-ai-runtime.md`.
-Earlier live Cloudflare evidence does not certify new live effects on test3.
-
-Live automatic Moltbook publication/challenge/reply was not qualified because
-isolated Capsules had no connected Moltbook account. Jack public live
-market-data reached a WASM observation preview on both artifacts; no order or
-VPS mutation was performed. Do not promote these observations into a live
-publication, trading or VPS teardown claim.
-
-This closes the bounded unsigned test matrix, not full User Lifetime or a
-permanently frozen host ABI. Native Intel, a separate macOS user, long-term
-migration/lifetime, other Android runtime combinations and the open Jack evidence
-remain unconfirmed. Future runtime changes need a new exact-artifact smoke;
-package changes within supported contracts must remain independently replaceable.
+This closes the bounded unsigned test matrix. Full User Lifetime, native Intel,
+a separate macOS user, long-term migration/lifetime, other Android combinations
+and the open Jack evidence remain unconfirmed. No permanently frozen host ABI
+is claimed. Future runtime changes require a new exact-artifact smoke; package
+changes within supported contracts must remain independently replaceable.
 Do not overwrite attested artifacts or reuse their smoke for changed code.
 
 ## Deferred Product Work
