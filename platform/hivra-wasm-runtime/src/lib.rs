@@ -71,7 +71,11 @@ pub fn invoke_json(
     }
 
     let mut config = Config::default();
-    config.consume_fuel(true);
+    // Keep the existing binary-only, 32-bit memory ABI across runtime upgrades.
+    config
+        .consume_fuel(true)
+        .wasm_memory64(false)
+        .wasm_custom_page_sizes(false);
     let engine = Engine::new(&config);
     let module = Module::new(&engine, module_bytes)
         .map_err(|error| RuntimeError::InvalidModule(error.to_string()))?;
@@ -152,8 +156,21 @@ mod tests {
         wat::parse_str(echo_module_text()).expect("test WASM compiles")
     }
 
-    fn echo_module_text() -> &'static str {
-        r#"
+    fn echo_module_text() -> String {
+        module_text(
+            "local.get $ptr
+                i64.extend_i32_u
+                i64.const 32
+                i64.shl
+                local.get $len
+                i64.extend_i32_u
+                i64.or",
+        )
+    }
+
+    fn module_text(entry_body: &str) -> String {
+        format!(
+            r#"
             (module
               (memory (export "memory") 1)
               (global $next (mut i32) (i32.const 1024))
@@ -167,14 +184,9 @@ mod tests {
                 local.get $ptr)
               (func (export "hivra_dealloc_v1") (param i32 i32))
               (func (export "hivra_evaluate_v1") (param $ptr i32) (param $len i32) (result i64)
-                local.get $ptr
-                i64.extend_i32_u
-                i64.const 32
-                i64.shl
-                local.get $len
-                i64.extend_i32_u
-                i64.or))
+                {entry_body}))
             "#
+        )
     }
 
     #[test]
@@ -195,6 +207,168 @@ mod tests {
             invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
             Err(RuntimeError::ImportsNotAllowed),
         );
+    }
+
+    #[test]
+    fn accepts_only_binary_wasm() {
+        for bytes in [echo_module_text().into_bytes(), b"not a module".to_vec()] {
+            assert!(matches!(
+                invoke_json(&bytes, DEFAULT_ENTRY_EXPORT, b"{}"),
+                Err(RuntimeError::InvalidModule(_)),
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_new_memory_profiles() {
+        for memory in [
+            "(memory (export \"memory\") i64 1)",
+            "(memory (export \"memory\") 1 (pagesize 1))",
+        ] {
+            let text = echo_module_text().replace("(memory (export \"memory\") 1)", memory);
+            let module = wat::parse_str(text).expect("valid extended-memory WASM");
+            assert!(matches!(
+                invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+                Err(RuntimeError::InvalidModule(_)),
+            ));
+        }
+    }
+
+    #[test]
+    fn preserves_module_and_input_size_limits() {
+        assert_eq!(
+            invoke_json(&vec![0; MAX_MODULE_BYTES + 1], DEFAULT_ENTRY_EXPORT, b"{}"),
+            Err(RuntimeError::ModuleTooLarge),
+        );
+        let module = echo_module();
+        for input in [Vec::new(), vec![b' '; MAX_INPUT_BYTES + 1]] {
+            assert_eq!(
+                invoke_json(&module, DEFAULT_ENTRY_EXPORT, &input),
+                Err(RuntimeError::InputTooLarge),
+            );
+        }
+        let input = vec![b' '; MAX_INPUT_BYTES];
+        let module = wat::parse_str(
+            echo_module_text().replace("(export \"memory\") 1", "(export \"memory\") 2"),
+        )
+        .unwrap();
+        assert_eq!(
+            invoke_json(&module, DEFAULT_ENTRY_EXPORT, &input),
+            Ok(input)
+        );
+    }
+
+    #[test]
+    fn bounds_execution_fuel() {
+        let module = wat::parse_str(module_text("(loop br 0) i64.const 0")).unwrap();
+        assert!(matches!(
+            invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+            Err(RuntimeError::ExecutionFailed(_)),
+        ));
+    }
+
+    #[test]
+    fn bounds_start_function_fuel() {
+        let module = wat::parse_str(echo_module_text().replacen(
+            "(module",
+            "(module (func $start (loop br 0)) (start $start)",
+            1,
+        ))
+        .unwrap();
+        assert!(matches!(
+            invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+            Err(RuntimeError::InstantiationFailed(_)),
+        ));
+    }
+
+    #[test]
+    fn preserves_output_pointer_and_size_checks() {
+        for packed in [0, 1u64 << 32, 1] {
+            let module = wat::parse_str(module_text(&format!("i64.const {packed}"))).unwrap();
+            assert_eq!(
+                invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+                Err(RuntimeError::OutputInvalid),
+            );
+        }
+        let too_large = (1u64 << 32) | (MAX_OUTPUT_BYTES as u64 + 1);
+        let module = wat::parse_str(module_text(&format!("i64.const {too_large}"))).unwrap();
+        assert_eq!(
+            invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+            Err(RuntimeError::OutputTooLarge),
+        );
+        let outside_memory = (65535u64 << 32) | 2;
+        let module = wat::parse_str(module_text(&format!("i64.const {outside_memory}"))).unwrap();
+        assert!(matches!(
+            invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+            Err(RuntimeError::MemoryAccessFailed(_)),
+        ));
+    }
+
+    #[test]
+    fn preserves_entry_export_contract() {
+        let module =
+            wat::parse_str(echo_module_text().replace(DEFAULT_ENTRY_EXPORT, "replacement_entry"))
+                .unwrap();
+        assert_eq!(
+            invoke_json(&module, "replacement_entry", b"{}"),
+            Ok(b"{}".to_vec())
+        );
+        assert_eq!(
+            invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+            Err(RuntimeError::EntryExportMissing),
+        );
+        let wrong_signature = module_text("i32.const 1").replace("(result i64)", "(result i32)");
+        assert_eq!(
+            invoke_json(
+                &wat::parse_str(wrong_signature).unwrap(),
+                DEFAULT_ENTRY_EXPORT,
+                b"{}"
+            ),
+            Err(RuntimeError::EntryExportMissing),
+        );
+    }
+
+    #[test]
+    fn preserves_instance_memory_and_table_limits() {
+        for extra in ["(memory 1)", "(table 1 funcref) (table 1 funcref)"] {
+            let module = wat::parse_str(echo_module_text().replacen(
+                "(module",
+                &format!("(module {extra}"),
+                1,
+            ))
+            .unwrap();
+            assert!(matches!(
+                invoke_json(&module, DEFAULT_ENTRY_EXPORT, b"{}"),
+                Err(RuntimeError::InstantiationFailed(_)),
+            ));
+        }
+    }
+
+    #[test]
+    fn replacement_modules_can_change_private_state_shape() {
+        let outputs: [&[u8]; 2] = [
+            br#"{"state":{"count":7}}"#,
+            br#"{"state":["replacement",7]}"#,
+        ];
+        let modules: Vec<_> = outputs
+            .iter()
+            .map(|output| {
+                let data: String = output.iter().map(|byte| format!("\\{byte:02x}")).collect();
+                let packed = (4096u64 << 32) | output.len() as u64;
+                wat::parse_str(module_text(&format!("i64.const {packed}")).replacen(
+                    "(module",
+                    &format!("(module (data (i32.const 4096) \"{data}\")"),
+                    1,
+                ))
+                .unwrap()
+            })
+            .collect();
+        for index in [0, 1, 0] {
+            assert_eq!(
+                invoke_json(&modules[index], DEFAULT_ENTRY_EXPORT, b"{}"),
+                Ok(outputs[index].to_vec()),
+            );
+        }
     }
 
     #[test]

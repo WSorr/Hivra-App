@@ -162,21 +162,22 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The active maintenance scope is the Nostr/TLS security migration, preserving
-Chat and invitation wire formats and their existing ingress/outbox owners.
-The candidate replaces Nostr SDK 0.36.0 with 0.45.4 (Nostr 0.45.5), rustls
-0.23.37 with 0.23.46, rustls-webpki 0.103.9 with 0.103.16 and the resolved
-webpki-roots 1.0.6 with 1.0.10; rand 0.8.5/0.9.2 move to their patched
-0.8.6/0.9.3 branches.
-Compiler/platform pins in `toolchains/hivra-baseline.conf` remain unchanged;
-this is a dependency migration, not activation of a new toolchain matrix.
-Old authenticated NIP-44 vectors, the prior outbound plaintext limit and
-70 KiB relay ingress event cap are preserved. Transport checks cover relay
-authentication, acknowledgement, read failure, retry and reconnect. No Ledger schema, C ABI or storage migration
-is selected. This candidate has no packaged acceptance yet: after a clean
-approved source and matching runner exist, verify invitation/accept, two-way
-Chat, reconnect and restart on exact macOS and Android packages using isolated
-data. Existing release artifacts and their attestations remain unchanged.
+The active maintenance scope replaces Wasmi 0.38.0 with 0.41.3 to remove its
+unmaintained `paste` dependency through the upstream runtime. The existing
+`hivra-wasm-runtime::invoke_json` remains the single execution owner; the ABI
+and resource contract in `plugins/plugin_host_api_v1.md` remain unchanged.
+The runtime keeps binary-only modules and 32-bit memory, explicitly excluding
+the newer memory64 and custom-page-size proposals. No package-private state,
+provider decision, C ABI, Ledger or storage migration belongs to this scope.
+
+Only the Wasmi dependency family and its required transitive replacements
+change; bincode and the compiler/platform pins remain unchanged. Automated
+acceptance covers entry signatures, module/input/output bounds, imports,
+memory growth, fuel exhaustion during start and evaluation, and replacement
+modules with different opaque state shapes. Exact packaged acceptance remains
+pending a clean approved source and matching runner: verify existing packages
+and replacement/reopen/restart on isolated macOS and Android data. Existing
+release artifacts and their attestations remain unchanged.
 
 The bounded Capsule/package release outcome is complete in `v1.0.4-test3`.
 Real Chat, Moltbook and Jack packages were installed/opened, removed through the
