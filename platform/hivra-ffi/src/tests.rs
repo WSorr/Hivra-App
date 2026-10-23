@@ -7,6 +7,19 @@ use std::sync::Mutex;
 
 static TEST_GUARD: Mutex<()> = Mutex::new(());
 
+/// Frozen before replacing bincode 1.3.3; never regenerate with the new codec.
+pub(crate) fn legacy_binary_fixture(name: &str) -> Vec<u8> {
+    let fixtures: serde_json::Value =
+        serde_json::from_str(include_str!("../tests/fixtures/bincode-1.3.3.json")).unwrap();
+    fixtures["hex"][name]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
 fn test_seed(byte: u8) -> Seed {
     Seed([byte; 32])
 }
@@ -52,24 +65,43 @@ fn capsule_state_binary_ffi_preserves_v1_layout() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
     set_runtime_capsule(PubKey::from([17u8; 32]), Network::Neste);
-    let state = runtime_capsule_state();
-    let expected = bincode::serialize(&(
-        state.public_key,
-        state.capsule_type,
-        state.network,
-        state.slots,
-        state.ledger_hash,
-        state.ledger_head_commitment,
-        state.relationships_count,
-        state.version,
-    ))
-    .unwrap();
+    let expected = legacy_binary_fixture("ffi");
 
     let encoded = unsafe { crate::ledger_api::capsule_state_encode(std::ptr::null()) };
     let actual = unsafe { std::slice::from_raw_parts(encoded.data, encoded.len) };
     assert_eq!(actual, expected);
     unsafe { crate::ffi_support::free_bytes(encoded.data, encoded.len) };
     clear_runtime_state();
+}
+
+#[test]
+fn capsule_binary_layout_preserves_options_arrays_and_integer_widths() {
+    type View = (
+        [u8; 32],
+        u8,
+        u8,
+        [Option<[u8; 32]>; 5],
+        u64,
+        Option<[u8; 32]>,
+        u32,
+        u32,
+    );
+    let bytes = legacy_binary_fixture("ffi_mixed");
+    let view: View =
+        wincode::config::deserialize(&bytes, crate::ffi_support::capsule_binary_config()).unwrap();
+    assert_eq!(view.0, [17; 32]);
+    assert_eq!(
+        view.3,
+        [Some([2; 32]), None, Some([255; 32]), None, Some([0; 32])]
+    );
+    assert_eq!(
+        (view.4, view.5, view.6, view.7),
+        (u64::MAX, Some([3; 32]), 65537, u32::MAX)
+    );
+    assert_eq!(
+        wincode::config::serialize(&view, crate::ffi_support::capsule_binary_config()).unwrap(),
+        bytes
+    );
 }
 
 fn relationship_established_count() -> usize {

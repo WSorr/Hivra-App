@@ -1,4 +1,5 @@
 use super::*;
+use crate::ffi_support::capsule_binary_config;
 use hivra_keystore::{
     open_inbound_quarantine_record, open_inbound_quarantine_snapshot,
     seal_inbound_quarantine_record, seal_inbound_quarantine_snapshot,
@@ -68,7 +69,9 @@ impl std::fmt::Display for QuarantineError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead,
+)]
 pub(crate) struct InboundQuarantineScopeV1 {
     pub(crate) capsule_id: String,
     pub(crate) network: u8,
@@ -85,7 +88,7 @@ impl InboundQuarantineScopeV1 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct InboundQuarantineRecordV1 {
     schema_version: u16,
     scope: InboundQuarantineScopeV1,
@@ -104,7 +107,7 @@ struct InboundQuarantineRecordV1 {
     envelope_ciphertext: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct InboundQuarantineTombstoneV1 {
     schema_version: u16,
     scope: InboundQuarantineScopeV1,
@@ -117,7 +120,7 @@ struct InboundQuarantineTombstoneV1 {
     terminal_at: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct InboundQuarantineSnapshotV1 {
     schema_version: u16,
     scope: InboundQuarantineScopeV1,
@@ -126,7 +129,7 @@ struct InboundQuarantineSnapshotV1 {
     sender_policies: Vec<SenderIngressPolicyV1>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct InboundQuarantineSnapshotPass15V1 {
     schema_version: u16,
     scope: InboundQuarantineScopeV1,
@@ -134,7 +137,7 @@ struct InboundQuarantineSnapshotPass15V1 {
     tombstones: Vec<InboundQuarantineTombstoneV1>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct SenderIngressPolicyV1 {
     schema_version: u16,
     scope: InboundQuarantineScopeV1,
@@ -145,13 +148,13 @@ struct SenderIngressPolicyV1 {
     charged_events: Vec<SenderChargeEvidenceV1>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct SenderChargeEvidenceV1 {
     adapter_event_id: String,
     charged_at: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, wincode::SchemaWrite, wincode::SchemaRead)]
 struct StoredInboundEnvelopeV1 {
     schema_version: u16,
     from: Vec<u8>,
@@ -458,7 +461,8 @@ impl<'a> CapsuleInboundQuarantineRepository<'a> {
             open_inbound_quarantine_record(self.seed, aad.as_bytes(), &record.envelope_ciphertext)
                 .map_err(|_| QuarantineError::Crypto)?;
         let stored_envelope: StoredInboundEnvelopeV1 =
-            bincode::deserialize(&plaintext).map_err(|_| QuarantineError::Corrupt)?;
+            wincode::config::deserialize(&plaintext, capsule_binary_config())
+                .map_err(|_| QuarantineError::Corrupt)?;
         let envelope = stored_envelope.into_delivery_envelope()?;
         if encode_hex(&envelope.from) != record.authenticated_sender
             || envelope.to.as_slice() != decode_hex32(&self.scope.transport_endpoint)?.as_slice()
@@ -540,7 +544,8 @@ impl<'a> CapsuleInboundQuarantineRepository<'a> {
             .parent()
             .ok_or(QuarantineError::InvalidScope)?;
         fs::create_dir_all(parent).map_err(|_| QuarantineError::Io)?;
-        let plaintext = bincode::serialize(&self.snapshot).map_err(|_| QuarantineError::Corrupt)?;
+        let plaintext = wincode::config::serialize(&self.snapshot, capsule_binary_config())
+            .map_err(|_| QuarantineError::Corrupt)?;
         let aad = snapshot_associated_data(&self.scope);
         let sealed = seal_inbound_quarantine_snapshot(self.seed, aad.as_bytes(), &plaintext)
             .map_err(|_| QuarantineError::Crypto)?;
@@ -586,8 +591,8 @@ fn append_quarantine_record(
     }
 
     let stored_envelope = StoredInboundEnvelopeV1::from(envelope);
-    let envelope_bytes =
-        bincode::serialize(&stored_envelope).map_err(|_| QuarantineError::Corrupt)?;
+    let envelope_bytes = wincode::config::serialize(&stored_envelope, capsule_binary_config())
+        .map_err(|_| QuarantineError::Corrupt)?;
     let record_aad = record_associated_data(scope, adapter_event_id);
     let envelope_ciphertext =
         seal_inbound_quarantine_record(seed, record_aad.as_bytes(), &envelope_bytes)
@@ -692,7 +697,7 @@ fn ensure_charge_evidence_capacity(
             adapter_event_id: "capacity-probe".to_string(),
             charged_at: 0,
         });
-    if bincode::serialize(&candidate)
+    if wincode::config::serialize(&candidate, capsule_binary_config())
         .map_err(|_| QuarantineError::Corrupt)?
         .len()
         > MAX_SENDER_POLICY_BYTES
@@ -729,10 +734,10 @@ fn append_tombstone(
     if snapshot.tombstones.len() >= MAX_TOMBSTONES {
         return Err(QuarantineError::TombstoneCapacity);
     }
-    let current_bytes = bincode::serialize(&snapshot.tombstones)
+    let current_bytes = wincode::config::serialize(&snapshot.tombstones, capsule_binary_config())
         .map_err(|_| QuarantineError::Corrupt)?
         .len();
-    let new_bytes = bincode::serialize(&tombstone)
+    let new_bytes = wincode::config::serialize(&tombstone, capsule_binary_config())
         .map_err(|_| QuarantineError::Corrupt)?
         .len();
     if current_bytes.saturating_add(new_bytes) > MAX_TOMBSTONE_BYTES {
@@ -785,11 +790,15 @@ fn load_snapshot(
     let aad = snapshot_associated_data(scope);
     let plaintext = open_inbound_quarantine_snapshot(seed, aad.as_bytes(), &sealed)
         .map_err(|_| QuarantineError::Crypto)?;
-    if let Ok(snapshot) = bincode::deserialize::<InboundQuarantineSnapshotV1>(&plaintext) {
+    if let Ok(snapshot) = wincode::config::deserialize::<InboundQuarantineSnapshotV1, _>(
+        &plaintext,
+        capsule_binary_config(),
+    ) {
         return Ok(snapshot);
     }
     let legacy: InboundQuarantineSnapshotPass15V1 =
-        bincode::deserialize(&plaintext).map_err(|_| QuarantineError::Corrupt)?;
+        wincode::config::deserialize(&plaintext, capsule_binary_config())
+            .map_err(|_| QuarantineError::Corrupt)?;
     Ok(InboundQuarantineSnapshotV1 {
         schema_version: legacy.schema_version,
         scope: legacy.scope,
@@ -873,7 +882,7 @@ fn validate_snapshot(
         validate_event_id(&tombstone.adapter_event_id)?;
         validate_hex32(&tombstone.authenticated_sender)?;
     }
-    if bincode::serialize(&snapshot.tombstones)
+    if wincode::config::serialize(&snapshot.tombstones, capsule_binary_config())
         .map_err(|_| QuarantineError::Corrupt)?
         .len()
         > MAX_TOMBSTONE_BYTES
@@ -902,7 +911,7 @@ fn validate_snapshot(
         charged_count = charged_count.saturating_add(policy.charged_events.len());
     }
     if charged_count > MAX_CHARGE_EVIDENCE
-        || bincode::serialize(&snapshot.sender_policies)
+        || wincode::config::serialize(&snapshot.sender_policies, capsule_binary_config())
             .map_err(|_| QuarantineError::Corrupt)?
             .len()
             > MAX_SENDER_POLICY_BYTES
@@ -1029,7 +1038,136 @@ pub unsafe extern "C" fn hivra_delete_inbound_quarantine(capsule_id_ptr: *const 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::legacy_binary_fixture;
     use tempfile::tempdir;
+
+    #[test]
+    fn truncated_legacy_envelope_and_snapshot_fail_closed() {
+        for name in ["envelope", "envelope_none", "quarantine"] {
+            let bytes = legacy_binary_fixture(name);
+            for end in 0..bytes.len() {
+                let rejected = if name == "quarantine" {
+                    wincode::config::deserialize::<InboundQuarantineSnapshotV1, _>(
+                        &bytes[..end],
+                        capsule_binary_config(),
+                    )
+                    .is_err()
+                } else {
+                    wincode::config::deserialize::<StoredInboundEnvelopeV1, _>(
+                        &bytes[..end],
+                        capsule_binary_config(),
+                    )
+                    .is_err()
+                };
+                assert!(rejected, "accepted truncated {name} at {end}");
+            }
+        }
+    }
+
+    #[test]
+    fn old_quarantine_envelope_bytes_preserve_optional_proof() {
+        for name in ["envelope", "envelope_none"] {
+            let bytes = legacy_binary_fixture(name);
+            let stored: StoredInboundEnvelopeV1 =
+                wincode::config::deserialize(&bytes, capsule_binary_config()).unwrap();
+            assert_eq!(
+                wincode::config::serialize(&stored, capsule_binary_config()).unwrap(),
+                bytes
+            );
+            let envelope = stored.into_delivery_envelope().unwrap();
+            assert_eq!(envelope.from, [21; 32]);
+            assert_eq!(envelope.to, [20; 32]);
+            assert_eq!(envelope.payload, b"secret-payload-marker");
+            if name == "envelope" {
+                assert_eq!(envelope.correlation_id, Some([22; 32]));
+                let proof = envelope.domain_event.unwrap();
+                assert_eq!(
+                    (proof.version, proof.kind, proof.signer, proof.signature),
+                    (5, 7, [23; 32], vec![24; 64])
+                );
+            } else {
+                assert!(envelope.domain_event.is_none());
+                assert!(envelope.correlation_id.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn old_quarantine_snapshot_preserves_retry_replay_and_sender_charges() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        set_application_storage_root(root.path()).unwrap();
+        let seed = Seed::new([19; 32]);
+        let scope = scope(19, 20);
+        let path = snapshot_path(&scope).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let sealed = legacy_binary_fixture("quarantine_sealed");
+        fs::write(&path, &sealed).unwrap();
+        let mut repo = CapsuleInboundQuarantineRepository::open(scope.clone(), &seed).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), sealed);
+        assert_eq!(
+            wincode::config::serialize(&repo.snapshot, capsule_binary_config()).unwrap(),
+            legacy_binary_fixture("quarantine")
+        );
+        assert_eq!(repo.snapshot.records[0].attempt_count, 1);
+        assert_eq!(repo.snapshot.records[0].last_attempt_at, Some(1001));
+        assert!(repo.next_eligible(1030).unwrap().is_none());
+        let recovered = repo.next_eligible(1031).unwrap().unwrap();
+        assert_eq!(recovered.adapter_event_id, "event-pending");
+        assert_eq!(recovered.envelope.domain_event.as_ref().unwrap().version, 5);
+        assert!(repo.has_terminal_evidence("event-consumed"));
+        assert_eq!(
+            repo.apply_sender_policy("charged-once", &[], &recovered.envelope, 1000)
+                .unwrap(),
+            SenderIngressDecision::AlreadyCharged
+        );
+        assert_eq!(
+            repo.sender_policy(&[21; 32]).unwrap().available_permits,
+            SENDER_POLICY_BURST - 1
+        );
+        repo.persist().unwrap();
+        let plaintext = open_inbound_quarantine_snapshot(
+            &seed,
+            snapshot_associated_data(&scope).as_bytes(),
+            &fs::read(&path).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(plaintext, legacy_binary_fixture("quarantine"));
+        repo.mark_consumed("event-pending", 1031).unwrap();
+        let reopened = CapsuleInboundQuarantineRepository::open(scope, &seed).unwrap();
+        assert_eq!(reopened.record_count(), 0);
+        assert!(reopened.has_terminal_evidence("event-pending"));
+        assert!(reopened.has_terminal_evidence("event-consumed"));
+    }
+
+    #[test]
+    fn frozen_pass15_snapshot_uses_existing_reader_without_migration_on_open() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        set_application_storage_root(root.path()).unwrap();
+        let seed = Seed::new([19; 32]);
+        let scope = scope(19, 20);
+        let bytes = legacy_binary_fixture("quarantine_pass15");
+        let legacy: InboundQuarantineSnapshotPass15V1 =
+            wincode::config::deserialize(&bytes, capsule_binary_config()).unwrap();
+        assert_eq!(
+            wincode::config::serialize(&legacy, capsule_binary_config()).unwrap(),
+            bytes
+        );
+        let path = snapshot_path(&scope).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let sealed = legacy_binary_fixture("quarantine_pass15_sealed");
+        fs::write(&path, &sealed).unwrap();
+        let repo = CapsuleInboundQuarantineRepository::open(scope, &seed).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), sealed);
+        assert_eq!(repo.record_count(), 1);
+        assert!(repo.snapshot.sender_policies.is_empty());
+        assert!(repo.has_terminal_evidence("event-consumed"));
+        assert_eq!(
+            repo.next_eligible(1031).unwrap().unwrap().adapter_event_id,
+            "event-pending"
+        );
+    }
 
     fn scope(capsule: u8, endpoint: u8) -> InboundQuarantineScopeV1 {
         InboundQuarantineScopeV1 {
@@ -1304,34 +1442,6 @@ mod tests {
                 .unwrap(),
             SenderIngressDecision::Permit
         );
-    }
-
-    #[test]
-    fn pass15_snapshot_migrates_without_rewriting_quarantine_evidence() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let root = tempdir().unwrap();
-        set_application_storage_root(root.path()).unwrap();
-        let seed = Seed::new([19; 32]);
-        let scope = scope(19, 20);
-        let mut repository =
-            CapsuleInboundQuarantineRepository::open(scope.clone(), &seed).unwrap();
-        repository
-            .quarantine("legacy-record", &[], &envelope(21, 20, 7), "retry", 10)
-            .unwrap();
-        let legacy = InboundQuarantineSnapshotPass15V1 {
-            schema_version: repository.snapshot.schema_version,
-            scope: repository.snapshot.scope.clone(),
-            records: repository.snapshot.records.clone(),
-            tombstones: repository.snapshot.tombstones.clone(),
-        };
-        let plaintext = bincode::serialize(&legacy).unwrap();
-        let aad = snapshot_associated_data(&scope);
-        let sealed = seal_inbound_quarantine_snapshot(&seed, aad.as_bytes(), &plaintext).unwrap();
-        atomic_write(&repository.snapshot_path, &sealed).unwrap();
-
-        let migrated = CapsuleInboundQuarantineRepository::open(scope, &seed).unwrap();
-        assert_eq!(migrated.record_count(), 1);
-        assert!(migrated.snapshot.sender_policies.is_empty());
     }
 
     #[test]
