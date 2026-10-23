@@ -23,10 +23,11 @@ class BackupFileExportService {
        _shareFile = shareFile ?? _shareBackupFile;
 
   Future<String?> save({
+    required String capsuleId,
     required BackupPathExporter exportToPath,
     required bool Function() isCurrent,
   }) async {
-    final name = 'capsule-backup-${DateTime.now().millisecondsSinceEpoch}.json';
+    final name = suggestedName(capsuleId);
     if (!_isAndroid) {
       final path = await HivraFilePickerService.saveJsonDocument(
         suggestedName: name,
@@ -37,7 +38,7 @@ class BackupFileExportService {
       if (saved == null) throw StateError('Failed to export capsule backup');
       return saved;
     }
-    return _withTemporaryExport(exportToPath, (path) async {
+    return _withTemporaryExport(name, exportToPath, (path) async {
       if (!isCurrent()) return null;
       return HivraFilePickerService.saveExistingJsonDocument(
         sourcePath: path,
@@ -46,17 +47,37 @@ class BackupFileExportService {
     });
   }
 
-  Future<void> share({required BackupPathExporter exportToPath}) async {
-    await _withTemporaryExport(exportToPath, _shareFile);
+  static String suggestedName(String capsuleId, {DateTime? at}) {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(capsuleId)) {
+      throw const FormatException('A Capsule ID is required for backup');
+    }
+    final date = (at ?? DateTime.now())
+        .toUtc()
+        .toIso8601String()
+        .replaceAll(':', '')
+        .replaceAll('.', '');
+    return 'hivra-capsule-$capsuleId-$date.json';
+  }
+
+  Future<void> share({
+    required String capsuleId,
+    required BackupPathExporter exportToPath,
+  }) async {
+    await _withTemporaryExport(
+      suggestedName(capsuleId),
+      exportToPath,
+      _shareFile,
+    );
   }
 
   Future<T> _withTemporaryExport<T>(
+    String name,
     BackupPathExporter exportToPath,
     Future<T> Function(String) consume,
   ) async {
     final directory = await _createTemporaryDirectory('hivra-backup-share-');
     try {
-      final targetPath = '${directory.path}/capsule-backup.hivra.json';
+      final targetPath = '${directory.path}/$name';
       final exportedPath = await exportToPath(targetPath);
       if (exportedPath == null) {
         throw StateError('Failed to export capsule backup');

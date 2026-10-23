@@ -162,22 +162,19 @@ provider evidence.
 
 ## Selected Product Outcome
 
-The active maintenance scope replaces unmaintained bincode 1.3.3 with wincode
-0.6.3 while preserving the existing little-endian, fixed-width v1 binary format.
-The FFI projection, encrypted Chat handoff and inbound quarantine remain owned
-by their existing paths. Frozen bytes from the old codec cover the FFI layout,
-optional envelope proof, Chat and both current/Pass15 quarantine snapshots.
-There is no file/schema/crypto migration or additional reader fallback. Core no
-longer carries a production codec dependency solely for a roundtrip test; binary
-compatibility is tested at the existing FFI boundary instead.
+The active maintenance outcome is complete authenticated Capsule backup and
+recovery through the existing codec/persistence/file-delivery owners: readable
+public ID + UTC date names, durable Capsule state and opaque package state,
+normal ZIP package admission, no platform credential export, no stale workspace
+execution renewal and no overwrite of an existing Capsule. The canonical wire
+and safety contract remains in `specification.md`. Acceptance uses isolated data
+for full restore/reopen/restart, package replacement, authentication/path/package
+rejection and failure rollback. Exact packaged acceptance is pending a clean
+approved source and matching runner; existing attested artifacts are unchanged.
 
-Only wincode and its required transitive additions change; existing third-party
-lock entries and compiler/platform pins remain unchanged. Automated acceptance
-must preserve size accounting, retry, tombstones and sender charges, accept the
-existing Chat payload budget, and reject malformed lengths and corrupt inputs.
-Exact packaged acceptance remains pending a clean approved source and matching
-runner: upgrade an isolated old Capsule, then verify invitations and two-way
-Chat through reconnect/restart. Existing release artifacts remain unchanged.
+The preceding dependency outcome (wincode 0.6.3 with frozen bincode 1.3.3 byte
+compatibility, no storage migration) is retained in the current Git base. This
+backup pass does not change dependencies, toolchain pins or its source scope.
 
 The bounded Capsule/package release outcome is complete in `v1.0.4-test3`.
 Real Chat, Moltbook and Jack packages were installed/opened, removed through the

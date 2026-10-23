@@ -10,26 +10,31 @@ class CapsuleBackupContents {
   final String ledgerJson;
   final bool? isGenesis;
   final bool? isNeste;
+  final Map<String, String>? files;
+  final Map<String, String>? packages;
 
   const CapsuleBackupContents({
     required this.ledgerJson,
     this.isGenesis,
     this.isNeste,
+    this.files,
+    this.packages,
   });
 }
 
 class CapsuleBackupCodec {
   static const String schema = 'hivra.capsule_backup';
   static const int version = 1;
-  static const int encryptedVersion = 2;
+  static const int ledgerOnlyEncryptedVersion = 2;
+  static const int encryptedVersion = 3;
+  static const int maxBackupBytes = 96 * 1024 * 1024;
   static const String encryptedSuite = 'hkdf-sha256+a256gcm';
   static const String _keyInfo = 'hivra.capsule_backup.v2';
   static const LedgerViewSupport _support = LedgerViewSupport();
 
   static bool isEncryptedEnvelope(String inputJson) {
     final envelope = _decodeJsonMap(inputJson.trim());
-    return envelope?['schema'] == schema &&
-        envelope?['version'] == encryptedVersion;
+    return envelope?['schema'] == schema && envelope?['version'] != version;
   }
 
   static Future<String> encodeEncryptedBackupEnvelope({
@@ -37,35 +42,47 @@ class CapsuleBackupCodec {
     required Uint8List seed,
     bool? isGenesis,
     bool? isNeste,
+    required Map<String, String> files,
+    Map<String, String>? packages,
     List<int>? salt,
     List<int>? nonce,
   }) async {
-    if (seed.isEmpty) {
-      throw const FormatException('Backup encryption seed is empty');
+    if (seed.length != 32) {
+      throw const FormatException('Backup encryption requires a Capsule seed');
     }
+    const wireVersion = encryptedVersion;
     final resolvedSalt = salt ?? _randomBytes(32);
     final cipher = AesGcm.with256bits();
     final resolvedNonce = nonce ?? cipher.newNonce();
     if (resolvedSalt.length != 32 || resolvedNonce.length != 12) {
       throw const FormatException('Invalid backup encryption parameters');
     }
-    final secretKey = await _deriveKey(seed, resolvedSalt);
-    final cleartext = utf8.encode(
-      encodeBackupEnvelope(
-        ledgerJson: ledgerJson,
-        isGenesis: isGenesis,
-        isNeste: isNeste,
-      ),
-    );
+    final secretKey = await _deriveKey(seed, resolvedSalt, wireVersion);
+    final payload =
+        jsonDecode(
+              encodeBackupEnvelope(
+                ledgerJson: ledgerJson,
+                isGenesis: isGenesis,
+                isNeste: isNeste,
+              ),
+            )
+            as Map<String, dynamic>;
+    payload['version'] = encryptedVersion;
+    payload['files'] = files;
+    payload['packages'] = packages ?? <String, String>{};
+    final cleartext = utf8.encode(jsonEncode(payload));
+    if (cleartext.length > maxBackupBytes) {
+      throw const FormatException('Capsule backup exceeds the size limit');
+    }
     final secretBox = await cipher.encrypt(
       cleartext,
       secretKey: secretKey,
       nonce: resolvedNonce,
-      aad: _associatedData,
+      aad: _associatedData(wireVersion),
     );
     return jsonEncode(<String, dynamic>{
       'schema': schema,
-      'version': encryptedVersion,
+      'version': wireVersion,
       'suite': encryptedSuite,
       'kdf': <String, dynamic>{
         'name': 'hkdf-sha256',
@@ -91,11 +108,17 @@ class CapsuleBackupCodec {
     String inputJson,
     Uint8List seed,
   ) async {
+    if (inputJson.length > maxBackupBytes * 2) return null;
     final envelope = _decodeJsonMap(inputJson.trim());
     if (envelope == null ||
         envelope['schema'] != schema ||
-        envelope['version'] != encryptedVersion) {
+        envelope['version'] == version) {
       return _legacyContents(inputJson);
+    }
+    final wireVersion = envelope['version'];
+    if (wireVersion != ledgerOnlyEncryptedVersion &&
+        wireVersion != encryptedVersion) {
+      return null;
     }
     if (envelope['suite'] != encryptedSuite) return null;
     final kdf = _coerceJsonMap(envelope['kdf']);
@@ -114,13 +137,30 @@ class CapsuleBackupCodec {
       }
       final cleartext = await AesGcm.with256bits().decrypt(
         SecretBox(ciphertext, nonce: nonce, mac: Mac(tag)),
-        secretKey: await _deriveKey(seed, salt),
-        aad: _associatedData,
+        secretKey: await _deriveKey(seed, salt, wireVersion as int),
+        aad: _associatedData(wireVersion),
       );
       final decoded = utf8.decode(cleartext);
       final inner = _decodeJsonMap(decoded);
-      if (inner?['schema'] != schema || inner?['version'] != version) {
+      if (inner?['schema'] != schema ||
+          inner?['version'] !=
+              (wireVersion == encryptedVersion ? encryptedVersion : version)) {
         return null;
+      }
+      if (wireVersion == encryptedVersion) {
+        final files = _stringMap(inner!['files']);
+        final packages = _stringMap(inner['packages']);
+        if (files == null || packages == null) return null;
+        final ledger = _coerceJsonMap(inner['ledger']);
+        if (ledger == null || !_isLedgerShape(ledger)) return null;
+        final meta = _coerceJsonMap(inner['meta']);
+        return CapsuleBackupContents(
+          ledgerJson: jsonEncode(ledger),
+          isGenesis: meta?['is_genesis'] as bool?,
+          isNeste: meta?['is_neste'] as bool?,
+          files: Map.unmodifiable(files),
+          packages: Map.unmodifiable(packages),
+        );
       }
       return _legacyContents(decoded);
     } on Object {
@@ -192,8 +232,11 @@ class CapsuleBackupCodec {
   }
 
   static Map<String, dynamic>? _decodeJsonMap(String rawJson) {
-    final decoded = jsonDecode(rawJson);
-    return _coerceJsonMap(decoded);
+    try {
+      return _coerceJsonMap(jsonDecode(rawJson));
+    } on FormatException {
+      return null;
+    }
   }
 
   static Map<String, dynamic>? _coerceJsonMap(Object? value) {
@@ -202,14 +245,30 @@ class CapsuleBackupCodec {
     return null;
   }
 
-  static List<int> get _associatedData =>
-      utf8.encode('$schema|$encryptedVersion|$encryptedSuite');
+  static Map<String, String>? _stringMap(Object? value) {
+    if (value is! Map || value.length > 1024) return null;
+    if (value.entries.any((e) => e.key is! String || e.value is! String)) {
+      return null;
+    }
+    return Map<String, String>.from(value);
+  }
 
-  static Future<SecretKey> _deriveKey(Uint8List seed, List<int> salt) {
+  static List<int> _associatedData(int wireVersion) =>
+      utf8.encode('$schema|$wireVersion|$encryptedSuite');
+
+  static Future<SecretKey> _deriveKey(
+    Uint8List seed,
+    List<int> salt,
+    int wireVersion,
+  ) {
     return Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(
       secretKey: SecretKey(seed),
       nonce: salt,
-      info: utf8.encode(_keyInfo),
+      info: utf8.encode(
+        wireVersion == ledgerOnlyEncryptedVersion
+            ? _keyInfo
+            : 'hivra.capsule_backup.v$wireVersion',
+      ),
     );
   }
 

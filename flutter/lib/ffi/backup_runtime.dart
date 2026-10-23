@@ -4,6 +4,7 @@ import '../services/capsule_persistence_service.dart';
 import 'hivra_bindings.dart';
 
 abstract class BackupRuntime {
+  String? capsulePublicKeyHex();
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24});
 
   Future<String?> exportBackupEnvelopeToPath(String targetPath, Uint8List seed);
@@ -24,6 +25,13 @@ class HivraBackupRuntime implements BackupRuntime {
     CapsulePersistenceService? persistence,
   }) : _hivra = hivra ?? HivraBindings(),
        _persistence = persistence ?? CapsulePersistenceService();
+
+  @override
+  String? capsulePublicKeyHex() =>
+      _hivra
+          .capsuleRuntimeOwnerPublicKey()
+          ?.map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
 
   @override
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24}) {

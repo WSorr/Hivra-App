@@ -18,6 +18,9 @@ class _FakeBackupRuntime implements BackupRuntime {
   bool? persistIsNeste;
 
   @override
+  String? capsulePublicKeyHex() => 'a' * 64;
+
+  @override
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24}) {
     mnemonicSeed = seed;
     mnemonicWordCount = wordCount;

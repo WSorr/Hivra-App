@@ -339,8 +339,8 @@ require_present "$SPEC" '^### 6\.4 Capsule Effect Proof' \
 require_present "$V2_BLUEPRINT" '^### Cross-Cutting Invariant: Cryptographic Agility' \
   "v2 blueprint carries the crypto-agility migration contract"
 check_crypto_fixed_size_compatibility_boundary
-require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'encryptedVersion = 2' \
-  "backup codec defines encrypted envelope v2"
+# Backup version compatibility and complete authenticated recovery are enforced
+# by the Flutter behavioral suite, including frozen legacy ciphertext.
 require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'AesGcm\.with256bits' \
   "backup codec uses authenticated AES-256-GCM"
 require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'Hkdf\(hmac: Hmac\.sha256\(\)' \

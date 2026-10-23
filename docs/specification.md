@@ -519,12 +519,17 @@ Storage:
 - Recovery seeds MUST NOT be persisted in plaintext files. If platform secure
   storage is unavailable, seed persistence fails closed.
 - User-visible Capsule backup exports MUST use the versioned authenticated
-  `hivra.capsule_backup` v2 envelope. The maintained 1.x suite derives a
+  `hivra.capsule_backup` v3 envelope. The maintained 1.x suite derives a
   domain-separated export key from the Capsule seed with HKDF-SHA256 and a
-  fresh 32-byte salt, then encrypts the complete v1 recovery payload with
+  fresh 32-byte salt, then encrypts the complete v3 recovery payload with
   AES-256-GCM and a fresh 12-byte nonce. The schema, version, and suite id are
   authenticated associated data; Ledger bytes and Capsule metadata remain
-  inside the ciphertext.
+  inside the ciphertext. v2 remains read-only Ledger recovery compatibility for existing 1.x exports;
+  removing it requires explicit retirement of that supported import format;
+  v3 adds Capsule-scoped durable host files, opaque package state and installed
+  ZIP packages. Seed, platform vaults, API tokens, private keys, process grants,
+  caches, locks and derived projections MUST NOT be exported. Opaque package
+  bytes MUST NOT be interpreted to reconstruct private state.
 - `CapsuleBackupCodec` is the sole backup wire-format owner and
   `CapsulePersistenceService` is the sole backup payload writer.
   `BackupFileExportService` owns file export and sharing for both the seed
@@ -533,9 +538,21 @@ Storage:
   selected document; it MUST NOT depend on an installed Share receiver or
   request broad storage access. Screens and platform adapters MUST NOT
   serialize, encrypt, decrypt, or reinterpret backup payloads.
-- An envelope recognized as v2 MUST fail closed on an unsupported suite,
+- Both Import Backup and phrase Recovery MUST converge on the complete import
+  owner for v3. Restore MUST validate authenticated paths, bounds, package
+  preflight and the native Ledger signatures/structure before publishing data.
+  Existing Capsule data MUST NOT be overwritten or merged with an old snapshot;
+  installed package conflicts MUST fail without downgrading other Capsules.
+  Failed imports MUST roll back newly installed packages, seed, Capsule and index.
+  Workspace execution leases MUST expire on recovery while remote custody and
+  effect evidence remain intact. Platform credentials require normal reconnect.
+- Saved and shared file names MUST contain the full public Capsule ID and a
+  readable UTC timestamp, never a phrase, private key, account label or token.
+  Android durable exports belong in a user-selected document folder such as
+  Documents/Hivra/Backups, outside app-private runtime data.
+- An envelope recognized as encrypted MUST fail closed on an unsupported suite,
   malformed field, wrong seed, or authentication failure. It MUST NOT fall
-  back to v1 or raw-Ledger parsing after v2 recognition.
+  back to v1 or raw-Ledger parsing after encrypted-envelope recognition.
 - Plaintext `capsule-backup.v1.json` remains an internal per-Capsule recovery
   snapshot and read-only import compatibility format. New user-visible exports
   MUST NOT emit v1 or raw Ledger JSON.
@@ -546,7 +563,7 @@ Storage:
 - Android OS Auto Backup, cloud restore, and device-to-device extraction MUST
   NOT copy Hivra private runtime state. The application manifest and both
   legacy and Android 12+ extraction rules MUST exclude every private storage
-  domain. An explicit authenticated `hivra.capsule_backup` v2 envelope plus
+  domain. An explicit authenticated `hivra.capsule_backup` v2/v3 envelope plus
   matching seed is the only supported cross-install Capsule recovery path.
   Android secure storage MUST derive its filesystem boundary from the active
   process `Context.filesDir`; adapters MUST NOT assume owner user `0`.

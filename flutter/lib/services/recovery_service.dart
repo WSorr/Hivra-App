@@ -54,6 +54,17 @@ class RecoveryService {
           'Backup authentication failed or the seed phrase does not match',
         );
       }
+      if (selectedBackup?.files != null) {
+        final restored = await _runtime.importCompleteBackup(
+          selectedBackupJson!,
+          seed,
+        );
+        return restored
+            ? const RecoveryExecutionResult.success()
+            : const RecoveryExecutionResult.failure(
+              'Failed to restore complete Capsule backup',
+            );
+      }
       final selectedBackupLedgerJson = selectedBackup?.ledgerJson;
       bool isGenesisRecovered = selectedBackup?.isGenesis ?? false;
 
@@ -125,7 +136,9 @@ class RecoveryService {
 
       return const RecoveryExecutionResult.success();
     } catch (e) {
-      return RecoveryExecutionResult.failure('Recovery failed: $e');
+      return const RecoveryExecutionResult.failure(
+        'Recovery failed; the Capsule was not restored',
+      );
     }
   }
 

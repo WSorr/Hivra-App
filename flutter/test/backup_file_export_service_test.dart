@@ -9,6 +9,25 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('hivra/file_documents');
 
+  test(
+    'backup names bind the full Capsule ID and readable UTC date without seed or account labels',
+    () {
+      expect(
+        BackupFileExportService.suggestedName(
+          'a' * 64,
+          at: DateTime.parse('2026-10-23T16:45:12.123Z'),
+        ),
+        'hivra-capsule-${'a' * 64}-2026-10-23T164512123Z.json',
+      );
+      for (final bad in ['', '../seed', 'A' * 64, 'a' * 63]) {
+        expect(
+          () => BackupFileExportService.suggestedName(bad),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
@@ -26,6 +45,7 @@ void main() {
     );
 
     await service.share(
+      capsuleId: 'a' * 64,
       exportToPath: (path) async {
         await File(path).writeAsString('encrypted');
         return path;
@@ -45,6 +65,7 @@ void main() {
 
     await expectLater(
       service.share(
+        capsuleId: 'a' * 64,
         exportToPath: (path) async {
           await File(path).writeAsString('encrypted');
           return path;
@@ -84,6 +105,7 @@ void main() {
       );
       var exports = 0;
       final saving = service.save(
+        capsuleId: 'a' * 64,
         exportToPath: (path) async {
           exports++;
           await File(path).writeAsString('authenticated encrypted envelope');
@@ -126,7 +148,11 @@ void main() {
         createTemporaryDirectory: (_) async => root,
       );
       await expectLater(
-        service.save(exportToPath: (_) async => null, isCurrent: () => true),
+        service.save(
+          capsuleId: 'a' * 64,
+          exportToPath: (_) async => null,
+          isCurrent: () => true,
+        ),
         throwsStateError,
       );
       expect(opened, isFalse);
@@ -148,6 +174,7 @@ void main() {
     );
     expect(
       await service.save(
+        capsuleId: 'a' * 64,
         exportToPath: (path) async {
           await File(path).writeAsString('encrypted');
           return path;

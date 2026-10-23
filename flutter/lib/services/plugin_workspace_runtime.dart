@@ -1191,7 +1191,7 @@ class PluginWorkspaceRuntime {
       final view = await runWorkspaceAction(record: record, action: 'open');
       preparedView = view;
       final scope = Map<String, dynamic>.from(view['schedule'] as Map);
-      _validateSchedule(scope);
+      validateWorkspaceExecutionSchedule(scope);
       if (approvedScope == null ||
           _canonical(scope) != _canonical(approvedScope)) {
         throw StateError('Execution scope changed; confirm Start again');
@@ -1361,7 +1361,7 @@ class PluginWorkspaceRuntime {
       throw StateError('Execution grant exceeds the storage bound');
     }
     final control = jsonDecode(raw);
-    _validateExecutionControl(control, owner, record.pluginId!);
+    validateWorkspaceExecutionControl(control, owner, record.pluginId!);
     if (enforceHost &&
         ((control['executor'] ?? 'local') != executionHost ||
             (executionHost == 'vps' &&
@@ -1392,56 +1392,13 @@ class PluginWorkspaceRuntime {
     return Map<String, dynamic>.from(control);
   }
 
-  static void _validateExecutionControl(
-    dynamic control,
-    String owner,
-    String pluginId,
-  ) {
-    if (control is! Map ||
-        control['version'] != 1 ||
-        control['owner'] != owner ||
-        control['plugin_id'] != pluginId ||
-        control['revision'] is! int ||
-        control['revision'] <= 0 ||
-        control['allow_new_entries'] is! bool ||
-        control['expires_at_ms'] is! int ||
-        control['settings'] is! Map ||
-        control['scope'] is! Map ||
-        control['package_id'] is! String ||
-        (control['package_id'] as String).isEmpty ||
-        (control['package_id'] as String).length > 128 ||
-        control['package_digest'] is! String ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(control['package_digest']) ||
-        !{'local', 'vps'}.contains(control['executor'] ?? 'local') ||
-        (control['executor'] == 'vps' &&
-            (control['executor_id'] is! String ||
-                !RegExp(r'^[0-9a-f]{64}$').hasMatch(control['executor_id']))) ||
-        ['handoff_id', 'handoff_digest'].any(
-          (key) =>
-              control[key] != null &&
-              (control[key] is! String ||
-                  !RegExp(r'^[0-9a-f]{64}$').hasMatch(control[key])),
-        )) {
-      throw StateError(
-        'Execution grant is unreadable; no cycle or effect admitted',
-      );
-    }
-    final settings = control['settings'] as Map;
-    if (settings.length > 8 ||
-        utf8.encode(jsonEncode(settings)).length > 2048 ||
-        settings.values.any((v) => v is! String && v is! num)) {
-      throw StateError('Execution settings are invalid');
-    }
-    _validateSchedule(Map<String, dynamic>.from(control['scope'] as Map));
-  }
-
   /// Installation may rebind only a completely ended host grant.
   static void validateInactiveWorkspaceGrant(
     dynamic control,
     String owner,
     String pluginId,
   ) {
-    _validateExecutionControl(control, owner, pluginId);
+    validateWorkspaceExecutionControl(control, owner, pluginId);
     if (control['executor'] != 'local' ||
         control['expires_at_ms'] != 0 ||
         control['allow_new_entries'] != false) {
@@ -1791,7 +1748,7 @@ class PluginWorkspaceRuntime {
       jsonDecode(jsonEncode(checkpoint)) as Map,
     );
     final incoming = Map<String, dynamic>.from(checkpoint['execution'] as Map);
-    _validateExecutionControl(incoming, owner, record.pluginId!);
+    validateWorkspaceExecutionControl(incoming, owner, record.pluginId!);
     if (incoming['executor'] != 'local' ||
         incoming['expires_at_ms'] != 0 ||
         incoming['allow_new_entries'] != false ||
@@ -1918,7 +1875,7 @@ class PluginWorkspaceRuntime {
       throw StateError('Invalid workspace checkpoint');
     }
     final control = checkpoint['execution'];
-    _validateExecutionControl(control, owner, pluginId);
+    validateWorkspaceExecutionControl(control, owner, pluginId);
     if (control['executor'] != 'vps' ||
         control['handoff_id'] == null ||
         control['handoff_digest'] != null ||
@@ -1929,29 +1886,6 @@ class PluginWorkspaceRuntime {
       throw StateError(
         'Checkpoint does not carry released execution authority',
       );
-    }
-  }
-
-  static void _validateSchedule(Map<String, dynamic> scope) {
-    if (scope.length != 6 ||
-        scope['account_id'] is! String ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(scope['account_id']) ||
-        scope['symbol'] is! String ||
-        (scope['symbol'] as String).length > 64 ||
-        !RegExp(r'^[A-Z0-9]+-USDT$').hasMatch(scope['symbol']) ||
-        scope['action'] is! String ||
-        !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(scope['action']) ||
-        scope['interval_seconds'] is! int ||
-        scope['interval_seconds'] < 30 ||
-        scope['interval_seconds'] > 3600 ||
-        scope['max_margin'] is! num ||
-        !scope['max_margin'].isFinite ||
-        scope['max_margin'] <= 0 ||
-        scope['max_stop_percent'] is! num ||
-        !scope['max_stop_percent'].isFinite ||
-        scope['max_stop_percent'] <= 0 ||
-        scope['max_stop_percent'] > 100) {
-      throw StateError('Invalid bounded execution scope');
     }
   }
 

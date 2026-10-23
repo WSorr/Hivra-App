@@ -4,6 +4,7 @@ import 'package:bech32/bech32.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ffi/capsule_runtime_bootstrap_runtime.dart';
+import '../models/external_effect_models.dart';
 import '../ffi/capsule_persistence_bindings.dart';
 import 'atomic_file_write_service.dart';
 import 'capsule_backup_codec.dart';
@@ -17,6 +18,7 @@ import 'capsule_seed_store.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'ledger_view_support.dart';
 import 'user_visible_data_directory_service.dart';
+import 'wasm_plugin_registry_service.dart';
 
 @visibleForTesting
 bool shouldRemoveCapsuleContactCardEntry({
@@ -143,24 +145,39 @@ class CapsulePersistenceService {
 
   factory CapsulePersistenceService() => _instance;
 
-  CapsulePersistenceService._internal() {
+  @visibleForTesting
+  factory CapsulePersistenceService.forTesting({
+    required UserVisibleDataDirectoryService dirs,
+    required CapsuleSeedStore seedStore,
+  }) => CapsulePersistenceService._internal(dirs: dirs, seedStore: seedStore);
+
+  CapsulePersistenceService._internal({
+    UserVisibleDataDirectoryService dirs =
+        const UserVisibleDataDirectoryService(),
+    CapsuleSeedStore? seedStore,
+  }) : _fileStore = CapsuleFileStore(dirs: dirs),
+       _indexStore = CapsuleIndexStore(dirs: dirs),
+       _seedStore = seedStore ?? CapsuleSeedStore(dirs: dirs),
+       _userVisibleDirs = dirs,
+       _pluginRegistry = WasmPluginRegistryService(dataDirs: dirs) {
     _runtimeBootstrapService = CapsuleRuntimeBootstrapService(
       _fileStore,
       _seedStore,
     );
   }
 
-  final CapsuleFileStore _fileStore = const CapsuleFileStore();
-  final CapsuleIndexStore _indexStore = const CapsuleIndexStore();
+  final CapsuleFileStore _fileStore;
+  final CapsuleIndexStore _indexStore;
   final CapsuleLedgerSummaryParser _summaryParser =
       const CapsuleLedgerSummaryParser();
   final CapsuleIdentityReconcilerService _identityReconciler =
       const CapsuleIdentityReconcilerService();
   final LedgerViewSupport _support = const LedgerViewSupport();
-  final CapsuleSeedStore _seedStore = CapsuleSeedStore();
+  final CapsuleSeedStore _seedStore;
   final CapsuleScopedSecretVault _secretVault = CapsuleScopedSecretVault();
-  final UserVisibleDataDirectoryService _userVisibleDirs =
-      const UserVisibleDataDirectoryService();
+  final UserVisibleDataDirectoryService _userVisibleDirs;
+  final WasmPluginRegistryService _pluginRegistry;
+  Future<void> _backupImportTail = Future<void>.value();
   final AtomicFileWriteService _atomicWrites = const AtomicFileWriteService();
   late final CapsuleRuntimeBootstrapService _runtimeBootstrapService;
 
@@ -353,17 +370,48 @@ class CapsulePersistenceService {
       throw StateError('Backup seed does not match the active Capsule');
     }
 
-    final state = await _readStateForCurrentCapsule(hivra);
-    final backupJson = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+    return _exportCompleteBackup(
+      ownerHex,
+      targetPath,
+      seed,
+      ledger,
+      stillCurrent: () async => hivra.exportLedger() == ledger,
+    );
+  }
+
+  Future<String> _exportCompleteBackup(
+    String owner,
+    String targetPath,
+    Uint8List seed,
+    String ledger, {
+    Future<bool> Function()? stillCurrent,
+  }) async {
+    final directory = await _capsuleDirForHex(owner);
+    final files = await _fileStore.snapshotForBackup(directory);
+    final packages = await _pluginRegistry.snapshotForBackup();
+    final state = await _fileStore.readState(directory);
+    final after = await _fileStore.snapshotForBackup(directory);
+    final packagesAfter = await _pluginRegistry.snapshotForBackup();
+    if (!mapEquals(files, after) ||
+        !mapEquals(packages, packagesAfter) ||
+        (stillCurrent != null && !await stillCurrent())) {
+      throw StateError('Capsule changed during backup; retry when idle');
+    }
+    final ledgerRoot = _support.exportLedgerRoot(ledger);
+    final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
       ledgerJson: ledger,
       seed: seed,
-      isGenesis: state?['isGenesis'] == true,
-      isNeste: state?['isNeste'] != false,
+      files: files,
+      packages: packages,
+      isGenesis:
+          _support.inferGenesisFromLedgerRoot(ledgerRoot) ??
+          (state?['isGenesis'] == true),
+      isNeste:
+          _support.inferNesteFromLedgerRoot(ledgerRoot) ??
+          (state?['isNeste'] != false),
     );
-
-    final outFile = File(targetPath);
-    await _atomicWrites.writeString(outFile, backupJson);
-    return outFile.path;
+    await _atomicWrites.writeString(File(targetPath), backup);
+    return targetPath;
   }
 
   Future<bool> importBackupEnvelopeIfExists(
@@ -1007,13 +1055,17 @@ class CapsulePersistenceService {
     if (seed == null) {
       throw StateError('Capsule seed is required for encrypted export');
     }
-    final backupJson = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
-      ledgerJson: ledgerJson,
-      seed: seed,
+    if (_extractOwnerHex(ledgerJson) != pubKeyHex) {
+      throw StateError('Backup owner does not match the selected Capsule');
+    }
+    return _exportCompleteBackup(
+      pubKeyHex,
+      targetPath,
+      seed,
+      ledgerJson,
+      stillCurrent:
+          () async => await _fileStore.readLedger(capsuleDir) == ledgerJson,
     );
-    final outFile = File(targetPath);
-    await _atomicWrites.writeString(outFile, backupJson);
-    return outFile.path;
   }
 
   Future<bool> refreshCapsuleSnapshot(
@@ -1053,6 +1105,36 @@ class CapsulePersistenceService {
       return null;
     }
 
+    if (contents.files != null) {
+      if (seed == null ||
+          hivra == null ||
+          !hivra.validateBackupLedger(ledgerJson, seed)) {
+        return null;
+      }
+      final previous = _backupImportTail;
+      final operation = previous
+          .catchError((_) {})
+          .then(
+            (_) => _restoreCompleteBackup(
+              ownerHex,
+              contents,
+              seed,
+              hivra
+                          .seedRootPublicKey(seed)
+                          ?.map((b) => b.toRadixString(16).padLeft(2, '0'))
+                          .join() ==
+                      ownerHex
+                  ? 'root_owner'
+                  : 'legacy_nostr_owner',
+            ),
+          );
+      _backupImportTail = operation.then<void>(
+        (_) {},
+        onError: (Object _, StackTrace _) {},
+      );
+      return operation;
+    }
+
     final capsuleDir = await _capsuleDirForHex(ownerHex, create: true);
     final localBackupJson = CapsuleBackupCodec.encodeBackupEnvelope(
       ledgerJson: ledgerJson,
@@ -1076,6 +1158,120 @@ class CapsulePersistenceService {
     }
     await _setActiveCapsule(ownerHex);
     return ownerHex;
+  }
+
+  Future<String> _restoreCompleteBackup(
+    String owner,
+    CapsuleBackupContents contents,
+    Uint8List seed,
+    String identityMode,
+  ) async {
+    final files = CapsuleFileStore.decodeBackupFiles(contents.files!);
+    final target = await _capsuleDirForHex(owner);
+    if (await FileSystemEntity.type(target.parent.path, followLinks: false) ==
+            FileSystemEntityType.link ||
+        await FileSystemEntity.type(target.path, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+      throw StateError('Capsule already exists or its destination is unsafe');
+    }
+    final root = await _fileStore.docsDirectory();
+    final stage = Directory('${root.path}/.backup-import-$owner');
+    final stageKind = await FileSystemEntity.type(
+      stage.path,
+      followLinks: false,
+    );
+    if (stageKind == FileSystemEntityType.directory) {
+      // This reserved path is the single unfinished import for this owner.
+      // A crash before atomic directory publication may leave a seed in secure
+      // storage. Keep it: matching platform keys can predate this import.
+      await stage.delete(recursive: true);
+    } else if (stageKind != FileSystemEntityType.notFound) {
+      throw StateError('Unsafe backup staging destination');
+    }
+    final existingSeed = await _seedStore.loadSeed(owner);
+    if (existingSeed != null && !listEquals(existingSeed, seed)) {
+      throw StateError('Stored Capsule identity does not match the backup');
+    }
+    final indexBefore = await _readIndex();
+    await stage.create();
+    var published = false;
+    var seedStored = false;
+    try {
+      return await _pluginRegistry.withBackupPackages(
+        contents.packages!,
+        () async {
+          for (final entry in files.entries) {
+            var bytes = entry.value;
+            // This is host authorization, not package-private state. Preserve VPS
+            // custody/effect evidence, but never revive an old execution lease.
+            if (entry.key.endsWith('/workspace-execution.v1.json')) {
+              final grant = jsonDecode(utf8.decode(bytes));
+              if (grant is! Map) {
+                throw const FormatException('Invalid execution authority');
+              }
+              bytes = utf8.encode(
+                jsonEncode(
+                  sealWorkspaceExecutionForRecovery(
+                    Map<String, dynamic>.from(grant),
+                    owner,
+                    entry.key.split('/')[1],
+                  ),
+                ),
+              );
+            }
+            await _atomicWrites.writeBytes(
+              File('${stage.path}/${entry.key}'),
+              bytes,
+            );
+          }
+          final localBackup = CapsuleBackupCodec.encodeBackupEnvelope(
+            ledgerJson: contents.ledgerJson,
+            isGenesis: contents.isGenesis,
+            isNeste: contents.isNeste,
+          );
+          await _fileStore.writeState(stage, {
+            'isGenesis': contents.isGenesis ?? false,
+            'isNeste': contents.isNeste ?? true,
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
+            'seedLength': seed.length,
+          });
+          await _fileStore.writeLedgerSnapshot(
+            stage,
+            ledgerJson: contents.ledgerJson,
+            backupJson: localBackup,
+          );
+          seedStored = existingSeed == null;
+          await _storeSeedForCapsule(owner, seed);
+          await target.parent.create(recursive: true);
+          if (await FileSystemEntity.type(target.path, followLinks: false) !=
+              FileSystemEntityType.notFound) {
+            throw StateError('Capsule appeared during import');
+          }
+          await stage.rename(target.path);
+          published = true;
+          await _upsertCapsuleIndex(
+            owner,
+            isGenesis: contents.isGenesis,
+            isNeste: contents.isNeste,
+            identityMode: identityMode,
+          );
+          await _setActiveCapsule(owner);
+          return owner;
+        },
+      );
+    } catch (_) {
+      if (published) await target.delete(recursive: true);
+      if (seedStored) await _seedStore.deleteSeed(owner);
+      final current = await _readIndex();
+      current.capsules.remove(owner);
+      if (current.activePubKeyHex == owner) {
+        current.activePubKeyHex = indexBefore.activePubKeyHex;
+      }
+      await _writeIndex(current);
+      rethrow;
+    } finally {
+      if (await stage.exists()) await stage.delete(recursive: true);
+    }
   }
 
   Future<void> deleteCapsule(

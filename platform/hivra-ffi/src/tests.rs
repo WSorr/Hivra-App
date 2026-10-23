@@ -4121,3 +4121,37 @@ fn capsule_state_and_incoming_offer_truth_survive_export_import() {
         PubKey::from(peer_pubkey),
     ));
 }
+
+#[test]
+fn backup_ledger_validation_is_read_only_and_rejects_wrong_seed_or_history() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+    let seed = test_seed(149);
+    let engine = build_engine(&seed);
+    let owner = engine.public_key().unwrap();
+    let birth = engine.prepare_domain_event(
+        EventKind::CapsuleCreated,
+        CapsuleCreatedPayload::new(Network::Neste.to_byte(), CapsuleType::Leaf as u8, [0u8; 32]).to_bytes(),
+        None,
+    ).unwrap();
+    let mut ledger = Ledger::new(owner);
+    ledger.append(birth.event).unwrap();
+    init_runtime_state(&seed, Network::Neste, CapsuleType::Leaf, CapsuleOwnerMode::Root).unwrap();
+    let continuous = CString::new(export_runtime_ledger().unwrap()).unwrap();
+    set_runtime_capsule(derived_pubkey(&test_seed(150)), Network::Neste);
+    let before = export_runtime_ledger().unwrap();
+    let json = CString::new(serde_json::to_string(&ledger).unwrap()).unwrap();
+    unsafe {
+        assert_eq!(crate::ledger_api::hivra_validate_backup_ledger_v1(continuous.as_ptr(), seed.0.as_ptr()), 0);
+        assert_eq!(crate::ledger_api::hivra_validate_backup_ledger_v1(json.as_ptr(), seed.0.as_ptr()), 0);
+        assert_eq!(crate::ledger_api::hivra_validate_backup_ledger_v1(json.as_ptr(), test_seed(151).0.as_ptr()), -3);
+        assert_eq!(crate::ledger_api::hivra_validate_backup_ledger_v1(ptr::null(), seed.0.as_ptr()), -1);
+    }
+    let mut broken = serde_json::to_value(&ledger).unwrap();
+    broken["events"][0]["payload"] = serde_json::json!([1, 2, 3]);
+    let json = CString::new(serde_json::to_string(&broken).unwrap()).unwrap();
+    unsafe {
+        assert_eq!(crate::ledger_api::hivra_validate_backup_ledger_v1(json.as_ptr(), seed.0.as_ptr()), -3);
+    }
+    assert_eq!(export_runtime_ledger().unwrap(), before);
+}

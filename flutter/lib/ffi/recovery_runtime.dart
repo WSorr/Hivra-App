@@ -4,14 +4,12 @@ import '../services/capsule_persistence_service.dart';
 import 'hivra_bindings.dart';
 
 abstract class RecoveryRuntime {
+  Future<bool> importCompleteBackup(String raw, Uint8List seed);
   bool validateMnemonic(String phrase);
 
   Uint8List mnemonicToSeed(String phrase);
 
-  String? createCapsuleError(
-    Uint8List seed, {
-    required bool isGenesis,
-  });
+  String? createCapsuleError(Uint8List seed, {required bool isGenesis});
 
   Uint8List? capsuleRuntimeOwnerPublicKey();
 
@@ -35,8 +33,19 @@ class HivraRecoveryRuntime implements RecoveryRuntime {
   HivraRecoveryRuntime({
     HivraBindings? hivra,
     CapsulePersistenceService? persistence,
-  })  : _hivra = hivra ?? HivraBindings(),
-        _persistence = persistence ?? CapsulePersistenceService();
+  }) : _hivra = hivra ?? HivraBindings(),
+       _persistence = persistence ?? CapsulePersistenceService();
+
+  @override
+  Future<bool> importCompleteBackup(String raw, Uint8List seed) async {
+    final owner = await _persistence.importCapsuleFromBackupJson(
+      raw,
+      seed: seed,
+      hivra: _hivra,
+    );
+    return owner != null &&
+        await _persistence.bootstrapActiveCapsuleRuntime(_hivra);
+  }
 
   @override
   bool validateMnemonic(String phrase) => _hivra.validateMnemonic(phrase);
@@ -45,10 +54,7 @@ class HivraRecoveryRuntime implements RecoveryRuntime {
   Uint8List mnemonicToSeed(String phrase) => _hivra.mnemonicToSeed(phrase);
 
   @override
-  String? createCapsuleError(
-    Uint8List seed, {
-    required bool isGenesis,
-  }) {
+  String? createCapsuleError(Uint8List seed, {required bool isGenesis}) {
     return _hivra.createCapsuleError(
       seed,
       isGenesis: isGenesis,
