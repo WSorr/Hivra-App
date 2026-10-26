@@ -512,6 +512,82 @@ void main() {
     },
   );
 
+  test(
+    'missing local catalog does not hide the remote network failure',
+    () async {
+      var attempts = 0;
+      final offline = WasmPluginSourceCatalogService(
+        dataDirs: dataDirs,
+        httpClientFactory: () {
+          attempts++;
+          throw const SocketException('Network unavailable');
+        },
+      );
+
+      await expectLater(
+        offline.fetchCatalogWithFallback(),
+        throwsA(isA<SocketException>()),
+      );
+      expect(attempts, 2);
+      expect(
+        File('${tempDocsDir.path}/Plugins/plugin_catalog.json').existsSync(),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'malformed local catalog does not hide the final remote HTTP error',
+    () async {
+      final path = '${tempDocsDir.path}/bad_catalog.json';
+      File(path).writeAsStringSync('invalid json');
+      final secondary = Uri.parse(
+        'http://127.0.0.1:${server.port}/missing.json',
+      );
+
+      await expectLater(
+        service.fetchCatalogWithFallback(
+          primaryCatalogUrl:
+              'http://127.0.0.1:${server.port}/also-missing.json',
+          secondaryCatalogUrl: secondary.toString(),
+          localCatalogPathOverride: path,
+        ),
+        throwsA(
+          isA<HttpException>().having((e) => e.uri, 'failed source', secondary),
+        ),
+      );
+      expect(File(path).readAsStringSync(), 'invalid json');
+    },
+  );
+
+  test('secondary remote catalog is still verified before use', () async {
+    final url = 'http://127.0.0.1:${server.port}/catalog.json';
+    final catalog = await service.fetchCatalogWithFallback(
+      primaryCatalogUrl: 'http://127.0.0.1:${server.port}/missing.json',
+      secondaryCatalogUrl: url,
+    );
+    expect(catalog.sourceId, 'wsorr.hivra.plugins');
+
+    final untrusted = WasmPluginSourceCatalogService(
+      dataDirs: dataDirs,
+      trustedRemoteCatalogPublicKeyHexes: const {},
+      trustedRemoteCatalogSha256Hexes: const {},
+    );
+    await expectLater(
+      untrusted.fetchCatalogWithFallback(
+        primaryCatalogUrl: url,
+        secondaryCatalogUrl: url,
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'trust failure',
+          contains('trusted digest'),
+        ),
+      ),
+    );
+  });
+
   test('installFromSourceEntry fails when sha256 mismatches', () async {
     final sourceDir = Directory('${tempDocsDir.path}/source')..createSync();
     final packagePath = '${sourceDir.path}/bad-hash-plugin.zip';

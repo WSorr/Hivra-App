@@ -108,18 +108,13 @@ class WasmPluginSourceCatalogService {
         return await fetchCatalog(catalogUrl: localCatalogPath);
       } catch (_) {
         // A malformed local catalog must not permanently block the published
-        // source. If remote sources are unavailable too, the final local
-        // fallback below will surface the local error.
+        // sources.
       }
     }
     try {
       return await fetchCatalog(catalogUrl: primaryCatalogUrl);
     } catch (_) {
-      try {
-        return await fetchCatalog(catalogUrl: secondaryCatalogUrl);
-      } catch (_) {
-        return fetchCatalog(catalogUrl: localCatalogPath);
-      }
+      return fetchCatalog(catalogUrl: secondaryCatalogUrl);
     }
   }
 

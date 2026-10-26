@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/backup_runtime.dart';
@@ -59,20 +60,90 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  Future<void> showBackup(WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 1000));
+  Future<void> showBackup(
+    WidgetTester tester, {
+    Size size = const Size(1200, 1000),
+    bool isNewWallet = false,
+    double textScale = 1,
+    double bottomInset = 0,
+  }) async {
+    await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData.dark(),
+        builder:
+            (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(textScale),
+                padding: EdgeInsets.only(bottom: bottomInset),
+                viewPadding: EdgeInsets.only(bottom: bottomInset),
+              ),
+              child: child!,
+            ),
         home: BackupScreen(
           seed: seed,
-          isNewWallet: false,
+          isNewWallet: isNewWallet,
           service: BackupService(runtime),
         ),
       ),
     );
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Save Backup'));
+  }
+
+  Future<void> expectReadableActions(
+    WidgetTester tester, {
+    required List<String> labels,
+    required int columns,
+    double textScale = 1,
+    double bottomInset = 0,
+  }) async {
+    await tester.ensureVisible(find.text(labels.last));
+    await tester.pump();
+    final buttons = <Rect>[];
+    for (final label in labels) {
+      final text = find.text(label);
+      final button = find.widgetWithText(ElevatedButton, label);
+      final buttonRect = tester.getRect(button);
+      final textRect = tester.getRect(text);
+      buttons.add(buttonRect);
+      expect(
+        buttonRect.bottom,
+        lessThanOrEqualTo(
+          tester.getRect(find.byType(Scaffold)).bottom - bottomInset,
+        ),
+        reason: '$label must remain above system navigation',
+      );
+      expect(buttonRect.width, greaterThanOrEqualTo(48), reason: label);
+      expect(buttonRect.height, greaterThanOrEqualTo(48), reason: label);
+      expect(buttonRect.contains(textRect.topLeft), isTrue, reason: label);
+      expect(buttonRect.contains(textRect.bottomRight), isTrue, reason: label);
+      final paragraph = tester.renderObject<RenderParagraph>(text);
+      expect(paragraph.didExceedMaxLines, isFalse, reason: label);
+      expect(paragraph.overflow, isNot(TextOverflow.ellipsis), reason: label);
+      expect(paragraph.textScaler.scale(14), closeTo(14 * textScale, 0.01));
+      final painter = TextPainter(
+        text: paragraph.text,
+        textDirection: paragraph.textDirection,
+        textScaler: paragraph.textScaler,
+      )..layout(maxWidth: paragraph.size.width);
+      expect(
+        painter.computeLineMetrics().length,
+        lessThanOrEqualTo(2),
+        reason: '$label must not wrap into a column of characters',
+      );
+      painter.dispose();
+    }
+    expect(buttons[0].center.dy, closeTo(buttons[1].center.dy, 1));
+    if (columns == 2) {
+      expect(buttons[2].top, greaterThanOrEqualTo(buttons[0].bottom));
+      expect(buttons[0].left, closeTo(buttons[2].left, 1));
+      expect(buttons[1].left, closeTo(buttons[3].left, 1));
+    } else {
+      expect(buttons[0].center.dy, closeTo(buttons[3].center.dy, 1));
+    }
+    expect(tester.takeException(), isNull);
   }
 
   testWidgets('Save writes a recoverable file at the selected location', (
@@ -141,19 +212,90 @@ void main() {
     expect(runtime.exports, ['/chosen/capsule.json']);
   });
 
-  testWidgets('Save and Share remain usable on a narrow phone screen', (
+  for (final width in [320.0, 360.0, 384.0, 411.0]) {
+    for (final isNewWallet in [false, true]) {
+      testWidgets('backup actions readable at $width, new: $isNewWallet', (
+        tester,
+      ) async {
+        await showBackup(
+          tester,
+          size: Size(width, 800),
+          isNewWallet: isNewWallet,
+        );
+        await expectReadableActions(
+          tester,
+          labels: [
+            'Copy',
+            'Save Backup',
+            'Share',
+            isNewWallet ? 'Continue' : 'Done',
+          ],
+          columns: 2,
+        );
+        await tester.tap(find.text('Save Backup'));
+        await tester.pumpAndSettle();
+        expect(dialogs, hasLength(1));
+        expect(runtime.exports, isEmpty);
+      });
+    }
+  }
+
+  testWidgets('backup actions remain readable with enlarged phone text', (
+    tester,
+  ) async {
+    await showBackup(
+      tester,
+      size: const Size(384, 800),
+      isNewWallet: true,
+      textScale: 1.3,
+    );
+    await expectReadableActions(
+      tester,
+      labels: ['Copy', 'Save Backup', 'Share', 'Continue'],
+      columns: 2,
+      textScale: 1.3,
+    );
+  });
+
+  testWidgets('backup actions use one readable row on a wide screen', (
     tester,
   ) async {
     await showBackup(tester);
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save Backup'));
-    await tester.pumpAndSettle();
-    expect(find.text('Share'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    await expectReadableActions(
+      tester,
+      labels: ['Copy', 'Save Backup', 'Share', 'Done'],
+      columns: 4,
+    );
+  });
+
+  testWidgets('backup actions stay above Android system navigation', (
+    tester,
+  ) async {
+    await showBackup(tester, size: const Size(384, 800), bottomInset: 48);
+    await expectReadableActions(
+      tester,
+      labels: ['Copy', 'Save Backup', 'Share', 'Done'],
+      columns: 2,
+      bottomInset: 48,
+    );
+  });
+
+  testWidgets('saving label remains readable in the phone action grid', (
+    tester,
+  ) async {
+    final selection = Completer<String?>();
+    selectPath = () => selection.future;
+    await showBackup(tester, size: const Size(384, 800));
     await tester.tap(find.text('Save Backup'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await expectReadableActions(
+      tester,
+      labels: ['Copy', 'Saving...', 'Share', 'Done'],
+      columns: 2,
+    );
     expect(dialogs, hasLength(1));
+    selection.complete(null);
+    await tester.pumpAndSettle();
     expect(runtime.exports, isEmpty);
   });
 

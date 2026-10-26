@@ -171,7 +171,12 @@ class _BackupScreenState extends State<BackupScreen> {
         title: Text(widget.isNewWallet ? 'Backup Your Capsule' : 'Seed Phrase'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.paddingOf(context).bottom,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -231,18 +236,28 @@ class _BackupScreenState extends State<BackupScreen> {
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const gap = 8.0;
+                final columns = constraints.maxWidth < 640 ? 2 : 4;
+                final width =
+                    (constraints.maxWidth - gap * (columns - 1)) / columns;
+                final style = ElevatedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 12,
+                  ),
+                );
+                final actions = [
+                  ElevatedButton.icon(
+                    style: style,
                     onPressed: _copyToClipboard,
                     icon: const Icon(Icons.copy),
                     label: const Text('Copy'),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
+                  ElevatedButton.icon(
+                    style: style,
                     onPressed: _isSavingBackup ? null : _exportBackup,
                     icon:
                         _isSavingBackup
@@ -254,24 +269,29 @@ class _BackupScreenState extends State<BackupScreen> {
                             : const Icon(Icons.save),
                     label: Text(_isSavingBackup ? 'Saving...' : 'Save Backup'),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
+                  ElevatedButton.icon(
+                    style: style,
                     onPressed: _isSavingBackup ? null : _shareBackup,
                     icon: const Icon(Icons.share),
                     label: const Text('Share'),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
+                  ElevatedButton.icon(
+                    style: style,
                     onPressed: _continue,
                     icon: const Icon(Icons.done),
                     label: Text(widget.isNewWallet ? 'Continue' : 'Done'),
                   ),
-                ),
-              ],
+                ];
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final action in actions)
+                      SizedBox(width: width, child: action),
+                  ],
+                );
+              },
             ),
             if (_backupPath != null && Platform.isMacOS) ...[
               const SizedBox(height: 8),
