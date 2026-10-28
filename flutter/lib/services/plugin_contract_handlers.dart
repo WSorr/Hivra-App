@@ -15,8 +15,12 @@ typedef PluginConsensusAsyncSignableReader =
 class PluginWorkspaceContractHandler implements PluginHostContractHandler {
   @override
   final String pluginId;
+  final Set<String> capabilities;
 
-  const PluginWorkspaceContractHandler({required this.pluginId});
+  const PluginWorkspaceContractHandler({
+    required this.pluginId,
+    this.capabilities = const {},
+  });
 
   @override
   String get contractKind => pluginWorkspaceContractKind;
@@ -59,7 +63,10 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
           utf8.encode(jsonEncode(result['state'])).length > 32 * 1024) {
         throw const FormatException('Invalid bounded plugin state');
       }
-      validateView(Map<String, dynamic>.from(result['view'] as Map));
+      validateView(
+        Map<String, dynamic>.from(result['view'] as Map),
+        capabilities: capabilities,
+      );
       final requests = result['requests'] as List;
       if (requests.length > 7 || requests.any((r) => r is! Map)) {
         throw const FormatException('Invalid bounded plugin requests');
@@ -89,7 +96,16 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
     }
   }
 
-  static void validateView(Map<String, dynamic> view) {
+  static void validateView(
+    Map<String, dynamic> view, {
+    required Set<String> capabilities,
+  }) {
+    void requireGrants(Set<String> required) {
+      if (!capabilities.containsAll(required)) {
+        throw const FormatException('Workspace control is not granted');
+      }
+    }
+
     if (utf8.encode(jsonEncode(view)).length > 16 * 1024 ||
         view['title'] is! String ||
         (view['title'] as String).isEmpty ||
@@ -119,6 +135,14 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
                     ).hasMatch((view['confirmation'] as Map)['order_id']))))) {
       throw const FormatException('Invalid order confirmation');
     }
+    if (view['confirmation'] is Map) {
+      final kind = (view['confirmation'] as Map)['kind'] as String;
+      requireGrants({kind, 'order.snapshot.read'});
+      if (kind != 'order.entry.place') {
+        requireGrants({'position.snapshot.read'});
+      }
+    }
+    if (view['schedule'] != null) requireGrants({'workspace.schedule'});
     final actions = view['actions'] as List;
     final columns = view['columns'] as List;
     final rows = view['rows'] as List;
@@ -159,6 +183,7 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
               (field['source'] as Map)['provider'] != 'bingx')) {
         throw const FormatException('Invalid workspace choice source');
       }
+      if (field['type'] == 'choice') requireGrants({'market.instruments.read'});
     }
     ids.clear();
     for (final action in actions) {
@@ -174,6 +199,24 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
               }.contains(action['host'])) ||
           !ids.add(action['id'] as String)) {
         throw const FormatException('Invalid workspace action');
+      }
+      switch (action['host']) {
+        case 'bingx.account.connect':
+          requireGrants({'account.connect'});
+        case 'bingx.order.submit':
+          requireGrants({'order.snapshot.read'});
+          if (!const {
+            'order.entry.place',
+            'order.entry.cancel',
+            'position.exit.place',
+          }.any(capabilities.contains)) {
+            throw const FormatException(
+              'Workspace order control is not granted',
+            );
+          }
+        case 'workspace.start':
+        case 'workspace.stop':
+          requireGrants({'workspace.schedule'});
       }
     }
   }

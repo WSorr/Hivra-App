@@ -13,6 +13,7 @@ import 'package:hivra_app/screens/plugin_workspace_screen.dart';
 import 'package:hivra_app/screens/wasm_plugins_screen.dart';
 import 'package:hivra_app/services/bingx_market_data_adapter.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
+import 'package:hivra_app/services/plugin_contract_handlers.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/services/plugin_runtime_module_service.dart';
 import 'package:hivra_app/services/plugin_workspace_runtime.dart';
@@ -35,6 +36,276 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  testWidgets(
+    'workspace host controls require package grants before reaching the shell',
+    (tester) async {
+      const request = PluginHostApiRequest(
+        schemaVersion: 1,
+        pluginId: 'hivra.contract.independent-workspace.v1',
+        method: 'workspace',
+        args: {},
+      );
+      var grants = <String>[...pluginWorkspaceRequiredCapabilities];
+      Map<String, dynamic> presentation = view();
+      final host = PluginHostApiService(
+        // A registered handler cannot substitute its grants for the package's.
+        handlers: [
+          PluginWorkspaceContractHandler(
+            pluginId: request.pluginId,
+            capabilities: {'account.connect'},
+          ),
+        ],
+        resolveRuntimeBinding:
+            (_) async => PluginRuntimeBinding.externalPackage(
+              packageId: 'package',
+              packageVersion: '1.0.0',
+              packageKind: 'zip',
+              contractKind: pluginWorkspaceContractKind,
+              capabilities: List.of(grants),
+            ),
+        resolveRuntimeInvoke:
+            (_, _) async => PluginRuntimeInvokeEvidence(
+              mode: 'wasmi_v1',
+              modulePath: 'plugin/module.wasm',
+              moduleSelection: 'manifest_module_path',
+              moduleDigestHex: 'a' * 64,
+              invokeDigestHex: 'b' * 64,
+              semanticStatus: PluginHostApiStatus.executed,
+              semanticResult: {
+                'state': {
+                  'unrelated_private_shape': [1, 'opaque'],
+                },
+                'view': presentation,
+                'requests': [],
+              },
+              semanticErrorCode: null,
+              semanticErrorMessage: null,
+            ),
+      );
+      for (final (hostAction, capabilities) in [
+        ('bingx.account.connect', ['account.connect']),
+        ('bingx.order.submit', ['order.entry.place', 'order.snapshot.read']),
+        ('workspace.start', ['workspace.schedule']),
+        ('workspace.stop', ['workspace.schedule']),
+      ]) {
+        presentation = {
+          ...view(),
+          'actions': [
+            {
+              'id': 'package_action',
+              'label': 'Package action',
+              'host': hostAction,
+            },
+          ],
+        };
+        grants = [...pluginWorkspaceRequiredCapabilities];
+        final denied = await host.executeWithRuntimeHook(request);
+        expect(denied.errorCode, 'invalid_workspace', reason: hostAction);
+        expect(denied.result, isNull);
+        grants.addAll(capabilities);
+        expect(
+          (await host.executeWithRuntimeHook(request)).status,
+          PluginHostApiStatus.executed,
+          reason: hostAction,
+        );
+        for (final missing in capabilities) {
+          grants = [
+            ...pluginWorkspaceRequiredCapabilities,
+            ...capabilities.where((grant) => grant != missing),
+          ];
+          expect(
+            (await host.executeWithRuntimeHook(request)).errorCode,
+            'invalid_workspace',
+            reason: '$hostAction without $missing',
+          );
+        }
+      }
+      for (final (candidate, capabilities)
+          in <(Map<String, dynamic>, List<String>)>[
+            (choiceView(), ['market.instruments.read']),
+            (
+              {
+                ...view(),
+                'schedule': {'action': 'cycle'},
+              },
+              ['workspace.schedule'],
+            ),
+            for (final kind in [
+              'order.entry.place',
+              'order.entry.cancel',
+              'position.exit.place',
+            ])
+              (
+                {
+                  ...view(),
+                  'confirmation': {
+                    'kind': kind,
+                    'provider': 'bingx',
+                    'plan': entryPlan(),
+                    if (kind == 'order.entry.cancel') 'order_id': '123',
+                  },
+                },
+                [
+                  kind,
+                  'order.snapshot.read',
+                  if (kind != 'order.entry.place') 'position.snapshot.read',
+                ],
+              ),
+          ]) {
+        presentation = candidate;
+        grants = [...pluginWorkspaceRequiredCapabilities, ...capabilities];
+        expect(
+          (await host.executeWithRuntimeHook(request)).status,
+          PluginHostApiStatus.executed,
+        );
+        for (final missing in capabilities) {
+          grants = [
+            ...pluginWorkspaceRequiredCapabilities,
+            ...capabilities.where((grant) => grant != missing),
+          ];
+          expect(
+            (await host.executeWithRuntimeHook(request)).errorCode,
+            'invalid_workspace',
+            reason: 'presentation without $missing',
+          );
+        }
+      }
+      // A package label alone must not cause the common shell to ask for keys.
+      presentation = {
+        ...view(),
+        'actions': [
+          {'id': 'link', 'label': 'Link', 'host': 'bingx.account.connect'},
+        ],
+      };
+      grants = [...pluginWorkspaceRequiredCapabilities];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            runWorkspaceAction: (
+              action,
+              settings, {
+              credentials,
+              approvedOrder,
+            }) async {
+              final response = await host.executeWithRuntimeHook(request);
+              if (response.result == null) {
+                throw StateError(response.errorMessage!);
+              }
+              return Map<String, dynamic>.from(response.result!['view'] as Map);
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('plugin-action-link')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('plugin-account-api-key')),
+        findsNothing,
+      );
+      expect(find.textContaining('invalid workspace'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test(
+    'replacement cannot return old host controls and accepts unrelated private state',
+    () async {
+      const request = PluginHostApiRequest(
+        schemaVersion: 1,
+        pluginId: 'hivra.contract.independent-workspace.v1',
+        method: 'workspace',
+        args: {},
+      );
+      for (final removed in [false, true]) {
+        var replaced = false;
+        var blocking = true;
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        final host = PluginHostApiService(
+          handlers: [],
+          resolveRuntimeBinding:
+              (_) async =>
+                  replaced && removed
+                      ? const PluginRuntimeBinding.hostFallback()
+                      : PluginRuntimeBinding.externalPackage(
+                        packageId: replaced ? 'replacement' : 'original',
+                        packageVersion: '1.0.0',
+                        packageKind: 'zip',
+                        contractKind: pluginWorkspaceContractKind,
+                        capabilities: [
+                          ...pluginWorkspaceRequiredCapabilities,
+                          if (!replaced) 'account.connect',
+                        ],
+                      ),
+          resolveRuntimeInvoke: (_, _) async {
+            final old = !replaced;
+            if (blocking) {
+              entered.complete();
+              await release.future;
+            }
+            return PluginRuntimeInvokeEvidence(
+              mode: 'wasmi_v1',
+              modulePath: 'plugin/module.wasm',
+              moduleSelection: 'manifest_module_path',
+              moduleDigestHex: 'a' * 64,
+              invokeDigestHex: 'b' * 64,
+              semanticStatus: PluginHostApiStatus.executed,
+              semanticResult: {
+                'state':
+                    old
+                        ? {'old_field': 7}
+                        : {
+                          'different_shape': [
+                            'owner',
+                            {'new': true},
+                          ],
+                        },
+                'view': {
+                  ...view(),
+                  'actions': [
+                    old
+                        ? {
+                          'id': 'link',
+                          'label': 'Link',
+                          'host': 'bingx.account.connect',
+                        }
+                        : {'id': 'observe', 'label': 'Observe'},
+                  ],
+                },
+                'requests': [],
+              },
+              semanticErrorCode: null,
+              semanticErrorMessage: null,
+            );
+          },
+        );
+        final pending = host.executeWithRuntimeHook(request);
+        await entered.future;
+        replaced = true;
+        release.complete();
+        final rejected = await pending;
+        expect(rejected.errorCode, 'runtime_binding_changed');
+        expect(rejected.result, isNull);
+        blocking = false;
+        final reopened = await host.executeWithRuntimeHook(request);
+        if (removed) {
+          expect(reopened.status, PluginHostApiStatus.rejected);
+        } else {
+          expect(reopened.status, PluginHostApiStatus.executed);
+          expect((reopened.result!['view'] as Map)['actions'], [
+            {'id': 'observe', 'label': 'Observe'},
+          ]);
+          expect(reopened.result!['state'], {
+            'different_shape': [
+              'owner',
+              {'new': true},
+            ],
+          });
+        }
+      }
+    },
+  );
+
   testWidgets('package removal shows progress and a safe retryable failure', (
     tester,
   ) async {
@@ -613,6 +884,8 @@ void main() {
             'workspace.schedule',
             'account.connect',
             'account.snapshot.read',
+            'order.entry.place',
+            'order.snapshot.read',
           ],
         });
         registry.record = _recordWithPluginId(registry.record, pluginId);
