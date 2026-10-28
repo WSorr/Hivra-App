@@ -14,6 +14,7 @@ import 'wasm_plugin_package_preflight_service.dart';
 class WasmPluginRegistryService {
   static const String _registryFileName = 'registry.json';
   static Future<void> _mutationTail = Future<void>.value();
+  static final Map<String, Future<void>> _removals = {};
   final UserVisibleDataDirectoryService _dataDirs;
   final WasmPluginPackagePreflightService _preflight;
   final AtomicFileWriteService _atomicWrites;
@@ -47,6 +48,9 @@ class WasmPluginRegistryService {
       }
       if (recordPluginId != normalizedPluginId) {
         continue;
+      }
+      if (record.removalPending) {
+        return const PluginRuntimeBinding.hostFallback();
       }
       if (record.packageKind != 'zip') {
         return const PluginRuntimeBinding.hostFallback();
@@ -175,6 +179,9 @@ class WasmPluginRegistryService {
         existing: existing,
         incomingPluginId: preflight.pluginId,
       );
+      if (replaced.any((record) => record.removalPending)) {
+        throw StateError('Finish removing this plugin before installing it');
+      }
       final record = WasmPluginRecord(
         id: id,
         displayName: _displayNameFromFile(
@@ -213,8 +220,49 @@ class WasmPluginRegistryService {
     }
   }
 
-  Future<void> removePlugin(String id) async {
-    return _serialized(() => _removePluginUnlocked(id));
+  Future<void> removePlugin(
+    String id, {
+    Future<void> Function()? cleanup,
+  }) async {
+    final key = '${(await pluginsDirectory()).absolute.path}::$id';
+    final running = _removals[key];
+    if (running != null) return running;
+    final removal = _removePlugin(id, cleanup: cleanup);
+    _removals[key] = removal;
+    try {
+      await removal;
+    } finally {
+      _removals.remove(key);
+    }
+  }
+
+  Future<void> _removePlugin(
+    String id, {
+    Future<void> Function()? cleanup,
+  }) async {
+    final found = await _serialized(() async {
+      final records = await _loadPluginsUnlocked(failClosed: true);
+      final selected = records.where((record) => record.id == id);
+      if (selected.isEmpty) return false;
+      if (!selected.single.removalPending) {
+        await _writeRegistry([
+          for (final record in records)
+            if (record.id == id)
+              WasmPluginRecord.fromJson({
+                ...record.toJson(),
+                'removalPending': true,
+              })
+            else
+              record,
+        ]);
+      }
+      return true;
+    });
+    if (!found) return;
+    // Admission is durably closed. Do not hold the registry lock while draining
+    // actions: their final binding checks must be able to observe that closure.
+    await cleanup?.call();
+    await _serialized(() => _removePluginUnlocked(id));
   }
 
   Future<Map<String, String>> snapshotForBackup() => _serialized(() async {
@@ -223,6 +271,9 @@ class WasmPluginRegistryService {
     final packages = <String, String>{};
     var size = 0;
     for (final record in records) {
+      if (record.removalPending) {
+        throw StateError('Finish removing plugins before creating a backup');
+      }
       if (record.packageKind != 'zip' || record.pluginId == null) {
         throw StateError('Remove unsupported legacy packages before backup');
       }
@@ -272,6 +323,9 @@ class WasmPluginRegistryService {
         }
         final current = original.where((r) => r.pluginId == entry.key);
         if (current.isNotEmpty) {
+          if (current.single.removalPending) {
+            throw StateError('Finish removing this plugin before recovery');
+          }
           final currentBytes =
               await _storedFile(dir, current.single).readAsBytes();
           if (sha256.convert(currentBytes) != sha256.convert(bytes)) {
@@ -344,7 +398,10 @@ class WasmPluginRegistryService {
   List<WasmPluginRecord> _dedupeByPluginId(List<WasmPluginRecord> records) {
     final kept = <WasmPluginRecord>[];
     final seenKeys = <String>{};
-    for (final record in records) {
+    for (final record in [
+      ...records.where((record) => record.removalPending),
+      ...records.where((record) => !record.removalPending),
+    ]) {
       final key = _dedupeKey(record);
       if (key == null) {
         kept.add(record);
@@ -487,6 +544,11 @@ class WasmPluginRegistryService {
     final dir = await pluginsDirectory();
     final kept = <WasmPluginRecord>[];
     for (final record in records) {
+      // The cleanup obligation survives even if the package file was lost.
+      if (record.removalPending) {
+        kept.add(record);
+        continue;
+      }
       final file = _storedFile(dir, record);
       final type = await FileSystemEntity.type(file.path, followLinks: false);
       if (type == FileSystemEntityType.notFound) {

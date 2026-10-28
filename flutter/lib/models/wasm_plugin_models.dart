@@ -15,6 +15,7 @@ class WasmPluginRecord {
   final String? runtimeEntryExport;
   final String? runtimeModulePath;
   final List<String> capabilities;
+  final bool removalPending;
 
   const WasmPluginRecord({
     required this.id,
@@ -31,9 +32,13 @@ class WasmPluginRecord {
     required this.runtimeEntryExport,
     required this.runtimeModulePath,
     required this.capabilities,
+    this.removalPending = false,
   });
 
   factory WasmPluginRecord.fromJson(Map<String, dynamic> json) {
+    if (json['removalPending'] != null && json['removalPending'] is! bool) {
+      throw const FormatException('Invalid plugin removal status');
+    }
     final rawCapabilities = json['capabilities'];
     final capabilities = <String>{};
     if (rawCapabilities is List) {
@@ -59,6 +64,7 @@ class WasmPluginRecord {
       runtimeEntryExport: json['runtimeEntryExport'] as String?,
       runtimeModulePath: json['runtimeModulePath'] as String?,
       capabilities: (capabilities.toList()..sort()),
+      removalPending: json['removalPending'] == true,
     );
   }
 
@@ -78,6 +84,7 @@ class WasmPluginRecord {
       'runtimeEntryExport': runtimeEntryExport,
       'runtimeModulePath': runtimeModulePath,
       'capabilities': capabilities,
+      if (removalPending) 'removalPending': true,
     };
   }
 }

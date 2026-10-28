@@ -36,6 +36,187 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  testWidgets('pending removal offers retry instead of opening a workspace', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final module = _PluginScreenModule();
+    module.registry.record = WasmPluginRecord.fromJson({
+      ...module.registry.record.toJson(),
+      'removalPending': true,
+    });
+    var opened = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WasmPluginsScreen(
+            module: module,
+            onOpenWorkspacePressed:
+                (_) => () {
+                  opened++;
+                },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Removal pending'), findsOneWidget);
+    expect(find.text('Open'), findsNothing);
+    await tester.ensureVisible(find.text('Retry removal'));
+    await tester.tap(find.text('Retry removal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pump();
+    expect(module.removalCalls, 1);
+    module.registry.installed = false;
+    module.removal.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Removal pending'), findsNothing);
+    expect(opened, 0);
+    expect(tester.takeException(), isNull);
+  });
+  test(
+    'failed secure cleanup stays removable after registry restart',
+    () async {
+      final root = await Directory.systemTemp.createTemp('hivra_remove_retry_');
+      addTearDown(() => root.delete(recursive: true));
+      final dirs = UserVisibleDataDirectoryService(
+        runtimeRootOverride: root.path,
+      );
+      final files = CapsuleFileStore(dirs: dirs);
+      final registry = WasmPluginRegistryService(dataDirs: dirs);
+      final manifest = jsonEncode({
+        'schema': 'hivra.plugin.manifest',
+        'version': 1,
+        'release_version': '1.0.0',
+        'plugin_id': 'hivra.contract.removal-test.v1',
+        'contract': {'kind': pluginWorkspaceContractKind},
+        'runtime': {
+          'abi': 'hivra_host_abi_v2',
+          'entry_export': 'hivra_evaluate_v1',
+        },
+        'capabilities': pluginWorkspaceRequiredCapabilities.toList(),
+      });
+      final archive =
+          Archive()
+            ..addFile(
+              ArchiveFile(
+                'plugin/manifest.json',
+                utf8.encode(manifest).length,
+                utf8.encode(manifest),
+              ),
+            )
+            ..addFile(
+              ArchiveFile('plugin/module.wasm', 8, [
+                0,
+                97,
+                115,
+                109,
+                1,
+                0,
+                0,
+                0,
+              ]),
+            );
+      final package = await File(
+        '${root.path}/removal.zip',
+      ).writeAsBytes(ZipEncoder().encode(archive)!);
+      final record = await registry.installPluginFromFile(package);
+      final vault = _Vault();
+      for (final owner in ['a' * 64, 'b' * 64]) {
+        final dir = await files.capsuleDirForHex(owner, create: true);
+        await files.writePluginState(
+          dir,
+          record.pluginId!,
+          'workspace.v1.json',
+          jsonEncode({
+            'arbitrary_shape': [owner, 7],
+          }),
+        );
+        await files.writePluginState(
+          dir,
+          record.pluginId!,
+          'external_effects.v1.json',
+          '{"retained":true}',
+        );
+        await vault.saveSecret(
+          capsuleHex: owner,
+          pluginId: record.pluginId!,
+          providerId: 'provider',
+          accountId: 'primary',
+          secretName: 'token',
+          secretValue: 'test-only-secret',
+        );
+      }
+      await vault.saveSecret(
+        capsuleHex: 'a' * 64,
+        pluginId: 'other.plugin',
+        providerId: 'provider',
+        accountId: 'primary',
+        secretName: 'token',
+        secretValue: 'unrelated-test-secret',
+      );
+      PluginRuntimeModule module(WasmPluginRegistryService activeRegistry) =>
+          PluginRuntimeModule(
+            registry: activeRegistry,
+            sourceCatalog: _EmptyCatalog(),
+            manualChecks: _Manual(),
+            pluginHostApi: const PluginHostApiService(handlers: []),
+            attestationExchange: _Attestations(),
+            chatDelivery: _Delivery(),
+            passiveReceive: _Passive(),
+            contactLabels: _Labels(),
+            uiLog: _ScreenLog(),
+            moltbook: _Moltbook(),
+            fileStore: files,
+            secretVault: vault,
+            readActiveCapsuleRootHex: () => 'a' * 64,
+          );
+      vault.failPluginDeletion = true;
+      await expectLater(
+        module(registry).removePlugin(record),
+        throwsStateError,
+      );
+      final restarted = WasmPluginRegistryService(dataDirs: dirs);
+      final pending = await restarted.loadPlugins();
+      expect(
+        pending.map((r) => r.id),
+        contains(record.id),
+        reason: 'Secure cleanup must remain reachable through the product',
+      );
+      expect(
+        (await restarted.resolveRuntimeBinding(record.pluginId!)).source,
+        isNot('external_package'),
+      );
+      expect(vault.values.length, 3);
+      vault.failPluginDeletion = false;
+      await module(restarted).removePlugin(pending.single);
+      expect(await restarted.loadPlugins(), isEmpty);
+      expect(vault.values.values, ['unrelated-test-secret']);
+      for (final owner in ['a' * 64, 'b' * 64]) {
+        final dir = await files.capsuleDirForHex(owner);
+        expect(
+          await files.readPluginState(
+            dir,
+            record.pluginId!,
+            'workspace.v1.json',
+          ),
+          isNull,
+        );
+        expect(
+          await files.readPluginState(
+            dir,
+            record.pluginId!,
+            'external_effects.v1.json',
+          ),
+          '{"retained":true}',
+        );
+      }
+    },
+  );
   testWidgets(
     'workspace host controls require package grants before reaching the shell',
     (tester) async {
@@ -6655,7 +6836,13 @@ class _Registry extends WasmPluginRegistryService {
           ? executionBinding!()
           : super.resolveRuntimeBinding(pluginId);
   @override
-  Future<void> removePlugin(String id) async => installed = false;
+  Future<void> removePlugin(
+    String id, {
+    Future<void> Function()? cleanup,
+  }) async {
+    installed = false;
+    await cleanup?.call();
+  }
 }
 
 WasmPluginRecord _recordWithPluginId(
@@ -6680,6 +6867,7 @@ WasmPluginRecord _recordWithPluginId(
 
 class _Vault extends Fake implements CapsuleScopedSecretVault {
   final values = <String, String>{};
+  bool failPluginDeletion = false;
   String scope(
     String capsule,
     String plugin,
@@ -6725,10 +6913,13 @@ class _Vault extends Fake implements CapsuleScopedSecretVault {
   Future<void> deletePlugin(
     String pluginId, {
     required Set<String> capsuleHexes,
-  }) async => values.removeWhere(
-    (k, v) =>
-        k.split('/')[1] == pluginId && capsuleHexes.contains(k.split('/')[0]),
-  );
+  }) async {
+    if (failPluginDeletion) throw StateError('Injected Keychain denial');
+    values.removeWhere(
+      (k, v) =>
+          k.split('/')[1] == pluginId && capsuleHexes.contains(k.split('/')[0]),
+    );
+  }
 }
 
 class _Manual extends Fake implements ManualConsensusCheckService {}
