@@ -50,6 +50,17 @@ provider effects merely because a WASM call succeeds.
     or saved connection metadata do not opt a package into these controls.
     Action labels always come from the package, including on a VPS. Host-owned
     authorization dialogs still explain the exact financial scope separately.
+    Before any view reaches the shell, the existing workspace contract handler
+    binds host controls to the resolved package capabilities, never action IDs,
+    labels, private state or a stale UI record. Account connection requires
+    `account.connect`; order submission requires an order-write grant and
+    `order.snapshot.read`, and a concrete confirmation requires its exact effect
+    grant (plus `position.snapshot.read` for cancellation or reducing exit).
+    Choice fields require `market.instruments.read`; scheduling declarations and
+    Start/Stop require `workspace.schedule`. An ungranted control rejects the
+    view before credential/approval dialogs or plugin-state persistence. These
+    presentation checks do not authorize execution: existing per-effect checks
+    and package revalidation still apply after asynchronous work.
   - State is at most 32 KiB and is persisted through the existing
     Capsule/plugin file store. One action is serialized per Capsule/plugin;
     Capsule and installed-package identity are checked before continuations.

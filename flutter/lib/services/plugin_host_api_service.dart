@@ -468,12 +468,15 @@ class PluginHostApiService {
     String pluginId, [
     PluginRuntimeBinding? binding,
   ]) {
-    for (final handler in _handlers) {
-      if (handler.pluginId == pluginId) return handler;
-    }
     if (binding?.source == 'external_package' &&
         binding?.contractKind == pluginWorkspaceContractKind) {
-      return PluginWorkspaceContractHandler(pluginId: pluginId);
+      return PluginWorkspaceContractHandler(
+        pluginId: pluginId,
+        capabilities: binding!.capabilities.toSet(),
+      );
+    }
+    for (final handler in _handlers) {
+      if (handler.pluginId == pluginId) return handler;
     }
     return null;
   }
