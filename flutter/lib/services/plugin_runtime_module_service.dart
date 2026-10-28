@@ -137,23 +137,33 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
   }
 
   Future<void> _removePlugin(WasmPluginRecord record) async {
-    await _retireWorkspacePackage(record.pluginId, uninstall: true);
+    final current = (await registry.loadPlugins()).where(
+      (r) => r.id == record.id,
+    );
+    if (current.isEmpty) return;
+    if (!current.single.removalPending) {
+      await _retireWorkspacePackage(record.pluginId, uninstall: true);
+    }
     // Stop admission first, then let in-flight continuations fail before
     // deleting state; otherwise a late write can recreate an uninstalled plugin.
-    await registry.removePlugin(record.id);
-    final pluginId = record.pluginId?.trim();
-    if (pluginId != null && pluginId.isNotEmpty) {
-      stopWorkspaceScheduling(pluginId: pluginId);
-      await drainWorkspaceActions(pluginId);
-      final owners = await _fileStore.deletePluginStateFromAllCapsules(
-        pluginId,
-        preserveFileNames: const {
-          'external_effects.v1.json',
-          'workspace-execution.v1.json',
-        },
-      );
-      await _secretVault.deletePlugin(pluginId, capsuleHexes: owners);
-    }
+    await registry.removePlugin(
+      record.id,
+      cleanup: () async {
+        final pluginId = record.pluginId?.trim();
+        if (pluginId != null && pluginId.isNotEmpty) {
+          stopWorkspaceScheduling(pluginId: pluginId);
+          await drainWorkspaceActions(pluginId);
+          final owners = await _fileStore.deletePluginStateFromAllCapsules(
+            pluginId,
+            preserveFileNames: const {
+              'external_effects.v1.json',
+              'workspace-execution.v1.json',
+            },
+          );
+          await _secretVault.deletePlugin(pluginId, capsuleHexes: owners);
+        }
+      },
+    );
   }
 
   Future<WasmPluginRecord> installPluginFromFile(File file) async {

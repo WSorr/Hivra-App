@@ -1011,7 +1011,8 @@ class _InstalledPluginTile extends StatelessWidget {
       capabilities: record.capabilities,
     );
     final ready =
-        !isZipPackage || (abiMatches && entryMatches && capabilitiesMatch);
+        !record.removalPending &&
+        (!isZipPackage || (abiMatches && entryMatches && capabilitiesMatch));
 
     return Material(
       color: const Color(0xFF171B23),
@@ -1064,44 +1065,48 @@ class _InstalledPluginTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  onPressed: onRemovePressed,
-                  icon: Icon(
-                    Icons.delete_outline_rounded,
-                    size: 20,
-                    semanticLabel: 'Remove $displayName',
+                if (!record.removalPending)
+                  IconButton(
+                    onPressed: onRemovePressed,
+                    icon: Icon(
+                      Icons.delete_outline_rounded,
+                      size: 20,
+                      semanticLabel: 'Remove $displayName',
+                    ),
+                    tooltip: 'Remove plugin',
                   ),
-                  tooltip: 'Remove plugin',
-                ),
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Row(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _StatusPill(
-                        label: ready ? 'Ready' : 'Needs attention',
-                        accent:
-                            ready
-                                ? const Color(0xFF75D98A)
-                                : const Color(0xFFFFA06B),
-                      ),
-                      if (record.pluginVersion?.trim().isNotEmpty == true)
-                        _OverviewMetric(
-                          icon: Icons.sell_outlined,
-                          label: 'v${record.pluginVersion}',
-                        ),
-                    ],
-                  ),
+                _StatusPill(
+                  label:
+                      record.removalPending
+                          ? 'Removal pending'
+                          : ready
+                          ? 'Ready'
+                          : 'Needs attention',
+                  accent:
+                      ready ? const Color(0xFF75D98A) : const Color(0xFFFFA06B),
                 ),
-                if (onOpenWorkspacePressed != null) ...[
-                  const SizedBox(width: 10),
+                if (record.pluginVersion?.trim().isNotEmpty == true)
+                  _OverviewMetric(
+                    icon: Icons.sell_outlined,
+                    label: 'v${record.pluginVersion}',
+                  ),
+                if (record.removalPending) ...[
+                  FilledButton.tonalIcon(
+                    onPressed: onRemovePressed,
+                    icon: const Icon(Icons.refresh_rounded, size: 17),
+                    label: const Text('Retry removal'),
+                  ),
+                ] else if (onOpenWorkspacePressed != null) ...[
                   FilledButton.tonalIcon(
                     onPressed: ready ? onOpenWorkspacePressed : null,
                     icon: const Icon(Icons.open_in_new_rounded, size: 17),

@@ -24,7 +24,7 @@ intent
   -> read and repair current registry
   -> stage package and run package preflight
   -> run optional source-catalog metadata validation
-  -> atomically commit registry.json
+  -> atomically commit registry.json (removal first records pending cleanup)
   -> remove superseded or unregistered files
   -> result
 ```
@@ -51,12 +51,21 @@ is recovery work and cannot roll back or invalidate the committed record.
 - The application module requires an authenticated VPS return and runner-removal
   acknowledgement before deregistration. It never treats an unreadable old grant
   as proof that remote authority has ended.
-- Package removal first commits the registry without the selected record.
-- Physical package deletion follows the commit. An interruption can leave an
-  orphaned file, but never a registry pointer to a deliberately deleted file.
-- The application module then stops scheduling, drains admitted actions and
-  clears Capsule-scoped secrets and private plugin state. The canonical effect
-  journal and ended execution grant remain retained by their existing owners.
+- Before cleanup, removal atomically marks the existing registry record as
+  `removalPending`. This host-owned status denies runtime binding and replacement;
+  it is not plugin-private state and does not create a second registry.
+- With admission closed, the application module stops scheduling, drains admitted
+  actions and clears Capsule-scoped secrets and private plugin state. Cleanup
+  runs outside the registry mutation lock so final action checks can finish.
+  Concurrent requests for the same removal share one in-process operation.
+  The canonical effect journal and ended execution grant remain retained by
+  their existing owners.
+- Only successful cleanup removes the registry record and then its package file.
+  A cleanup or final registry-write failure retains the non-executable pending
+  record. After restart, the installed-package card offers **Retry removal**;
+  retry uses the same removal path and skips completed VPS retirement.
+- Pending cleanup survives missing package bytes and cannot be bypassed by
+  installation or backup recovery. Backup export requires completed removals.
 - The UI displays pending cleanup and a safe failure; it does not report success
   before the module completes or display raw provider/Keychain exceptions.
 
@@ -64,8 +73,8 @@ is recovery work and cannot roll back or invalidate the committed record.
 
 Every serialized load repairs the managed directory:
 
-- records whose package is missing are removed through an atomic registry
-  rewrite;
+- active records whose package is missing are removed through an atomic registry
+  rewrite; pending-removal records retain their cleanup obligation;
 - duplicate `plugin_id` records retain one active package;
 - unreferenced `.wasm`, `.zip`, and atomic temporary files are deleted;
 - malformed registry state fails closed for mutations and is never replaced by
@@ -90,7 +99,10 @@ without interpreting plugin-private fields, and the local grant remains ended.
 | Catalog metadata rejection | Candidate is removed; previous active version remains active |
 | Registry commit failure | Previous registry and packages remain active |
 | Interruption after install/update commit | New record and package are active; superseded package may remain as a recoverable orphan |
-| Interruption after remove commit | Record stays removed; old package may remain as a recoverable orphan |
+| Removal intent cannot be committed | Previous active record and package remain; cleanup has not started |
+| Cleanup fails or is interrupted | Pending record denies execution and remains available for retry after restart |
+| Final removal commit fails | Cleaned record remains pending and can be retried idempotently |
+| Interruption after final remove commit | Record stays removed; old package may remain as a recoverable orphan |
 
 ## Architecture Constraints
 

@@ -204,6 +204,135 @@ void main() {
     );
   });
 
+  test('pending removal survives restart and cannot be reactivated', () async {
+    final source = await _createPluginPackage(tempDocsDir, version: '1.0.0');
+    final record = await service.installPluginFromFile(source);
+    final stored = File(
+      '${(await service.pluginsDirectory()).path}/${record.storedFileName}',
+    );
+    final entered = Completer<void>();
+    final release = Completer<void>();
+    final removing = expectLater(
+      service.removePlugin(
+        record.id,
+        cleanup: () async {
+          // Draining an action may recheck admission; it must not deadlock.
+          expect(
+            (await service.resolveRuntimeBinding(record.pluginId!)).source,
+            isNot('external_package'),
+          );
+          entered.complete();
+          await release.future;
+          throw StateError('Injected secure cleanup failure');
+        },
+      ),
+      throwsStateError,
+    );
+    await entered.future;
+    final restarted = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+    );
+    var duplicateCleanups = 0;
+    final joined = expectLater(
+      restarted.removePlugin(
+        record.id,
+        cleanup: () async {
+          duplicateCleanups++;
+        },
+      ),
+      throwsStateError,
+    );
+    expect((await restarted.loadPlugins()).single.removalPending, isTrue);
+    expect(await stored.exists(), isTrue);
+    await expectLater(
+      restarted.installPluginFromFile(source),
+      throwsStateError,
+    );
+    await expectLater(restarted.snapshotForBackup(), throwsStateError);
+    var restored = false;
+    await expectLater(
+      restarted.withBackupPackages(
+        {record.pluginId!: base64Encode(await source.readAsBytes())},
+        () async {
+          restored = true;
+        },
+      ),
+      throwsStateError,
+    );
+    expect(restored, isFalse);
+    final other = await restarted.installPluginFromFile(
+      await _createPluginPackage(
+        tempDocsDir,
+        version: '2.0.0',
+        pluginId: 'unrelated.plugin',
+      ),
+    );
+    expect(
+      (await restarted.resolveRuntimeBinding(other.pluginId!)).source,
+      'external_package',
+    );
+    release.complete();
+    await removing;
+    await joined;
+    expect(duplicateCleanups, 0);
+    // Losing package bytes must not erase the outstanding cleanup obligation.
+    await stored.delete();
+    final nextProcess = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+    );
+    expect(
+      (await nextProcess.loadPlugins())
+          .where((r) => r.id == record.id)
+          .single
+          .removalPending,
+      isTrue,
+    );
+    var cleaned = 0;
+    await nextProcess.removePlugin(
+      record.id,
+      cleanup: () async {
+        cleaned++;
+      },
+    );
+    expect(cleaned, 1);
+    expect((await nextProcess.loadPlugins()).map((r) => r.id), [other.id]);
+    expect(await stored.exists(), isFalse);
+  });
+
+  test('failed final removal commit remains denied and retryable', () async {
+    final source = await _createPluginPackage(tempDocsDir, version: '1.0.0');
+    final record = await service.installPluginFromFile(source);
+    final writes = _FailingRegistryWriteService();
+    final failing = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      atomicWrites: writes,
+    );
+    var cleanups = 0;
+    await expectLater(
+      failing.removePlugin(
+        record.id,
+        cleanup: () async {
+          cleanups++;
+          writes.failNextRegistryWrite = true;
+        },
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect((await service.loadPlugins()).single.removalPending, isTrue);
+    expect(
+      (await service.resolveRuntimeBinding(record.pluginId!)).source,
+      isNot('external_package'),
+    );
+    await service.removePlugin(
+      record.id,
+      cleanup: () async {
+        cleanups++;
+      },
+    );
+    expect(cleanups, 2);
+    expect(await service.loadPlugins(), isEmpty);
+  });
+
   test(
     'raw module rejection preserves the installed ZIP and its binding',
     () async {
@@ -818,14 +947,22 @@ void main() {
       atomicWrites: failingWrites,
     );
     failingWrites.failNextRegistryWrite = true;
+    var cleanups = 0;
 
     await expectLater(
-      () => failingService.removePlugin(record.id),
+      () => failingService.removePlugin(
+        record.id,
+        cleanup: () async {
+          cleanups++;
+        },
+      ),
       throwsA(isA<FileSystemException>()),
     );
 
     final installed = await service.loadPlugins();
     expect(installed.map((entry) => entry.id), contains(record.id));
+    expect(installed.single.removalPending, isFalse);
+    expect(cleanups, 0);
     expect(await storedFile.exists(), isTrue);
   });
 
