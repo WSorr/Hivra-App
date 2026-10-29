@@ -74,6 +74,15 @@ provider effects merely because a WASM call succeeds.
     withhold public financial/execution host actions and scheduling until fresh
     evidence is available. The Capsule/package binding is revalidated after
     awaiting the credential store before returning that presentation.
+    Status opening sends no draft settings. Visible status refresh continues
+    while fields are edited and preserves compatible field text and selection;
+    only an explicit package action submits those settings. Failed observations
+    mark retained data as stale and offer the same status retry. Public Start
+    and order submission remain unavailable until a fresh view is received;
+    Stop remains accessible, and a connection failure never acknowledges that
+    remote execution has stopped. Network errors are shown without raw socket
+    diagnostics. These presentation rules do not change executor authority or
+    add a local fallback.
     `PluginWorkspaceRuntime` owns the same invocation, persistence and effect
     path in app and headless hosts. The app module supplies its scoped vault
     through credential ports; Flutter, Chat and Moltbook are not dependencies

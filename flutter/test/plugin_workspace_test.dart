@@ -2785,6 +2785,153 @@ void main() {
   }
 
   testWidgets(
+    'VPS status recovers without committing drafts or trusting stale controls',
+    (tester) async {
+      var reads = 0;
+      final retry = Completer<Map<String, dynamic>>();
+      final calls = <String>[];
+      final sent = <Map<String, dynamic>>[];
+      Map<String, dynamic> shown() => {
+        ...view(),
+        'fields': [
+          ...view()['fields'] as List,
+          {'id': 'limit', 'label': 'Limit', 'type': 'number', 'value': 1.0},
+        ],
+        'execution': {
+          'allow_new_entries': false,
+          'mode': 'vps',
+          'expires_at_ms': 2000000000000,
+        },
+        'host_connection': {'target': 'vps', 'health': 'running'},
+        'actions': [
+          {'id': 'inspect', 'label': 'Inspect'},
+          {'id': 'begin', 'label': 'Begin', 'host': 'workspace.start'},
+          {'id': 'effect', 'label': 'Confirm', 'host': 'bingx.order.submit'},
+          {'id': 'halt', 'label': 'Halt', 'host': 'workspace.stop'},
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (
+              action,
+              settings, {
+              credentials,
+              approvedOrder,
+            }) async {
+              calls.add(action);
+              sent.add(Map.from(settings));
+              if (action == 'open') {
+                reads++;
+                if (reads == 2) {
+                  throw const SocketException('synthetic-sensitive-endpoint');
+                }
+                if (reads == 3) return retry.future;
+              }
+              return shown();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final symbol = find.byKey(const ValueKey('plugin-field-symbol'));
+      final limit = find.byKey(const ValueKey('plugin-field-limit'));
+      FilledButton button(String id) => tester.widget<FilledButton>(
+        find.byKey(ValueKey('plugin-action-$id')),
+      );
+      await tester.enterText(symbol, 'XRP-USDT');
+      // An unfinished number must not prevent an independent status read.
+      await tester.enterText(limit, '');
+      final selection = tester.widget<TextField>(symbol).controller!.selection;
+      await tester.pump(const Duration(seconds: 60));
+      await tester.pumpAndSettle();
+      expect(reads, 2);
+      expect(sent, [{}, {}]);
+      expect(find.textContaining('SocketException'), findsNothing);
+      expect(find.textContaining('synthetic-sensitive-endpoint'), findsNothing);
+      expect(find.textContaining('Connection unavailable.'), findsOneWidget);
+      expect(find.textContaining('Last received data'), findsOneWidget);
+      expect(
+        find.textContaining('New entries stopped or expired'),
+        findsNothing,
+      );
+      expect(button('begin').onPressed, isNull);
+      expect(button('effect').onPressed, isNull);
+      expect(button('halt').onPressed, isNotNull);
+      expect(button('inspect').onPressed, isNotNull);
+      expect(find.text('Calculation details'), findsNothing);
+      await tester.tap(find.text('Retry connection'));
+      await tester.pump();
+      expect(reads, 3);
+      expect(button('begin').onPressed, isNull);
+      retry.complete(shown());
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Last received data'), findsNothing);
+      expect(find.text('Retry connection'), findsNothing);
+      expect(tester.widget<TextField>(symbol).controller!.text, 'XRP-USDT');
+      expect(tester.widget<TextField>(symbol).controller!.selection, selection);
+      expect(tester.widget<TextField>(limit).controller!.text, isEmpty);
+      expect(button('begin').onPressed, isNotNull);
+      expect(
+        button('effect').onPressed,
+        isNull,
+        reason: 'Draft is still dirty',
+      );
+      // The next automatic read also keeps the draft and its invalid number.
+      await tester.pump(const Duration(seconds: 60));
+      await tester.pumpAndSettle();
+      expect(reads, 4);
+      expect(tester.widget<TextField>(limit).controller!.text, isEmpty);
+      expect(sent, [{}, {}, {}, {}]);
+      await tester.enterText(limit, '2.5');
+      await tester.tap(find.text('Inspect'));
+      await tester.pumpAndSettle();
+      expect(calls, ['open', 'open', 'open', 'open', 'inspect']);
+      expect(sent.last, {'symbol': 'XRP-USDT', 'limit': 2.5});
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final error in [
+    const SocketException('synthetic-sensitive-endpoint'),
+    TimeoutException('synthetic-sensitive-endpoint'),
+  ]) {
+    testWidgets('initial ${error.runtimeType} has a bounded retry', (
+      tester,
+    ) async {
+      var reads = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            runWorkspaceAction: (
+              action,
+              settings, {
+              credentials,
+              approvedOrder,
+            }) async {
+              expect(action, 'open');
+              expect(settings, isEmpty);
+              if (++reads == 1) throw error;
+              return view();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Connection unavailable.'), findsOneWidget);
+      expect(find.textContaining('synthetic-sensitive-endpoint'), findsNothing);
+      await tester.tap(find.text('Retry opening plugin'));
+      await tester.pumpAndSettle();
+      expect(reads, 2);
+      expect(find.text('Independent package'), findsOneWidget);
+      expect(find.textContaining('Connection unavailable.'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets(
     'VPS connection failure stays visible and Start confirms its target',
     (tester) async {
       var remote = false;
