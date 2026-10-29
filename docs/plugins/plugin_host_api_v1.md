@@ -83,6 +83,15 @@ provider effects merely because a WASM call succeeds.
     remote execution has stopped. Network errors are shown without raw socket
     diagnostics. These presentation rules do not change executor authority or
     add a local fallback.
+    A failed initial workspace read does not hide the granted VPS connection
+    form. A saved installation also exposes explicit access restoration through
+    the same connection owner, with its original host and port locked. A failed
+    saved-key attempt never automatically requests root credentials. Restoration
+    reuses pinned identity and binding checks and does not grant a new Start;
+    it can reinstall the runner and resume existing unexpired permissions.
+    Workspace content respects native system insets. Account-dialog title and
+    fields scroll together when the keyboard reduces available height; protected
+    key fields retain normal paste and Next/Done input without submitting early.
     `PluginWorkspaceRuntime` owns the same invocation, persistence and effect
     path in app and headless hosts. The app module supplies its scoped vault
     through credential ports; Flutter, Chat and Moltbook are not dependencies
