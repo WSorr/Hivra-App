@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -52,6 +53,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   String? _error;
   bool _busy = false;
   bool _edited = false;
+  bool _observationUnavailable = false;
   bool _choosing = false;
   Timer? _refresh;
   AppLifecycleState? _appState;
@@ -91,8 +93,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         _supportsExecution &&
         _view?['execution'] != null &&
         !_busy &&
-        !_choosing &&
-        !_edited) {
+        !_choosing) {
       _run('open');
     }
   }
@@ -112,14 +113,25 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           setState(() {
             _view = stopped;
             _error = null;
+            _observationUnavailable = false;
           });
         }
       } catch (error) {
-        if (mounted) setState(() => _error = error.toString());
+        if (mounted) {
+          setState(() {
+            _error = _describeError(error);
+            _observationUnavailable = true;
+          });
+        }
       }
       return;
     }
     if (_busy || _choosing) return;
+    if (_observationUnavailable &&
+        const {'workspace.start', 'bingx.order.submit'}.contains(hostAction)) {
+      return;
+    }
+    final preserveEdits = action == 'open' && _edited;
     Map<String, String>? credentials;
     Map<String, dynamic>? approvedOrder;
     if (descriptor.isNotEmpty &&
@@ -205,7 +217,12 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     });
     try {
       final settings = <String, dynamic>{};
-      for (final raw in (_view?['fields'] as List? ?? const [])) {
+      // Opening reads committed state. Draft input, including an incomplete
+      // number, must neither block status recovery nor be committed by it.
+      for (final raw
+          in (action == 'open'
+              ? const []
+              : _view?['fields'] as List? ?? const [])) {
         final field = raw as Map;
         final text = _fields[field['id']]!.text.trim();
         settings[field['id'] as String] = switch (field['type']) {
@@ -294,14 +311,23 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           id,
           () => TextEditingController(),
         );
-        controller.text = field['value'].toString();
+        final previous = (_view?['fields'] as List? ?? const []).where(
+          (raw) => (raw as Map)['id'] == id,
+        );
+        if (!preserveEdits ||
+            previous.isEmpty ||
+            previous.single['type'] != field['type']) {
+          final text = field['value'].toString();
+          if (controller.text != text) controller.text = text;
+        }
       }
       for (final id in _fields.keys.where((id) => !ids.contains(id)).toList()) {
         _fields.remove(id)!.dispose();
       }
       setState(() {
         _view = view;
-        _edited = false;
+        _edited = preserveEdits;
+        _observationUnavailable = false;
       });
       _refresh?.cancel();
       _refresh = null;
@@ -314,13 +340,12 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       }
     } catch (error) {
       if (!mounted) return;
-      setState(
-        () =>
-            _error =
-                error is FormatException
-                    ? 'Check the entered settings: ${error.message}'
-                    : error.toString(),
-      );
+      setState(() {
+        _error = _describeError(error);
+        if (action == 'open' || error is! FormatException) {
+          _observationUnavailable = true;
+        }
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -330,6 +355,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       }
     }
   }
+
+  String _describeError(Object error) => switch (error) {
+    SocketException() || TimeoutException() =>
+      'Connection unavailable. Check your network and server availability, then retry. '
+          'An unreachable executor may still be running.',
+    FormatException() => 'Check the entered settings: ${error.message}',
+    _ => error.toString(),
+  };
 
   Future<void> _connectVps({bool reinstall = false}) async {
     if (_busy || _choosing || widget.connectVps == null) return;
@@ -772,7 +805,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   Widget build(BuildContext context) {
     final view = _view;
     final health =
-        _error != null
+        _observationUnavailable || _error != null
             ? 'observation unavailable'
             : switch (view?['host_connection']?['health']) {
               'not_started' => 'connected; press Start to begin',
@@ -820,13 +853,25 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
-          if (view == null && !_busy)
+          if ((view == null || _observationUnavailable) && !_busy)
             OutlinedButton(
-              onPressed: () => _run('open'),
-              child: const Text('Retry opening plugin'),
+              onPressed: _choosing ? null : () => _run('open'),
+              child: Text(
+                view == null ? 'Retry opening plugin' : 'Retry connection',
+              ),
             ),
           if (view != null) ...[
-            if (_supportsExecution && view['execution'] is Map)
+            if (_observationUnavailable)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Last received data; current status is unavailable. '
+                  'Connection loss does not stop remote execution.',
+                ),
+              ),
+            if (!_observationUnavailable &&
+                _supportsExecution &&
+                view['execution'] is Map)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
@@ -887,6 +932,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                               ? () => _run(raw['id'] as String)
                               : _busy ||
                                   _choosing ||
+                                  (_observationUnavailable &&
+                                      const {
+                                        'workspace.start',
+                                        'bingx.order.submit',
+                                      }.contains(raw['host'])) ||
                                   (_edited &&
                                       raw['host'] == 'bingx.order.submit')
                               ? null
@@ -905,6 +955,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             ),
             const SizedBox(height: 16),
             if (!_edited &&
+                !_observationUnavailable &&
                 ((view['rows'] as List).isNotEmpty ||
                     (view['details'] as String).isNotEmpty))
               ExpansionTile(
