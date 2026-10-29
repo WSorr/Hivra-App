@@ -364,14 +364,19 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     _ => error.toString(),
   };
 
-  Future<void> _connectVps({bool reinstall = false}) async {
+  Future<void> _connectVps({
+    bool reinstall = false,
+    bool restoreAccess = false,
+  }) async {
     if (_busy || _choosing || widget.connectVps == null) return;
     var host = _view?['host_connection']?['host']?.toString() ?? '';
     var port = _view?['host_connection']?['port']?.toString() ?? '22';
     var password = '';
     var connected = false;
     var returnedOnline = false;
-    if (!reinstall && _view?['host_connection']?['installed'] == true) {
+    if (!reinstall &&
+        !restoreAccess &&
+        _view?['host_connection']?['installed'] == true) {
       setState(() => _busy = true);
       try {
         await widget.connectVps!(
@@ -405,7 +410,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                   builder:
                       (context, update) => AlertDialog(
                         title: Text(
-                          reinstall ? 'Update VPS runtime' : 'Connect your VPS',
+                          reinstall
+                              ? 'Update VPS runtime'
+                              : restoreAccess
+                              ? 'Restore VPS access'
+                              : 'Connect your VPS',
                         ),
                         content: SizedBox(
                           width: 420,
@@ -416,12 +425,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 Text(
                                   reinstall
                                       ? 'End VPS trading authority and install the runtime bundled with this Capsule. Existing exchange orders and plugin state are retained. Website and VPN are not changed. Root password is never saved. Resume trading only after a separate Start confirmation.'
-                                      : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. Root password is used only for installation, never saved. Trading starts only after your separate Start confirmation.',
+                                      : restoreAccess
+                                      ? 'Use the root password for this same VPS to restore access. This reinstalls the bundled workspace runner after checking the server identity and Capsule binding. Existing exchange orders are not cancelled; unexpired trading permissions may resume. Website and VPN are not changed. Root password is never saved; no new trading permission is granted.'
+                                      : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. To restore an existing connection, enter the original VPS address. Root password is used only for installation, never saved. No new trading permission is granted; existing unexpired permissions may resume.',
                                 ),
                                 const SizedBox(height: 16),
                                 TextFormField(
                                   initialValue: host,
-                                  readOnly: reinstall,
+                                  readOnly: reinstall || restoreAccess,
                                   decoration: const InputDecoration(
                                     labelText: 'VPS IP or hostname',
                                   ),
@@ -431,7 +442,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 ),
                                 TextFormField(
                                   initialValue: port,
-                                  readOnly: reinstall,
+                                  readOnly: reinstall || restoreAccess,
                                   decoration: const InputDecoration(
                                     labelText: 'SSH port',
                                   ),
@@ -468,6 +479,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             child: Text(
                               reinstall
                                   ? 'Update securely'
+                                  : restoreAccess
+                                  ? 'Restore securely'
                                   : 'Connect securely',
                             ),
                           ),
@@ -606,39 +619,44 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           (context) => StatefulBuilder(
             builder:
                 (context, update) => AlertDialog(
+                  scrollable: true,
+                  insetPadding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
                   title: const Text('Connect BingX account'),
                   content: SizedBox(
                     width: 420,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'LIVE endpoint: open-api.bingx.com. This step reads account data only; it cannot place orders. Keys stay in the host secure vault for this Capsule and plugin, never in WASM.',
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          key: const ValueKey('plugin-account-api-key'),
+                          obscureText: true,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'API key',
                           ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            key: const ValueKey('plugin-account-api-key'),
-                            obscureText: true,
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            decoration: const InputDecoration(
-                              labelText: 'API key',
-                            ),
-                            onChanged: (s) => update(() => key = s.trim()),
+                          onChanged: (s) => update(() => key = s.trim()),
+                        ),
+                        TextField(
+                          key: const ValueKey('plugin-account-secret-key'),
+                          obscureText: true,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          textInputAction: TextInputAction.done,
+                          decoration: const InputDecoration(
+                            labelText: 'Secret key',
                           ),
-                          TextField(
-                            key: const ValueKey('plugin-account-secret-key'),
-                            obscureText: true,
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            decoration: const InputDecoration(
-                              labelText: 'Secret key',
-                            ),
-                            onChanged: (s) => update(() => secret = s.trim()),
-                          ),
-                        ],
-                      ),
+                          onChanged: (s) => update(() => secret = s.trim()),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Read-only account check. Keys are stored securely for this Capsule. Trading needs separate confirmation.',
+                        ),
+                      ],
                     ),
                   ),
                   actions: [
@@ -815,186 +833,199 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             };
     return Scaffold(
       appBar: AppBar(title: Text(view?['title']?.toString() ?? 'Plugin')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (view != null &&
-              _supportsExecution &&
-              widget.connectVps != null) ...[
-            Text(
-              _view?['host_connection']?['target'] == 'vps'
-                  ? 'VPS ${_view?["host_connection"]?["host"] ?? ""}: $health'
-                  : 'Local execution: keep this app open for scheduled cycles.',
-            ),
-            Wrap(
-              spacing: 12,
-              children: [
-                OutlinedButton(
-                  onPressed: _busy || _choosing ? null : _connectVps,
-                  child: const Text('Connect VPS'),
-                ),
-                TextButton(
-                  onPressed:
-                      _busy || _choosing || widget.useOnline == null
-                          ? null
-                          : _useOnline,
-                  child: const Text('Use local execution'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
-          if (_busy) const LinearProgressIndicator(),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-          if ((view == null || _observationUnavailable) && !_busy)
-            OutlinedButton(
-              onPressed: _choosing ? null : () => _run('open'),
-              child: Text(
-                view == null ? 'Retry opening plugin' : 'Retry connection',
-              ),
-            ),
-          if (view != null) ...[
-            if (_observationUnavailable)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'Last received data; current status is unavailable. '
-                  'Connection loss does not stop remote execution.',
-                ),
-              ),
-            if (!_observationUnavailable &&
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            if ((view != null || (_error != null && !_busy)) &&
                 _supportsExecution &&
-                view['execution'] is Map)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(
-                  '${view["execution"]["allow_new_entries"] == true ? (view["execution"]["mode"] == "vps" ? "VPS entries enabled" : "Local entries enabled") : "New entries stopped or expired"}. '
-                  'Until ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["expires_at_ms"]).toLocal()}. '
-                  '${view["execution"]["last_checked_at_ms"] == null ? "No cycle observed in this process yet." : "Last successful cycle: ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["last_checked_at_ms"]).toLocal()}"}'
-                  '${view["execution"]["last_error"] == null ? "" : "\n${view["execution"]["last_error"]}"}',
-                ),
+                widget.connectVps != null) ...[
+              Text(
+                view == null
+                    ? 'Execution status unavailable. Connect your VPS to restore access.'
+                    : _view?['host_connection']?['target'] == 'vps'
+                    ? 'VPS ${_view?["host_connection"]?["host"] ?? ""}: $health'
+                    : 'Local execution: keep this app open for scheduled cycles.',
               ),
-            if (view['summary'] is String &&
-                (view['summary'] as String).isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: SelectableText(view['summary'] as String),
-              ),
-            for (final raw in view['fields'] as List)
-              if ((raw as Map)['advanced'] != true) _field(raw),
-            if ((view['fields'] as List).any(
-                  (raw) => (raw as Map)['advanced'] == true,
-                ) ||
-                (_supportsExecution &&
-                    widget.connectVps != null &&
-                    widget.useOnline != null &&
-                    view['host_connection']?['installed'] == true))
-              ExpansionTile(
-                title: const Text('Advanced settings'),
-                childrenPadding: const EdgeInsets.only(top: 8),
+              Wrap(
+                spacing: 12,
                 children: [
-                  for (final raw in view['fields'] as List)
-                    if ((raw as Map)['advanced'] == true) _field(raw),
-                  if (_supportsExecution &&
-                      widget.connectVps != null &&
-                      widget.useOnline != null &&
-                      view['host_connection']?['installed'] == true)
+                  OutlinedButton(
+                    onPressed: _busy || _choosing ? null : _connectVps,
+                    child: const Text('Connect VPS'),
+                  ),
+                  if (view?['host_connection']?['installed'] == true)
                     TextButton(
                       onPressed:
                           _busy || _choosing
                               ? null
-                              : () => _connectVps(reinstall: true),
-                      child: const Text('Update VPS runtime'),
+                              : () => _connectVps(restoreAccess: true),
+                      child: const Text('Restore VPS access'),
                     ),
-                ],
-              ),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final raw in view['actions'] as List)
-                  if (_supportsExecution ||
-                      !const {
-                        'workspace.start',
-                        'workspace.stop',
-                      }.contains((raw as Map)['host']))
-                    FilledButton(
-                      key: ValueKey('plugin-action-${(raw as Map)['id']}'),
+                  if (view != null)
+                    TextButton(
                       onPressed:
-                          raw['host'] == 'workspace.stop'
-                              ? () => _run(raw['id'] as String)
-                              : _busy ||
-                                  _choosing ||
-                                  (_observationUnavailable &&
-                                      const {
-                                        'workspace.start',
-                                        'bingx.order.submit',
-                                      }.contains(raw['host'])) ||
-                                  (_edited &&
-                                      raw['host'] == 'bingx.order.submit')
+                          _busy || _choosing || widget.useOnline == null
                               ? null
-                              : () => _run(raw['id'] as String),
-                      child: Text(raw['label'] as String),
-                    ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            SelectableText(
-              _busy
-                  ? 'Working... Complete any system permission prompt to continue.'
-                  : _edited
-                  ? 'Settings or inputs changed. Run an action to refresh the results.'
-                  : view['message'] as String,
-            ),
-            const SizedBox(height: 16),
-            if (!_edited &&
-                !_observationUnavailable &&
-                ((view['rows'] as List).isNotEmpty ||
-                    (view['details'] as String).isNotEmpty))
-              ExpansionTile(
-                key: const ValueKey('plugin-calculation-details'),
-                title: Text(
-                  view['details_title'] as String? ?? 'Calculation details',
-                ),
-                children: [
-                  if ((view['rows'] as List).isNotEmpty)
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columns: [
-                          for (final column in view['columns'] as List)
-                            DataColumn(label: Text(column as String)),
-                        ],
-                        rows: [
-                          for (final row in view['rows'] as List)
-                            DataRow(
-                              cells: [
-                                for (final cell in row as List)
-                                  DataCell(SelectableText(cell as String)),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-                  if ((view['details'] as String).isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: SelectableText(
-                        view['details'] as String,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                              : _useOnline,
+                      child: const Text('Use local execution'),
                     ),
                 ],
               ),
+              const SizedBox(height: 16),
+            ],
+            if (_busy) const LinearProgressIndicator(),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            if ((view == null || _observationUnavailable) && !_busy)
+              OutlinedButton(
+                onPressed: _choosing ? null : () => _run('open'),
+                child: Text(
+                  view == null ? 'Retry opening plugin' : 'Retry connection',
+                ),
+              ),
+            if (view != null) ...[
+              if (_observationUnavailable)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Last received data; current status is unavailable. '
+                    'Connection loss does not stop remote execution.',
+                  ),
+                ),
+              if (!_observationUnavailable &&
+                  _supportsExecution &&
+                  view['execution'] is Map)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    '${view["execution"]["allow_new_entries"] == true ? (view["execution"]["mode"] == "vps" ? "VPS entries enabled" : "Local entries enabled") : "New entries stopped or expired"}. '
+                    'Until ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["expires_at_ms"]).toLocal()}. '
+                    '${view["execution"]["last_checked_at_ms"] == null ? "No cycle observed in this process yet." : "Last successful cycle: ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["last_checked_at_ms"]).toLocal()}"}'
+                    '${view["execution"]["last_error"] == null ? "" : "\n${view["execution"]["last_error"]}"}',
+                  ),
+                ),
+              if (view['summary'] is String &&
+                  (view['summary'] as String).isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: SelectableText(view['summary'] as String),
+                ),
+              for (final raw in view['fields'] as List)
+                if ((raw as Map)['advanced'] != true) _field(raw),
+              if ((view['fields'] as List).any(
+                    (raw) => (raw as Map)['advanced'] == true,
+                  ) ||
+                  (_supportsExecution &&
+                      widget.connectVps != null &&
+                      widget.useOnline != null &&
+                      view['host_connection']?['installed'] == true))
+                ExpansionTile(
+                  title: const Text('Advanced settings'),
+                  childrenPadding: const EdgeInsets.only(top: 8),
+                  children: [
+                    for (final raw in view['fields'] as List)
+                      if ((raw as Map)['advanced'] == true) _field(raw),
+                    if (_supportsExecution &&
+                        widget.connectVps != null &&
+                        widget.useOnline != null &&
+                        view['host_connection']?['installed'] == true)
+                      TextButton(
+                        onPressed:
+                            _busy || _choosing
+                                ? null
+                                : () => _connectVps(reinstall: true),
+                        child: const Text('Update VPS runtime'),
+                      ),
+                  ],
+                ),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final raw in view['actions'] as List)
+                    if (_supportsExecution ||
+                        !const {
+                          'workspace.start',
+                          'workspace.stop',
+                        }.contains((raw as Map)['host']))
+                      FilledButton(
+                        key: ValueKey('plugin-action-${(raw as Map)['id']}'),
+                        onPressed:
+                            raw['host'] == 'workspace.stop'
+                                ? () => _run(raw['id'] as String)
+                                : _busy ||
+                                    _choosing ||
+                                    (_observationUnavailable &&
+                                        const {
+                                          'workspace.start',
+                                          'bingx.order.submit',
+                                        }.contains(raw['host'])) ||
+                                    (_edited &&
+                                        raw['host'] == 'bingx.order.submit')
+                                ? null
+                                : () => _run(raw['id'] as String),
+                        child: Text(raw['label'] as String),
+                      ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SelectableText(
+                _busy
+                    ? 'Working... Complete any system permission prompt to continue.'
+                    : _edited
+                    ? 'Settings or inputs changed. Run an action to refresh the results.'
+                    : view['message'] as String,
+              ),
+              const SizedBox(height: 16),
+              if (!_edited &&
+                  !_observationUnavailable &&
+                  ((view['rows'] as List).isNotEmpty ||
+                      (view['details'] as String).isNotEmpty))
+                ExpansionTile(
+                  key: const ValueKey('plugin-calculation-details'),
+                  title: Text(
+                    view['details_title'] as String? ?? 'Calculation details',
+                  ),
+                  children: [
+                    if ((view['rows'] as List).isNotEmpty)
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: [
+                            for (final column in view['columns'] as List)
+                              DataColumn(label: Text(column as String)),
+                          ],
+                          rows: [
+                            for (final row in view['rows'] as List)
+                              DataRow(
+                                cells: [
+                                  for (final cell in row as List)
+                                    DataCell(SelectableText(cell as String)),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    if ((view['details'] as String).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SelectableText(
+                          view['details'] as String,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                  ],
+                ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

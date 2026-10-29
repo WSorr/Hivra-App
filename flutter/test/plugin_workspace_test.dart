@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
@@ -2662,6 +2663,7 @@ void main() {
         await tester.pumpAndSettle();
         for (final label in [
           'Connect VPS',
+          'Restore VPS access',
           'Use local execution',
           'Package schedule label',
           'Package stop label',
@@ -3001,7 +3003,7 @@ void main() {
         find.widgetWithText(TextField, 'Root password (installation only)'),
         'synthetic-password',
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Connect securely'));
       await tester.pumpAndSettle();
       expect(
@@ -3085,6 +3087,171 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('failed initial workspace retains VPS access recovery', (
+    tester,
+  ) async {
+    var connected = false;
+    var connections = 0;
+    var grants = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
+          runWorkspaceAction: (
+            action,
+            settings, {
+            credentials,
+            approvedOrder,
+          }) async {
+            expect(action, 'open');
+            if (!connected) throw StateError('Unlock the Capsule VPS key');
+            return view();
+          },
+          connectVps: ({
+            required host,
+            required port,
+            required password,
+            required trustPeer,
+          }) async {
+            expect(host, 'original.test');
+            expect(port, 2222);
+            expect(password, 'synthetic-password');
+            connections++;
+            connected = true;
+          },
+          configureExecution: ({
+            required enabled,
+            approvedScope,
+            settings = const {},
+          }) async {
+            grants++;
+            return view();
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Use local execution'), findsNothing);
+    expect(find.textContaining('Local execution:'), findsNothing);
+    await tester.tap(find.text('Connect VPS'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(connections, 0);
+    expect(find.textContaining('Unlock the Capsule VPS key'), findsOneWidget);
+    await tester.tap(find.text('Connect VPS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'VPS IP or hostname'),
+      'original.test',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'SSH port'),
+      '2222',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Root password (installation only)'),
+      'synthetic-password',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect securely'));
+    await tester.pumpAndSettle();
+    expect(connections, 1);
+    expect(grants, 0);
+    expect(find.text('Independent package'), findsOneWidget);
+    expect(find.textContaining('synthetic-password'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('saved key failure offers explicit repair of the same VPS', (
+    tester,
+  ) async {
+    final passwords = <String>[];
+    var returnedOnline = 0;
+    var grants = 0;
+    final shown = {
+      ...view(),
+      'host_connection': {
+        'target': 'vps',
+        'host': 'original.test',
+        'port': 2222,
+        'installed': true,
+        'health': 'running',
+      },
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
+          runWorkspaceAction:
+              (action, settings, {credentials, approvedOrder}) async => shown,
+          connectVps: ({
+            required host,
+            required port,
+            required password,
+            required trustPeer,
+          }) async {
+            expect(host, 'original.test');
+            expect(port, 2222);
+            passwords.add(password);
+            if (password.isEmpty) throw const SocketException('Unavailable');
+          },
+          useOnline: () async => returnedOnline++,
+          configureExecution: ({
+            required enabled,
+            approvedScope,
+            settings = const {},
+          }) async {
+            grants++;
+            return shown;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect VPS'));
+    await tester.pumpAndSettle();
+    expect(passwords, ['']);
+    // An ordinary network failure must not automatically ask for root access.
+    expect(find.byType(AlertDialog), findsNothing);
+    await tester.tap(find.text('Restore VPS access'));
+    await tester.pumpAndSettle();
+    for (final label in ['VPS IP or hostname', 'SSH port']) {
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: find.widgetWithText(TextFormField, label),
+                matching: find.byType(TextField),
+              ),
+            )
+            .readOnly,
+        isTrue,
+      );
+    }
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(passwords, ['']);
+    await tester.tap(find.text('Restore VPS access'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Root password (installation only)'),
+      'synthetic-repair-password',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Restore securely'));
+    await tester.pumpAndSettle();
+    expect(passwords, ['', 'synthetic-repair-password']);
+    expect(returnedOnline, 0);
+    expect(grants, 0);
+    expect(find.textContaining('synthetic-repair-password'), findsNothing);
+    expect(
+      find.textContaining('Saved VPS connection was not acknowledged'),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
 
   for (final failure in ['none', 'return', 'install']) {
     testWidgets(
@@ -5632,6 +5799,134 @@ void main() {
           expect(error.toString(), isNot(contains('***1234')));
         }
       }
+    },
+  );
+
+  testWidgets('workspace avoids the Android landscape navigation inset', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 400);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(left: 48);
+    tester.view.viewPadding = const FakeViewPadding(left: 48);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          runWorkspaceAction:
+              (action, settings, {credentials, approvedOrder}) async => view(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(find.byKey(const ValueKey('plugin-field-symbol'))).left,
+      greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('plugin-action-inspect'))).left,
+      greaterThanOrEqualTo(48),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+    'BingX paste stays usable with landscape keyboard and protected fields',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 400);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(left: 48);
+      tester.view.viewPadding = const FakeViewPadding(left: 48);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetViewInsets);
+      var clipboard = 'public-test-api-key';
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => switch (call.method) {
+          'Clipboard.hasStrings' => {'value': true},
+          'Clipboard.getData' => {'text': clipboard},
+          _ => null,
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      Map<String, String>? sent;
+      final shown = {
+        ...view(),
+        'fields': <Object>[],
+        'actions': [
+          {
+            'id': 'link_account',
+            'label': 'Connect account',
+            'host': 'bingx.account.connect',
+          },
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.android),
+          home: PluginWorkspaceScreen(
+            runWorkspaceAction: (
+              action,
+              settings, {
+              credentials,
+              approvedOrder,
+            }) async {
+              if (action != 'open') sent = credentials;
+              return shown;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect account'));
+      await tester.pumpAndSettle();
+      final api = find.byKey(const ValueKey('plugin-account-api-key'));
+      final secret = find.byKey(const ValueKey('plugin-account-secret-key'));
+      await tester.tap(api);
+      await tester.showKeyboard(api);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+      await tester.pumpAndSettle();
+      const available = Rect.fromLTRB(48, 0, 900, 200);
+      expect(
+        tester.getRect(api).intersect(available).height,
+        greaterThanOrEqualTo(48),
+      );
+      await tester.longPress(api);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste'));
+      await tester.pumpAndSettle();
+      clipboard = 'public-test-secret';
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(secret).intersect(available).height,
+        greaterThanOrEqualTo(48),
+      );
+      await tester.longPress(secret);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(api).obscureText, isTrue);
+      expect(tester.widget<TextField>(secret).obscureText, isTrue);
+      expect(sent, isNull);
+      await tester.tap(find.text('Connect and save'));
+      await tester.pumpAndSettle();
+      expect(sent, {
+        'api_key': 'public-test-api-key',
+        'secret_key': 'public-test-secret',
+      });
+      await tester.pumpWidget(const SizedBox());
     },
   );
 
