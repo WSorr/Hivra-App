@@ -231,7 +231,30 @@ provider effects merely because a WASM call succeeds.
     normalized `exit` evidence for that exact journaled reducing order; packages
     not requesting it retain the previous evidence shape. Stop retains reducing
     exit authority within the current package/account/instrument grant until
-    expiry, but disables new entries and entry replacement cancellations.
+    expiry or full revocation, but disables new entries and entry replacement cancellations.
+    The host's Start confirmation carries an explicit absolute UTC deadline
+    (`expires_at_ms`), or explicit `null` for authorization until full revocation.
+    Twenty-four hours is a selectable UI default, not a host maximum. Missing
+    deadline terms are rejected; restart, reconnect and checkpoint replay never
+    renew them. A fresh Start must match the confirmed executor grant revision;
+    a duplicate or delayed request cannot reactivate a stopped/revoked grant.
+    The existing execution control owns an optional boolean `revoked` (absent
+    means false for legacy grants). Full revocation sets it true and disables
+    entries before waiting for in-flight observation to drain. It ends all new
+    automatic trading effects, including reducing exits, and disarms scheduling;
+    authenticated manual observation remains available. It neither cancels
+    provider orders nor closes positions. Existing finite grants retain their
+    original deadline, and `0` remains an ended/sealed deadline, never infinity.
+    Revocation does not transfer executor custody. Pending VPS revocation is
+    stored in the existing source grant and must be acknowledged by the assigned
+    executor; connection loss is not acknowledgement. The custody checkpoint's
+    digest excludes only mutable entry permission, full-revocation intent and
+    revision; replay can reduce authority but cannot restore it or old state.
+    The runner advertises `execution_controls: 2` in its existing status result.
+    New Start/full-revocation RPCs carry deadline, expected revision and revocation
+    terms explicitly; unsupported runners fail with an update requirement rather
+    than granting a default duration. The old Stop-only envelope remains supported
+    until legacy 1.x clients are retired; legacy Start without terms is rejected.
   - `order.snapshot.read` queries the exact client operation/order. Its
     `scope: "open"` variant reads current open orders for the selected instrument
     and connected account, not account-wide history. The host verifies the UID

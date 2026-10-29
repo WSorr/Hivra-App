@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-23
+Status date: 2026-10-29
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -156,9 +156,16 @@ Open Jack evidence is bounded to these items:
 - packaged runtime-update smoke remains pending.
 
 No new strategy filter, runner, host fallback, or second effect owner is
-permitted under this boundary. Any future Jack pass must use the existing
-package/executor path and replace one of the open evidence items with actual
-provider evidence.
+permitted under this boundary. Trading qualification must use the existing
+package/executor path and actual provider evidence. Host authorization maintenance
+does not require placing live orders.
+
+The current bounded maintenance outcome is owner-selected execution duration
+and full revocation through the existing host grant. Its maintained contract is
+`plugins/plugin_host_api_v1.md`. Core, Ledger, strategy and provider effects are
+unchanged. Source tests and gates are required; exact packaged Mac/APK and
+matching-runner acceptance remain pending until a separately approved clean
+candidate can be built. No VPS deployment or trading is part of this pass.
 
 ## Selected Product Outcome
 

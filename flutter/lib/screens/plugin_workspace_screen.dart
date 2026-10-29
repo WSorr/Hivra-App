@@ -19,6 +19,9 @@ class PluginWorkspaceScreen extends StatefulWidget {
   final Future<List<String>> Function(String fieldId)? readFieldOptions;
   final Future<Map<String, dynamic>> Function({
     required bool enabled,
+    required int? expiresAtMs,
+    int? expectedRevision,
+    bool revoke,
     Map<String, dynamic>? approvedScope,
     Map<String, dynamic> settings,
   })?
@@ -105,34 +108,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     );
     final hostAction = descriptor.isEmpty ? null : descriptor.single['host'];
     if (hostAction == 'workspace.stop' && widget.configureExecution != null) {
-      // Stop supersedes any earlier read, including its delayed error. The
-      // executor still owns authority; this only orders visible completions.
-      final generation = ++_presentationGeneration;
-      setState(() => _busy = true);
-      try {
-        final stopped = await widget.configureExecution!(
-          enabled: false,
-          settings: const {},
-        );
-        if (mounted && generation == _presentationGeneration) {
-          setState(() {
-            _view = stopped;
-            _error = null;
-            _observationUnavailable = false;
-          });
-        }
-      } catch (error) {
-        if (mounted && generation == _presentationGeneration) {
-          setState(() {
-            _error = _describeError(error);
-            _observationUnavailable = true;
-          });
-        }
-      } finally {
-        if (mounted && generation == _presentationGeneration) {
-          setState(() => _busy = false);
-        }
-      }
+      await _stopExecution();
       return;
     }
     if (_busy || _choosing) return;
@@ -265,6 +241,29 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         }
         final scope = Map<String, dynamic>.from(view['schedule'] as Map);
         final onVps = view['host_connection']?['target'] == 'vps';
+        final expectedRevision = view['execution']?['revision'] as int?;
+        var untilRevoked = false;
+        var hours = '24';
+        int? deadline =
+            DateTime.now().millisecondsSinceEpoch +
+            const Duration(hours: 24).inMilliseconds;
+        void updateDeadline() {
+          final duration = double.tryParse(hours);
+          if (duration == null ||
+              !duration.isFinite ||
+              duration <= 0 ||
+              duration >
+                  (8640000000000000 - DateTime.now().millisecondsSinceEpoch) /
+                      3600000) {
+            deadline = null;
+            return;
+          }
+          final milliseconds = (duration * 3600000).round();
+          final value = DateTime.now().millisecondsSinceEpoch + milliseconds;
+          deadline =
+              milliseconds > 0 && value <= 8640000000000000 ? value : null;
+        }
+
         setState(() {
           _choosing = true;
           _busy = false;
@@ -273,39 +272,96 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             await showDialog<bool>(
               context: context,
               builder:
-                  (context) => AlertDialog(
-                    scrollable: true,
-                    title: Text(
-                      onVps
-                          ? 'Start VPS LIVE cycles for 24 hours?'
-                          : 'Start local LIVE cycles for 24 hours?',
-                    ),
-                    content: Text(
-                      '${scope["symbol"]} / account ${scope["account_id"]}\n'
-                      'Up to ${scope["max_margin"]} USDT margin per entry; requested stop '
-                      '${scope["max_stop_percent"]}% of entry margin.\n\n'
-                      'Authorize cancellation of invalidated, unfilled managed entries and '
-                      'repeated entries after confirmed closure. No daily loss limit: '
-                      'successive losses can exhaust the account. '
-                      '${onVps ? "The VPS will continue while Capsule is closed; exchange credentials are sent over pinned SSH into the server host store, not WASM." : "App must remain open and online."} '
-                      'Authorize reducing limit exits selected by the package for managed fills. '
-                      'Stop protection remains unverified. '
-                      'Stop disables automatic entries and cancellations; reducing exits remain authorized until expiry. It does not '
-                      'cancel exchange orders or close positions.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton(
-                        key: const ValueKey('plugin-confirm-start'),
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: Text(
-                          onVps ? 'Start VPS cycles' : 'Start local cycles',
+                  (context) => StatefulBuilder(
+                    builder:
+                        (context, update) => AlertDialog(
+                          scrollable: true,
+                          title: Text(
+                            onVps
+                                ? 'Start VPS LIVE cycles?'
+                                : 'Start local LIVE cycles?',
+                          ),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Until fully revoked'),
+                                value: untilRevoked,
+                                onChanged:
+                                    (value) =>
+                                        update(() => untilRevoked = value),
+                              ),
+                              if (!untilRevoked)
+                                TextFormField(
+                                  initialValue: hours,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: InputDecoration(
+                                    labelText: 'Permission duration (hours)',
+                                    errorText:
+                                        deadline == null
+                                            ? 'Enter a positive representable duration'
+                                            : null,
+                                  ),
+                                  onChanged:
+                                      (value) => update(() {
+                                        hours = value;
+                                        updateDeadline();
+                                      }),
+                                ),
+                              Text(
+                                untilRevoked
+                                    ? 'No automatic expiry. An unreachable VPS may continue until revocation reaches it.'
+                                    : deadline == null
+                                    ? 'A valid deadline is required.'
+                                    : 'Authorization ends: ${DateTime.fromMillisecondsSinceEpoch(deadline!).toLocal()}',
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                '${scope["symbol"]} / account ${scope["account_id"]}\n'
+                                'Up to ${scope["max_margin"]} USDT margin per entry; requested stop '
+                                '${scope["max_stop_percent"]}% of entry margin.\n\n'
+                                'Authorize cancellation of invalidated, unfilled managed entries and '
+                                'repeated entries after confirmed closure. No daily loss limit: '
+                                'successive losses can exhaust the account. '
+                                '${onVps ? "The VPS will continue while Capsule is closed; exchange credentials are sent over pinned SSH into the server host store, not WASM." : "App must remain open and online."} '
+                                'Authorize reducing limit exits selected by the package for managed fills. '
+                                'Stop protection remains unverified. '
+                                'Stop disables automatic entries and cancellations; reducing exits remain authorized until expiry or full revocation. It does not '
+                                'cancel exchange orders or close positions.',
+                              ),
+                              const Text(
+                                'Full revocation ends all new automatic trading effects, including reducing exits. Existing exchange orders and positions remain. Expiry also ends reducing exits.',
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              key: const ValueKey('plugin-confirm-start'),
+                              onPressed:
+                                  !untilRevoked &&
+                                          (deadline == null ||
+                                              deadline! <=
+                                                  DateTime.now()
+                                                      .millisecondsSinceEpoch)
+                                      ? null
+                                      : () => Navigator.of(context).pop(true),
+                              child: Text(
+                                onVps
+                                    ? 'Start VPS cycles'
+                                    : 'Start local cycles',
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
                   ),
             ) ??
             false;
@@ -317,6 +373,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         if (confirmed) {
           view = await configure(
             enabled: true,
+            expiresAtMs: untilRevoked ? null : deadline,
+            expectedRevision: expectedRevision,
             approvedScope: scope,
             settings: settings,
           );
@@ -373,6 +431,38 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           _busy = false;
           _choosing = false;
         });
+      }
+    }
+  }
+
+  Future<void> _stopExecution({bool revoke = false}) async {
+    // Both revocation intents supersede stale reads and share one host path.
+    final generation = ++_presentationGeneration;
+    setState(() => _busy = true);
+    try {
+      final stopped = await widget.configureExecution!(
+        enabled: false,
+        expiresAtMs: null,
+        revoke: revoke,
+        settings: const {},
+      );
+      if (mounted && generation == _presentationGeneration) {
+        setState(() {
+          _view = stopped;
+          _error = null;
+          _observationUnavailable = false;
+        });
+      }
+    } catch (error) {
+      if (mounted && generation == _presentationGeneration) {
+        setState(() {
+          _error = _describeError(error);
+          _observationUnavailable = true;
+        });
+      }
+    } finally {
+      if (mounted && generation == _presentationGeneration) {
+        setState(() => _busy = false);
       }
     }
   }
@@ -928,10 +1018,23 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Text(
                     '${view["execution"]["allow_new_entries"] == true ? (view["execution"]["mode"] == "vps" ? "VPS entries enabled" : "Local entries enabled") : "New entries stopped or expired"}. '
-                    'Until ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["expires_at_ms"]).toLocal()}. '
+                    '${view["execution"]["revoked"] == true
+                        ? "Automation authorization fully revoked."
+                        : view["execution"]["expires_at_ms"] == null
+                        ? "Authorized until full revocation."
+                        : "Until ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["expires_at_ms"]).toLocal()}."} '
                     '${view["execution"]["last_checked_at_ms"] == null ? "No cycle observed in this process yet." : "Last successful cycle: ${DateTime.fromMillisecondsSinceEpoch(view["execution"]["last_checked_at_ms"]).toLocal()}"}'
                     '${view["execution"]["last_error"] == null ? "" : "\n${view["execution"]["last_error"]}"}',
                   ),
+                ),
+              if (_supportsExecution &&
+                  widget.configureExecution != null &&
+                  view['execution'] is Map &&
+                  view['execution']['active'] == true)
+                OutlinedButton(
+                  onPressed:
+                      _choosing ? null : () => _stopExecution(revoke: true),
+                  child: const Text('Revoke all automation'),
                 ),
               if (view['summary'] is String &&
                   (view['summary'] as String).isNotEmpty)

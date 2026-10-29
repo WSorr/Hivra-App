@@ -38,6 +38,367 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  for (final indefinite in [false, true]) {
+    testWidgets(
+      'Start submits the owner-selected permission terms: indefinite=$indefinite',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final before = DateTime.now().millisecondsSinceEpoch;
+        final scope = {
+          'account_id': 'a' * 64,
+          'symbol': 'BTC-USDT',
+          'action': 'cycle',
+          'interval_seconds': 60,
+          'max_margin': 1,
+          'max_stop_percent': 20,
+        };
+        final data = {
+          ...view(),
+          'fields': <Object>[],
+          'schedule': scope,
+          'execution': {
+            'revision': 7,
+            'expires_at_ms': null,
+            'allow_new_entries': false,
+            'active': true,
+            'mode': 'local',
+          },
+          'actions': [
+            {'id': 'start', 'label': 'Start cycles', 'host': 'workspace.start'},
+          ],
+        };
+        var calls = 0;
+        int? chosenDeadline;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction:
+                  (action, settings, {credentials, approvedOrder}) async =>
+                      data,
+              configureExecution: ({
+                required enabled,
+                required int? expiresAtMs,
+                int? expectedRevision,
+                bool revoke = false,
+                approvedScope,
+                settings = const {},
+              }) async {
+                calls++;
+                chosenDeadline = expiresAtMs;
+                expect(enabled, true);
+                expect(revoke, false);
+                expect(expectedRevision, 7);
+                expect(approvedScope, scope);
+                return data;
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Start cycles'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextFormField), 'NaN');
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const ValueKey('plugin-confirm-start')),
+              )
+              .onPressed,
+          isNull,
+        );
+        if (indefinite) {
+          await tester.tap(find.text('Until fully revoked'));
+        } else {
+          await tester.enterText(find.byType(TextFormField), '72');
+        }
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('plugin-confirm-start')),
+        );
+        await tester.tap(find.byKey(const ValueKey('plugin-confirm-start')));
+        await tester.pumpAndSettle();
+        expect(calls, 1);
+        if (indefinite) {
+          expect(chosenDeadline, isNull);
+        } else {
+          expect(
+            chosenDeadline,
+            inInclusiveRange(
+              before + const Duration(hours: 72).inMilliseconds,
+              DateTime.now().millisecondsSinceEpoch +
+                  const Duration(hours: 72).inMilliseconds,
+            ),
+          );
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+  testWidgets(
+    'full revocation wins a pending observation without an entry action',
+    (tester) async {
+      final late = Completer<Map<String, dynamic>>();
+      var revokeCalls = 0;
+      var reads = 0;
+      Map<String, dynamic> shown(bool active) => {
+        ...view(),
+        'fields': <Object>[],
+        'execution': {
+          'revision': active ? 1 : 2,
+          'expires_at_ms': null,
+          'allow_new_entries': active,
+          'active': active,
+          'revoked': !active,
+          'mode': 'local',
+        },
+        'actions': [
+          {'id': 'read', 'label': 'Read observations'},
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (
+              action,
+              settings, {
+              credentials,
+              approvedOrder,
+            }) async {
+              if (action == 'read') {
+                reads++;
+                return late.future;
+              }
+              return shown(true);
+            },
+            configureExecution: ({
+              required enabled,
+              required int? expiresAtMs,
+              int? expectedRevision,
+              bool revoke = false,
+              approvedScope,
+              settings = const {},
+            }) async {
+              expect(enabled, false);
+              expect(revoke, true);
+              revokeCalls++;
+              return shown(false);
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Read observations'));
+      await tester.pump();
+      await tester.tap(find.text('Revoke all automation'));
+      await tester.pump();
+      late.complete(shown(true));
+      await tester.pumpAndSettle();
+      expect(reads, 1);
+      expect(revokeCalls, 1);
+      expect(
+        find.textContaining('Automation authorization fully revoked.'),
+        findsOneWidget,
+      );
+      expect(find.text('Revoke all automation'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  test(
+    'owner deadlines and full revocation survive restart without replay renewal',
+    () async {
+      for (final deadline in [
+        null,
+        DateTime.now().add(const Duration(days: 3)).millisecondsSinceEpoch,
+      ]) {
+        final root = await Directory.systemTemp.createTemp('hivra_permission_');
+        addTearDown(() => root.delete(recursive: true));
+        final files = CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
+        );
+        final registry = _Registry();
+        final owner = 'a' * 64;
+        final scope = {
+          'account_id': 'c' * 64,
+          'symbol': 'BTC-USDT',
+          'action': 'observe',
+          'interval_seconds': 30,
+          'max_margin': 1.0,
+          'max_stop_percent': 20.0,
+        };
+        registry.executionBinding =
+            () => PluginRuntimeBinding.externalPackage(
+              packageId: registry.record.id,
+              packageVersion: registry.record.pluginVersion,
+              packageKind: 'zip',
+              packageDigestHex: 'b' * 64,
+              contractKind: pluginWorkspaceContractKind,
+              capabilities: const [
+                'workspace.render',
+                'workspace.continue',
+                'state.plugin.read_write',
+                'workspace.schedule',
+              ],
+            );
+        final host = PluginHostApiService(
+          handlers: [],
+          resolveRuntimeBinding: registry.resolveRuntimeBinding,
+          resolveRuntimeInvoke:
+              (request, _) async => PluginRuntimeInvokeEvidence(
+                mode: 'wasmi_v1',
+                modulePath: 'plugin/module.wasm',
+                moduleSelection: 'zip_manifest',
+                moduleDigestHex: 'd' * 64,
+                invokeDigestHex: 'e' * 64,
+                semanticStatus: PluginHostApiStatus.executed,
+                semanticErrorCode: null,
+                semanticErrorMessage: null,
+                semanticResult: {
+                  'state': {'opaque': 'package owns this'},
+                  'requests': <Object>[],
+                  'view': {...view(), 'schedule': scope},
+                },
+              ),
+        );
+        PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
+          registry: registry,
+          pluginHostApi: host,
+          fileStore: files,
+          scheduleTimers: false,
+          readActiveCapsuleRootHex: () => owner,
+          readCredentials:
+              ({required owner, required pluginId}) async =>
+                  fail('No secrets needed'),
+          writeCredentials:
+              ({required owner, required pluginId, required value}) async =>
+                  fail('No secret writes'),
+        );
+        final started = await runtime().setWorkspaceExecution(
+          record: registry.record,
+          enabled: true,
+          expiresAtMs: deadline,
+          approvedScope: scope,
+        );
+        expect(started['execution']['active'], true);
+        expect(started['execution']['expires_at_ms'], deadline);
+        final first = await runtime().readWorkspaceExecution(registry.record);
+        await runtime().resumeWorkspaceScheduling(registry.record);
+        expect(await runtime().readWorkspaceExecution(registry.record), first);
+        await expectLater(
+          runtime().setWorkspaceExecution(
+            record: registry.record,
+            enabled: true,
+            expiresAtMs: deadline,
+            approvedScope: scope,
+          ),
+          throwsStateError,
+        );
+        expect(await runtime().readWorkspaceExecution(registry.record), first);
+        final stopped = await runtime().setWorkspaceExecution(
+          record: registry.record,
+          enabled: false,
+          expiresAtMs: null,
+        );
+        expect(stopped['execution']['active'], true);
+        expect(stopped['execution']['allow_new_entries'], false);
+        final revoked = await runtime().setWorkspaceExecution(
+          record: registry.record,
+          enabled: false,
+          expiresAtMs: null,
+          revoke: true,
+        );
+        expect(revoked['execution']['active'], false);
+        expect(revoked['execution']['revoked'], true);
+        expect(revoked['execution']['expires_at_ms'], deadline);
+        await runtime().resumeWorkspaceScheduling(registry.record);
+        expect(
+          (await runtime().runWorkspaceAction(
+            record: registry.record,
+            action: 'open',
+          ))['execution']['active'],
+          false,
+        );
+        await expectLater(
+          runtime().setWorkspaceExecution(
+            record: registry.record,
+            enabled: true,
+            expiresAtMs: deadline,
+            expectedRevision: first!['revision'] as int,
+            approvedScope: scope,
+          ),
+          throwsStateError,
+        );
+        for (final bad in [
+          0,
+          DateTime.now().millisecondsSinceEpoch - 1,
+          8640000000000001,
+        ]) {
+          await expectLater(
+            runtime().setWorkspaceExecution(
+              record: registry.record,
+              enabled: true,
+              expiresAtMs: bad,
+              expectedRevision: revoked['execution']['revision'],
+              approvedScope: scope,
+            ),
+            throwsStateError,
+          );
+        }
+        final restarted = await runtime().setWorkspaceExecution(
+          record: registry.record,
+          enabled: true,
+          expiresAtMs: deadline,
+          expectedRevision: revoked['execution']['revision'],
+          approvedScope: scope,
+        );
+        expect(restarted['execution']['active'], true);
+        expect(restarted['execution']['revoked'], false);
+        final legacy = Map<String, dynamic>.from(
+          (await runtime().readWorkspaceExecution(registry.record))!,
+        )..remove('revoked');
+        validateWorkspaceExecutionControl(
+          legacy,
+          owner,
+          registry.record.pluginId!,
+        );
+        expect(
+          workspaceExecutionIsActive(legacy, nowMs: deadline ?? 0),
+          deadline == null,
+        );
+        final sealed = sealWorkspaceExecutionForRecovery(
+          legacy,
+          owner,
+          registry.record.pluginId!,
+        );
+        expect(workspaceExecutionIsActive(sealed), false);
+        expect(
+          () => validateWorkspaceExecutionControl(
+            {...legacy}..remove('expires_at_ms'),
+            owner,
+            registry.record.pluginId!,
+          ),
+          throwsStateError,
+        );
+        expect(
+          () => validateWorkspaceExecutionControl(
+            {...legacy, 'revoked': true},
+            owner,
+            registry.record.pluginId!,
+          ),
+          throwsStateError,
+        );
+      }
+    },
+  );
+
   testWidgets('pending removal offers retry instead of opening a workspace', (
     tester,
   ) async {
@@ -690,6 +1051,9 @@ void main() {
         jsonEncode(connection),
       );
       var loseAdoptAck = true;
+      var oldExecutionControls = false;
+      final chosenDeadline =
+          DateTime.now().add(const Duration(days: 3)).millisecondsSinceEpoch;
       var wrongBinding = false;
       var offline = false;
       final vault = _Vault();
@@ -704,6 +1068,11 @@ void main() {
           );
           if (command == 'setup') return jsonEncode(serverBinding);
           final result = await runner.dispatch(input);
+          if (oldExecutionControls && input['command'] == 'status') {
+            result['runner'] = Map<String, dynamic>.from(
+              result['runner'] as Map,
+            )..remove('execution_controls');
+          }
           if (input['command'] == 'adopt' && loseAdoptAck) {
             loseAdoptAck = false;
             throw TimeoutException('Lost acknowledgement');
@@ -738,6 +1107,28 @@ void main() {
         workspaceRemote: remote,
       );
       addTearDown(module.stopWorkspaceScheduling);
+      oldExecutionControls = true;
+      await expectLater(
+        module.setWorkspaceExecution(
+          record: localRegistry.record,
+          enabled: true,
+          expiresAtMs: chosenDeadline,
+          approvedScope: scope,
+        ),
+        throwsStateError,
+      );
+      expect(
+        await module.readWorkspaceExecution(
+          localRegistry.record,
+          enforceHost: false,
+        ),
+        isNull,
+      );
+      expect(
+        await serverRuntime.readWorkspaceExecution(serverRegistry.record),
+        isNull,
+      );
+      oldExecutionControls = false;
       expect(
         (await module.runWorkspaceAction(
           record: localRegistry.record,
@@ -748,6 +1139,13 @@ void main() {
       await expectLater(
         module.setWorkspaceExecution(
           record: localRegistry.record,
+          expiresAtMs: chosenDeadline,
+          expectedRevision:
+              (await module.readWorkspaceExecution(
+                    localRegistry.record,
+                    enforceHost: false,
+                  ))?["revision"]
+                  as int?,
           enabled: true,
           approvedScope: scope,
         ),
@@ -800,6 +1198,13 @@ void main() {
       await expectLater(
         module.setWorkspaceExecution(
           record: localRegistry.record,
+          expiresAtMs: null,
+          expectedRevision:
+              (await module.readWorkspaceExecution(
+                    localRegistry.record,
+                    enforceHost: false,
+                  ))?["revision"]
+                  as int?,
           enabled: false,
         ),
         throwsA(isA<TimeoutException>()),
@@ -821,15 +1226,90 @@ void main() {
       );
       final stopped = await module.setWorkspaceExecution(
         record: localRegistry.record,
+        expiresAtMs: null,
+        expectedRevision:
+            (await module.readWorkspaceExecution(
+                  localRegistry.record,
+                  enforceHost: false,
+                ))?["revision"]
+                as int?,
         enabled: false,
       );
       expect(stopped['execution']['allow_new_entries'], false);
       final restarted = await module.setWorkspaceExecution(
         record: localRegistry.record,
+        expiresAtMs: null,
+        expectedRevision: stopped['execution']['revision'] as int?,
         enabled: true,
         approvedScope: scope,
       );
       expect(restarted['execution']['allow_new_entries'], true);
+      expect(restarted['execution']['expires_at_ms'], isNull);
+      // Offline revocation is an owner intent, not a remote acknowledgement.
+      offline = true;
+      await expectLater(
+        module.setWorkspaceExecution(
+          record: localRegistry.record,
+          enabled: false,
+          expiresAtMs: null,
+          revoke: true,
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      final pendingRevoke = await module.readWorkspaceExecution(
+        localRegistry.record,
+        enforceHost: false,
+      );
+      expect(pendingRevoke!['revoked'], true);
+      expect(pendingRevoke['executor'], 'vps');
+      expect(
+        (await serverRuntime.readWorkspaceExecution(
+          serverRegistry.record,
+        ))!['revoked'],
+        false,
+      );
+      offline = false;
+      oldExecutionControls = true;
+      await expectLater(
+        module.runWorkspaceAction(record: localRegistry.record, action: 'open'),
+        throwsStateError,
+      );
+      expect(
+        (await serverRuntime.readWorkspaceExecution(
+          serverRegistry.record,
+        ))!['revoked'],
+        false,
+      );
+      oldExecutionControls = false;
+      final revokedView = await module.runWorkspaceAction(
+        record: localRegistry.record,
+        action: 'open',
+      );
+      expect(revokedView['execution']['revoked'], true);
+      expect(revokedView['execution']['active'], false);
+      await expectLater(
+        runner.dispatch({
+          ...serverBinding,
+          'command': 'execution',
+          'enabled': true,
+          'settings': <String, dynamic>{},
+          'scope': scope,
+          'expires_at_ms': null,
+          'expected_revision': restarted['execution']['revision'],
+          'revoke': false,
+        }),
+        throwsStateError,
+      );
+      await expectLater(
+        runner.dispatch({
+          ...serverBinding,
+          'command': 'execution',
+          'enabled': true,
+          'settings': <String, dynamic>{},
+          'scope': scope,
+        }),
+        throwsFormatException,
+      );
       wrongBinding = true;
       await expectLater(
         module.runWorkspaceAction(record: localRegistry.record, action: 'open'),
@@ -930,6 +1410,13 @@ void main() {
       );
       await module.setWorkspaceExecution(
         record: localRegistry.record,
+        expiresAtMs: null,
+        expectedRevision:
+            (await module.readWorkspaceExecution(
+                  localRegistry.record,
+                  enforceHost: false,
+                ))?["revision"]
+                as int?,
         enabled: true,
         approvedScope: scope,
       );
@@ -1455,6 +1942,13 @@ void main() {
         await expectLater(
           runtime.setWorkspaceExecution(
             record: registry.record,
+            expiresAtMs: null,
+            expectedRevision:
+                (await runtime.readWorkspaceExecution(
+                      registry.record,
+                      enforceHost: false,
+                    ))?["revision"]
+                    as int?,
             enabled: invalid.enabled,
             approvedScope: scope,
             releaseToExecutorId: invalid.target,
@@ -1465,6 +1959,13 @@ void main() {
       }
       final prepared = await runtime.setWorkspaceExecution(
         record: registry.record,
+        expiresAtMs: null,
+        expectedRevision:
+            (await runtime.readWorkspaceExecution(
+                  registry.record,
+                  enforceHost: false,
+                ))?["revision"]
+                as int?,
         enabled: true,
         approvedScope: scope,
         releaseToExecutorId: 'f' * 64,
@@ -1497,6 +1998,13 @@ void main() {
       await expectLater(
         runtime.setWorkspaceExecution(
           record: registry.record,
+          expiresAtMs: null,
+          expectedRevision:
+              (await runtime.readWorkspaceExecution(
+                    registry.record,
+                    enforceHost: false,
+                  ))?["revision"]
+                  as int?,
           enabled: true,
           approvedScope: scope,
         ),
@@ -1871,6 +2379,13 @@ void main() {
       final record = registry.record;
       await local.setWorkspaceExecution(
         record: record,
+        expiresAtMs: null,
+        expectedRevision:
+            (await local.readWorkspaceExecution(
+                  record,
+                  enforceHost: false,
+                ))?["revision"]
+                as int?,
         enabled: true,
         approvedScope: scope,
       );
@@ -1932,13 +2447,30 @@ void main() {
       await expectLater(
         restartedLocal.setWorkspaceExecution(
           record: record,
+          expiresAtMs: null,
+          expectedRevision:
+              (await restartedLocal.readWorkspaceExecution(
+                    record,
+                    enforceHost: false,
+                  ))?["revision"]
+                  as int?,
           enabled: true,
           approvedScope: scope,
         ),
         throwsStateError,
       );
       await expectLater(
-        restartedLocal.setWorkspaceExecution(record: record, enabled: false),
+        restartedLocal.setWorkspaceExecution(
+          record: record,
+          expiresAtMs: null,
+          expectedRevision:
+              (await restartedLocal.readWorkspaceExecution(
+                    record,
+                    enforceHost: false,
+                  ))?["revision"]
+                  as int?,
+          enabled: false,
+        ),
         throwsStateError,
       );
       await expectLater(
@@ -2046,7 +2578,17 @@ void main() {
         checkpoint['effects'],
       );
       await remote.runScheduledWorkspaceCycle(record);
-      await remote.setWorkspaceExecution(record: record, enabled: false);
+      await remote.setWorkspaceExecution(
+        record: record,
+        expiresAtMs: null,
+        expectedRevision:
+            (await remote.readWorkspaceExecution(
+                  record,
+                  enforceHost: false,
+                ))?["revision"]
+                as int?,
+        enabled: false,
+      );
       const progressed = '{"new_shape":{"after":"server progress"}}';
       await remoteFiles.writePluginState(
         destination,
@@ -2193,6 +2735,13 @@ void main() {
       await expectLater(
         remote.setWorkspaceExecution(
           record: record,
+          expiresAtMs: null,
+          expectedRevision:
+              (await remote.readWorkspaceExecution(
+                    record,
+                    enforceHost: false,
+                  ))?["revision"]
+                  as int?,
           enabled: true,
           approvedScope: scope,
         ),
@@ -2237,6 +2786,13 @@ void main() {
       );
       await local.setWorkspaceExecution(
         record: record,
+        expiresAtMs: null,
+        expectedRevision:
+            (await local.readWorkspaceExecution(
+                  record,
+                  enforceHost: false,
+                ))?["revision"]
+                as int?,
         enabled: true,
         approvedScope: scope,
         releaseToExecutorId: 'f' * 64,
@@ -2393,6 +2949,9 @@ void main() {
       expect(observed, before, reason: 'Extra authority cannot reach WASM');
       final started = await command('execution', {
         'enabled': true,
+        'expires_at_ms': null,
+        'expected_revision': null,
+        'revoke': false,
         'scope': scope,
         'settings': <String, dynamic>{},
       });
@@ -2649,6 +3208,9 @@ void main() {
               useOnline: () async => hostCalls++,
               configureExecution: ({
                 required enabled,
+                required int? expiresAtMs,
+                int? expectedRevision,
+                bool revoke = false,
                 approvedScope,
                 settings = const {},
               }) async {
@@ -2975,6 +3537,9 @@ void main() {
             },
             configureExecution: ({
               required enabled,
+              required int? expiresAtMs,
+              int? expectedRevision,
+              bool revoke = false,
               approvedScope,
               settings = const {},
             }) async {
@@ -3017,7 +3582,7 @@ void main() {
       remote = true;
       await tester.tap(find.text('Start cycles'));
       await tester.pumpAndSettle();
-      expect(find.text('Start VPS LIVE cycles for 24 hours?'), findsOneWidget);
+      expect(find.text('Start VPS LIVE cycles?'), findsOneWidget);
       expect(
         find.textContaining('The VPS will continue while Capsule is closed'),
         findsOneWidget,
@@ -3057,6 +3622,9 @@ void main() {
                     shown(),
             configureExecution: ({
               required enabled,
+              required int? expiresAtMs,
+              int? expectedRevision,
+              bool revoke = false,
               approvedScope,
               settings = const {},
             }) async {
@@ -3123,6 +3691,9 @@ void main() {
           },
           configureExecution: ({
             required enabled,
+            required int? expiresAtMs,
+            int? expectedRevision,
+            bool revoke = false,
             approvedScope,
             settings = const {},
           }) async {
@@ -3201,6 +3772,9 @@ void main() {
           useOnline: () async => returnedOnline++,
           configureExecution: ({
             required enabled,
+            required int? expiresAtMs,
+            int? expectedRevision,
+            bool revoke = false,
             approvedScope,
             settings = const {},
           }) async {
@@ -3282,6 +3856,9 @@ void main() {
                       shown(),
               configureExecution: ({
                 required enabled,
+                required int? expiresAtMs,
+                int? expectedRevision,
+                bool revoke = false,
                 approvedScope,
                 settings = const {},
               }) async {
@@ -3478,6 +4055,9 @@ void main() {
                 (action, settings, {credentials, approvedOrder}) async => shown,
             configureExecution: ({
               required enabled,
+              required int? expiresAtMs,
+              int? expectedRevision,
+              bool revoke = false,
               approvedScope,
               settings = const {},
             }) async {
@@ -3490,8 +4070,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Start cycles'));
       await tester.pumpAndSettle();
-      final dialog = tester.widget<AlertDialog>(find.byType(AlertDialog));
-      final content = dialog.content! as Text;
+      // Assert visibility of the final authority explanation, independent of
+      // the dialog's layout/container implementation.
+      final content = tester.widget<Text>(
+        find.textContaining(
+          'Full revocation ends all new automatic trading effects',
+        ),
+      );
       final paragraph = tester.renderObject<RenderParagraph>(
         find.byWidget(content),
       );
@@ -3571,6 +4156,9 @@ void main() {
           },
           configureExecution: ({
             required enabled,
+            required int? expiresAtMs,
+            int? expectedRevision,
+            bool revoke = false,
             approvedScope,
             settings = const {},
           }) async {
@@ -3600,7 +4188,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Start cycles'));
     await tester.pumpAndSettle();
-    expect(find.text('Start local LIVE cycles for 24 hours?'), findsOneWidget);
+    expect(find.text('Start local LIVE cycles?'), findsOneWidget);
     expect(grants, 0);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
@@ -3665,6 +4253,9 @@ void main() {
                         action == 'read' ? reading.future : shown(true),
                 configureExecution: ({
                   required enabled,
+                  required int? expiresAtMs,
+                  int? expectedRevision,
+                  bool revoke = false,
                   approvedScope,
                   settings = const {},
                 }) async {
@@ -3747,8 +4338,14 @@ void main() {
             return shown(true);
           },
           configureExecution:
-              ({required enabled, approvedScope, settings = const {}}) async =>
-                  shown(false),
+              ({
+                required enabled,
+                required int? expiresAtMs,
+                int? expectedRevision,
+                bool revoke = false,
+                approvedScope,
+                settings = const {},
+              }) async => shown(false),
         ),
       ),
     );
@@ -3793,6 +4390,8 @@ void main() {
       for (final fault in [
         'none',
         'stop',
+        'full_revoke',
+        'full_revoke_during_read',
         'expire',
         'account',
         'margin',
@@ -3808,6 +4407,8 @@ void main() {
         'cancel_replaced',
         'exit',
         'exit_stop',
+        'exit_full_revoke',
+        'exit_full_revoke_during_read',
         'exit_unknown',
         'exit_unjournaled',
         'exit_replaced',
@@ -4009,6 +4610,13 @@ void main() {
         );
         await executor.setWorkspaceExecution(
           record: registry.record,
+          expiresAtMs: null,
+          expectedRevision:
+              (await executor.readWorkspaceExecution(
+                    registry.record,
+                    enforceHost: false,
+                  ))?["revision"]
+                  as int?,
           enabled: true,
           approvedScope: scope,
         );
@@ -4112,10 +4720,21 @@ void main() {
           );
         }
 
-        if (fault == 'stop' || fault == 'exit_stop') {
+        if (fault == 'stop' ||
+            fault == 'exit_stop' ||
+            fault == 'full_revoke' ||
+            fault == 'exit_full_revoke') {
           await executor.setWorkspaceExecution(
             record: registry.record,
+            expiresAtMs: null,
+            expectedRevision:
+                (await executor.readWorkspaceExecution(
+                      registry.record,
+                      enforceHost: false,
+                    ))?["revision"]
+                    as int?,
             enabled: false,
+            revoke: fault.contains('full_revoke'),
           );
         }
         if (fault == 'expire') {
@@ -4140,6 +4759,34 @@ void main() {
         if (fault == 'loss') plan['stop_price'] = 90.0;
         if (fault == 'replace') digest = 'c' * 64;
         if (fault == 'during_read') fixture.beforeMarketRead = revoke;
+        Future<Map<String, dynamic>>? pendingFullRevoke;
+        Future<void> revokeAll() async {
+          pendingFullRevoke = executor.setWorkspaceExecution(
+            record: registry.record,
+            enabled: false,
+            expiresAtMs: null,
+            revoke: true,
+          );
+          // The concurrent command persists revocation before waiting for the
+          // current read to drain. Do not await its final status inside that read.
+          for (var i = 0; i < 1000; i++) {
+            final saved = await executor.readWorkspaceExecution(
+              registry.record,
+            );
+            if (saved?['revoked'] == true) return;
+            await Future<void>.delayed(const Duration(milliseconds: 1));
+          }
+          fail(
+            'Full revocation did not become durable before provider dispatch',
+          );
+        }
+
+        if (fault == 'full_revoke_during_read') {
+          fixture.beforeMarketRead = revokeAll;
+        }
+        if (fault == 'exit_full_revoke_during_read') {
+          fixture.afterModeRead = revokeAll;
+        }
         if (fault == 'cancel_during_read') fixture.afterOrderRead = revoke;
         if (fault == 'cancel_replaced') {
           fixture.afterOrderRead = () async {
@@ -4181,6 +4828,21 @@ void main() {
           );
         } else {
           await executor.runScheduledWorkspaceCycle(registry.record);
+        }
+        if (pendingFullRevoke != null) await pendingFullRevoke;
+        if (fault.contains('full_revoke')) {
+          expect(
+            (await executor.readWorkspaceExecution(
+              registry.record,
+            ))!['revoked'],
+            true,
+          );
+          expect(
+            (await executor.readWorkspaceExecution(
+              registry.record,
+            ))!['allow_new_entries'],
+            false,
+          );
         }
         expect(
           fixture.posts,
@@ -4344,6 +5006,13 @@ void main() {
           );
           await executor.setWorkspaceExecution(
             record: registry.record,
+            expiresAtMs: null,
+            expectedRevision:
+                (await executor.readWorkspaceExecution(
+                      registry.record,
+                      enforceHost: false,
+                    ))?["revision"]
+                    as int?,
             enabled: false,
           );
           final saved = await files.readPluginState(
@@ -7333,7 +8002,7 @@ class _EntryProvider {
   String evidenceTimeframe = '5m';
   int evidenceLimit = 600;
   Map<String, String>? postParams;
-  void Function()? afterModeRead;
+  FutureOr<void> Function()? afterModeRead;
   void Function()? afterOpenOrdersRead;
   void Function()? afterMarketRead;
   Future<void> Function()? beforeMarketRead;
@@ -7418,7 +8087,7 @@ class _EntryProvider {
         data = positionData;
       } else if (uri.path.endsWith('/dual')) {
         data = modeData;
-        afterModeRead?.call();
+        await afterModeRead?.call();
       } else if (uri.path.endsWith('/leverage')) {
         expect(params['symbol'], 'BTC-USDT');
         data = {'longLeverage': longLeverage, 'shortLeverage': '20'};

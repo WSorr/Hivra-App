@@ -501,6 +501,17 @@ void _validateUtc(String field, String value) {
   }
 }
 
+/// One deadline/revocation predicate for app, headless runner and custody checks.
+/// A null deadline is explicit owner authorization until revocation; zero is ended.
+bool workspaceExecutionIsActive(Map control, {int? nowMs}) {
+  final deadline = control['expires_at_ms'];
+  return control['revoked'] != true &&
+      control.containsKey('expires_at_ms') &&
+      (deadline == null ||
+          (deadline is int &&
+              deadline > (nowMs ?? DateTime.now().millisecondsSinceEpoch)));
+}
+
 void validateWorkspaceExecutionControl(
   dynamic control,
   String owner,
@@ -513,7 +524,14 @@ void validateWorkspaceExecutionControl(
       control['revision'] is! int ||
       control['revision'] <= 0 ||
       control['allow_new_entries'] is! bool ||
-      control['expires_at_ms'] is! int ||
+      !control.containsKey('expires_at_ms') ||
+      (control['expires_at_ms'] != null &&
+          (control['expires_at_ms'] is! int ||
+              control['expires_at_ms'] < 0 ||
+              control['expires_at_ms'] > 8640000000000000)) ||
+      (control.containsKey('revoked') && control['revoked'] is! bool) ||
+      ((control['revoked'] == true || control['expires_at_ms'] == 0) &&
+          control['allow_new_entries'] == true) ||
       control['settings'] is! Map ||
       control['scope'] is! Map ||
       control['package_id'] is! String ||

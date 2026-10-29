@@ -116,8 +116,7 @@ class PluginWorkspaceRuntime {
     if (control != null && (control['executor'] ?? 'local') != executionHost) {
       return;
     }
-    if (control != null &&
-        DateTime.now().millisecondsSinceEpoch < control['expires_at_ms']) {
+    if (control != null && workspaceExecutionIsActive(control)) {
       _armScheduledExecution(record, owner, control);
     }
   }
@@ -254,8 +253,7 @@ class PluginWorkspaceRuntime {
                 'symbol': execution['scope']['symbol'],
                 'allow_new_entries':
                     execution['allow_new_entries'] == true &&
-                    DateTime.now().millisecondsSinceEpoch <
-                        execution['expires_at_ms'],
+                    workspaceExecutionIsActive(execution),
               },
             if (snapshot != null) 'snapshot': snapshot,
           },
@@ -1170,10 +1168,22 @@ class PluginWorkspaceRuntime {
   Future<Map<String, dynamic>> setWorkspaceExecution({
     required WasmPluginRecord record,
     required bool enabled,
+    required int? expiresAtMs,
+    int? expectedRevision,
+    bool revoke = false,
     Map<String, dynamic>? approvedScope,
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
   }) async {
+    if (enabled &&
+        (revoke ||
+            (expiresAtMs != null &&
+                (expiresAtMs <= DateTime.now().millisecondsSinceEpoch ||
+                    expiresAtMs > 8640000000000000)))) {
+      throw StateError(
+        'Choose a future deadline or authorize until revocation',
+      );
+    }
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (owner == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) {
       throw StateError('An active Capsule is required');
@@ -1185,6 +1195,9 @@ class PluginWorkspaceRuntime {
       throw StateError('Invalid VPS execution target');
     }
     final previous = await _readExecution(record, owner);
+    if (enabled && previous?['revision'] != expectedRevision) {
+      throw StateError('Execution authority changed; review Start again');
+    }
     Map<String, dynamic>? preparedView;
     final Map<String, dynamic> control;
     if (enabled) {
@@ -1226,8 +1239,8 @@ class PluginWorkspaceRuntime {
           'handoff_digest': previous!['handoff_digest'],
         'scope': scope,
         'settings': settings,
-        'expires_at_ms':
-            DateTime.now().millisecondsSinceEpoch + 24 * 60 * 60 * 1000,
+        'expires_at_ms': expiresAtMs,
+        'revoked': false,
         'allow_new_entries': true,
         'revision': (previous?['revision'] as int? ?? 0) + 1,
       };
@@ -1238,6 +1251,7 @@ class PluginWorkspaceRuntime {
       control = {
         ...previous,
         'allow_new_entries': false,
+        if (revoke) 'revoked': true,
         'revision': (previous['revision'] as int) + 1,
       };
     }
@@ -1248,6 +1262,13 @@ class PluginWorkspaceRuntime {
         final current = await _readExecution(record, owner);
         if (current?['revision'] != previous?['revision']) {
           throw StateError('Execution authority changed during confirmation');
+        }
+        if (enabled &&
+            expiresAtMs != null &&
+            expiresAtMs <= DateTime.now().millisecondsSinceEpoch) {
+          throw StateError(
+            'Authorization deadline elapsed during confirmation',
+          );
         }
         final binding = await registry.resolveRuntimeBinding(record.pluginId!);
         if (binding.packageId != control['package_id'] ||
@@ -1298,8 +1319,7 @@ class PluginWorkspaceRuntime {
       action: scope['action'] as String,
       settings: Map<String, dynamic>.from(control['settings'] as Map),
     );
-    if (DateTime.now().millisecondsSinceEpoch < control['expires_at_ms'] &&
-        view['confirmation'] is Map) {
+    if (workspaceExecutionIsActive(control) && view['confirmation'] is Map) {
       final request = Map<String, dynamic>.from(view['confirmation'] as Map);
       final exiting = request['kind'] == 'position.exit.place';
       if (!exiting && control['allow_new_entries'] != true) return view;
@@ -1546,8 +1566,10 @@ class PluginWorkspaceRuntime {
               if (previous['handoff_id'] == incoming['handoff_id'] &&
                   previous['handoff_digest'] == digest &&
                   previous['executor'] == 'vps') {
-                if (incoming['allow_new_entries'] == false &&
-                    previous['allow_new_entries'] == true) {
+                if ((incoming['allow_new_entries'] == false &&
+                        previous['allow_new_entries'] == true) ||
+                    (incoming['revoked'] == true &&
+                        previous['revoked'] != true)) {
                   final directory = await _fileStore.capsuleDirForHex(owner);
                   await _fileStore.writePluginState(
                     directory,
@@ -1556,6 +1578,7 @@ class PluginWorkspaceRuntime {
                     jsonEncode({
                       ...previous,
                       'allow_new_entries': false,
+                      if (incoming['revoked'] == true) 'revoked': true,
                       'revision': (previous['revision'] as int) + 1,
                     }),
                   );
@@ -1563,8 +1586,7 @@ class PluginWorkspaceRuntime {
                 return;
               }
               if (previous['executor'] != 'local' ||
-                  previous['expires_at_ms'] >
-                      DateTime.now().millisecondsSinceEpoch ||
+                  workspaceExecutionIsActive(previous) ||
                   previous['allow_new_entries'] != false ||
                   previous['handoff_id'] == incoming['handoff_id']) {
                 throw StateError(
@@ -1606,8 +1628,10 @@ class PluginWorkspaceRuntime {
     WasmPluginRecord record, {
     required String executorId,
     required bool enabled,
+    bool revoke = false,
     int? expectedRevision,
   }) async {
+    if (enabled && revoke) throw StateError('Start cannot revoke authority');
     final owner = activeCapsuleRootHex();
     if (executionHost != 'local' || owner == null) {
       throw StateError('Local custody is required');
@@ -1632,6 +1656,7 @@ class PluginWorkspaceRuntime {
           jsonEncode({
             ...control,
             'allow_new_entries': enabled,
+            if (revoke || enabled) 'revoked': revoke,
             'revision': (control['revision'] as int) + 1,
           }),
         );
@@ -1843,6 +1868,7 @@ class PluginWorkspaceRuntime {
       'execution':
           {...checkpoint['execution'] as Map}
             ..remove('allow_new_entries')
+            ..remove('revoked')
             ..remove('revision'),
     };
     return sha256.convert(utf8.encode(_canonical(immutable))).toString();
@@ -1901,7 +1927,7 @@ class PluginWorkspaceRuntime {
         control == null ||
         control['revision'] != revision ||
         (!exiting && control['allow_new_entries'] != true) ||
-        DateTime.now().millisecondsSinceEpoch >= control['expires_at_ms']) {
+        !workspaceExecutionIsActive(control)) {
       throw StateError('Start authority was stopped, expired or replaced');
     }
     final scope = control['scope'] as Map;
@@ -1940,7 +1966,10 @@ class PluginWorkspaceRuntime {
     'mode': executionHost,
     'allow_new_entries':
         control['allow_new_entries'] == true &&
-        DateTime.now().millisecondsSinceEpoch < control['expires_at_ms'],
+        workspaceExecutionIsActive(control),
+    'active': workspaceExecutionIsActive(control),
+    'revoked': control['revoked'] == true,
+    'revision': control['revision'],
     'expires_at_ms': control['expires_at_ms'],
     'last_checked_at_ms': observation?['last_checked_at_ms'],
     'last_error': observation?['last_error'],
@@ -1957,6 +1986,10 @@ class PluginWorkspaceRuntime {
     final key = '$owner::${record.pluginId}';
     final binding =
         '${record.id}::${control['package_digest']}::${control['revision']}';
+    if (!workspaceExecutionIsActive(control)) {
+      _clearSchedule(key);
+      return;
+    }
     if (_scheduledHosts.containsKey(key) &&
         _scheduledBindings[key] == binding) {
       return;
@@ -1979,9 +2012,7 @@ class PluginWorkspaceRuntime {
           try {
             final current = await _readExecution(record, owner);
             if (!identical(_scheduledGenerations[key], generation)) return;
-            if (current == null ||
-                DateTime.now().millisecondsSinceEpoch >=
-                    current['expires_at_ms']) {
+            if (current == null || !workspaceExecutionIsActive(current)) {
               _clearSchedule(key);
               return;
             }

@@ -598,11 +598,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   configureExecution:
                       ({
                         required enabled,
+                        required expiresAtMs,
+                        expectedRevision,
+                        revoke = false,
                         approvedScope,
                         settings = const {},
                       }) => _pluginRuntime.setWorkspaceExecution(
                         record: record,
                         enabled: enabled,
+                        expiresAtMs: expiresAtMs,
+                        expectedRevision: expectedRevision,
+                        revoke: revoke,
                         approvedScope: approvedScope,
                         settings: settings,
                       ),

@@ -401,6 +401,13 @@ Future<void> _checkInstalledWasm(
     );
     await runtime().setWorkspaceExecution(
       record: record,
+      expiresAtMs: null,
+      expectedRevision:
+          (await runtime().readWorkspaceExecution(
+                record,
+                enforceHost: false,
+              ))?["revision"]
+              as int?,
       enabled: true,
       approvedScope: Map<String, dynamic>.from(initialView['schedule'] as Map),
     );
@@ -492,7 +499,17 @@ Future<void> _checkInstalledWasm(
     if (cancellations != 1 || posts != 0) {
       throw StateError('Reopen duplicated cancellation or fabricated an entry');
     }
-    await runtime().setWorkspaceExecution(record: record, enabled: false);
+    await runtime().setWorkspaceExecution(
+      record: record,
+      expiresAtMs: null,
+      expectedRevision:
+          (await runtime().readWorkspaceExecution(
+                record,
+                enforceHost: false,
+              ))?["revision"]
+              as int?,
+      enabled: false,
+    );
     final stopped = await runtime().runScheduledWorkspaceCycle(record);
     if (stopped['execution']['allow_new_entries'] != false || posts != 0) {
       throw StateError('Stop did not prevent new entries');
