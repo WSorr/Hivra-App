@@ -274,6 +274,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               context: context,
               builder:
                   (context) => AlertDialog(
+                    scrollable: true,
                     title: Text(
                       onVps
                           ? 'Start VPS LIVE cycles for 24 hours?'
@@ -429,6 +430,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                 (context) => StatefulBuilder(
                   builder:
                       (context, update) => AlertDialog(
+                        scrollable: true,
+                        insetPadding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                         title: Text(
                           reinstall
                               ? 'Update VPS runtime'
@@ -438,50 +444,46 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         ),
                         content: SizedBox(
                           width: 420,
-                          child: SingleChildScrollView(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  reinstall
-                                      ? 'End VPS trading authority and install the runtime bundled with this Capsule. Existing exchange orders and plugin state are retained. Website and VPN are not changed. Root password is never saved. Resume trading only after a separate Start confirmation.'
-                                      : restoreAccess
-                                      ? 'Use the root password for this same VPS to restore access. This reinstalls the bundled workspace runner after checking the server identity and Capsule binding. Existing exchange orders are not cancelled; unexpired trading permissions may resume. Website and VPN are not changed. Root password is never saved; no new trading permission is granted.'
-                                      : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. To restore an existing connection, enter the original VPS address. Root password is used only for installation, never saved. No new trading permission is granted; existing unexpired permissions may resume.',
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                reinstall
+                                    ? 'End VPS trading authority and install the runtime bundled with this Capsule. Existing exchange orders and plugin state are retained. Website and VPN are not changed. Root password is never saved. Resume trading only after a separate Start confirmation.'
+                                    : restoreAccess
+                                    ? 'Use the root password for this same VPS to restore access. This reinstalls the bundled workspace runner after checking the server identity and Capsule binding. Existing exchange orders are not cancelled; unexpired trading permissions may resume. Website and VPN are not changed. Root password is never saved; no new trading permission is granted.'
+                                    : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. To restore an existing connection, enter the original VPS address. Root password is used only for installation, never saved. No new trading permission is granted; existing unexpired permissions may resume.',
+                              ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                initialValue: host,
+                                readOnly: reinstall || restoreAccess,
+                                decoration: const InputDecoration(
+                                  labelText: 'VPS IP or hostname',
                                 ),
-                                const SizedBox(height: 16),
-                                TextFormField(
-                                  initialValue: host,
-                                  readOnly: reinstall || restoreAccess,
-                                  decoration: const InputDecoration(
-                                    labelText: 'VPS IP or hostname',
-                                  ),
-                                  autocorrect: false,
-                                  onChanged:
-                                      (s) => update(() => host = s.trim()),
+                                autocorrect: false,
+                                onChanged: (s) => update(() => host = s.trim()),
+                              ),
+                              TextFormField(
+                                initialValue: port,
+                                readOnly: reinstall || restoreAccess,
+                                decoration: const InputDecoration(
+                                  labelText: 'SSH port',
                                 ),
-                                TextFormField(
-                                  initialValue: port,
-                                  readOnly: reinstall || restoreAccess,
-                                  decoration: const InputDecoration(
-                                    labelText: 'SSH port',
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                  onChanged:
-                                      (s) => update(() => port = s.trim()),
+                                keyboardType: TextInputType.number,
+                                onChanged: (s) => update(() => port = s.trim()),
+                              ),
+                              TextField(
+                                obscureText: true,
+                                enableSuggestions: false,
+                                autocorrect: false,
+                                decoration: const InputDecoration(
+                                  labelText:
+                                      'Root password (installation only)',
                                 ),
-                                TextField(
-                                  obscureText: true,
-                                  enableSuggestions: false,
-                                  autocorrect: false,
-                                  decoration: const InputDecoration(
-                                    labelText:
-                                        'Root password (installation only)',
-                                  ),
-                                  onChanged: (s) => update(() => password = s),
-                                ),
-                              ],
-                            ),
+                                onChanged: (s) => update(() => password = s),
+                              ),
+                            ],
                           ),
                         ),
                         actions: [

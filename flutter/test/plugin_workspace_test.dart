@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -3356,6 +3357,173 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+  }
+
+  for (final operation in ['connect', 'restore', 'update']) {
+    testWidgets('VPS password remains usable under keyboard: $operation', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+      var connections = 0;
+      var returns = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction:
+                (action, settings, {credentials, approvedOrder}) async => {
+                  ...view(),
+                  'host_connection': {
+                    'target': 'vps',
+                    'installed': operation != 'connect',
+                    'host': 'test.example',
+                    'port': 22,
+                  },
+                },
+            connectVps:
+                ({
+                  required host,
+                  required port,
+                  required password,
+                  required trustPeer,
+                }) async => connections++,
+            useOnline: () async => returns++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      if (operation == 'update') {
+        await tester.tap(find.text('Advanced settings'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Update VPS runtime'));
+      }
+      await tester.tap(
+        find.text(switch (operation) {
+          'restore' => 'Restore VPS access',
+          'update' => 'Update VPS runtime',
+          _ => 'Connect VPS',
+        }),
+      );
+      await tester.pumpAndSettle();
+      final password = find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.obscureText,
+      );
+      await tester.showKeyboard(password);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+      await tester.pumpAndSettle();
+      final field = tester.renderObject<RenderBox>(password);
+      int visibleHeight() {
+        final bounds = tester.getRect(password);
+        var height = 0;
+        for (var y = bounds.top + 0.5; y < bounds.bottom; y++) {
+          final hit = tester.hitTestOnBinding(Offset(bounds.center.dx, y));
+          if (hit.path.any((entry) => identical(entry.target, field))) {
+            height++;
+          }
+        }
+        return height;
+      }
+
+      for (var i = 0; i < 8 && visibleHeight() < 48; i++) {
+        await tester.dragFrom(const Offset(450, 100), const Offset(0, -70));
+        await tester.pumpAndSettle();
+      }
+      expect(visibleHeight(), greaterThanOrEqualTo(48));
+      expect(connections, 0);
+      expect(returns, 0);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(connections, 0);
+      expect(returns, 0);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  for (final target in ['local', 'vps']) {
+    testWidgets('Start consent remains readable on short screens: $target', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var grants = 0;
+      final shown = {
+        ...view(),
+        'fields': <dynamic>[],
+        'host_connection': {'target': target},
+        'schedule': {
+          'action': 'package_cycle',
+          'interval_seconds': 60,
+          'account_id': 'a' * 64,
+          'symbol': 'BTC-USDT',
+          'max_margin': 1,
+          'max_stop_percent': 20,
+        },
+        'actions': [
+          {'id': 'start', 'label': 'Start cycles', 'host': 'workspace.start'},
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction:
+                (action, settings, {credentials, approvedOrder}) async => shown,
+            configureExecution: ({
+              required enabled,
+              approvedScope,
+              settings = const {},
+            }) async {
+              grants++;
+              return shown;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start cycles'));
+      await tester.pumpAndSettle();
+      final dialog = tester.widget<AlertDialog>(find.byType(AlertDialog));
+      final content = dialog.content! as Text;
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.byWidget(content),
+      );
+      bool lastLineVisible() {
+        final text = content.data!;
+        final boxes = paragraph.getBoxesForSelection(
+          TextSelection(baseOffset: text.length - 1, extentOffset: text.length),
+        );
+        if (boxes.isEmpty) return false;
+        final point = paragraph.localToGlobal(boxes.last.toRect().center);
+        return tester
+            .hitTestOnBinding(point)
+            .path
+            .any((entry) => identical(entry.target, paragraph));
+      }
+
+      for (var i = 0; i < 8 && !lastLineVisible(); i++) {
+        await tester.dragFrom(
+          tester.getCenter(find.byType(AlertDialog)),
+          const Offset(0, -120),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(lastLineVisible(), isTrue);
+      expect(grants, 0);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(grants, 0);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
   }
 
   testWidgets('Start requires consent and Stop stays available during reads', (

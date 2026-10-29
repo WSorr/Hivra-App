@@ -91,9 +91,11 @@ provider effects merely because a WASM call succeeds.
     saved-key attempt never automatically requests root credentials. Restoration
     reuses pinned identity and binding checks and does not grant a new Start;
     it can reinstall the runner and resume existing unexpired permissions.
-    Workspace content respects native system insets. Account-dialog title and
-    fields scroll together when the keyboard reduces available height; protected
-    key fields retain normal paste and Next/Done input without submitting early.
+    Workspace content respects native system insets. Account/VPS dialog titles
+    and fields scroll together when the keyboard reduces available height;
+    protected account fields retain normal paste and Next/Done input without
+    submitting early. Start authorization also permits scrolling through its
+    complete risk and authority scope while confirmation and Cancel stay reachable.
     `PluginWorkspaceRuntime` owns the same invocation, persistence and effect
     path in app and headless hosts. The app module supplies its scoped vault
     through credential ports; Flutter, Chat and Moltbook are not dependencies
