@@ -3463,6 +3463,162 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final lateRead in ['view', 'error']) {
+    for (final stopAcknowledged in [true, false]) {
+      testWidgets(
+        'Stop owns presentation after late $lateRead; acknowledged=$stopAcknowledged',
+        (tester) async {
+          final reading = Completer<Map<String, dynamic>>();
+          var stops = 0;
+          var starts = 0;
+          Map<String, dynamic> shown(bool enabled) => {
+            ...view(),
+            'fields': <dynamic>[],
+            'execution': {
+              'mode': 'vps',
+              'allow_new_entries': enabled,
+              'expires_at_ms': 200000000,
+            },
+            'actions': [
+              {
+                'id': enabled ? 'stop' : 'start',
+                'label': enabled ? 'Stop new entries' : 'Start cycles',
+                'host': enabled ? 'workspace.stop' : 'workspace.start',
+              },
+              {'id': 'read', 'label': 'Read observations'},
+            ],
+          };
+          await tester.pumpWidget(
+            MaterialApp(
+              home: PluginWorkspaceScreen(
+                capabilities: const ['workspace.schedule'],
+                runWorkspaceAction:
+                    (action, settings, {credentials, approvedOrder}) async =>
+                        action == 'read' ? reading.future : shown(true),
+                configureExecution: ({
+                  required enabled,
+                  approvedScope,
+                  settings = const {},
+                }) async {
+                  if (enabled) {
+                    starts++;
+                  } else {
+                    stops++;
+                  }
+                  if (!stopAcknowledged) {
+                    throw StateError('Stop acknowledgement unavailable');
+                  }
+                  return shown(false);
+                },
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Read observations'));
+          await tester.pump();
+          await tester.tap(find.text('Stop new entries'));
+          await tester.pump();
+          await tester.pump();
+          expect(stops, 1);
+          if (lateRead == 'view') {
+            reading.complete(shown(true));
+          } else {
+            reading.completeError(StateError('Obsolete read failed'));
+          }
+          await tester.pumpAndSettle();
+          if (stopAcknowledged) {
+            expect(find.text('Stop new entries'), findsNothing);
+            expect(find.text('Start cycles'), findsOneWidget);
+            expect(find.text('Retry connection'), findsNothing);
+          } else {
+            expect(find.text('Retry connection'), findsOneWidget);
+            expect(
+              find.textContaining('Stop acknowledgement unavailable'),
+              findsOneWidget,
+            );
+            expect(find.text('Start cycles'), findsNothing);
+          }
+          expect(find.textContaining('Obsolete read failed'), findsNothing);
+          expect(starts, 0);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox());
+        },
+      );
+    }
+  }
+
+  testWidgets('superseded read cannot unlock a newer workspace action', (
+    tester,
+  ) async {
+    final earlier = Completer<Map<String, dynamic>>();
+    final newer = Completer<Map<String, dynamic>>();
+    var reads = 0;
+    Map<String, dynamic> shown(bool enabled) => {
+      ...view(),
+      'fields': <dynamic>[],
+      'execution': {'allow_new_entries': enabled, 'expires_at_ms': 200000000},
+      'actions': [
+        if (enabled)
+          {'id': 'stop', 'label': 'Stop new entries', 'host': 'workspace.stop'},
+        {'id': 'read', 'label': 'Read observations'},
+      ],
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
+          runWorkspaceAction: (
+            action,
+            settings, {
+            credentials,
+            approvedOrder,
+          }) async {
+            if (action == 'read') {
+              return ++reads == 1 ? earlier.future : newer.future;
+            }
+            return shown(true);
+          },
+          configureExecution:
+              ({required enabled, approvedScope, settings = const {}}) async =>
+                  shown(false),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Read observations'));
+    await tester.pump();
+    await tester.tap(find.text('Stop new entries'));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('Read observations'));
+    await tester.pump();
+    expect(reads, 2);
+    earlier.complete(shown(true));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Stop new entries'), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('plugin-action-read')),
+          )
+          .onPressed,
+      isNull,
+    );
+    newer.complete(shown(false));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('plugin-action-read')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   test(
     'scheduled entries use host grants, opaque state and the existing journal',
     () async {
