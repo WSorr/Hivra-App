@@ -338,6 +338,9 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           'Return to online mode before replacing exchange credentials',
         );
       }
+      if (grant['revoked'] == true || grant['expires_at_ms'] == null) {
+        await _requireExecutionControls(c);
+      }
       // Recover a lost adoption acknowledgement with the exact frozen source
       // checkpoint. Server replay never restores older state or renews authority.
       await _remote.request(c, 'adopt', {
@@ -409,10 +412,14 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
   Future<Map<String, dynamic>> setWorkspaceExecution({
     required WasmPluginRecord record,
     required bool enabled,
+    required int? expiresAtMs,
+    int? expectedRevision,
+    bool revoke = false,
     Map<String, dynamic>? approvedScope,
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
   }) async {
+    if (enabled && revoke) throw StateError('Start cannot revoke authority');
     final owner = activeCapsuleRootHex();
     if (owner == null) throw StateError('Open a Capsule first');
     final grant = await super.readWorkspaceExecution(
@@ -421,16 +428,33 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       allowRemoteRecoveryBinding: true,
     );
     var c = await _remote.connection(owner, record.pluginId!);
+    if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
     if (grant?['executor'] == 'vps') {
-      if (c == null || c['executor_id'] != grant!['executor_id']) {
-        throw StateError('Reconnect the assigned VPS');
-      }
       if (!enabled) {
         await setReleasedWorkspaceEntries(
           record,
-          executorId: c['executor_id'] as String,
+          executorId: grant!['executor_id'] as String,
           enabled: false,
+          revoke: revoke,
         );
+      }
+      if (c == null || c['executor_id'] != grant!['executor_id']) {
+        throw StateError(
+          'Reconnect the assigned VPS; remote stop is unconfirmed',
+        );
+      }
+      if (enabled ||
+          revoke ||
+          grant['revoked'] == true ||
+          grant['expires_at_ms'] == null) {
+        await _requireExecutionControls(c);
+      }
+      if (activeCapsuleRootHex() != owner ||
+          (await registry.resolveRuntimeBinding(record.pluginId!)).packageId !=
+              record.id) {
+        throw StateError('Capsule or package changed during authorization');
+      }
+      if (!enabled) {
         await _remote.request(c, 'adopt', {
           'checkpoint': await releaseWorkspaceToVps(
             record,
@@ -442,6 +466,11 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         'enabled': enabled,
         'settings': settings,
         'scope': approvedScope,
+        if (enabled || revoke) ...{
+          'expires_at_ms': expiresAtMs,
+          'expected_revision': expectedRevision,
+          'revoke': revoke,
+        },
       });
       if (enabled) {
         await setReleasedWorkspaceEntries(
@@ -455,10 +484,13 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     }
     if (enabled && c?['selected'] == true) {
       c = await _remote.ensurePackage(owner, record);
+      await _requireExecutionControls(c);
       if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
       await super.setWorkspaceExecution(
         record: record,
         enabled: true,
+        expiresAtMs: expiresAtMs,
+        expectedRevision: expectedRevision,
         approvedScope: approvedScope,
         settings: settings,
         releaseToExecutorId: c['executor_id'] as String,
@@ -473,10 +505,24 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     return super.setWorkspaceExecution(
       record: record,
       enabled: enabled,
+      expiresAtMs: expiresAtMs,
+      expectedRevision: expectedRevision,
+      revoke: revoke,
       approvedScope: approvedScope,
       settings: settings,
       releaseToExecutorId: releaseToExecutorId,
     );
+  }
+
+  Future<void> _requireExecutionControls(
+    Map<String, dynamic> connection,
+  ) async {
+    final status = await _remote.request(connection, 'status');
+    if (status['runner']?['execution_controls'] != 2) {
+      throw StateError(
+        'Update the VPS runtime before changing permission terms',
+      );
+    }
   }
 
   Future<PluginChatSendResult> sendChatMessage({

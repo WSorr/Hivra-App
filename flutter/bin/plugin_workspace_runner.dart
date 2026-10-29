@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:hivra_app/ffi/hivra_bindings.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
+import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
@@ -326,9 +327,7 @@ class WorkspaceRunner {
           final control = raw == null ? null : jsonDecode(raw);
           if (control is Map &&
               control['executor'] == 'vps' &&
-              control['expires_at_ms'] is int &&
-              control['expires_at_ms'] >
-                  DateTime.now().millisecondsSinceEpoch) {
+              workspaceExecutionIsActive(control)) {
             final saved = await _readPrivateJson(
               File('${root.path}/credentials.json'),
             );
@@ -558,11 +557,30 @@ class WorkspaceRunner {
         final checkpoint = await runtime.returnWorkspaceToLocal(record);
         return {
           'binding': binding,
-          'runner': {'state': 'detached', 'started_at_ms': _startedAt},
+          'runner': {
+            'state': 'detached',
+            'started_at_ms': _startedAt,
+            'execution_controls': 2,
+          },
           'checkpoint': checkpoint,
         };
       case 'execution':
-        if (request.length != 9 ||
+        // Old clients retain their existing Stop command. Start and full
+        // revocation require explicit terms; no default 24-hour authority.
+        final legacyStop =
+            request.length == 9 &&
+            request['enabled'] == false &&
+            request.keys.toSet().containsAll({'enabled', 'settings', 'scope'});
+        if ((!legacyStop &&
+                (request.length != 12 ||
+                    !request.containsKey('expires_at_ms') ||
+                    !request.containsKey('expected_revision') ||
+                    !request.containsKey('scope') ||
+                    (request['expires_at_ms'] != null &&
+                        request['expires_at_ms'] is! int) ||
+                    (request['expected_revision'] != null &&
+                        request['expected_revision'] is! int) ||
+                    request['revoke'] is! bool)) ||
             request['enabled'] is! bool ||
             request['settings'] is! Map ||
             (request['scope'] != null && request['scope'] is! Map)) {
@@ -571,6 +589,9 @@ class WorkspaceRunner {
         view = await runtime.setWorkspaceExecution(
           record: record,
           enabled: request['enabled'] as bool,
+          expiresAtMs: request['expires_at_ms'] as int?,
+          expectedRevision: request['expected_revision'] as int?,
+          revoke: request['revoke'] == true,
           approvedScope:
               request['scope'] == null
                   ? null
@@ -592,14 +613,18 @@ class WorkspaceRunner {
         }
         return {
           'binding': binding,
-          'runner': {'state': 'detached'},
+          'runner': {'state': 'detached', 'execution_controls': 2},
         };
       default:
         throw const FormatException('Unsupported workspace command');
     }
     return {
       'binding': binding,
-      'runner': {'state': 'running', 'started_at_ms': _startedAt},
+      'runner': {
+        'state': 'running',
+        'started_at_ms': _startedAt,
+        'execution_controls': 2,
+      },
       'view': view,
       if (observationError != null) 'observation_error': observationError,
     };
