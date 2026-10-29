@@ -55,6 +55,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   bool _edited = false;
   bool _observationUnavailable = false;
   bool _choosing = false;
+  int _presentationGeneration = 0;
   Timer? _refresh;
   AppLifecycleState? _appState;
 
@@ -104,12 +105,16 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     );
     final hostAction = descriptor.isEmpty ? null : descriptor.single['host'];
     if (hostAction == 'workspace.stop' && widget.configureExecution != null) {
+      // Stop supersedes any earlier read, including its delayed error. The
+      // executor still owns authority; this only orders visible completions.
+      final generation = ++_presentationGeneration;
+      setState(() => _busy = true);
       try {
         final stopped = await widget.configureExecution!(
           enabled: false,
           settings: const {},
         );
-        if (mounted) {
+        if (mounted && generation == _presentationGeneration) {
           setState(() {
             _view = stopped;
             _error = null;
@@ -117,11 +122,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           });
         }
       } catch (error) {
-        if (mounted) {
+        if (mounted && generation == _presentationGeneration) {
           setState(() {
             _error = _describeError(error);
             _observationUnavailable = true;
           });
+        }
+      } finally {
+        if (mounted && generation == _presentationGeneration) {
+          setState(() => _busy = false);
         }
       }
       return;
@@ -131,6 +140,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         const {'workspace.start', 'bingx.order.submit'}.contains(hostAction)) {
       return;
     }
+    final generation = ++_presentationGeneration;
     final preserveEdits = action == 'open' && _edited;
     Map<String, String>? credentials;
     Map<String, dynamic>? approvedOrder;
@@ -140,9 +150,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       try {
         credentials = await _accountCredentials();
       } finally {
-        if (mounted) setState(() => _choosing = false);
+        if (mounted && generation == _presentationGeneration) {
+          setState(() => _choosing = false);
+        }
       }
-      if (!mounted || credentials == null) return;
+      if (!mounted ||
+          generation != _presentationGeneration ||
+          credentials == null) {
+        return;
+      }
     }
     if (descriptor.isNotEmpty &&
         (descriptor.single as Map)['host'] == 'bingx.order.submit') {
@@ -205,9 +221,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             ) ??
             false;
       } finally {
-        if (mounted) setState(() => _choosing = false);
+        if (mounted && generation == _presentationGeneration) {
+          setState(() => _choosing = false);
+        }
       }
-      if (!mounted || !confirmed) return;
+      if (!mounted || generation != _presentationGeneration || !confirmed) {
+        return;
+      }
       approvedOrder = request;
     }
     setState(() {
@@ -237,7 +257,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         credentials: credentials,
         approvedOrder: approvedOrder,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _presentationGeneration) return;
       if (hostAction == 'workspace.start') {
         final configure = widget.configureExecution;
         if (configure == null || view['schedule'] is! Map) {
@@ -288,7 +308,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                   ),
             ) ??
             false;
-        if (!mounted) return;
+        if (!mounted || generation != _presentationGeneration) return;
         setState(() {
           _choosing = false;
           _busy = true;
@@ -300,7 +320,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             settings: settings,
           );
         }
-        if (!mounted) return;
+        if (!mounted || generation != _presentationGeneration) return;
       }
       final ids = <String>{};
       for (final raw in view['fields'] as List) {
@@ -339,7 +359,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         );
       }
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _presentationGeneration) return;
       setState(() {
         _error = _describeError(error);
         if (action == 'open' || error is! FormatException) {
@@ -347,7 +367,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         }
       });
     } finally {
-      if (mounted) {
+      if (mounted && generation == _presentationGeneration) {
         setState(() {
           _busy = false;
           _choosing = false;

@@ -79,8 +79,10 @@ provider effects merely because a WASM call succeeds.
     only an explicit package action submits those settings. Failed observations
     mark retained data as stale and offer the same status retry. Public Start
     and order submission remain unavailable until a fresh view is received;
-    Stop remains accessible, and a connection failure never acknowledges that
-    remote execution has stopped. Network errors are shown without raw socket
+    Stop remains accessible. Once requested, earlier pending views or errors
+    cannot overwrite its acknowledgement or failure, or unlock a newer action.
+    A connection failure never acknowledges that remote execution has stopped.
+    Network errors are shown without raw socket
     diagnostics. These presentation rules do not change executor authority or
     add a local fallback.
     A failed initial workspace read does not hide the granted VPS connection
