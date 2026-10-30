@@ -38,6 +38,76 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  testWidgets('credential recovery exposes full revocation without Start', (
+    tester,
+  ) async {
+    var calls = 0;
+    final recovery = {
+      ...view(),
+      'fields': <Object>[],
+      'actions': [
+        {
+          'id': 'restore_binding',
+          'label': 'Reconnect account',
+          'host': 'bingx.account.connect',
+        },
+      ],
+      'execution': {
+        'mode': 'vps',
+        'active': true,
+        'allow_new_entries': false,
+        'revoked': false,
+        'revision': 7,
+        'expires_at_ms': null,
+      },
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule', 'account.connect'],
+          runWorkspaceAction:
+              (action, settings, {credentials, approvedOrder}) async =>
+                  recovery,
+          configureExecution: ({
+            required enabled,
+            required int? expiresAtMs,
+            int? expectedRevision,
+            bool revoke = false,
+            approvedScope,
+            settings = const {},
+          }) async {
+            calls++;
+            expect(enabled, false);
+            expect(revoke, true);
+            return {
+              ...recovery,
+              'execution': {
+                ...recovery['execution'] as Map,
+                'active': false,
+                'revoked': true,
+                'revision': 8,
+              },
+            };
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Reconnect account'), findsOneWidget);
+    expect(find.byKey(const ValueKey('plugin-confirm-start')), findsNothing);
+    await tester.ensureVisible(find.text('Revoke all automation'));
+    await tester.tap(find.text('Revoke all automation'));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    expect(find.text('Revoke all automation'), findsNothing);
+    expect(
+      find.textContaining('Automation authorization fully revoked.'),
+      findsOneWidget,
+    );
+    expect(find.text('Reconnect account'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   for (final indefinite in [false, true]) {
     testWidgets(
       'Start submits the owner-selected permission terms: indefinite=$indefinite',
@@ -1522,18 +1592,69 @@ void main() {
       );
     },
   );
-  for (final (pluginId, privateAction, declaresRecovery, change) in [
-    ('hivra.contract.workspace-test.v1', 'start', true, 'none'),
-    ('HIVRA.CONTRACT.WORKSPACE-TEST.V1', 'stop', true, 'none'),
-    ('hivra.contract.workspace-test.v1', 'list_orders', true, 'none'),
-    ('hivra.contract.workspace-test.v1', 'start', false, 'none'),
-    ('hivra.contract.workspace-test.v1', 'start', true, 'remove'),
-    ('hivra.contract.workspace-test.v1', 'start', true, 'replace'),
-    ('hivra.contract.workspace-test.v1', 'start', true, 'capsule'),
-    ('hivra.contract.workspace-test.v1', 'start', true, 'digest'),
-  ]) {
+  for (final (
+        pluginId,
+        privateAction,
+        declaresRecovery,
+        change,
+        permission,
+        executor,
+      )
+      in [
+        (
+          'hivra.contract.workspace-test.v1',
+          'start',
+          true,
+          'none',
+          'none',
+          'local',
+        ),
+        (
+          'HIVRA.CONTRACT.WORKSPACE-TEST.V1',
+          'stop',
+          true,
+          'none',
+          'none',
+          'local',
+        ),
+        (
+          'hivra.contract.workspace-test.v1',
+          'list_orders',
+          true,
+          'none',
+          'none',
+          'local',
+        ),
+        (
+          'hivra.contract.workspace-test.v1',
+          'start',
+          false,
+          'none',
+          'none',
+          'local',
+        ),
+        for (final change in ['remove', 'replace', 'capsule', 'digest'])
+          (
+            'hivra.contract.workspace-test.v1',
+            'start',
+            true,
+            change,
+            'active',
+            'local',
+          ),
+        for (final executor in ['local', 'vps'])
+          for (final permission in ['active', 'stopped', 'expired', 'revoked'])
+            (
+              'hivra.contract.workspace-test.v1',
+              'start',
+              true,
+              'none',
+              permission,
+              executor,
+            ),
+      ]) {
     test(
-      'credential recovery preserves package commands and binding: $pluginId $privateAction $declaresRecovery $change',
+      'credential recovery preserves package commands and binding: $pluginId $privateAction $declaresRecovery $change $permission $executor',
       () async {
         final root = await Directory('/tmp').createTemp('hivra_vps_recovery_');
         addTearDown(() => root.delete(recursive: true));
@@ -1568,6 +1689,36 @@ void main() {
               contractKind: pluginWorkspaceContractKind,
               capabilities: registry.record.capabilities,
             );
+        final directory = await files.capsuleDirForHex(owner, create: true);
+        if (permission != 'none') {
+          await files.writePluginState(
+            directory,
+            pluginId,
+            'workspace-execution.v1.json',
+            jsonEncode({
+              'version': 1,
+              'owner': owner,
+              'plugin_id': pluginId,
+              'package_id': registry.record.id,
+              'package_digest': digest,
+              'executor': executor,
+              if (executor == 'vps') 'executor_id': 'e' * 64,
+              'scope': {
+                'action': 'cycle',
+                'interval_seconds': 60,
+                'account_id': 'f' * 64,
+                'symbol': 'BTC-USDT',
+                'max_margin': 1,
+                'max_stop_percent': 20,
+              },
+              'settings': <String, dynamic>{},
+              'expires_at_ms': permission == 'expired' ? 1 : null,
+              'allow_new_entries': permission == 'active',
+              'revoked': permission == 'revoked',
+              'revision': 7,
+            }),
+          );
+        }
         final host = PluginHostApiService(
           handlers: [],
           resolveRuntimeBinding: registry.resolveRuntimeBinding,
@@ -1621,7 +1772,7 @@ void main() {
                 },
               ),
         );
-        final runtime = PluginWorkspaceRuntime(
+        PluginWorkspaceRuntime makeRuntime() => PluginWorkspaceRuntime(
           registry: registry,
           pluginHostApi: host,
           fileStore: files,
@@ -1643,9 +1794,13 @@ void main() {
             return null;
           },
           writeCredentials:
-              ({required owner, required pluginId, required value}) async {},
+              ({required owner, required pluginId, required value}) async =>
+                  fail('Authority controls must not write credentials'),
           scheduleTimers: false,
+          executionHost: executor,
+          executionIdentity: executor == 'vps' ? 'e' * 64 : null,
         );
+        final runtime = makeRuntime();
         final pending = runtime.runWorkspaceAction(
           record: registry.record,
           action: 'open',
@@ -1673,6 +1828,40 @@ void main() {
           action: privateAction,
         );
         expect(continued['title'], 'Independent package');
+        if (permission == 'none') {
+          expect(recovered['execution'], isNull);
+          return;
+        }
+        final execution = recovered['execution'] as Map;
+        expect(execution['mode'], executor);
+        expect(
+          execution['active'],
+          !['expired', 'revoked'].contains(permission),
+        );
+        expect(execution['allow_new_entries'], permission == 'active');
+        expect(execution['revoked'], permission == 'revoked');
+        expect(execution['revision'], 7);
+        // Full revocation must complete through the normal host path even
+        // when the provider cannot be read or reconnected.
+        final stopped = await runtime.setWorkspaceExecution(
+          record: registry.record,
+          enabled: false,
+          expiresAtMs: null,
+          revoke: true,
+        );
+        expect(stopped['execution']['active'], false);
+        expect(stopped['execution']['revoked'], true);
+        expect(stopped['execution']['revision'], 8);
+        final restarted = await makeRuntime().runWorkspaceAction(
+          record: registry.record,
+          action: 'open',
+        );
+        expect(restarted['execution'], stopped['execution']);
+        expect(restarted['schedule'], isNull);
+        expect(
+          (await runtime.readWorkspaceExecution(registry.record))!['revoked'],
+          true,
+        );
       },
     );
   }

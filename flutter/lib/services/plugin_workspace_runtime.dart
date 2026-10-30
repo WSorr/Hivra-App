@@ -313,6 +313,20 @@ class PluginWorkspaceRuntime {
       return _decodeCredentials(raw);
     }
 
+    Future<Map<String, dynamic>> presentExecution(
+      Map<String, dynamic> view,
+    ) async {
+      final currentExecution = await _readExecution(record, owner);
+      if (currentExecution != null) {
+        view['execution'] = _executionPresentation(
+          currentExecution,
+          _cycleObservations['$owner::$pluginId'],
+        );
+        _armScheduledExecution(record, owner, currentExecution);
+      }
+      return view;
+    }
+
     final adapter = _market.scopedEffects(
       credentials: (request) async {
         if (!_isStillOwnedBy(owner) ||
@@ -555,8 +569,8 @@ class PluginWorkspaceRuntime {
     // A recovered VPS key can restore the executor before the provider
     // credentials are present on that executor. Keep the package-owned public
     // presentation available in this read-only case so the user can reconnect
-    // the account from the workspace. Do not expose stale execution controls
-    // or order actions until fresh account evidence is available.
+    // the account from the workspace. Hide trading actions, but retain the
+    // current host authority so revocation never requires provider credentials.
     if (action == 'open' &&
         credentials == null &&
         requests.isNotEmpty &&
@@ -583,7 +597,7 @@ class PluginWorkspaceRuntime {
       view['actions'] = actions;
       view['message'] =
           '${view['message'] ?? ''}\nReconnect your BingX account to refresh VPS observations. No trading action is enabled.';
-      return view;
+      return presentExecution(view);
     }
     for (final request in requests) {
       if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
@@ -1152,16 +1166,7 @@ class PluginWorkspaceRuntime {
         jsonEncode(state),
       );
     }
-    final view = Map<String, dynamic>.from(output['view'] as Map);
-    final currentExecution = await _readExecution(record, owner);
-    if (currentExecution != null) {
-      view['execution'] = _executionPresentation(
-        currentExecution,
-        _cycleObservations['$owner::$pluginId'],
-      );
-      _armScheduledExecution(record, owner, currentExecution);
-    }
-    return view;
+    return presentExecution(Map<String, dynamic>.from(output['view'] as Map));
   }
 
   /// A host-owned grant, never a field inside private package state.
