@@ -3006,7 +3006,7 @@ void main() {
     },
   );
   test(
-    'runner socket restores authority, rejects duplicates and binds commands',
+    'runner drains shutdown without rearming and restores authority',
     () async {
       final root = await Directory('/tmp').createTemp('hivra_runner_');
       addTearDown(() => root.delete(recursive: true));
@@ -3042,11 +3042,21 @@ void main() {
           );
       var observed = 0;
       var providerDown = false;
+      var observationFails = false;
+      Completer<void>? observationEntered;
+      Completer<void>? observationRelease;
       final host = PluginHostApiService(
         handlers: [],
         resolveRuntimeBinding: registry.resolveRuntimeBinding,
         resolveRuntimeInvoke: (request, _) async {
           if (providerDown) throw StateError('secret-key provider URL');
+          final release = observationRelease;
+          if (release != null) {
+            observationRelease = null;
+            observationEntered!.complete();
+            await release.future;
+            if (observationFails) throw StateError('Observation unavailable');
+          }
           observed++;
           return PluginRuntimeInvokeEvidence(
             mode: 'wasmi_v1',
@@ -3090,13 +3100,15 @@ void main() {
         'package_digest': digest,
         'executor_id': 'f' * 64,
       };
-      WorkspaceRunner runner() => WorkspaceRunner(
-        root: root,
-        runtime: runtime(),
-        registry: registry,
-        binding: binding,
-      );
-      final first = runner();
+      WorkspaceRunner runner({PluginWorkspaceRuntime? workspace}) =>
+          WorkspaceRunner(
+            root: root,
+            runtime: workspace ?? runtime(),
+            registry: registry,
+            binding: binding,
+          );
+      final firstRuntime = runtime();
+      final first = runner(workspace: firstRuntime);
       addTearDown(first.close);
       await first.start();
       expect(
@@ -3169,7 +3181,85 @@ void main() {
         registry.record.pluginId!,
         'workspace.v1.json',
       );
-      await first.close();
+      final idle = await Socket.connect(
+        InternetAddress(
+          '${root.path}/runner.sock',
+          type: InternetAddressType.unix,
+        ),
+        0,
+      );
+      final partial = await Socket.connect(
+        InternetAddress(
+          '${root.path}/runner.sock',
+          type: InternetAddressType.unix,
+        ),
+        0,
+      );
+      partial.write('{"command":');
+      await partial.flush();
+      // The status round trip ensures both stalled connections were accepted.
+      expect((await command('status'))['ok'], true);
+      final idleDisconnected = idle.drain<void>();
+      final partialDisconnected = partial.drain<void>();
+      final timers = <Timer>[];
+      final release = Completer<void>();
+      try {
+        await runZoned(
+          () async {
+            observationEntered = Completer<void>();
+            observationRelease = release;
+            final observing = firstRuntime.runWorkspaceAction(
+              record: registry.record,
+              action: 'open',
+            );
+            await observationEntered!.future;
+            final closing = first.close();
+            final repeatedClose = first.close();
+            var closed = false;
+            unawaited(closing.then((_) => closed = true));
+            await Future.wait([
+              idleDisconnected,
+              partialDisconnected,
+            ]).timeout(const Duration(seconds: 2));
+            expect(
+              closed,
+              false,
+              reason: 'Pending work must drain before unlock',
+            );
+            await expectLater(runner().start(), throwsStateError);
+            final completedObservation = expectLater(
+              observing,
+              observationFails ? throwsStateError : completes,
+            );
+            release.complete();
+            await completedObservation;
+            await Future.wait([
+              closing,
+              repeatedClose,
+            ]).timeout(const Duration(seconds: 2));
+          },
+          zoneSpecification: ZoneSpecification(
+            createTimer: (self, parent, zone, duration, callback) {
+              final timer = parent.createTimer(zone, duration, callback);
+              timers.add(timer);
+              return timer;
+            },
+          ),
+        );
+        expect(
+          timers.where((timer) => timer.isActive),
+          isEmpty,
+          reason:
+              'A drained observation must not keep the stopped process alive',
+        );
+      } finally {
+        if (!release.isCompleted) release.complete();
+        for (final timer in timers) {
+          timer.cancel();
+        }
+        idle.destroy();
+        partial.destroy();
+      }
       final restarted = runner();
       addTearDown(restarted.close);
       await restarted.start();
@@ -3197,6 +3287,24 @@ void main() {
         state,
         reason: 'Runner must not migrate private state',
       );
+      observationFails = true;
+      observationEntered = Completer<void>();
+      final failedReadRelease = Completer<void>();
+      observationRelease = failedReadRelease;
+      final failedRead = restarted.runtime.runWorkspaceAction(
+        record: registry.record,
+        action: 'open',
+      );
+      await observationEntered!.future;
+      final failedReadShutdown = restarted.close();
+      final failedObservation = expectLater(failedRead, throwsStateError);
+      failedReadRelease.complete();
+      await failedObservation;
+      await failedReadShutdown.timeout(const Duration(seconds: 2));
+      final recovered = runner();
+      addTearDown(recovered.close);
+      await recovered.start();
+      expect((await command('status'))['ok'], true);
       final stopped = await command('execution', {
         'enabled': false,
         'scope': null,
@@ -3208,7 +3316,7 @@ void main() {
       );
       digest = 'f' * 64;
       expect((await command('status'))['ok'], false);
-      await restarted.close();
+      await recovered.close();
       await expectLater(runner().start(), throwsStateError);
     },
   );
@@ -5466,13 +5574,15 @@ void main() {
         'hivra_headless_binary_',
       );
       addTearDown(() => output.delete(recursive: true));
-      final executable = '${output.path}/workspace-probe';
+      final executable =
+          '${output.path}/bundle/bin/plugin_workspace_headless_probe';
       final compiled = await Process.run('dart', [
-        'compile',
-        'exe',
+        'build',
+        'cli',
+        '--target',
         'test/fixtures/plugin_workspace_headless_probe.dart',
-        '-o',
-        executable,
+        '--output',
+        output.path,
       ]);
       expect(
         compiled.exitCode,

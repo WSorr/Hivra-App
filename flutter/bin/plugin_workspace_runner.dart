@@ -150,6 +150,7 @@ class WorkspaceRunner {
   ServerSocket? _server;
   final Set<Socket> _clients = {};
   final Set<Future<void>> _requests = {};
+  Future<void>? _closeFuture;
   bool _closing = false;
   String? _ownedRoot;
   String startupPhase = 'private_directory';
@@ -630,10 +631,12 @@ class WorkspaceRunner {
     };
   }
 
-  Future<void> close() async {
+  Future<void> close() => _closeFuture ??= _close();
+
+  Future<void> _close() async {
     _closing = true;
+    runtime.stopWorkspaceScheduling(permanently: true);
     await _server?.close();
-    runtime.stopWorkspaceScheduling(pluginId: binding['plugin_id'] as String);
     for (final client in _clients.toList()) {
       client.destroy();
     }
