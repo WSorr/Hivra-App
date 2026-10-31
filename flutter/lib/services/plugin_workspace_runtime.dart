@@ -44,6 +44,7 @@ class PluginWorkspaceRuntime {
   _writeCredentials;
   final BingxMarketDataAdapter _market;
   final bool scheduleTimers;
+  bool _schedulingClosed = false;
   final String executionHost;
   final String? executionIdentity;
 
@@ -1985,7 +1986,9 @@ class PluginWorkspaceRuntime {
     String owner,
     Map<String, dynamic> control,
   ) {
-    if (!scheduleTimers || (control['executor'] ?? 'local') != executionHost) {
+    if (_schedulingClosed ||
+        !scheduleTimers ||
+        (control['executor'] ?? 'local') != executionHost) {
       return;
     }
     final key = '$owner::${record.pluginId}';
@@ -2061,7 +2064,10 @@ class PluginWorkspaceRuntime {
     _cycleObservations.remove(key);
   }
 
-  void stopWorkspaceScheduling({String? pluginId}) {
+  void stopWorkspaceScheduling({String? pluginId, bool permanently = false}) {
+    // Process shutdown must also seal rearming by actions already in flight.
+    // Normal Stop/switch calls remain reversible through the existing grant.
+    if (permanently) _schedulingClosed = true;
     for (final key in _scheduledHosts.keys.toList()) {
       if (pluginId == null
           ? identical(_scheduledHosts[key], this)

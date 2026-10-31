@@ -251,6 +251,10 @@ provider effects merely because a WASM call succeeds.
     digest excludes only mutable entry permission, full-revocation intent and
     revision; replay can reduce authority but cannot restore it or old state.
     The runner advertises `execution_controls: 2` in its existing status result.
+    Process shutdown rejects new control requests and permanently seals timer
+    rearming on that runtime before draining accepted work and releasing its
+    lease. It does not change the saved grant or cancel provider orders; a new
+    process may resume the existing unexpired permission.
     New Start/full-revocation RPCs carry deadline, expected revision and revocation
     terms explicitly; unsupported runners fail with an update requirement rather
     than granting a default duration. The old Stop-only envelope remains supported

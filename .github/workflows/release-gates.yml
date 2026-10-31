@@ -53,6 +53,20 @@ jobs:
       - name: Build canonical standalone workspace runner
         run: bash tools/release/workspace_runner.sh "$RUNNER_TEMP/workspace-runner"
 
+      - name: Check exact runner shutdown and restart without network
+        working-directory: flutter
+        run: |
+          stand="$RUNNER_TEMP/runner-shutdown"
+          mkdir -p "$stand"
+          tar -xzf "$RUNNER_TEMP/workspace-runner/hivra-workspace-runner-linux-x64.tar.gz" -C "$stand"
+          dart build cli --target test/fixtures/plugin_workspace_headless_probe.dart --output "$RUNNER_TEMP/runner-probe"
+          cp "$RUNNER_TEMP/runner-probe/bundle/bin/plugin_workspace_headless_probe" "$stand/bin/shutdown-probe"
+          if [ -d "$RUNNER_TEMP/runner-probe/bundle/lib" ]; then
+            cp -R "$RUNNER_TEMP/runner-probe/bundle/lib" "$stand/"
+          fi
+          sudo env PATH="$PATH" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" RUSTUP_TOOLCHAIN=1.93.0 \
+            unshare --net "$stand/bin/shutdown-probe" --runner-shutdown "$stand/bin/hivra-workspace-runner"
+
       - name: Review gates
         run: bash tools/review/review_all.sh
 

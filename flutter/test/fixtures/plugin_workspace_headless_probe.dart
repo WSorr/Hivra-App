@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
@@ -20,6 +22,10 @@ import '../../bin/plugin_workspace_runner.dart';
 // Run with Dart as well as Flutter: the executor must not depend on dart:ui,
 // mobile vaults, Chat or Moltbook, even when using an unrelated package shape.
 Future<void> main(List<String> args) async {
+  if (args.length == 2 && args.first == '--runner-shutdown') {
+    await _checkShutdownProcess(File(args.last).absolute);
+    return;
+  }
   if (args.length == 2 || args.length == 3) {
     await _checkInstalledWasm(
       File(args[0]).absolute,
@@ -170,6 +176,147 @@ Future<void> main(List<String> args) async {
     stdout.writeln('headless workspace PASS');
   } finally {
     await home.delete(recursive: true);
+  }
+}
+
+Future<void> _checkShutdownProcess(File executable) async {
+  final root = await Directory('/tmp').createTemp('hivra_shutdown_fixture_');
+  try {
+    const pluginId = 'hivra.contract.shutdown-test.v1';
+    final scope = {
+      'account_id': 'c' * 64,
+      'symbol': 'BTC-USDT',
+      'action': 'open',
+      'interval_seconds': 30,
+      'max_margin': 1,
+      'max_stop_percent': 20,
+    };
+    final response = jsonEncode({
+      'schema_version': 1,
+      'status': 'executed',
+      'result': {
+        'state': {
+          'unrelated_private_shape': [7, 'retained'],
+        },
+        'requests': <Object>[],
+        'view': {
+          'title': 'Shutdown test',
+          'message': 'No provider requests or trading capabilities',
+          'details': '',
+          'fields': <Object>[],
+          'actions': <Object>[],
+          'columns': <Object>[],
+          'rows': <Object>[],
+          'schedule': scope,
+        },
+      },
+    });
+    final source = File('${root.path}/fixture.rs');
+    await source.writeAsString('''#![no_std]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
+static OUTPUT: &[u8] = br###"$response"###;
+static mut INPUT: [u8; 65536] = [0; 65536];
+#[no_mangle]
+pub extern "C" fn hivra_alloc_v1(len: u32) -> u32 {
+    if len > 65536 { return 0; }
+    core::ptr::addr_of_mut!(INPUT) as u32
+}
+#[no_mangle]
+pub extern "C" fn hivra_dealloc_v1(_: u32, _: u32) {}
+#[no_mangle]
+pub extern "C" fn hivra_evaluate_v1(_: u32, _: u32) -> u64 {
+    ((OUTPUT.as_ptr() as u64) << 32) | OUTPUT.len() as u64
+}
+''');
+    final module = File('${root.path}/fixture.wasm');
+    final compiled = await Process.run('rustc', [
+      '--edition=2021',
+      '--crate-type=cdylib',
+      '--target=wasm32-unknown-unknown',
+      '-C',
+      'opt-level=s',
+      '-C',
+      'panic=abort',
+      source.path,
+      '-o',
+      module.path,
+    ]);
+    if (compiled.exitCode != 0) {
+      throw StateError('Cannot build test WASM: ${compiled.stderr}');
+    }
+    final manifest = utf8.encode(
+      jsonEncode({
+        'schema': 'hivra.plugin.manifest',
+        'version': 1,
+        'release_version': '1.0.0',
+        'plugin_id': pluginId,
+        'contract': {'kind': pluginWorkspaceContractKind},
+        'runtime': {
+          'abi': 'hivra_host_abi_v2',
+          'entry_export': 'hivra_evaluate_v1',
+            'module_path': 'plugin/module.wasm',
+        },
+        'capabilities': [
+          ...pluginWorkspaceRequiredCapabilities,
+          'workspace.schedule',
+        ],
+      }),
+    );
+    final bytes = await module.readAsBytes();
+    final package = File('${root.path}/fixture.zip');
+    await package.writeAsBytes(
+      ZipEncoder().encode(
+        Archive()
+          ..addFile(
+            ArchiveFile('plugin/manifest.json', manifest.length, manifest),
+          )
+          ..addFile(ArchiveFile('plugin/module.wasm', bytes.length, bytes)),
+      )!,
+    );
+    final dirs = UserVisibleDataDirectoryService(
+      runtimeRootOverride: '${root.path}/source',
+    );
+    final registry = WasmPluginRegistryService(dataDirs: dirs);
+    final files = CapsuleFileStore(dirs: dirs);
+    final record = await registry.installPluginFromFile(package);
+    final wasm = WasmPluginRuntimeService(
+      invokeJson: HivraBindings.invokeInstalledWasmJson,
+    );
+    final runtime = PluginWorkspaceRuntime(
+      registry: registry,
+      pluginHostApi: PluginHostApiService(
+        handlers: [],
+        resolveRuntimeBinding: registry.resolveRuntimeBinding,
+        resolveRuntimeInvoke:
+            (request, binding) =>
+                wasm.invoke(request: request, binding: binding),
+      ),
+      fileStore: files,
+      readActiveCapsuleRootHex: () => 'a' * 64,
+      scheduleTimers: false,
+      readCredentials:
+          ({required owner, required pluginId}) async =>
+              throw StateError('No test credentials'),
+      writeCredentials:
+          ({required owner, required pluginId, required value}) async =>
+              throw StateError('No test credentials'),
+    );
+    await runtime.setWorkspaceExecution(
+      record: record,
+      enabled: true,
+      expiresAtMs: null,
+      approvedScope: scope,
+    );
+    await _checkProductionProcess(
+      executable,
+      registry,
+      files,
+      record,
+      'a' * 64,
+    );
+  } finally {
+    await root.delete(recursive: true);
   }
 }
 
@@ -885,9 +1032,35 @@ Future<void> _checkProductionProcess(
       record.pluginId!,
       'workspace.v1.json',
     );
-    process.kill(ProcessSignal.sigterm);
-    if (await process.exitCode.timeout(const Duration(seconds: 10)) != 0) {
-      throw StateError('Production shutdown failed');
+    final idle = await Socket.connect(
+      InternetAddress(
+        '${root.path}/runner.sock',
+        type: InternetAddressType.unix,
+      ),
+      0,
+    );
+    final partial = await Socket.connect(
+      InternetAddress(
+        '${root.path}/runner.sock',
+        type: InternetAddressType.unix,
+      ),
+      0,
+    );
+    try {
+      partial.write('{"command":');
+      await partial.flush();
+      await status();
+      final elapsed = Stopwatch()..start();
+      process.kill(ProcessSignal.sigterm);
+      if (await process.exitCode.timeout(const Duration(seconds: 10)) != 0) {
+        throw StateError('Production shutdown failed');
+      }
+      stdout.writeln(
+        'SIGTERM clean exit in ${elapsed.elapsedMilliseconds}ms; idle/partial clients disconnected',
+      );
+    } finally {
+      idle.destroy();
+      partial.destroy();
     }
     if (jsonEncode(await setup(installation)) != jsonEncode(config) ||
         await files.readPluginState(
@@ -946,12 +1119,26 @@ Future<void> _checkProductionProcess(
         effectsBefore) {
       throw StateError('Restart changed effect journal');
     }
+    process.kill(ProcessSignal.sigint);
+    if (await process.exitCode.timeout(const Duration(seconds: 10)) != 0) {
+      throw StateError('Production SIGINT shutdown failed');
+    }
+    process = null;
     stdout.writeln(
       'production runner setup/reinstall/handoff/timer/restart/replay/singleton PASS; real installed WASM; no network',
     );
   } finally {
     process?.kill(ProcessSignal.sigterm);
-    if (process != null) await process.exitCode;
+    if (process != null) {
+      final child = process;
+      await child.exitCode.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          child.kill(ProcessSignal.sigkill);
+          return child.exitCode;
+        },
+      );
+    }
     await root.delete(recursive: true);
     await sourceRoot.delete(recursive: true);
   }
