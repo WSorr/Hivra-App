@@ -304,7 +304,7 @@ provider effects merely because a WASM call succeeds.
     PnL, protection or authority is inferred by the host. Existing single-entry
     confirmation or a separate schedule grant remains required. This read
     contract alone does not authorize another entry.
-  - At most seven requested reads are processed sequentially and supplied through subsequent
+  - At most eight requested operations are processed sequentially and supplied through subsequent
     WASM invocations in host transport batches of 12 candles. Each batch carries the
     full history's end time and whether it is the final batch, so streaming
     does not change the plugin's calculation window. Nested provider requests

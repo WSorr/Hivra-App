@@ -38,6 +38,79 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  test('workspace admits eight bounded requests and rejects a ninth', () {
+    const handler = PluginWorkspaceContractHandler(pluginId: 'fixture');
+    for (final count in [8, 9]) {
+      final result = handler.execute(
+        const PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: 'fixture',
+          method: 'workspace',
+          args: {},
+        ),
+        runtimeInvoke: PluginRuntimeInvokeEvidence(
+          mode: 'wasmi_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex: 'a' * 64,
+          invokeDigestHex: 'b' * 64,
+          semanticStatus: PluginHostApiStatus.executed,
+          semanticErrorCode: null,
+          semanticErrorMessage: null,
+          semanticResult: {
+            'state': <String, dynamic>{},
+            'view': {
+              'title': 'Fixture',
+              'message': '',
+              'details': '',
+              'fields': [],
+              'actions': [],
+              'columns': [],
+              'rows': [],
+            },
+            'requests': List.generate(count, (_) => marketRequest()),
+          },
+        ),
+      );
+      expect(
+        result.status,
+        count == 8
+            ? PluginHostApiStatus.executed
+            : PluginHostApiStatus.rejected,
+      );
+    }
+  });
+
+  test(
+    'one-minute market reads preserve closed/live candle boundaries',
+    () async {
+      final adapter = BingxMarketDataAdapter(
+        clock: () => DateTime.fromMillisecondsSinceEpoch(230000, isUtc: true),
+        read: (uri) async {
+          expect(uri.queryParameters['interval'], '1m');
+          return jsonEncode({
+            'code': 0,
+            'data': [
+              [180000, '100', '102', '99', '101'],
+              [120000, '100', '102', '99', '101'],
+              [60000, '100', '102', '99', '101'],
+            ],
+          });
+        },
+      );
+      final snapshot = await adapter.readCandles({
+        ...marketRequest(),
+        'timeframe': '1m',
+      });
+      expect(snapshot['candles'], [
+        [60000, 100, 102, 99, 101],
+        [120000, 100, 102, 99, 101],
+      ]);
+      expect(snapshot['current_candle'], [180000, 100, 102, 99, 101]);
+      expect(snapshot['observed_at_ms'], 230000);
+    },
+  );
+
   test('runner service bounds its cgroup and restarts after OOM', () async {
     final rendered = await Process.run('bash', [
       '../tools/release/workspace_runner.sh',
@@ -5754,6 +5827,7 @@ void main() {
       for (final mode in [
         'normal',
         'normal_15m',
+        'normal_1m',
         'denied',
         'replaced',
         'not_sent',
@@ -5791,6 +5865,10 @@ void main() {
         if (mode == 'normal_15m') {
           fixture.evidenceTimeframe = '15m';
           fixture.evidenceLimit = 49;
+        }
+        if (mode == 'normal_1m') {
+          fixture.evidenceTimeframe = '1m';
+          plan['timeframe'] = '1m';
         }
         if (mode == 'not_sent') fixture.existingOrder = true;
         if (mode == 'replaced') {
@@ -6114,7 +6192,9 @@ void main() {
         );
         final validationCandles =
             validationSnapshots.expand((s) => s['candles'] as List).toList();
-        final span = fixture.evidenceTimeframe == '15m' ? 900000 : 300000;
+        final span =
+            {'15m': 900000, '5m': 300000, '1m': 60000}[fixture
+                .evidenceTimeframe]!;
         final expectedCount =
             (fixture.now ~/ span + 1).clamp(2, fixture.evidenceLimit) - 1;
         expect(validationCandles.length, expectedCount);
@@ -8365,7 +8445,8 @@ class _EntryProvider {
       await beforeMarketRead?.call();
       expect(uri.queryParameters['limit'], '$evidenceLimit');
       expect(uri.queryParameters['interval'], evidenceTimeframe);
-      final span = evidenceTimeframe == '15m' ? 900000 : 300000;
+      final span =
+          {'15m': 900000, '5m': 300000, '1m': 60000}[evidenceTimeframe]!;
       final currentOpen = now ~/ span * span;
       final count = (currentOpen ~/ span + 1).clamp(2, evidenceLimit);
       afterMarketRead?.call();
