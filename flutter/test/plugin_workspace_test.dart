@@ -38,6 +38,31 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  test('runner service bounds its cgroup and restarts after OOM', () async {
+    final rendered = await Process.run('bash', [
+      '../tools/release/workspace_runner.sh',
+      '--print-service',
+    ]);
+    expect(rendered.exitCode, 0, reason: rendered.stderr.toString());
+    final service = <String, String>{};
+    var section = '';
+    for (final raw in const LineSplitter().convert(
+      rendered.stdout.toString(),
+    )) {
+      final line = raw.trim();
+      if (line.startsWith('[')) section = line;
+      final separator = line.indexOf('=');
+      if (section == '[Service]' && separator > 0) {
+        service[line.substring(0, separator)] = line.substring(separator + 1);
+      }
+    }
+    expect(service['MemoryMax'], '256M');
+    expect(service['MemorySwapMax'], '0');
+    expect(service['OOMPolicy'], 'kill');
+    expect(service['Restart'], 'on-failure');
+    expect(service['RestartSec'], '15');
+  });
+
   testWidgets('credential recovery exposes full revocation without Start', (
     tester,
   ) async {
@@ -1928,12 +1953,19 @@ void main() {
       for (final name in [
         'bin/hivra-workspace-runner',
         'bin/libhivra_ffi.so',
-        'hivra-workspace-runner.service',
       ]) {
         await File(
           '${stage.path}/$name',
         ).writeAsString('Synthetic component fixture: $name');
       }
+      final rendered = await Process.run('bash', [
+        helper.path,
+        '--print-service',
+      ]);
+      expect(rendered.exitCode, 0, reason: rendered.stderr.toString());
+      await File(
+        '${stage.path}/hivra-workspace-runner.service',
+      ).writeAsString(rendered.stdout.toString());
       const archiveName = 'hivra-workspace-runner-linux-x64.tar.gz';
       final candidate = Directory('${root.path}/candidate');
       await candidate.create();
@@ -1992,6 +2024,19 @@ void main() {
       final stored = File('${assetDir.path}/$archiveName');
       final bytes = await stored.readAsBytes();
       expect(sha256.convert(bytes).toString(), digest);
+      final tar = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+      expect(
+        utf8.decode(
+          tar.files
+                  .singleWhere(
+                    (f) => f.name == './hivra-workspace-runner.service',
+                  )
+                  .content
+              as List<int>,
+        ),
+        rendered.stdout.toString(),
+        reason: 'Packaged service must retain the canonical resource policy',
+      );
       final verified = await run(['--verify-assets']);
       expect(verified.exitCode, 0, reason: verified.stderr.toString());
       expect(verified.stdout.toString().trim(), digest);

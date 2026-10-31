@@ -22,8 +22,13 @@ import '../../bin/plugin_workspace_runner.dart';
 // Run with Dart as well as Flutter: the executor must not depend on dart:ui,
 // mobile vaults, Chat or Moltbook, even when using an unrelated package shape.
 Future<void> main(List<String> args) async {
-  if (args.length == 2 && args.first == '--runner-shutdown') {
-    await _checkShutdownProcess(File(args.last).absolute);
+  if ((args.length == 2 || args.length == 4) &&
+      args.first == '--runner-shutdown') {
+    await _checkShutdownProcess(
+      File(args[1]).absolute,
+      memoryProbe: args.length == 4 ? File(args[2]).absolute : null,
+      service: args.length == 4 ? File(args[3]).absolute : null,
+    );
     return;
   }
   if (args.length == 2 || args.length == 3) {
@@ -179,7 +184,11 @@ Future<void> main(List<String> args) async {
   }
 }
 
-Future<void> _checkShutdownProcess(File executable) async {
+Future<void> _checkShutdownProcess(
+  File executable, {
+  File? memoryProbe,
+  File? service,
+}) async {
   final root = await Directory('/tmp').createTemp('hivra_shutdown_fixture_');
   try {
     const pluginId = 'hivra.contract.shutdown-test.v1';
@@ -255,7 +264,7 @@ pub extern "C" fn hivra_evaluate_v1(_: u32, _: u32) -> u64 {
         'runtime': {
           'abi': 'hivra_host_abi_v2',
           'entry_export': 'hivra_evaluate_v1',
-            'module_path': 'plugin/module.wasm',
+          'module_path': 'plugin/module.wasm',
         },
         'capabilities': [
           ...pluginWorkspaceRequiredCapabilities,
@@ -314,6 +323,8 @@ pub extern "C" fn hivra_evaluate_v1(_: u32, _: u32) -> u64 {
       files,
       record,
       'a' * 64,
+      memoryProbe: memoryProbe,
+      service: service,
     );
   } finally {
     await root.delete(recursive: true);
@@ -801,8 +812,10 @@ Future<void> _checkProductionProcess(
   WasmPluginRegistryService fixtureRegistry,
   CapsuleFileStore fixtureFiles,
   WasmPluginRecord fixtureRecord,
-  String owner,
-) async {
+  String owner, {
+  File? memoryProbe,
+  File? service,
+}) async {
   final root = await Directory('/tmp').createTemp('hivra_runner_process_');
   final sourceRoot = await Directory('/tmp').createTemp('hivra_runner_source_');
   Process? process;
@@ -1124,6 +1137,18 @@ Future<void> _checkProductionProcess(
       throw StateError('Production SIGINT shutdown failed');
     }
     process = null;
+    if (memoryProbe != null && service != null) {
+      final memory = await Process.run('python3', [
+        memoryProbe.path,
+        executable.path,
+        service.path,
+        root.path,
+      ]);
+      if (memory.exitCode != 0) {
+        throw StateError('Memory recovery probe failed: ${memory.stderr}');
+      }
+      stdout.write(memory.stdout);
+    }
     stdout.writeln(
       'production runner setup/reinstall/handoff/timer/restart/replay/singleton PASS; real installed WASM; no network',
     );
