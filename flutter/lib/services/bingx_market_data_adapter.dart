@@ -418,7 +418,15 @@ class BingxMarketDataAdapter implements ExternalEffectAdapter {
         !RegExp(r'^[A-Z0-9]+-USDT$').hasMatch(p['symbol'] as String) ||
         (p['symbol'] as String).length > 64 ||
         !['long', 'short'].contains(p['side']) ||
-        !['1d', '4h', '1h', '30m', '15m', '5m'].contains(p['timeframe']) ||
+        ![
+          '1d',
+          '4h',
+          '1h',
+          '30m',
+          '15m',
+          '5m',
+          '1m',
+        ].contains(p['timeframe']) ||
         [
           'origin',
           'first_known',
@@ -1141,6 +1149,7 @@ class BingxMarketDataAdapter implements ExternalEffectAdapter {
       '30m': 1800000,
       '15m': 900000,
       '5m': 300000,
+      '1m': 60000,
     };
     if (request['kind'] != 'market.candles.read' ||
         request['provider'] != 'bingx' ||

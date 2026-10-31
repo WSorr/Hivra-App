@@ -68,7 +68,7 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
         capabilities: capabilities,
       );
       final requests = result['requests'] as List;
-      if (requests.length > 7 || requests.any((r) => r is! Map)) {
+      if (requests.length > 8 || requests.any((r) => r is! Map)) {
         throw const FormatException('Invalid bounded plugin requests');
       }
       final resume = result['resume_action'];
