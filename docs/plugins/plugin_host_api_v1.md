@@ -255,6 +255,11 @@ provider effects merely because a WASM call succeeds.
     rearming on that runtime before draining accepted work and releasing its
     lease. It does not change the saved grant or cancel provider orders; a new
     process may resume the existing unexpired permission.
+    The packaged systemd service bounds its entire cgroup to 256 MiB with no
+    swap. A cgroup OOM terminates the whole service group; the existing
+    on-failure policy restarts the runner after 15 seconds. Recovery uses the
+    persisted package, grant, state and effect journal; it does not renew
+    permission or authorize replay of an uncertain provider effect.
     New Start/full-revocation RPCs carry deadline, expected revision and revocation
     terms explicitly; unsupported runners fail with an update requirement rather
     than granting a default duration. The old Stop-only envelope remains supported

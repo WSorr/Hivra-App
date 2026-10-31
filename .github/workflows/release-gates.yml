@@ -53,7 +53,7 @@ jobs:
       - name: Build canonical standalone workspace runner
         run: bash tools/release/workspace_runner.sh "$RUNNER_TEMP/workspace-runner"
 
-      - name: Check exact runner shutdown and restart without network
+      - name: Check exact runner shutdown and OOM recovery without network
         working-directory: flutter
         run: |
           stand="$RUNNER_TEMP/runner-shutdown"
@@ -65,7 +65,10 @@ jobs:
             cp -R "$RUNNER_TEMP/runner-probe/bundle/lib" "$stand/"
           fi
           sudo env PATH="$PATH" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" RUSTUP_TOOLCHAIN=1.93.0 \
-            unshare --net "$stand/bin/shutdown-probe" --runner-shutdown "$stand/bin/hivra-workspace-runner"
+            unshare --net "$stand/bin/shutdown-probe" --runner-shutdown \
+              "$stand/bin/hivra-workspace-runner" \
+              "$PWD/test/fixtures/plugin_workspace_memory_probe.py" \
+              "$stand/hivra-workspace-runner.service"
 
       - name: Review gates
         run: bash tools/review/review_all.sh

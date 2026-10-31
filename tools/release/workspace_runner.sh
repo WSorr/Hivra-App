@@ -6,6 +6,37 @@ ARCHIVE="hivra-workspace-runner-linux-x64.tar.gz"
 ASSETS="$ROOT/flutter/assets/workspace_runner"
 . "$ROOT/toolchains/hivra-baseline.conf"
 
+render_service() {
+cat <<'EOF'
+[Unit]
+Description=Hivra installed WASM workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hivra-workspace
+Group=hivra-workspace
+StateDirectory=hivra-workspace
+StateDirectoryMode=0700
+UMask=0077
+ExecStart=/opt/hivra-workspace/current/bin/hivra-workspace-runner serve /var/lib/hivra-workspace
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=90
+MemoryMax=256M
+MemorySwapMax=0
+OOMPolicy=kill
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
 verify_distribution() {
   local directory="$1" expected="$2" archive="$1/$ARCHIVE" metadata actual entries
   [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || return 1
@@ -30,6 +61,11 @@ verify_distribution() {
 }
 
 case "${1:-}" in
+  --print-service)
+    [ "$#" = 1 ] || exit 1
+    render_service
+    exit 0
+    ;;
   --prepare-assets)
     [ "$#" = 3 ] || { echo 'Usage: workspace_runner.sh --prepare-assets <CI-artifact-directory> <verified-archive-sha256>' >&2; exit 1; }
     git -C "$ROOT" diff --quiet && git -C "$ROOT" diff --cached --quiet || {
@@ -98,31 +134,7 @@ cd "$ROOT"
 cargo build --release -p hivra-ffi --no-default-features --locked
 cp "${CARGO_TARGET_DIR:-$ROOT/target}/release/libhivra_ffi.so" "$STAGE/bin/"
 
-cat > "$STAGE/hivra-workspace-runner.service" <<'EOF'
-[Unit]
-Description=Hivra installed WASM workspace
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=hivra-workspace
-Group=hivra-workspace
-StateDirectory=hivra-workspace
-StateDirectoryMode=0700
-UMask=0077
-ExecStart=/opt/hivra-workspace/current/bin/hivra-workspace-runner serve /var/lib/hivra-workspace
-Restart=on-failure
-RestartSec=15
-TimeoutStopSec=90
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-
-[Install]
-WantedBy=multi-user.target
-EOF
+render_service > "$STAGE/hivra-workspace-runner.service"
 
 [ "$(git -C "$ROOT" rev-parse HEAD)" = "$SOURCE" ] && \
   [ -z "$(git -C "$ROOT" status --porcelain)" ] || {
