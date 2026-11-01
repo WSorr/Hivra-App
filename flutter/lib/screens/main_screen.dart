@@ -623,6 +623,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   listSecrets:
                       () =>
                           _pluginRuntime.listWorkspaceSecretReferences(record),
+                  saveSecrets:
+                      (secrets) => _pluginRuntime.saveWorkspaceSecretReferences(
+                        record,
+                        secrets,
+                      ),
                   runWorkspaceAction:
                       (action, settings) => _pluginRuntime.runWorkspaceAction(
                         record: record,

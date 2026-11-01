@@ -556,6 +556,138 @@ void main() {
     }
   });
   testWidgets(
+    'first connection stores only on Allow, passes references, and fails without a grant',
+    (tester) async {
+      for (final outcome in ['allow', 'cancel', 'fail', 'leave']) {
+        var writes = 0, grants = 0;
+        final pending = Completer<List<Map<String, String>>>();
+        Map<String, Map<String, String>>? connected;
+        final access = permission('https://unrelated.example');
+        Map<String, dynamic> view() => {
+          ...presentation(),
+          'access': access,
+          'actions': [
+            {'id': 'link', 'label': 'Connect', 'host': 'workspace.authorize'},
+          ],
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              key: ValueKey(outcome),
+              capabilities: const ['credentials.use'],
+              listSecrets: () async => [],
+              saveSecrets: (secrets) async {
+                writes++;
+                expect(secrets, [
+                  {'label': 'My service', 'value': 'test-only-secret'},
+                ]);
+                if (outcome == 'fail') {
+                  throw StateError('Secure storage unavailable');
+                }
+                if (outcome == 'leave') return pending.future;
+                return [
+                  {'id': 'new-owner-ref', 'label': 'My service'},
+                ];
+              },
+              configureExecution: ({
+                required enabled,
+                required expiresAtMs,
+                expectedRevision,
+                revoke = false,
+                approvedScope,
+                credentialBindings,
+                settings = const {},
+              }) async {
+                grants++;
+                connected = credentialBindings;
+                expect(
+                  jsonEncode(settings),
+                  isNot(contains('test-only-secret')),
+                );
+                expect(
+                  jsonEncode(approvedScope),
+                  isNot(contains('test-only-secret')),
+                );
+                return view();
+              },
+              runWorkspaceAction: (action, settings) async {
+                expect(
+                  jsonEncode(settings),
+                  isNot(contains('test-only-secret')),
+                );
+                return view();
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Connect'));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const ValueKey('plugin-confirm-permissions')),
+              )
+              .onPressed,
+          isNull,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('plugin-secret-default-token')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Add new secret…').last);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('plugin-secret-name-default-token')),
+          'My service',
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('plugin-secret-value-default-token')),
+          'test-only-secret',
+        );
+        expect(
+          tester
+              .widget<EditableText>(
+                find.descendant(
+                  of: find.byKey(
+                    const ValueKey('plugin-secret-value-default-token'),
+                  ),
+                  matching: find.byType(EditableText),
+                ),
+              )
+              .obscureText,
+          isTrue,
+        );
+        await tester.pumpAndSettle();
+        final button = find.text(outcome == 'cancel' ? 'Cancel' : 'Allow');
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        if (outcome == 'leave') {
+          await tester.pump();
+          await tester.pumpWidget(const SizedBox());
+          pending.complete([
+            {'id': 'late-ref', 'label': 'My service'},
+          ]);
+        }
+        await tester.pumpAndSettle();
+        expect(writes, outcome == 'cancel' ? 0 : 1);
+        expect(grants, outcome == 'allow' ? 1 : 0);
+        if (outcome == 'allow') {
+          expect(connected, {
+            'default': {'token': 'new-owner-ref'},
+          });
+        }
+        if (outcome == 'fail') {
+          expect(
+            find.textContaining('Secure storage unavailable'),
+            findsOneWidget,
+          );
+        }
+        await tester.pumpWidget(const SizedBox());
+      }
+    },
+  );
+  testWidgets(
     'one owner grant connects Keychain references and Start reuses it',
     (tester) async {
       final access = permission('https://one.example');

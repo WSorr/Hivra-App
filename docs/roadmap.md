@@ -25,8 +25,7 @@ The following product foundations are implemented and retained:
 - Core-owned Starter-kind and invitation identity projections consumed by the
   Flutter runtime without product-side Ledger payload decoding;
 - Moltbook proposal, publication, reply, receipt, and restart lifecycle;
-- dedicated Moltbook capability runtime ownership outside the generic plugin
-  and Chat module;
+- package-owned Moltbook and Jack workflows through the common technical host;
 - guarded repository integration and exact-artifact release signoff.
 
 ## Retired 1.x Capability

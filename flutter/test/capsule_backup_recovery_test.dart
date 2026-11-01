@@ -70,10 +70,20 @@ class _FakeSecureStorage extends FlutterSecureStorage {
 class _Bindings implements HivraBindings {
   bool valid = true;
   int validations = 0;
+  Uint8List? nostrKey;
+  @override
+  Uint8List? capsuleRuntimeOwnerPublicKey() =>
+      Uint8List.fromList(List.filled(32, 0xaa));
+  @override
+  Uint8List? capsuleRootPublicKey() => capsuleRuntimeOwnerPublicKey();
+  @override
+  bool setApplicationStorageRoot(String path) => true;
+  @override
+  String? exportLedger() => null;
   @override
   Uint8List? seedRootPublicKey(Uint8List seed) => seed;
   @override
-  Uint8List? seedNostrPublicKey(Uint8List seed) => seed;
+  Uint8List? seedNostrPublicKey(Uint8List seed) => nostrKey ?? seed;
   @override
   bool validateBackupLedger(String json, Uint8List seed) {
     validations++;
@@ -163,6 +173,62 @@ void main() {
     bindings = _Bindings();
   });
   tearDown(() async => stand.delete(recursive: true));
+  test('recovering a new Capsule never unlocks unrelated seeds', () async {
+    final index = CapsuleIndexStore(dirs: dstDirs);
+    for (final byte in [0xbb, 0xcc, 0xdd]) {
+      final foreign = byte.toRadixString(16) * 32;
+      await index.upsert(foreign, identityMode: 'root_owner');
+      dstSecure.values['hivra.seed.$foreign'] = base64Encode(
+        List.filled(32, byte),
+      );
+    }
+    await importer.persistAfterCreate(
+      hivra: bindings,
+      seed: seed,
+      isGenesis: false,
+      isNeste: true,
+    );
+    expect(dstSecure.readCounts.keys, everyElement('hivra.seed.$owner'));
+    final saved = await index.read();
+    expect(saved.activePubKeyHex, owner);
+    expect(saved.capsules.length, 4);
+  });
+
+  test(
+    'recovery recognizes an existing public owner without reading its old seed',
+    () async {
+      final index = CapsuleIndexStore(dirs: dstDirs);
+      await index.upsert(owner, identityMode: 'root_owner');
+      await importer.persistAfterCreate(
+        hivra: bindings,
+        seed: seed,
+        isGenesis: false,
+        isNeste: true,
+      );
+      expect((await index.read()).capsules.keys, [owner]);
+      expect(dstSecure.readCounts.keys, everyElement('hivra.seed.$owner'));
+    },
+  );
+  test(
+    'recovery reuses the matching legacy public owner without a seed scan',
+    () async {
+      final index = CapsuleIndexStore(dirs: dstDirs);
+      final legacy = 'bb' * 32;
+      bindings.nostrKey = Uint8List.fromList(List.filled(32, 0xbb));
+      await index.upsert(legacy, identityMode: 'legacy_nostr_owner');
+      await index.upsert('cc' * 32, identityMode: 'root_owner');
+      await importer.persistAfterCreate(
+        hivra: bindings,
+        seed: seed,
+        isGenesis: false,
+        isNeste: true,
+      );
+      final saved = await index.read();
+      expect(saved.activePubKeyHex, legacy);
+      expect(saved.capsules.keys, unorderedEquals([legacy, 'cc' * 32]));
+      expect(dstSecure.readCounts.keys, everyElement('hivra.seed.$legacy'));
+    },
+  );
   test(
     'full encrypted recovery retains Capsule, opaque package state and packages across restart/replacement',
     () async {

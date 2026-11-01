@@ -18,6 +18,21 @@ Capsule root -> plugin id -> provider id -> external account id -> secret name
 All scopes are stored in one versioned Secure Storage item. There is no
 plaintext, Documents, backup, ledger, or plugin-state fallback.
 
+The common plugin permission form can select an existing reference or accept a
+new service token/key from the owner. It never asks for the device password.
+New fields from one Allow decision are saved together through the same vault
+writer. Their account identifiers are opaque local reference identities, not
+host-validated external account facts. An optional owner label is display
+metadata; existing entries without labels retain their original references.
+
+The form holds new values only in memory. Cancel writes nothing. A failed
+native write produces no references and no execution grant. Saving a secret
+does not itself authorize a package: the existing owner/package-bound grant
+must still be issued. If grant creation subsequently fails or the Capsule or
+package changes, a completed native write may remain scoped to the original
+owner; it never authorizes the new selection. Canonical plugin removal still
+cleans that plugin's vault entries.
+
 ## Lifecycle
 
 - Save and replacement are serialized through one process-wide vault owner.
@@ -31,6 +46,6 @@ plaintext, Documents, backup, ledger, or plugin-state fallback.
 - A failed secure-storage cleanup aborts the destructive parent action; secret
   orphaning is not reported as successful deletion.
 
-The vault does not interpret provider credentials or expose them to UI. A
+The vault does not interpret provider credentials or return stored values to UI. A
 provider-specific connection service may request one exact secret only after
 capturing the active Capsule root.
