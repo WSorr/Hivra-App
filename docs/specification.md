@@ -26,7 +26,8 @@ product axis defined in `product-axis.md`:
 
 > A user-owned Capsule turns explicit intent and authenticated input into
 > reproducible local truth through one deterministic capability path, while
-> every external effect follows one durable, idempotent lifecycle.
+> every external action has one semantic owner and one execution path, with
+> recovery appropriate to the service's actual guarantees.
 
 Confirmed Core state follows the truth lane. Network, storage, crypto,
 exchange, and provider work follows the effect lane. A production workflow MUST
@@ -36,6 +37,15 @@ or a parallel effect lifecycle.
 Implementation and review follow the three laws in `product-axis.md`. Focused
 capability contracts define the additional protocol or lifecycle rules needed
 for their own boundaries.
+
+The unified Capsule/package API development target is owned by
+`plugins/plugin_host_api_v1.md`. Its target section separates package-owned
+service protocols and workflows from host-owned isolation, permission checks
+and technical execution. The implemented v1 contracts in that document still
+apply until replaced; documentation does not introduce new network access or
+remove existing recovery evidence. A host journal for every service is not a
+permanent protocol requirement. Ledger truth concerns Hivra domain facts, not
+external account balances, orders or publications.
 
 ### 0.2 Person-First Runtime
 
@@ -59,6 +69,13 @@ projection, capability, effect-lifecycle, adapter, secure-storage, and recovery
 contracts. Operational state remains outside the Ledger unless this
 specification defines it as a Core fact, and private keys remain inside their
 declared secure cryptographic boundary.
+
+The Person-First design basis and replacement criteria are owned by
+`product-axis.md`. Owner choices and delegated permissions must be distinguished
+from Core invariants, provider requirements and implementation limits. The
+maintained formats and behaviors specified here remain binding until an
+authorized compatibility change replaces them; design requirements do not imply
+that all owner-context or capability-composition journeys are implemented.
 
 ### 0.3 Cryptographic Agility
 
@@ -625,14 +642,18 @@ Diagnostics:
 - Capsule Analyst is the canonical user-facing local diagnostic surface.
 - Capsule Analyst MAY summarize bootstrap state, filesystem traces, ledger
   projection, invitations, relationships, outbox, consensus, and plugin state.
-- Capsule Analyst MUST be deterministic for the same local files and runtime
-  inputs.
+- Capsule Analyst's local diagnostic snapshot MUST be deterministic for the
+  same local files and runtime inputs; an inference result is nondeterministic.
 - Capsule Analyst MUST NOT upload recovery seed, ledger contents, transport
   secrets, or plugin credentials to any AI/provider service.
-- Capsule Analyst MAY provide an optional scoped AI analysis over a user-selected,
-  redacted diagnostic snapshot.
-- Scoped AI chat MUST show an outbound preview before provider submission,
-  including selected sections, payload size, and snapshot hash.
+- Capsule Analyst MAY provide optional AI analysis over a redacted technical
+  diagnostic snapshot. An owner request can cover all technical module
+  summaries without separate section-selection controls; secrets, personal
+  content and owner/peer addresses remain excluded from that technical scope.
+- Scoped AI chat MUST make an outbound preview available, including disclosed
+  module sections, payload size and the hash of the actual outbound context.
+  Redaction MUST preserve relevant technical evidence where it can be safely
+  disclosed; a small fixed summary is not itself proof of complete diagnostics.
 - Scoped AI chat MUST store provider API keys only in platform secure storage
   and MUST NOT create plaintext fallback files.
 - Scoped AI chat output is advisory only. It MUST NOT mutate ledger, runtime,
@@ -841,6 +862,12 @@ Mandatory constraints:
     external packages. Direct module invocation remains available to the
     low-level ABI and its tests, not as a registry or UI installation route.
     Legacy raw records remain removable but confer no execution authority.
+
+Further API development MUST follow the unified boundary in
+`plugins/plugin_host_api_v1.md`; provider-specific v1 host contracts are current
+implementation constraints, not a template for future service integrations.
+Package code remains isolated: mediated network/credential execution does not
+imply direct sockets, filesystem access, raw keys or arbitrary identity signing.
 
 ### 5.2.3 Identity Separation Rule
 

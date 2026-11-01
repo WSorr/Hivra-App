@@ -408,13 +408,13 @@ void main() {
             'version': 1,
             'release_version': '0.1.0',
             'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
-            'contract': {'kind': 'moltbook_ambassador_draft'},
+            'contract': {'kind': 'plugin_workspace_v1'},
             'runtime': {
               'abi': 'hivra_host_abi_v2',
               'entry_export': 'hivra_evaluate_v1',
               'module_path': 'plugin/module.wasm',
             },
-            'capabilities': ['consensus_guard.read', 'content.draft.prepare'],
+            'capabilities': ['consensus_guard.read', 'workspace.render'],
           }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
@@ -427,13 +427,13 @@ void main() {
     expect(installed.packageKind, 'zip');
     expect(installed.pluginId, 'hivra.contract.moltbook-ambassador.v1');
     expect(installed.pluginVersion, '0.1.0');
-    expect(installed.contractKind, 'moltbook_ambassador_draft');
+    expect(installed.contractKind, 'plugin_workspace_v1');
     expect(installed.runtimeAbi, 'hivra_host_abi_v2');
     expect(installed.runtimeEntryExport, 'hivra_evaluate_v1');
     expect(installed.runtimeModulePath, 'plugin/module.wasm');
     expect(installed.capabilities, [
       'consensus_guard.read',
-      'content.draft.prepare',
+      'workspace.render',
     ]);
 
     final loaded = await service.loadPlugins();
@@ -455,12 +455,12 @@ void main() {
                 'version': 1,
                 'release_version': '0.1.0',
                 'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
-                'contract': {'kind': 'moltbook_ambassador_draft'},
+                'contract': {'kind': 'plugin_workspace_v1'},
                 'runtime': {
                   'abi': 'hivra_host_abi_v2',
                   'entry_export': 'hivra_evaluate_v1',
                 },
-                'capabilities': ['content.feed.plan', 'content.draft.prepare'],
+                'capabilities': ['workspace.continue', 'workspace.render'],
               }),
               'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
             },
@@ -589,9 +589,7 @@ void main() {
                     throw StateError(
                       'Read-only replacement must not read credentials',
                     ),
-            writeCredentials:
-                ({required owner, required pluginId, required value}) async =>
-                    throw StateError('Replacement must not write credentials'),
+
             pluginHostApi: PluginHostApiService(
               handlers: [],
               resolveRuntimeBinding: registry.resolveRuntimeBinding,
@@ -836,7 +834,7 @@ void main() {
                   'abi': 'hivra_host_abi_v2',
                   'entry_export': 'hivra_evaluate_v1',
                 },
-                'capabilities': ['content.draft.prepare'],
+                'capabilities': ['workspace.render', 'workspace.continue'],
               }),
               'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
             },
@@ -1082,7 +1080,7 @@ Future<File> _createPluginPackage(
   required String version,
   String pluginId = 'hivra.contract.transactional-demo.v1',
   String contractKind = 'transactional_demo',
-  List<String> capabilities = const ['content.draft.prepare'],
+  List<String> capabilities = const ['workspace.render'],
 }) async {
   final file = _createPluginPackageSync(
     root,
@@ -1100,7 +1098,7 @@ File _createPluginPackageSync(
   required String version,
   String pluginId = 'hivra.contract.transactional-demo.v1',
   String contractKind = 'transactional_demo',
-  List<String> capabilities = const ['content.draft.prepare'],
+  List<String> capabilities = const ['workspace.render'],
 }) {
   final file = File('${root.path}/transactional-demo-$version.zip');
   file.writeAsBytesSync(

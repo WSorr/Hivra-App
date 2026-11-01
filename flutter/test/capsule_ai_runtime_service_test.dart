@@ -64,7 +64,15 @@ void main() {
 
       expect(adapter.apiKey, 'gemini-key');
       expect(adapter.prompt!.inputJson, request.inputJson);
-      expect(result.requestId, request.requestId);
+      expect(
+        result.requestId,
+        _request(
+          providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+          providerId: 'gemini',
+          modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
+          model: InferenceProviderKind.gemini.defaultModel,
+        ).requestId,
+      );
       expect(result.capsuleRootHex, _capsuleA);
       expect(result.providerId, 'gemini');
       expect(result.proposalText, 'Explained');
@@ -332,6 +340,33 @@ void main() {
     },
   );
 
+  test(
+    'execution identity binds the configured model and preserves explicit request identity',
+    () async {
+      final store = _SessionCredentialStore();
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) => _RecordingAdapter(),
+      );
+      await runtime.savePreferredProviderId('gemini', model: 'model-a');
+      final first = await runtime.infer(_request());
+      await runtime.savePreferredProviderId('gemini', model: 'model-b');
+      final second = await runtime.infer(_request());
+      expect(first.requestId, isNot(second.requestId));
+      expect(first.disclosureHashHex, second.disclosureHashHex);
+      final explicit = _request(
+        providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+        providerId: 'gemini',
+        modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
+        model: 'explicit-model',
+      );
+      final result = await runtime.infer(explicit);
+      expect(result.requestId, explicit.requestId);
+      expect(result.model, 'explicit-model');
+    },
+  );
+
   test('provider session status and lock are owned by the runtime', () async {
     final store = _SessionCredentialStore(unlocked: false);
     final runtime = CapsuleAiRuntimeService(
@@ -349,6 +384,106 @@ void main() {
     expect(runtime.sessionProviderLabel, isNull);
   });
 
+  test('a plugin uses the Analyst model through the shared runtime', () async {
+    final store = _SessionCredentialStore();
+    final adapter = _RecordingAdapter(
+      text:
+          '{"left_operand":"10","operator":"+","right_operand":"20","answer":"30"}',
+    );
+    final analystRuntime = CapsuleAiRuntimeService(
+      credentialStore: store,
+      readActiveCapsuleRootHex: () => _capsuleA,
+    );
+    await analystRuntime.savePreferredProviderId(
+      'gemini',
+      model: 'chosen-model',
+    );
+    final moltbookRuntime = CapsuleAiRuntimeService(
+      credentialStore: store,
+      readActiveCapsuleRootHex: () => _capsuleA,
+      adapterFactory: (_) => adapter,
+    );
+    final result = await moltbookRuntime.inferAuthorized(
+      _request(),
+      authorize: () async {},
+    );
+    expect(result.proposalText, contains('left_operand'));
+    expect(adapter.model, 'chosen-model');
+    expect(adapter.callCount, 1);
+  });
+
+  test(
+    'queued inference retains its submitted model when preference changes',
+    () async {
+      final store =
+          _SessionCredentialStore()
+            ..models[InferenceProviderKind.gemini] = 'model-before';
+      final first = _RecordingAdapter(deferred: true);
+      final second = _RecordingAdapter();
+      final firstRuntime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) => first,
+      );
+      final secondRuntime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) => second,
+      );
+      final pendingFirst = firstRuntime.infer(
+        _request(cancellationScope: 'first'),
+      );
+      await first.started.future;
+      final pendingSecond = secondRuntime.infer(
+        _request(cancellationScope: 'second'),
+      );
+      await secondRuntime.savePreferredProviderId(
+        'gemini',
+        model: 'model-after',
+      );
+      first.complete();
+      expect((await pendingFirst).model, 'model-before');
+      expect((await pendingSecond).model, 'model-before');
+      expect(
+        (await secondRuntime.infer(_request(cancellationScope: 'third'))).model,
+        'model-after',
+      );
+    },
+  );
+
+  test(
+    'a common API grant revoked while inference is queued never reaches the adapter',
+    () async {
+      final store = _SessionCredentialStore();
+      final first = _RecordingAdapter(deferred: true),
+          second = _RecordingAdapter();
+      CapsuleAiRuntimeService runtime(_RecordingAdapter adapter) =>
+          CapsuleAiRuntimeService(
+            credentialStore: store,
+            readActiveCapsuleRootHex: () => _capsuleA,
+            adapterFactory: (_) => adapter,
+          );
+      final pending = runtime(
+        first,
+      ).infer(_request(cancellationScope: 'holds-queue'));
+      await first.started.future;
+      var permitted = true, checked = false;
+      final queued = runtime(second).inferAuthorized(
+        _request(cancellationScope: 'revoked-while-queued'),
+        authorize: () async {
+          checked = true;
+          if (!permitted) throw StateError('Owner grant revoked');
+        },
+      );
+      final rejection = expectLater(queued, throwsA(anything));
+      permitted = false;
+      first.complete();
+      await pending;
+      await rejection;
+      expect(checked, true);
+      expect(second.callCount, 0);
+    },
+  );
   test(
     'process scheduler serializes requests across runtime instances',
     () async {
@@ -462,6 +597,7 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
   bool unlocked;
   InferenceProviderKind preferredProvider = InferenceProviderKind.gemini;
   final List<String> configuration = <String>[];
+  final Map<InferenceProviderKind, String> models = {};
 
   _SessionCredentialStore({this.unlocked = true});
 
@@ -500,7 +636,11 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
   }
 
   @override
-  Future<void> savePreferredProvider(InferenceProviderKind provider) async {
+  Future<void> savePreferredProvider(
+    InferenceProviderKind provider, {
+    String? model,
+  }) async {
+    if (model != null) models[provider] = model;
     preferredProvider = provider;
     configuration.add('preferred:${provider.id}');
   }
@@ -509,6 +649,14 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
   Future<InferenceProviderKind?> loadPreferredProvider() async {
     return preferredProvider;
   }
+
+  @override
+  String preferredModel(InferenceProviderKind provider) =>
+      models[provider] ?? provider.defaultModel;
+
+  @override
+  Future<String> loadPreferredModel(InferenceProviderKind provider) async =>
+      preferredModel(provider);
 
   @override
   Future<void> saveApiKey(InferenceProviderKind provider, String apiKey) async {

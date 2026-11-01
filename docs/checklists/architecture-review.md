@@ -2,6 +2,24 @@
 
 Use this checklist only for a structural change. A focused capability contract
 and its tests own detailed protocol, storage, security, and lifecycle rules.
+Apply the design basis in `../product-axis.md` and the model-first workflow in
+`../development-control.md`. Answer these checks in the existing review;
+do not create another report or gate for routine work.
+
+## Owner Journey And Model
+
+- [ ] The gained capability and what remains the person's after executor
+      replacement are explicit; a working reference app alone is insufficient.
+- [ ] Acceptance matches the selected debt's recorded retention, permitted
+      eviction/reconnection and non-goals; tests have not silently expanded it.
+- [ ] Necessary states, transitions, invariants and authority were identified
+      before choosing a library or application pattern.
+- [ ] Restrictions have a concrete failure case and a canonical enforcement
+      owner; owner preferences and current limits are not labelled Core laws.
+- [ ] Credible alternative mechanisms and a falsifying experiment were
+      considered where the decision is nontrivial.
+- [ ] Different local contexts are not forced into a new identity or a merge
+      without a product requirement; existing history is preserved.
 
 ## The Three Laws
 
@@ -32,12 +50,16 @@ and its tests own detailed protocol, storage, security, and lifecycle rules.
       screen-owned service graph.
 - [ ] Installed plugins receive only declared capabilities and cannot access
       raw credentials, transport sessions, arbitrary storage, or Core mutation.
-- [ ] Plugin state is Capsule-scoped, bounded, versioned, and removed with its
-      owning Capsule or package lifecycle.
+- [ ] Plugin state is Capsule-scoped, bounded and versioned. Executor removal,
+      owner-data erasure and credential revocation follow their explicit
+      lifecycle contract, with retention/deletion scope visible to the owner.
+- [ ] Product policy remains owner/package-owned. A reference provider, field,
+      editorial rule or UI lifetime has not become an unrelated host restriction.
 - [ ] Transport adapters move authenticated envelopes but do not interpret
       Chat, invitation, consensus, Moltbook, or Trading semantics.
-- [ ] Provider adapters execute bounded requests and return evidence; they do
-      not make product decisions.
+- [ ] Service protocol, response parsing and workflow belong to the package;
+      shared host operations enforce access and execute requests. Existing v1
+      exceptions are identified through `../plugins/plugin_host_api_v1.md`.
 - [ ] Plugin source and release bytes remain owned by the separate
       `hivra-plugins` repository.
 
@@ -45,11 +67,15 @@ and its tests own detailed protocol, storage, security, and lifecycle rules.
 
 - [ ] Stable event or operation identity survives timeout, retry, restart,
       reconnect, refresh, and Capsule switching.
-- [ ] Pending state is durable before an external request.
+- [ ] Necessary pending intent survives dispatch/restart without a duplicate
+      host account history; reconstructible observations remain disposable.
 - [ ] Timeout or missing receipt remains ambiguous and enters reconciliation;
       it is not converted to success or a safe retry automatically.
 - [ ] Duplicate input cannot create a second active semantic effect.
 - [ ] Passive and manual triggers converge on the same lifecycle owner.
+- [ ] An autonomous grant needs no repeated product approvals. Revocation and
+      package isolation still stop new unauthorized dispatches; already sent
+      actions are not represented as undone.
 - [ ] Full bounded storage produces visible backpressure rather than silent
       loss or eviction of another retained operation.
 

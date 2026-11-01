@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_doctor_credential_store.dart';
+import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/inference_provider_adapter.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
@@ -86,6 +88,15 @@ class _ThrowingSecureStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     throw Exception('secure storage unavailable');
+  }
+}
+
+class _ControlledPreferenceWrites extends AtomicFileWriteService {
+  bool fail = false;
+  @override
+  Future<void> writeString(File target, String contents) async {
+    if (fail) throw const FileSystemException('test write failure');
+    await super.writeString(target, contents);
   }
 }
 
@@ -173,6 +184,202 @@ void main() {
 
       expect(await store.loadPreferredProvider(), InferenceProviderKind.gemini);
       expect(secureStorage.values, isEmpty);
+    });
+
+    test(
+      'failed model save retains durable and in-memory selection, then retries',
+      () async {
+        final secrets = _FakeSecureStorage();
+        final writes = _ControlledPreferenceWrites();
+        final store = AiDoctorCredentialStore(
+          secureStorage: secrets,
+          directories: directories,
+          atomicWrites: writes,
+        );
+        await store.savePreferredProvider(
+          InferenceProviderKind.gemini,
+          model: 'model-before',
+        );
+        writes.fail = true;
+        await expectLater(
+          store.savePreferredProvider(
+            InferenceProviderKind.openAi,
+            model: 'model-after',
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(
+          await store.loadPreferredProvider(),
+          InferenceProviderKind.gemini,
+        );
+        expect(
+          await store.loadPreferredModel(InferenceProviderKind.gemini),
+          'model-before',
+        );
+        final restarted = buildStore(secrets);
+        expect(
+          await restarted.loadPreferredProvider(),
+          InferenceProviderKind.gemini,
+        );
+        expect(
+          await restarted.loadPreferredModel(InferenceProviderKind.gemini),
+          'model-before',
+        );
+        writes.fail = false;
+        await store.savePreferredProvider(
+          InferenceProviderKind.openAi,
+          model: 'model-after',
+        );
+        expect(
+          await store.loadPreferredModel(InferenceProviderKind.openAi),
+          'model-after',
+        );
+      },
+    );
+
+    test(
+      'rejects invalid model identifiers without changing existing preferences',
+      () async {
+        final store = buildStore(_FakeSecureStorage());
+        await store.savePreferredProvider(
+          InferenceProviderKind.gemini,
+          model: 'retained-model',
+        );
+        for (final invalid in ['', 'a' * 257, 'bad\nmodel']) {
+          expect(
+            () => store.savePreferredProvider(
+              InferenceProviderKind.openAi,
+              model: invalid,
+            ),
+            throwsFormatException,
+          );
+        }
+        expect(
+          await store.loadPreferredProvider(),
+          InferenceProviderKind.gemini,
+        );
+        expect(
+          await store.loadPreferredModel(InferenceProviderKind.gemini),
+          'retained-model',
+        );
+      },
+    );
+
+    test(
+      'per-provider models survive restart, switching and key replacement',
+      () async {
+        final secrets = _FakeSecureStorage();
+        final store = buildStore(secrets);
+        await store.saveApiKey(InferenceProviderKind.gemini, 'private-token');
+        await store.savePreferredProvider(
+          InferenceProviderKind.gemini,
+          model: ' gemini-chosen ',
+        );
+        await store.savePreferredProvider(
+          InferenceProviderKind.openAi,
+          model: 'openai-chosen',
+        );
+        await store.saveApiKey(
+          InferenceProviderKind.gemini,
+          'replacement-token',
+        );
+        final restarted = buildStore(secrets);
+        expect(
+          await restarted.loadPreferredProvider(),
+          InferenceProviderKind.gemini,
+        );
+        expect(
+          await restarted.loadPreferredModel(InferenceProviderKind.gemini),
+          'gemini-chosen',
+        );
+        expect(
+          await restarted.loadPreferredModel(InferenceProviderKind.openAi),
+          'openai-chosen',
+        );
+        expect(restarted.isPreferredProviderUnlocked, false);
+        final root = await directories.rootDirectory();
+        final content =
+            await File(
+              '${root.path}/ai_provider_preference.v1.json',
+            ).readAsString();
+        expect(content, isNot(contains('private-token')));
+        expect(content, isNot(contains('replacement-token')));
+        expect(secrets.values.keys.any((key) => key.contains('model')), false);
+        await restarted.clearApiKey(InferenceProviderKind.gemini);
+        final afterClear = buildStore(secrets);
+        expect(await afterClear.loadPreferredProvider(), isNull);
+        expect(
+          await afterClear.loadPreferredModel(InferenceProviderKind.openAi),
+          'openai-chosen',
+        );
+        expect(
+          await afterClear.loadPreferredModel(InferenceProviderKind.gemini),
+          InferenceProviderKind.gemini.defaultModel,
+        );
+      },
+    );
+
+    test('concurrent preference saves retain both model choices', () async {
+      final store = buildStore(_FakeSecureStorage());
+      await Future.wait([
+        store.savePreferredProvider(
+          InferenceProviderKind.gemini,
+          model: 'model-a',
+        ),
+        store.savePreferredProvider(
+          InferenceProviderKind.openAi,
+          model: 'model-b',
+        ),
+      ]);
+      final restarted = buildStore(_FakeSecureStorage());
+      expect(
+        await restarted.loadPreferredProvider(),
+        InferenceProviderKind.openAi,
+      );
+      expect(
+        await restarted.loadPreferredModel(InferenceProviderKind.gemini),
+        'model-a',
+      );
+      expect(
+        await restarted.loadPreferredModel(InferenceProviderKind.openAi),
+        'model-b',
+      );
+    });
+
+    test(
+      'existing configuration without model remains readable without rewriting it',
+      () async {
+        final root = await directories.rootDirectory(create: true);
+        final file = File('${root.path}/ai_provider_preference.v1.json');
+        const original = '{"schema_version":1,"provider_id":"gemini"}';
+        await file.writeAsString(original);
+        final secrets = _FakeSecureStorage();
+        final store = buildStore(secrets);
+        expect(
+          await store.loadPreferredModel(InferenceProviderKind.gemini),
+          InferenceProviderKind.gemini.defaultModel,
+        );
+        expect(await file.readAsString(), original);
+        expect(secrets.readCounts, isEmpty);
+      },
+    );
+
+    test('invalid saved model fails closed before credential access', () async {
+      final root = await directories.rootDirectory(create: true);
+      final file = File('${root.path}/ai_provider_preference.v1.json');
+      await file.writeAsString(
+        jsonEncode({
+          'schema_version': 1,
+          'provider_id': 'gemini',
+          'models': {'gemini': 'bad\nmodel'},
+        }),
+      );
+      final secrets = _FakeSecureStorage();
+      await expectLater(
+        buildStore(secrets).unlockPreferredProviderSession(),
+        throwsStateError,
+      );
+      expect(secrets.readCounts, isEmpty);
     });
 
     test(

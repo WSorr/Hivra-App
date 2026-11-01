@@ -56,7 +56,6 @@
     {"id": "ui_invitations", "kind": "ui_entrypoint", "path": "flutter/lib/screens/invitations_screen.dart", "symbol": "InvitationsScreen", "capability_id": "invitations", "status": "CANONICAL", "target": "invitations.sendInvitation", "rationale": "Registered invitation command entrypoint."},
     {"id": "ui_ledger_inspector", "kind": "ui_entrypoint", "path": "flutter/lib/screens/ledger_inspector_screen.dart", "symbol": "LedgerInspectorScreen", "capability_id": "ledger_truth", "status": "COMPATIBILITY_DEBT", "target": "ledger_truth.inspect", "rationale": "Inspector composes current projections but is not one registered capability command."},
     {"id": "ui_main", "kind": "ui_entrypoint", "path": "flutter/lib/screens/main_screen.dart", "symbol": "MainScreen", "capability_id": "person_runtime_shell", "status": "CANONICAL", "target": "person_runtime_shell.bootstrapActiveCapsuleRuntime", "rationale": "Registered Person Runtime shell bootstrap entrypoint."},
-    {"id": "ui_moltbook", "kind": "ui_entrypoint", "path": "flutter/lib/screens/moltbook_ambassador_screen.dart", "symbol": "MoltbookAmbassadorScreen", "capability_id": "moltbook_agent", "status": "CANONICAL", "target": "moltbook_agent.runMoltbookOnDemandCycle", "rationale": "Registered Moltbook lifecycle entrypoint."},
     {"id": "ui_recovery", "kind": "ui_entrypoint", "path": "flutter/lib/screens/recovery_screen.dart", "symbol": "RecoveryScreen", "capability_id": "capsule_recovery", "status": "COMPATIBILITY_DEBT", "target": "capsule_recovery.restore", "rationale": "Recovery is a 1.x continuity surface pending a versioned recovery protocol."},
     {"id": "ui_relationships", "kind": "ui_entrypoint", "path": "flutter/lib/screens/relationships_screen.dart", "symbol": "RelationshipsScreen", "capability_id": "relationships", "status": "CANONICAL", "target": "relationships.loadRelationships", "rationale": "Registered relationship projection entrypoint."},
     {"id": "ui_capsule_card_scanner", "kind": "ui_entrypoint", "path": "flutter/lib/screens/settings_screen.dart", "symbol": "_CapsuleCardScannerScreen", "capability_id": "capsule_addressing", "status": "COMPATIBILITY_DEBT", "target": "capsule_addressing.import_card", "rationale": "Nested scanner UI is a current address-import surface, not an independent owner."},
@@ -242,15 +241,6 @@
       "closure": {"verdict": "READY", "missing_boundaries": []}
     },
     {
-      "id": "external_effects",
-      "owner": {"layer": "application", "path": "flutter/lib/services/external_effect_service.dart", "symbol": "ExternalEffectService"},
-      "public_contracts": [{"id": "external_effect_operation", "path": "flutter/lib/models/external_effect_models.dart", "symbol": "ExternalEffectOperation"}],
-      "facts": [], "projections": [],
-      "effect_kinds": [{"id": "external_effect_process", "path": "flutter/lib/services/external_effect_service.dart", "symbol": "process"}],
-      "entrypoints": [],
-      "closure": {"verdict": "READY", "missing_boundaries": []}
-    },
-    {
       "id": "capsule_ai_runtime",
       "owner": {"layer": "application", "path": "flutter/lib/services/capsule_ai_runtime_service.dart", "symbol": "CapsuleAiRuntimeService"},
       "public_contracts": [{"id": "capsule_inference_request_v1", "path": "flutter/lib/services/capsule_ai_runtime_service.dart", "symbol": "CapsuleInferenceRequestV1"}],
@@ -269,15 +259,6 @@
       "closure": {"verdict": "READY", "missing_boundaries": []}
     },
     {
-      "id": "moltbook_agent",
-      "owner": {"layer": "module", "path": "flutter/lib/services/moltbook_runtime_module.dart", "symbol": "MoltbookRuntimeModule"},
-      "public_contracts": [{"id": "moltbook_engagement_plan", "path": "flutter/lib/models/moltbook_ambassador_models.dart", "symbol": "MoltbookEngagementPlan"}],
-      "facts": [], "projections": [],
-      "effect_kinds": [{"id": "moltbook_publication", "path": "flutter/lib/services/moltbook_runtime_module.dart", "symbol": "prepareMoltbookPublication"}],
-      "entrypoints": [{"id": "moltbook_ambassador_screen", "path": "flutter/lib/screens/moltbook_ambassador_screen.dart", "symbol": "MoltbookAmbassadorScreen", "command_path": "flutter/lib/services/moltbook_runtime_module.dart", "command_symbol": "runMoltbookOnDemandCycle"}],
-      "closure": {"verdict": "READY", "missing_boundaries": []}
-    },
-    {
       "id": "person_runtime_shell",
       "owner": {"layer": "composition", "path": "flutter/lib/services/app_runtime_service.dart", "symbol": "AppRuntimeService"},
       "public_contracts": [{"id": "passive_receive_port", "path": "flutter/lib/services/capsule_passive_receive_coordinator.dart", "symbol": "CapsulePassiveReceivePort"}],
@@ -287,13 +268,6 @@
     }
   ],
   "concrete_bindings": [
-    {
-      "id": "moltbook_provider_adapter",
-      "pattern": "MoltbookProviderAdapter\\(",
-      "search_roots": ["flutter/lib"],
-      "definition_paths": ["flutter/lib/services/moltbook_provider_adapter.dart"],
-      "allowed_paths": ["flutter/lib/services/plugin_runtime_module_service.dart"]
-    },
     {
       "id": "inference_provider_dispatch",
       "pattern": "inferenceProviderAdapterFor",

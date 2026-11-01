@@ -9,8 +9,12 @@ AI capability to Core or create another truth or effect path.
 
 ## 1. Purpose
 
-Hivra does not model an inference provider as an autonomous agent with tools.
-An inference provider is an untrusted, nondeterministic proposal source.
+An inference provider is a replaceable, nondeterministic proposal source. The
+person owns continuity and grants execution authority under the design basis
+in `product-axis.md`. A model response or requested tool call cannot grant that
+authority to itself. A capability may apply the result through an existing
+owner-authorized command or effect path; a permanent reference application or
+human approval of every already-delegated step is not required by this model.
 
 The permanent boundary is:
 
@@ -71,6 +75,11 @@ Capsule AI Runtime is the sole host owner of:
 The capability host and originating feature retain capability grants, approval
 policy, deterministic decisions, and normal effect lifecycle composition.
 Neither side moves provider business policy into Core or generic UI.
+Editorial choices, compatible provider/model selection and local autonomy
+budgets express owner/capability policy. Their current values must not become
+universal host restrictions without a concrete protected property. External
+service limits remain external constraints, not evidence for unrelated local
+limits. Changing a model does not change the capability's authority.
 
 Inference credentials have one process-scoped host owner. A user action may
 unlock the configured provider into host memory for the current foreground app
@@ -165,7 +174,9 @@ AI proposes. The user reviews the exact outbound or executable intent. Trusted
 code binds that reviewed value to a canonical decision/effect, and a separate
 explicit action approves execution.
 
-This is the default releasable mode for external writes.
+This is the default mode for external writes without a matching delegated
+authorization. A current delegated grant may cover eligible steps without
+repeated manual confirmation; the host still checks its scope at execution.
 
 ### 7.3 Bounded Delegation
 
@@ -180,9 +191,10 @@ Every delegated capability requires all of the following before release:
 - stable operation ids, durable queue, reconciliation, and receipt evidence;
 - unattended restart, revocation, timeout, replay, and duplicate tests;
 - hostile-input and compromised-model tests proving the invariant in section 5;
-- mandatory return to Assisted mode for ambiguous, private, financial,
-  identity, permission, deletion, or irreversible actions unless a separate
-  capability specification proves a narrower safe rule.
+- return to Assisted mode when authority is ambiguous or the action exceeds
+  the delegated scope. Private, financial, identity, permission, deletion or
+  irreversible actions require their explicit capability-specific contract
+  and authorization; an AI proposal cannot broaden either.
 
 Changing a profile field cannot silently promote Assisted mode into Bounded
 Delegation.
@@ -191,10 +203,13 @@ Delegation.
 
 ### 8.1 Moltbook Ambassador
 
-Remote conversations are untrusted disclosure input. Gemini may propose post
-or reply prose. The Moltbook WASM drone binds exact reviewed text. The host
-creates a canonical publication effect. The pinned Moltbook adapter publishes
-only after explicit approval and records success only from a matching receipt.
+Remote conversations and public source text are untrusted data. The installed
+Moltbook package uses common `ai.infer` through the Analyst-selected connection,
+validates its own proposal and reconstructs publication/reply facts from the
+service. The host enforces the owner's current grant at actual dispatch; it has
+no Moltbook prompt builder, approval policy, effect DTO or publication adapter.
+The current workflow and receipt/recovery guarantees belong to
+`../plugins/moltbook_engagement_lifecycle_v1.md`.
 
 ### 8.2 Staking Drone
 

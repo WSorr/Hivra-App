@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_capsule_inspection_service.dart';
 import 'package:hivra_app/services/ai_doctor_chat_service.dart';
-import 'package:hivra_app/services/ai_doctor_prompt_service.dart';
 import 'package:hivra_app/services/capsule_ai_runtime_service.dart';
 import 'package:hivra_app/services/inference_provider_adapter.dart';
+import 'package:hivra_app/services/ui_event_log_service.dart';
 import 'package:hivra_app/widgets/ai_diagnostics/provider_widgets.dart';
 
 void main() {
@@ -22,6 +22,7 @@ void main() {
             child: AiDoctorChatCard(
               snapshot: _snapshot(),
               chatService: AiDoctorChatService(runtime: runtime),
+              uiLog: const _NoopUiLog(),
             ),
           ),
         ),
@@ -171,51 +172,109 @@ void main() {
     expect(runtime.operations, isEmpty);
   });
 
+  testWidgets(
+    'saved model returns after reopening and is used without re-entering credentials',
+    (tester) async {
+      final runtime = _RecordingRuntime(preferredProviderId: 'gemini');
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      final modelField = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField && widget.decoration?.labelText == 'Model',
+      );
+      await tester.ensureVisible(modelField);
+      await tester.enterText(modelField, 'gemini-user-selected');
+      final save = find.text('Save / replace provider settings');
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      expect(runtime.models['gemini'], 'gemini-user-selected');
+      expect(runtime.configuration, ['preferred:gemini']);
+      expect(find.byType(FilterChip), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(modelField).controller!.text,
+        'gemini-user-selected',
+      );
+      final ask = find.text('Ask AI Analyst');
+      await tester.ensureVisible(ask);
+      await tester.tap(ask);
+      await tester.pumpAndSettle();
+      expect(runtime.request!.model, 'gemini-user-selected');
+      expect(runtime.request!.disclosedSectionIds, contains('plugin_summary'));
+      expect(runtime.operations, ['unlock:gemini', 'infer']);
+    },
+  );
+
+  testWidgets('saving a local model does not overwrite its existing endpoint', (
+    tester,
+  ) async {
+    final runtime = _RecordingRuntime(
+      preferredProviderId: 'local_openai_compatible',
+    );
+    await showCard(tester, runtime);
+    await tester.pumpAndSettle();
+    final modelField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Model',
+    );
+    await tester.ensureVisible(modelField);
+    await tester.enterText(modelField, 'another-local-model');
+    final save = find.text('Save / replace provider settings');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(runtime.models['local_openai_compatible'], 'another-local-model');
+    expect(runtime.configuration, ['preferred:local_openai_compatible']);
+  });
+
   group('AiDoctorChatService', () {
-    test(
-      'routes selected redacted disclosure through Capsule AI Runtime',
-      () async {
-        final runtime = _RecordingRuntime();
-        final service = AiDoctorChatService(runtime: runtime);
+    test('routes all technical modules through Capsule AI Runtime', () async {
+      final runtime = _RecordingRuntime();
+      final service = AiDoctorChatService(runtime: runtime);
 
-        final result = await service.ask(
-          snapshot: _snapshot(),
-          userQuery: 'Why is consensus blocked?',
-          sections: const <AiDoctorContextSection>[
-            AiDoctorContextSection.transport,
-            AiDoctorContextSection.consensus,
-          ],
-          providerId: 'gemini',
-          model: 'gemini-test',
-        );
+      final result = await service.ask(
+        snapshot: _snapshot(),
+        userQuery: 'Why is consensus blocked?',
+        providerId: 'gemini',
+        model: 'gemini-test',
+      );
 
-        expect(result.text, contains('Finding'));
-        expect(result.providerId, 'gemini');
-        expect(runtime.operations, <String>['unlock:gemini', 'infer']);
-        final request = runtime.request!;
-        expect(request.capabilityId, AiDoctorChatService.capabilityId);
-        expect(request.proposalSchemaId, AiDoctorChatService.proposalSchemaId);
-        expect(
-          request.providerPolicy,
-          CapsuleInferenceProviderPolicyV1.explicit,
-        );
-        expect(request.providerId, 'gemini');
-        expect(request.modelPolicy, CapsuleInferenceModelPolicyV1.explicit);
-        expect(request.model, 'gemini-test');
-        expect(request.disclosedSectionIds, <String>[
+      expect(result.text, contains('Finding'));
+      expect(result.providerId, 'gemini');
+      expect(runtime.operations, <String>['unlock:gemini', 'infer']);
+      final request = runtime.request!;
+      expect(request.capabilityId, AiDoctorChatService.capabilityId);
+      expect(request.proposalSchemaId, AiDoctorChatService.proposalSchemaId);
+      expect(request.providerPolicy, CapsuleInferenceProviderPolicyV1.explicit);
+      expect(request.providerId, 'gemini');
+      expect(request.modelPolicy, CapsuleInferenceModelPolicyV1.explicit);
+      expect(request.model, 'gemini-test');
+      expect(
+        request.disclosedSectionIds,
+        containsAll(<String>[
           'consensus_summary',
           'transport_summary',
+          'ledger_summary',
+          'invitation_summary',
+          'relationship_summary',
+          'plugin_summary',
+          'bootstrap_summary',
+          'trace_summary',
+          'capsule',
           'user_query',
-        ]);
-        expect(request.inputJson, contains('scoped_ai_capsule_analyst_chat'));
-        expect(request.inputJson, contains('transport_summary'));
-        expect(request.inputJson, contains('consensus_summary'));
-        expect(request.inputJson, isNot(contains('ledger_summary')));
-        expect(request.inputJson, isNot(contains('seed phrase')));
-        expect(result.preview.payloadBytes, request.disclosureByteCount);
-        expect(result.preview.secretsRedacted, isTrue);
-      },
-    );
+        ]),
+      );
+      expect(request.inputJson, contains('scoped_ai_capsule_analyst_chat'));
+      expect(request.inputJson, contains('transport_summary'));
+      expect(request.inputJson, contains('consensus_summary'));
+      expect(request.inputJson, contains('ledger_summary'));
+      expect(request.inputJson, isNot(contains('seed phrase')));
+      expect(result.preview.payloadBytes, request.disclosureByteCount);
+      expect(result.preview.secretsRedacted, isTrue);
+    });
 
     test(
       'delegates provider configuration only to Capsule AI Runtime',
@@ -247,12 +306,7 @@ void main() {
       final runtime = _RecordingRuntime();
       final service = AiDoctorChatService(runtime: runtime);
 
-      await service.ask(
-        snapshot: _snapshot(),
-        userQuery: 'check',
-        sections: const <AiDoctorContextSection>[AiDoctorContextSection.ledger],
-        model: ' ',
-      );
+      await service.ask(snapshot: _snapshot(), userQuery: 'check', model: ' ');
 
       expect(
         runtime.request!.modelPolicy,
@@ -266,13 +320,7 @@ void main() {
       final service = AiDoctorChatService(runtime: runtime);
 
       await expectLater(
-        service.ask(
-          snapshot: _snapshot(),
-          userQuery: ' ',
-          sections: const <AiDoctorContextSection>[
-            AiDoctorContextSection.ledger,
-          ],
-        ),
+        service.ask(snapshot: _snapshot(), userQuery: ' '),
         throwsA(isA<ArgumentError>()),
       );
       expect(runtime.operations, isEmpty);
@@ -285,13 +333,7 @@ void main() {
       final service = AiDoctorChatService(runtime: runtime);
 
       await expectLater(
-        service.ask(
-          snapshot: _snapshot(),
-          userQuery: 'check',
-          sections: const <AiDoctorContextSection>[
-            AiDoctorContextSection.ledger,
-          ],
-        ),
+        service.ask(snapshot: _snapshot(), userQuery: 'check'),
         throwsA(same(error)),
       );
       expect(runtime.operations, <String>['unlock:openai', 'infer']);
@@ -302,8 +344,15 @@ void main() {
 const _capsuleRoot =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
+class _NoopUiLog extends UiEventLogService {
+  const _NoopUiLog();
+  @override
+  Future<void> log(String source, String message) async {}
+}
+
 class _RecordingRuntime implements CapsuleInferenceRuntime {
   String? preferredProviderId;
+  final Map<String, String> models = {};
   final Object? error;
   Future<bool> Function(String)? readPresence;
   Future<String?> Function()? readPreferred;
@@ -331,10 +380,21 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
       readPreferred != null ? await readPreferred!() : preferredProviderId;
 
   @override
-  Future<void> savePreferredProviderId(String providerId) async {
+  Future<void> savePreferredProviderId(
+    String providerId, {
+    String? model,
+  }) async {
     preferredProviderId = providerId;
+    if (model != null) models[providerId] = model;
     configuration.add('preferred:$providerId');
   }
+
+  @override
+  Future<String> loadPreferredModel(String providerId) async =>
+      models[providerId] ??
+      InferenceProviderKind.values
+          .firstWhere((p) => p.id == providerId)
+          .defaultModel;
 
   @override
   Future<void> saveProviderApiKey(String providerId, String apiKey) async {
@@ -393,7 +453,7 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
       proposalText: 'Finding: inspect local consensus evidence.',
       providerId: request.providerId ?? 'openai',
       providerLabel: request.providerId == 'gemini' ? 'Gemini' : 'OpenAI',
-      model: request.model ?? AiDoctorChatService.defaultModel,
+      model: request.model ?? 'test-model',
       responseHashHex:
           'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       elapsedMilliseconds: 1,

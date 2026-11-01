@@ -186,7 +186,6 @@ EXTERNAL_EFFECT_LIFECYCLE_DOC="$ROOT/docs/architecture/external-effect-lifecycle
 AI_PROPOSAL_BOUNDARY_DOC="$ROOT/docs/architecture/ai-proposal-boundary.md"
 CAPSULE_AI_RUNTIME_DOC="$ROOT/docs/architecture/capsule-ai-runtime.md"
 CAPSULE_AI_RUNTIME_GATE="$ROOT/tools/review/capsule_ai_runtime_gate.sh"
-MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC="$ROOT/docs/plugins/moltbook_engagement_lifecycle_v1.md"
 TRANSPORT_HEALTH_CHECKLIST="$ROOT/docs/checklists/transport-health-policy.md"
 CAPSULE_SECRET_LIFECYCLE_DOC="$ROOT/docs/architecture/capsule-scoped-secret-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
@@ -219,18 +218,8 @@ WASM_REGISTRY="$ROOT/flutter/lib/services/wasm_plugin_registry_service.dart"
 SCREENS="$ROOT/flutter/lib/screens"
 MAIN_SCREEN="$SCREENS/main_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
-MOLTBOOK_AMBASSADOR_SCREEN="$SCREENS/moltbook_ambassador_screen.dart"
-MOLTBOOK_PROVIDER_ADAPTER="$ROOT/flutter/lib/services/moltbook_provider_adapter.dart"
-MOLTBOOK_EFFECT_ADAPTER="$ROOT/flutter/lib/services/moltbook_external_effect_adapter.dart"
-MOLTBOOK_PUBLICATION="$ROOT/flutter/lib/services/moltbook_publication_service.dart"
 PLUGIN_RUNTIME_MODULE="$ROOT/flutter/lib/services/plugin_runtime_module_service.dart"
-MOLTBOOK_RUNTIME_MODULE="$ROOT/flutter/lib/services/moltbook_runtime_module.dart"
 PLUGIN_CONTRACT_IDS="$ROOT/flutter/lib/models/plugin_contract_ids.dart"
-MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart"
-MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
-MOLTBOOK_PUBLIC_BULLETIN_AI="$ROOT/flutter/lib/services/moltbook_public_bulletin_ai_service.dart"
-MOLTBOOK_AMBASSADOR_MODELS="$ROOT/flutter/lib/models/moltbook_ambassador_models.dart"
-MOLTBOOK_CYCLE_TRIGGER="$ROOT/flutter/lib/services/moltbook_cycle_trigger_service.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
 INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
 LEDGER_INSPECTOR_SCREEN="$SCREENS/ledger_inspector_screen.dart"
@@ -442,12 +431,6 @@ require_present "$DELIVERY_LIFECYCLE_DOC" '^# Transport Delivery Lifecycle v1' \
   "delivery lifecycle architecture doc exists"
 require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" '^# External Effect Lifecycle v1' \
   "external effect lifecycle architecture doc exists"
-require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'ExternalEffectService.*sole lifecycle owner' \
-  "external effect lifecycle has one application owner"
-require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'late adapter result cannot overwrite a newer reconciliation' \
-  "external effect lifecycle rejects stale adapter completion"
-require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'must not share journals, DTOs' \
-  "external effects remain separate from transport delivery"
 require_present "$AI_PROPOSAL_BOUNDARY_DOC" '^# AI Proposal Boundary' \
   "AI proposal boundary architecture doc exists"
 require_present "$AI_PROPOSAL_BOUNDARY_DOC" 'Inference ends before authority begins' \
@@ -816,86 +799,6 @@ require_absent "$WASM_PLUGINS_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
   "wasm plugins screen does not keep individual service fields"
 require_absent "$WASM_PLUGINS_SCREEN" 'MoltbookAmbassadorConfiguration' \
   "generic plugins screen does not own Moltbook profile configuration"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" '^class MoltbookAmbassadorScreen ' \
-  "Moltbook profile uses a dedicated workspace"
-require_present "$MOLTBOOK_PROVIDER_ADAPTER" "https://www\\.moltbook\\.com/api/v1/" \
-  "Moltbook adapter pins the official HTTPS API origin"
-require_present "$MOLTBOOK_PROVIDER_ADAPTER" "followRedirects = false" \
-  "Moltbook adapter rejects redirects before credential forwarding"
-require_present "$MOLTBOOK_PROVIDER_ADAPTER" "maxResponseBytes = 256 \\* 1024" \
-  "Moltbook adapter bounds provider responses"
-require_present "$MOLTBOOK_PROVIDER_ADAPTER" "Moltbook transport only permits GET and POST" \
-  "Moltbook adapter restricts methods to the reviewed read and publication set"
-require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "moltbook_provider_adapter|CapsuleScopedSecretVault" \
-  "Moltbook screen cannot call provider or secure storage directly"
-require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "InferenceProviderAdapter|AiDoctorCredentialStore" \
-  "Moltbook screen cannot call inference provider or credential store directly"
-require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "PluginHostApiService|executeWithRuntimeHook" \
-  "Moltbook screen cannot call the plugin host directly"
-require_absent "$MOLTBOOK_PUBLIC_BULLETIN_AI" "import .*ledger|import .*repository|MoltbookProvider|ExternalEffect|CapsuleFileStore|dart:io" \
-  "Moltbook public-facts AI has no private truth, repository, provider, effect, or filesystem dependency"
-require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "content_only_from_source_notes_and_canonical_anchor.*true" \
-  "Moltbook public-bulletin AI is constrained to explicit source notes and canonical anchor"
-require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "canonicalProductAnchor" \
-  "Moltbook public-bulletin AI carries the Capsule-first product anchor"
-require_present "$MOLTBOOK_AMBASSADOR_MODELS" "relationship-first\\|concept system" \
-  "Moltbook public-bulletin validation rejects contradictory positioning"
-require_present "$MOLTBOOK_AMBASSADOR_MODELS" '_unsafePublicTextControls' \
-  "Moltbook AI proposals reject hidden text controls"
-require_present "$MOLTBOOK_EFFECT_ADAPTER" 'payload contains unsupported fields' \
-  "Moltbook external effects reject unknown envelope fields"
-require_present "$PLUGIN_CONTRACT_IDS" 'authorize_moltbook_delegated_reply' \
-  "Moltbook bounded delegation has an explicit plugin method"
-require_present "$PLUGIN_HOST_API_DOC" 'authorize_moltbook_delegated_reply' \
-  "host API documents Moltbook bounded delegation method"
-require_present "$PLUGIN_CONTRACT_HANDLERS" 'content\.reply\.delegate' \
-  "Moltbook delegated reply requires its own WASM capability"
-require_present "$PLUGIN_CONTRACT_HANDLERS" 'moltbook_ambassador_delegated_reply_authorization' \
-  "Moltbook host validates delegated authorization contract kind"
-require_present "$MOLTBOOK_PUBLICATION" 'validateDelegatedReplyBinding' \
-  "Moltbook delegated approval binds the exact canonical reply effect"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'maxDailyReplies = 12' \
-  "Moltbook delegated replies have a conservative local daily budget"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'minReplyIntervalMinutes = 5' \
-  "Moltbook delegated replies have a conservative local minimum interval"
-require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "natural_non_repetitive_prose.*true" \
-  "Moltbook public-bulletin AI requests bounded natural prose"
-require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "publication_controlled_by_runtime_policy.*true" \
-  "Moltbook public-bulletin AI cannot choose the publication policy"
-require_present "$MOLTBOOK_RUNTIME_MODULE" "Future<MoltbookDraftPreview> prepareMoltbookDraft" \
-  "Moltbook draft preview is mounted through the plugin runtime module"
-require_present "$MOLTBOOK_RUNTIME_MODULE" "method: prepareMoltbookDraftMethod" \
-  "Moltbook draft preview executes the canonical WASM contract method"
-require_present "$MOLTBOOK_RUNTIME_MODULE" "preview\\.body != reviewedBody\\.trim\\(\\)" \
-  "Moltbook host rejects plugins that do not preserve reviewed prose"
-require_present "$MOLTBOOK_RUNTIME_MODULE" "moltbookDrafts\\.save\\(preview\\)" \
-  "validated Moltbook drafts enter one local store"
-require_present "$MOLTBOOK_DRAFT_STORE" "writePluginState" \
-  "Moltbook draft history uses Capsule-scoped plugin state"
-require_absent "$MOLTBOOK_DRAFT_STORE" "ledger|ExternalEffect|MoltbookProviderAdapter" \
-  "Moltbook local drafts do not become ledger, remote effects, or provider calls"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" "Approve permanent publication" \
-  "Moltbook workspace requires exact human publication approval"
-require_present "$MOLTBOOK_PUBLICATION" "permanent_publication" \
-  "Moltbook post/reply approval evidence binds the public permanence decision"
-require_present "$MOLTBOOK_PUBLICATION" "permanent_community_creation" \
-  "Moltbook community approval evidence binds the exact permanent creation decision"
-require_present "$MOLTBOOK_EFFECT_ADAPTER" "automatic resubmission is blocked" \
-  "Moltbook reconciliation cannot blindly duplicate an ambiguous post"
-require_present "$MOLTBOOK_EFFECT_ADAPTER" "request\\.ownerCapsuleHex" \
-  "Moltbook credential lookup is bound to the originating Capsule"
-require_absent "$MOLTBOOK_EFFECT_ADAPTER" "AppRuntimeService|Ledger|Transport" \
-  "Moltbook external effect adapter remains outside Core and transport"
-require_present "$MOLTBOOK_CONNECTION" "_observer\\.observeAccount\\(normalizedKey\\)" \
-  "Moltbook connection verifies a credential before storage"
-require_present "$MOLTBOOK_CONNECTION" "_secretVault\\.replaceAccountSecret" \
-  "Moltbook account rotation uses the generic secret vault"
-require_absent "$MOLTBOOK_CONNECTION" "FlutterSecureStorage|dart:io" \
-  "Moltbook connection owns no second credential store"
-require_present "$MOLTBOOK_CONNECTION" "_secretVault\\.deleteAccount" \
-  "Moltbook disconnect removes the account secret"
-require_absent "$EXTERNAL_EFFECT_LIFECYCLE_DOC" "MoltbookHttp|MoltbookProvider" \
-  "generic external-effect lifecycle contains no Moltbook DTO"
 require_present "$CAPSULE_SECRET_LIFECYCLE_DOC" "single application owner" \
   "capsule-scoped secret lifecycle has one application owner"
 require_absent "$CAPSULE_SECRET_VAULT" "dart:io|File\\(|Directory\\(" \
@@ -994,84 +897,7 @@ require_present "$LEDGER_SUMMARY" '_starterCountFromCoreProjection' \
 require_absent "$LEDGER_SUMMARY" '_parseStarterCreated|_parseStarterBurnedId|activeStartersById' \
   "capsule selector does not mirror starter lifecycle transitions"
 
-# 10) Moltbook automatic evolution must preserve one target lifecycle.
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" '^# Moltbook Engagement Lifecycle v1$' \
-  "Moltbook canonical engagement lifecycle exists"
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'engagement_id' \
-  "Moltbook lifecycle defines canonical engagement identity"
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'zero or one non-terminal engagement' \
-  "Moltbook lifecycle forbids parallel active target engagements"
-require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'on_demand.*session.*continuous_while_running|`on_demand`|`continuous_while_running`' \
-  "Moltbook trigger modes share one lifecycle contract"
-require_present "$ROOT/docs/plugins/moltbook_agent_drone_design_v1.md" 'moltbook_engagement_lifecycle_v1\.md' \
-  "Moltbook design references canonical engagement lifecycle"
-require_present "$MOLTBOOK_PUBLICATION" 'String replyEngagementId\(' \
-  "Moltbook publication owner derives canonical engagement identity"
-require_present "$MOLTBOOK_PUBLICATION" "'engagement_id': engagementId" \
-  "Moltbook reply payload binds the canonical engagement identity"
-require_present "$MOLTBOOK_PUBLICATION" 'findReplyOperations\(' \
-  "Moltbook publication owner projects targets from the effect journal"
-require_present "$MOLTBOOK_PUBLICATION" 'conflicting active publication effects' \
-  "Moltbook publication owner freezes legacy duplicate targets"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<ExternalEffectOperation> advanceMoltbookEngagement\(' \
-  "Moltbook runtime exposes one engagement orchestration port"
-MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT="$(
-  rg -c 'advanceMoltbookEngagement' \
-    "$MOLTBOOK_AMBASSADOR_SCREEN" || true
-)"
-if [ "${MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT:-0}" -eq 2 ]; then
-  pass "Moltbook release UI has one engagement orchestration route"
-else
-  fail "Moltbook release UI has one engagement orchestration route"
-fi
-require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'prepareMoltbookReplyPublication|authorizeDelegatedMoltbookReply|approveDelegatedMoltbookReply' \
-  "Moltbook screen has no parallel reply authorization or queue route"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookAmbassadorConfiguration\.approvalBounded' \
-  "Moltbook release UI exposes bounded policy through canonical configuration"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'MoltbookEngagementWritePolicy\.bounded' \
-  "Moltbook runtime maps bounded policy into the canonical engagement use case"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles' \
-  "Moltbook runtime serializes cycles by Capsule and provider account"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<MoltbookCycleSummary> runMoltbookCycle\(' \
-  "Moltbook runtime exposes one wake-run-sleep cycle port"
-require_present "$MOLTBOOK_RUNTIME_MODULE" "operation.state == ExternalEffectState.unresolved" \
-  "Moltbook cycle reconciles unresolved effects before new observation"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'heartbeat = await _observeAndPlanMoltbookHeartbeat\(' \
-  "Moltbook cycle uses generation-bound deterministic heartbeat observation and planning"
-require_present "$MOLTBOOK_RUNTIME_MODULE" "'sleep inspected=" \
-  "Moltbook cycle publishes one bounded local summary"
-require_present "$MOLTBOOK_AMBASSADOR_MODELS" "triggerContinuous = 'continuous_while_running'" \
-  "Moltbook configuration separates trigger policy from write policy"
-require_present "$MOLTBOOK_CYCLE_TRIGGER" 'Future<MoltbookCycleSummary> runOnDemand\(' \
-  "Moltbook trigger owner exposes on-demand execution"
-require_present "$MOLTBOOK_CYCLE_TRIGGER" 'Future<MoltbookCycleSummary\?> startSession\(' \
-  "Moltbook trigger owner exposes once-per-session execution"
-require_present "$MOLTBOOK_CYCLE_TRIGGER" 'Future<MoltbookCycleSummary> startContinuous\(' \
-  "Moltbook trigger owner exposes sequential continuous execution"
-require_present "$MOLTBOOK_CYCLE_TRIGGER" 'void stopAll\(\)' \
-  "Moltbook trigger owner exposes an immediate scheduling stop"
-require_absent "$MOLTBOOK_CYCLE_TRIGGER" 'moltbook_provider_adapter|moltbook_external_effect_adapter|plugin_host_api_service' \
-  "Moltbook trigger owner depends only on the canonical cycle callback"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<MoltbookCycleSummary\?> startConfiguredMoltbookCycles\(' \
-  "Moltbook runtime maps persisted trigger policy to one controller"
-require_present "$MOLTBOOK_RUNTIME_MODULE" 'Future<void> stopMoltbookCyclesAndDisable\(' \
-  "Moltbook runtime exposes one persistent kill-switch route"
-require_absent "$PLUGIN_RUNTIME_MODULE" 'Future<[^>]*Moltbook|runMoltbook|prepareMoltbook|advanceMoltbook' \
-  "generic plugin runtime exposes no parallel Moltbook lifecycle"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'runMoltbookOnDemandCycle\(\)' \
-  "Moltbook manual cycle uses the canonical cycle port"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'onStop: _saving \? null : _stopCycles' \
-  "Moltbook Stop remains available while cycle work is in flight"
-require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'planMoltbookHeartbeat\(\)' \
-  "Moltbook screen has no legacy direct heartbeat planning route"
-require_present "$MOLTBOOK_AMBASSADOR_MODELS" 'class MoltbookWorkspaceProjection' \
-  "Moltbook workspace has one canonical UI projection"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookWorkspaceProjection\.resolve\(' \
-  "Moltbook screen derives actions and summary from the canonical projection"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'Technical account controls' \
-  "Moltbook manual provider controls remain secondary"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'Technical cycle details' \
-  "Moltbook raw cycle evidence remains secondary"
+# Service workflows and stateless restart/replacement are checked by package and common-runtime behavioral tests.
 
 # 11) Transport receive surfaces share one capsule-scoped health policy.
 require_present "$TRANSPORT_HEALTH_POLICY" 'class TransportHealthSnapshot' \

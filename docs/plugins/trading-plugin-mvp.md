@@ -2,6 +2,10 @@
 
 Status: accepted product brief; implementation authorized on 2026-09-30.
 Current implementation state belongs to `../development-control.md`.
+The target Capsule/package ownership boundary and migration acceptance belong
+to `plugin_host_api_v1.md`, under Unified Capability API. Existing host trading
+checks and journal references below describe v1 mechanisms pending that
+replacement, not permanent requirements for the common API.
 Live exchange effects, VPS mutation, commit, push, and release require their
 own authorization. Trading 1.x was retired; this is not a compatibility plan
 for it.
@@ -40,8 +44,8 @@ quality is measured separately from actual closed-trade outcomes.
    instrument.
    Updating the native VPS runtime is an explicit advanced action through the
    same installer. It first retrieves current state and ends VPS authority,
-   retains exchange orders and the journal, and requires a separate Start to
-   resume. A failed return acknowledgement prevents installation; ordinary
+   retains exchange orders and recovery evidence, and requires a separate
+   Start to resume. A failed return acknowledgement prevents installation; ordinary
    saved-key reconnection does not reinstall the native runtime.
 3. Connect one supported exchange account through a host-owned credential
    handle. The plugin never receives raw API keys. Select one instrument from
@@ -181,8 +185,9 @@ quality is measured separately from actual closed-trade outcomes.
   If that exit becomes terminal but a freshly matched position still remains
   (for example after later entry fills), prepare a new exit for the observed
   remainder. An open, partially filled or unverified previous exit cannot
-  authorize a second one. The host journal admits the replacement only after
-  an exact terminal provider read, not merely an acceptance receipt.
+  authorize a second one. Jack admits the replacement only after an exact
+  terminal provider read, not merely an acceptance receipt. The current v1
+  host journal also checks that condition until replaced.
 - The user chooses one stop-loss percentage of their entry margin, not a
   percentage move in market price. After a fill, derive the protective stop
   trigger from the actual average fill price and filled quantity. For a
@@ -198,16 +203,12 @@ quality is measured separately from actual closed-trade outcomes.
   completed trade. TP/SL closure does not require a new user session while
   the existing trading authority remains valid. Restart resumes reconciliation
   of the current lifecycle before evaluating another entry.
-- Keep one effect journal, not files per past order. Retain the last five
-  provider-confirmed closed entry lifecycles and their entry/cancel/exit records.
-  Older completed groups expire only after every public plan's replay deadline;
-  accepted, active and unresolved effects are not disposable history. WASM
-  emits the exact public `retired_entry` plan during normalized lifecycle
-  observation. The host verifies terminal orders, no open position/order and
-  exact journal scope before marking completion, without reading private state.
-  Journal completion precedes private-state persistence so interruption can
-  repeat observation without another exchange effect. Reading the journal
-  also removes expired completed groups after restart; no cleaner is added.
+- Keep only the private decisions and pending operation identifiers necessary
+  to continue safely. Exchange account history belongs to the exchange, not a
+  host mirror. Current v1 retains completed groups in its effect journal and
+  couples completion to `retired_entry`; replacing that mechanism must preserve
+  unresolved intent and existing order identity. The minimal checkpoint and
+  retirement condition are defined in `plugin_host_api_v1.md`.
 - Each candidate carries symbol, timeframe, side, line price, first-known time,
   placement time, invalidation condition, and stable zone identity. Its
   decision must be reproducible from the exact exchange candle input and
@@ -228,20 +229,21 @@ quality is measured separately from actual closed-trade outcomes.
   provider evidence to decide whether to wait, replace, protect, or close its
   managed order or position, including after restart. Its bounded state must
   explain those decisions.
-- The existing host remains the owner of installation, Capsule selection,
-  credential handles, public market-data acquisition, bounded storage, and
-  exchange effects. Provider adapters fetch candles, instrument constraints,
-  leverage, orders, and positions; normalize provider evidence; and sign and
-  send explicitly permitted requests. The host checks authority, account
-  scope, request validity, and operation identity. It must not select a zone,
-  calculate Trading prices or quantities, interpret Trading state, or run a
-  fallback strategy. Core and Ledger do not gain Trading-specific types.
+- The host owns installation, Capsule selection, protected credential use,
+  access enforcement, technical network/crypto execution and optional opaque
+  storage. The package owns exchange API requests, response parsing and all
+  trading preflight/recovery. Existing BingX host normalization and effect
+  handling are the implementation to replace through the common API, not a
+  required adapter for each future exchange. Core and Ledger do not gain
+  Trading-specific types.
 - Use the existing bounded WASM input/output execution model. Each invocation
   receives market and provider snapshots, user settings, explicit observation
   time, and the plugin's saved state. It returns its next state, presentation
-  data, and requested effects. The host persists state and durable request
-  results and supplies them on the next invocation. The scheduling loop
-  belongs to the execution host; trading transitions belong to the plugin.
+  data, and requested operations. The host persists the package's necessary
+  opaque checkpoint and supplies results through package-selected continuations.
+  It does not retain a mandatory archive of account observations. The
+  scheduling loop belongs to the execution host; trading transitions belong
+  to the plugin.
   Raw credentials, direct network access, and arbitrary filesystem access
   remain outside WASM. This journey does not require unrestricted host imports.
 - The journey requires market/account snapshots, order effects, state
@@ -282,9 +284,9 @@ quality is measured separately from actual closed-trade outcomes.
 ## Necessary Limits, Not Process Gates
 
 The user chooses initial margin per entry in account currency and a stop-loss
-percentage of that margin. The host supplies the exchange's current
-side-specific leverage and instrument constraints; WASM derives target
-notional, rounded quantity, and stop price. For example, 1 USDT at 50x
+percentage of that margin. Jack reads the exchange's current side-specific
+leverage and instrument constraints through permitted network operations and
+derives target notional, rounded quantity, and stop price. For example, 1 USDT at 50x
 targets about 50 USDT notional before rounding and fees. A 20% stop targets
 roughly 0.20 USDT loss on a fully filled entry, not a 20% market-price move.
 Neither amount is a guaranteed maximum loss: fees, slippage, liquidation, and
@@ -294,6 +296,12 @@ for the selected instrument and explain when its minimum cannot fit the
 entered margin. These are runtime safety properties; they do not justify a
 stack of approvals, shadow protocols, synthetic mandates, or repeated release
 candidates for a small test account.
+
+These trading rules belong to Jack. The unified host enforces access and full
+revocation, not an independent trading-risk policy. An owner-authorized Start
+may cover the complete autonomous cycle without per-order approvals. Existing
+v1 host financial checks remain enforced until the common-API migration;
+changed authorization guarantees must be explicit to the owner.
 
 ## Acceptance Evidence
 

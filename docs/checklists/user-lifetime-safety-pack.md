@@ -1,6 +1,7 @@
 # User Lifetime Safety Pack
 
-Use this checklist to validate the real-world path where a person uses one or two capsules for years.
+Use this checklist to validate continuity of one or two Capsules across ordinary
+use, interruption, update and recovery on the declared runtime matrix.
 
 Run it on the release candidate build.
 
@@ -9,22 +10,30 @@ details remain in the macOS and Android release checklists, and capability-
 specific depth remains in their existing smoke checklists. Do not create a
 second journey checklist.
 
+Follow the required matrix in `docs/development-control.md`. Optional Intel and
+separate macOS-profile evidence do not determine PASS/PENDING. Use bounded
+restart/retry exercises and automated clock/event cases instead of calendar-ageing
+waits.
+
 ## Scope
 
 - [ ] Test includes one main capsule and one peer capsule (max two capsules in scope).
-- [ ] Test starts from clean local state for this release candidate; Android
-      uses the local emulator environment defined in `release-android.md`.
+- [ ] Isolate test Capsule state; record reused package registries/credential
+      stores without claiming an OS-clean account. Android uses the environment
+      in `release-android.md`.
 - [ ] The exact packaged macOS and Android artifacts, source commit, build tag,
       and clean-source metadata are recorded before the journey begins.
 
 ## Scenario 0: Packaged Install And Clean Launch
 
-- [ ] Install the packaged release artifact on clean macOS and Android test
-      environments; do not substitute a debug or build-tree launch.
-- [ ] First launch reaches an explicit create/recover choice without inherited
-      Capsule, credential, plugin, or OS-backup state.
-- [ ] Relaunch before creating a Capsule preserves the same explicit empty
-      state and does not synthesize identity or history.
+- [ ] Install the packaged release artifacts on the declared runtime matrix;
+      do not substitute a debug or build-tree launch.
+- [ ] On macOS, reach the selector and create/import only isolated test Capsules
+      in the current account; existing working Capsules remain unchanged.
+- [ ] On an empty Android Emulator runtime, first launch reaches an explicit
+      create/recover choice without inherited Capsule, credential, plugin or
+      OS-backup state. Relaunch before creation preserves that empty state and
+      does not synthesize identity or history.
 
 ## Scenario 1: First Capsule Birth
 
@@ -69,9 +78,13 @@ second journey checklist.
 ## Scenario 3: Recovery On New Device Path
 
 - [ ] Export backup for capsule A.
-- [ ] Confirm the exported backup is authenticated envelope v2 and does not
+- [ ] Confirm the exported full backup is authenticated envelope v3 and does not
       expose plaintext Ledger owner/events.
-- [ ] On clean runtime (or clean machine/profile), recover capsule A using seed + backup.
+- [ ] Recover Capsule A using seed + backup into an empty Capsule destination.
+      A new destination, or a test Capsule removed through the product after
+      preserving backup/seed, suffices. Record reused platform state and preserve
+      other Capsules. Android also exercises empty-runtime recovery under
+      `release-android.md`.
 - [ ] Confirm wrong-seed and tampered-backup recovery fail closed.
 - [ ] Recovered capsule shows the same ledger truth (starters, relationships, pending counts) as before recovery.
 - [ ] Android fresh install/profile receives no private Capsule state from OS
@@ -87,6 +100,10 @@ second journey checklist.
 
 ## Scenario 4A: macOS Runtime Storage Migration
 
+Run affected cases for migration/index/legacy-path changes; keep automated
+fixtures for unchanged code. A separate OS account is optional. Never inject
+faults into working Capsule storage.
+
 - [ ] Start with a previous-build capsule under `~/Documents/Hivra/capsules`.
 - [ ] Launch the update and verify capsule runtime is copied to `~/Library/Application Support/Hivra` with matching files and ledger truth.
 - [ ] Verify `Backups` and `Ledger Exports` remain user-visible under `~/Documents/Hivra`.
@@ -99,7 +116,9 @@ second journey checklist.
 
 - [ ] Create one pending invitation and leave it unresolved.
 - [ ] After restart/switch, invitation state is still coherent (no duplicate lineage or phantom pending rows).
-- [ ] Timeout/burn behavior follows specification once terminal event is appended.
+- [ ] Timeout/burn behavior follows specification once terminal event is appended;
+      verify time-dependent semantics with automated controlled-time/event cases,
+      without a calendar-ageing wait for each release candidate.
 
 ## Scenario 5A: Cross-Platform Restart And Capsule Isolation
 

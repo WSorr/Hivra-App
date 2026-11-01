@@ -14,20 +14,7 @@ import 'capsule_file_store.dart';
 import 'capsule_passive_receive_coordinator.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'consensus_attestation_exchange_service.dart';
-import 'external_effect_service.dart';
 import 'manual_consensus_check_service.dart';
-import 'moltbook_ambassador_configuration_store.dart';
-import 'moltbook_connection_service.dart';
-import 'moltbook_cycle_trigger_service.dart';
-import 'moltbook_draft_store.dart';
-import 'moltbook_external_effect_adapter.dart';
-import 'moltbook_feed_checkpoint_store.dart';
-import 'moltbook_public_bulletin_ai_service.dart';
-import 'moltbook_public_change_feed_store.dart';
-import 'moltbook_public_repository_source_adapter.dart';
-import 'moltbook_publication_service.dart';
-import 'moltbook_provider_adapter.dart';
-import 'moltbook_runtime_module.dart';
 import 'plugin_workspace_runtime.dart';
 import 'plugin_workspace_remote_service.dart';
 import 'wasm_plugin_package_preflight_service.dart';
@@ -68,7 +55,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
   final CapsulePassiveReceivePort passiveReceive;
   final CapsuleContactLabelStore contactLabels;
   final UiEventLogService uiLog;
-  final MoltbookRuntimeModule moltbook;
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
   final String? Function() _readActiveCapsuleRootHex;
@@ -91,52 +77,29 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     required this.passiveReceive,
     required this.contactLabels,
     required this.uiLog,
-    required this.moltbook,
     required super.fileStore,
     required CapsuleScopedSecretVault secretVault,
     required super.readActiveCapsuleRootHex,
-    super.market,
+    super.capabilities,
+    super.infer,
     PluginWorkspaceRemoteService? workspaceRemote,
   }) : _fileStore = fileStore,
        _providedRemote = workspaceRemote,
        _secretVault = secretVault,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
-       super(
-         readCredentials:
-             ({required owner, required pluginId}) => secretVault.loadSecret(
-               capsuleHex: owner,
-               pluginId: pluginId,
-               providerId: 'bingx',
-               accountId: 'primary',
-               secretName: 'credentials',
-             ),
-         writeCredentials:
-             ({required owner, required pluginId, required value}) =>
-                 value == null
-                     ? secretVault.deleteAccount(
-                       capsuleHex: owner,
-                       pluginId: pluginId,
-                       providerId: 'bingx',
-                       accountId: 'primary',
-                     )
-                     : secretVault.saveSecret(
-                       capsuleHex: owner,
-                       pluginId: pluginId,
-                       providerId: 'bingx',
-                       accountId: 'primary',
-                       secretName: 'credentials',
-                       secretValue: value,
-                     ),
-       );
+       super(resolveCredentialReferences: secretVault.resolveReferences);
 
-  Future<void> removePlugin(WasmPluginRecord record) async {
-    if (record.pluginId == moltbookAmbassadorPluginId) {
-      return moltbook.changeInstalledPackage(() => _removePlugin(record));
-    }
-    return _removePlugin(record);
+  Future<void> removePlugin(
+    WasmPluginRecord record, {
+    bool deleteSavedData = false,
+  }) async {
+    return _removePlugin(record, deleteSavedData: deleteSavedData);
   }
 
-  Future<void> _removePlugin(WasmPluginRecord record) async {
+  Future<void> _removePlugin(
+    WasmPluginRecord record, {
+    required bool deleteSavedData,
+  }) async {
     final current = (await registry.loadPlugins()).where(
       (r) => r.id == record.id,
     );
@@ -155,10 +118,18 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           await drainWorkspaceActions(pluginId);
           final owners = await _fileStore.deletePluginStateFromAllCapsules(
             pluginId,
-            preserveFileNames: const {
+            preserveFileNames: {
               'external_effects.v1.json',
               'workspace-execution.v1.json',
+              if (record.contractKind == pluginWorkspaceContractKind &&
+                  !deleteSavedData)
+                'workspace.v1.json',
             },
+            preserveFilePrefixes:
+                record.contractKind == pluginWorkspaceContractKind &&
+                        !deleteSavedData
+                    ? const {'data-'}
+                    : const {},
           );
           await _secretVault.deletePlugin(pluginId, capsuleHexes: owners);
         }
@@ -182,9 +153,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       );
     }
 
-    return inspected.pluginId == moltbookAmbassadorPluginId
-        ? moltbook.changeInstalledPackage(install)
-        : install();
+    return install();
   }
 
   Future<WasmPluginRecord> installPluginFromSource(
@@ -194,9 +163,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       entry,
       beforeInstall: _retireWorkspacePackage,
     );
-    return entry.pluginId == moltbookAmbassadorPluginId
-        ? moltbook.changeInstalledPackage(install)
-        : install();
+    return install();
   }
 
   Future<void> _retireWorkspacePackage(
@@ -311,15 +278,28 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     await _remote.selectOnline(owner, record.pluginId!);
   }
 
+  Future<List<Map<String, String>>> listWorkspaceSecretReferences(
+    WasmPluginRecord record,
+  ) async {
+    final owner = activeCapsuleRootHex();
+    if (owner == null) throw StateError('Open a Capsule first');
+    final binding = await registry.resolveRuntimeBinding(record.pluginId!);
+    if (binding.packageId != record.id) throw StateError('Package changed');
+    final references = await _secretVault.listReferences(owner);
+    final current = await registry.resolveRuntimeBinding(record.pluginId!);
+    if (activeCapsuleRootHex() != owner ||
+        current.packageId != binding.packageId ||
+        current.packageDigestHex != binding.packageDigestHex) {
+      throw StateError('Capsule or package changed');
+    }
+    return references;
+  }
+
   @override
   Future<Map<String, dynamic>> runWorkspaceAction({
     required WasmPluginRecord record,
     required String action,
     Map<String, dynamic> settings = const {},
-    String? optionsForField,
-    Map<String, String>? credentials,
-    Map<String, dynamic>? approvedOrder,
-    int? executionRevision,
   }) async {
     final owner = activeCapsuleRootHex();
     if (owner == null) throw StateError('Open a Capsule first');
@@ -333,12 +313,9 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       if (c == null || c['executor_id'] != grant!['executor_id']) {
         throw StateError('Assigned VPS is unavailable; no local fallback');
       }
-      if (credentials != null) {
-        throw StateError(
-          'Return to online mode before replacing exchange credentials',
-        );
-      }
-      if (grant['revoked'] == true || grant['expires_at_ms'] == null) {
+      if (action != 'open' ||
+          grant['revoked'] == true ||
+          grant['expires_at_ms'] == null) {
         await _requireExecutionControls(c);
       }
       // Recover a lost adoption acknowledgement with the exact frozen source
@@ -351,15 +328,8 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       });
       final result = await _remote.request(
         c,
-        action == 'open' && optionsForField == null ? 'status' : 'action',
-        action == 'open' && optionsForField == null
-            ? const {}
-            : {
-              'action': action,
-              'settings': settings,
-              'options_field': optionsForField,
-              'approved_order': approvedOrder,
-            },
+        action == 'open' ? 'status' : 'action',
+        action == 'open' ? const {} : {'action': action, 'settings': settings},
       );
       if (result['view'] is! Map) {
         throw StateError(
@@ -370,9 +340,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           (await registry.resolveRuntimeBinding(record.pluginId!)).packageId !=
               record.id) {
         throw StateError('Capsule or package changed');
-      }
-      if (optionsForField != null) {
-        return Map<String, dynamic>.from(result['view'] as Map);
       }
       return {
         ...Map<String, dynamic>.from(result['view'] as Map),
@@ -390,12 +357,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       record: record,
       action: action,
       settings: settings,
-      optionsForField: optionsForField,
-      credentials: credentials,
-      approvedOrder: approvedOrder,
-      executionRevision: executionRevision,
     );
-    if (optionsForField != null) return view;
     return {
       ...view,
       'host_connection': {
@@ -416,6 +378,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     int? expectedRevision,
     bool revoke = false,
     Map<String, dynamic>? approvedScope,
+    Map<String, Map<String, String>>? credentialBindings,
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
   }) async {
@@ -430,6 +393,11 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     var c = await _remote.connection(owner, record.pluginId!);
     if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
     if (grant?['executor'] == 'vps') {
+      if (credentialBindings != null) {
+        throw StateError(
+          'Return execution to this Capsule before reconnecting Keychain secrets',
+        );
+      }
       if (!enabled) {
         await setReleasedWorkspaceEntries(
           record,
@@ -483,7 +451,11 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       return runWorkspaceAction(record: record, action: 'open');
     }
     if (enabled && c?['selected'] == true) {
-      c = await _remote.ensurePackage(owner, record);
+      c = await _remote.ensurePackage(
+        owner,
+        record,
+        credentialBindings: credentialBindings,
+      );
       await _requireExecutionControls(c);
       if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
       await super.setWorkspaceExecution(
@@ -492,6 +464,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         expiresAtMs: expiresAtMs,
         expectedRevision: expectedRevision,
         approvedScope: approvedScope,
+        credentialBindings: credentialBindings,
         settings: settings,
         releaseToExecutorId: c['executor_id'] as String,
       );
@@ -509,6 +482,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       expectedRevision: expectedRevision,
       revoke: revoke,
       approvedScope: approvedScope,
+      credentialBindings: credentialBindings,
       settings: settings,
       releaseToExecutorId: releaseToExecutorId,
     );
@@ -518,7 +492,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     Map<String, dynamic> connection,
   ) async {
     final status = await _remote.request(connection, 'status');
-    if (status['runner']?['execution_controls'] != 2) {
+    if (status['runner']?['execution_controls'] != 3) {
       throw StateError(
         'Update the VPS runtime before changing permission terms',
       );
@@ -743,83 +717,53 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
 }
 
 class PluginRuntimeModuleService {
-  static final MoltbookCycleTriggerService _moltbookCycleTriggers =
-      MoltbookCycleTriggerService();
-
   final AppRuntimeService runtime;
-  final ExternalEffectAdapterResolver? externalEffectAdapterResolver;
   final CapsuleFileStore fileStore;
 
   const PluginRuntimeModuleService({
     required this.runtime,
-    this.externalEffectAdapterResolver,
     this.fileStore = const CapsuleFileStore(),
   });
 
   PluginRuntimeModule build() {
     final activeCapsuleRootHex = runtime.activeCapsuleRootHex;
     final secretVault = CapsuleScopedSecretVault();
-    final provider = MoltbookProviderAdapter();
-    final connection = MoltbookConnectionService(
-      fileStore: fileStore,
-      secretVault: secretVault,
-      observer: provider,
-      readActiveCapsuleRootHex: activeCapsuleRootHex,
-    );
-    late final MoltbookRuntimeModule moltbook;
-    final moltbookAdapter = MoltbookExternalEffectAdapter(
-      secretVault: secretVault,
-      provider: provider,
-      authorize: (request) => moltbook.authorizeMoltbookEffect(request),
-    );
-    final effects = ExternalEffectService(
-      readActiveCapsuleRootHex: activeCapsuleRootHex,
-      resolveAdapter:
-          externalEffectAdapterResolver ??
-          (providerId) =>
-              providerId == MoltbookConnectionService.providerId
-                  ? moltbookAdapter
-                  : null,
-      fileStore: fileStore,
-    );
     final aiRuntime = CapsuleAiRuntimeService(
       credentialStore: AiDoctorCredentialStore.shared,
       readActiveCapsuleRootHex: activeCapsuleRootHex,
     );
     final uiLog = const UiEventLogService();
     final pluginHostApi = runtime.buildPluginHostApiService();
-    moltbook = MoltbookRuntimeModule(
-      pluginHostApi: pluginHostApi,
-      uiLog: uiLog,
-      moltbookConnection: connection,
-      moltbookDrafts: MoltbookDraftStore(
-        fileStore: fileStore,
-        readActiveCapsuleRootHex: activeCapsuleRootHex,
-      ),
-      moltbookFeedCheckpoint: MoltbookFeedCheckpointStore(
-        fileStore: fileStore,
-        readActiveCapsuleRootHex: activeCapsuleRootHex,
-      ),
-      moltbookPublications: MoltbookPublicationService(
-        connection: connection,
-        effects: effects,
-      ),
-      moltbookPublicBulletinAi: MoltbookPublicBulletinAiService(
-        runtime: aiRuntime,
-      ),
-      moltbookPublicChanges: MoltbookPublicChangeFeedStore(
-        fileStore: fileStore,
-        readActiveCapsuleRootHex: activeCapsuleRootHex,
-      ),
-      moltbookCycleTriggers: _moltbookCycleTriggers,
-      publicRepositorySource: MoltbookPublicRepositorySourceAdapter(),
-      ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
-        fileStore: fileStore,
-        readActiveCapsuleRootHex: activeCapsuleRootHex,
-      ),
-      readActiveCapsuleRootHex: activeCapsuleRootHex,
-    );
     return PluginRuntimeModule(
+      infer: (request, authorize) async {
+        final maxOutput = request['max_output_bytes'] ?? 16 * 1024;
+        if (maxOutput is! int || maxOutput < 1 || maxOutput > 16 * 1024) {
+          throw const FormatException('Invalid inference output bound');
+        }
+        final result = await aiRuntime.inferAuthorized(
+          CapsuleInferenceRequestV1.create(
+            capsuleRootHex: activeCapsuleRootHex()!,
+            capabilityId: 'plugin:${request['plugin_id']}',
+            disclosureSchemaVersion: 1,
+            disclosedSectionIds: const ['package_input'],
+            proposalSchemaId: 'plugin.inference.text',
+            proposalSchemaVersion: 1,
+            cancellationScope: 'workspace:${request['plugin_id']}',
+            instructions: request['instructions'] as String,
+            input: request['input'] as Object,
+            maxInputBytes: 24 * 1024,
+            maxOutputBytes: maxOutput,
+          ),
+          authorize: authorize,
+        );
+        return {
+          'outcome': 'response',
+          'text': result.proposalText,
+          'provider_id': result.providerId,
+          'provider_label': result.providerLabel,
+          'model': result.model,
+        };
+      },
       registry: const WasmPluginRegistryService(),
       sourceCatalog: const WasmPluginSourceCatalogService(),
       manualChecks: runtime.buildManualConsensusCheckService(),
@@ -829,7 +773,6 @@ class PluginRuntimeModuleService {
       passiveReceive: runtime.passiveReceive,
       contactLabels: runtime.buildCapsuleContactLabelStore(),
       uiLog: uiLog,
-      moltbook: moltbook,
       secretVault: secretVault,
       fileStore: fileStore,
       readActiveCapsuleRootHex: activeCapsuleRootHex,

@@ -78,6 +78,32 @@ void main() {
     expect(storage.values.values.single, isNot(contains('plaintext_file')));
   });
 
+  test(
+    'owner selects metadata references without exposing values or another Capsule',
+    () async {
+      await _save(vault, capsuleA, pluginA, 'account-a', 'secret-a');
+      await _save(vault, capsuleB, pluginB, 'account-b', 'secret-b');
+      final references = await vault.listReferences(capsuleA);
+      expect(references.length, 1);
+      expect(jsonEncode(references), isNot(contains('secret-a')));
+      expect(
+        await vault.resolveReferences(capsuleA, {
+          'token': references.single['id']!,
+        }),
+        {'token': 'secret-a'},
+      );
+      await expectLater(
+        vault.resolveReferences(capsuleB, {'token': references.single['id']!}),
+        throwsStateError,
+      );
+      await vault.deleteCapsule(capsuleA);
+      await expectLater(
+        vault.resolveReferences(capsuleA, {'token': references.single['id']!}),
+        throwsStateError,
+      );
+    },
+  );
+
   test('deleting a capsule removes only its secret scopes', () async {
     await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
     await _save(vault, capsuleB, pluginA, 'account-b', 'key-b');

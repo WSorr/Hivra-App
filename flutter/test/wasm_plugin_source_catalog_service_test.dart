@@ -52,7 +52,7 @@ void main() {
         'schema': 'hivra.plugin.manifest',
         'version': 1,
         'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
-        'contract': {'kind': 'moltbook_ambassador_draft'},
+        'contract': {'kind': 'plugin_workspace_v1'},
         'runtime': {
           'abi': 'hivra_host_abi_v2',
           'entry_export': 'hivra_evaluate_v1',
@@ -74,7 +74,7 @@ void main() {
           'abi': 'hivra_host_abi_v2',
           'entry_export': 'hivra_evaluate_v1',
         },
-        'capabilities': ['content.draft.prepare'],
+        'capabilities': ['workspace.render', 'workspace.continue'],
       }),
       'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
     },
@@ -390,7 +390,7 @@ void main() {
 
       expect(record.packageKind, 'zip');
       expect(record.pluginId, 'hivra.contract.moltbook-ambassador.v1');
-      expect(record.contractKind, 'moltbook_ambassador_draft');
+      expect(record.contractKind, 'plugin_workspace_v1');
     },
   );
 

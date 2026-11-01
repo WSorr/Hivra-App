@@ -19,7 +19,6 @@ class AiDoctorChatResult {
 }
 
 class AiDoctorChatService {
-  static const String defaultModel = 'gpt-5.5';
   static const String defaultProviderId = 'openai';
   static const String capabilityId = 'hivra.capsule_analyst.chat';
   static const String proposalSchemaId = 'hivra.capsule_analyst.advisory.v1';
@@ -41,13 +40,16 @@ class AiDoctorChatService {
     return _runtime.hasProviderApiKey(providerId);
   }
 
-  Future<void> savePreferredProviderId(String providerId) {
-    return _runtime.savePreferredProviderId(providerId);
+  Future<void> savePreferredProviderId(String providerId, {String? model}) {
+    return _runtime.savePreferredProviderId(providerId, model: model);
   }
 
   Future<String?> loadPreferredProviderId() {
     return _runtime.loadPreferredProviderId();
   }
+
+  Future<String> loadPreferredModel(String providerId) =>
+      _runtime.loadPreferredModel(providerId);
 
   Future<void> clearProviderApiKey(String providerId) {
     return _runtime.clearProviderApiKey(providerId);
@@ -64,28 +66,21 @@ class AiDoctorChatService {
   AiDoctorOutboundPreview preview({
     required AiCapsuleInspectionSnapshot snapshot,
     required String userQuery,
-    required Iterable<AiDoctorContextSection> sections,
   }) {
     return _promptService
-        .buildPrompt(
-          snapshot: snapshot,
-          userQuery: userQuery,
-          sections: sections,
-        )
+        .buildPrompt(snapshot: snapshot, userQuery: userQuery)
         .preview;
   }
 
   Future<AiDoctorChatResult> ask({
     required AiCapsuleInspectionSnapshot snapshot,
     required String userQuery,
-    required Iterable<AiDoctorContextSection> sections,
-    String model = defaultModel,
+    String model = '',
     String providerId = defaultProviderId,
   }) async {
     final prompt = _promptService.buildPrompt(
       snapshot: snapshot,
       userQuery: userQuery,
-      sections: sections,
     );
     final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
     await _runtime.unlockProviderSession(providerId);

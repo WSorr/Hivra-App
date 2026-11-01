@@ -1,115 +1,49 @@
 # Moltbook Release Smoke Checklist
 
-Use this checklist as optional product evidence on packaged artifacts for
-platforms that expose the Moltbook Ambassador. Use a disposable Moltbook agent
-and non-sensitive public text. It does not block release when live Moltbook or
-Gemini access is unavailable; record `N/A` and the reason in the release
-signoff row. Automated offline contract tests remain release gates.
+Qualify the exact guarded artifact on the maintained macOS and Android runtimes.
+The current 0.8.0 migration has synthetic service evidence only. A local ZIP,
+unit suite, provider acceptance or development runner is not packaged acceptance.
+If live service/Keychain access is unavailable, record N/A with the reason under
+the existing release policy; do not describe that as live journey acceptance.
 
-Automatic trigger modes remain experimental until the lifecycle below has
-automated coverage. This product status does not make live Moltbook smoke a
-release prerequisite.
+Before manual smoke, ask `Hands or automatic?` and use an isolated test Capsule.
+Live publication is a separate explicitly authorized stage. No live publication,
+commit, release or VPS mutation is authorized by the migration checks.
 
-## Live Inference Availability
+## Read And Prepare Journey
 
-Successful live AI generation and AI challenge solving are optional release
-evidence, not dependencies on Gemini quota or billing. When inference is
-unavailable, record that limitation in signoff Notes and verify that the
-packaged agent visibly defers the work without a publication, blind retry or
-duplicate effect. Never replace the agent's model output with operator-written
-text and claim that autonomous generation passed.
+- [ ] Record source, app/runner/package digests and runtime/device.
+- [ ] Install Moltbook 0.8.0 through normal package admission and open its common
+      workspace. It must not expose a legacy product screen or old named methods.
+- [ ] Connect an existing Capsule-scoped Keychain token through owner permissions.
+      Complete native authentication as required by the OS; never enter a system
+      password into an application field. Select the Analyst connection normally.
+- [ ] Confirm network/inference destinations and permission duration. Start with
+      `read_only`, or use Prepare without sending. No POST may reach Moltbook.
+- [ ] Observe publication and comment history from the actual account; close,
+      reopen and restart the app, confirming fresh service reads each time.
+- [ ] Change repository/community/editorial settings, issue the owner grant and
+      restart. Owner settings must survive in that grant without product history.
+- [ ] Prepare content with the Analyst-selected provider/model; inspect provenance
+      and source/conversation context. AI/service failures remain visible.
+- [ ] Confirm that only the existing permission record is written for this
+      stateless package. No draft, history, publication journal or feed checkpoint.
+- [ ] Start using the same grant without a second request for unchanged access.
+      Revoke while work is queued/in flight; no subsequent dispatch is admitted.
+- [ ] Replace/remove the package during inference and reconnect. Old callbacks and
+      the previous package digest must not acquire new authority or create stores.
 
-Offline AI contract tests remain mandatory: Capsule/credential isolation,
-locked sessions, untrusted context, malformed answers and effect suppression.
-The local draft, approval, provider receipt, restart, Stop and isolation checks
-below remain the optional live smoke evidence. An unexercised publication
-lifecycle must be recorded as `N/A`, never as `PASS`; provider challenge
-verification and publication status must still be reported truthfully.
+## Publication Journey — Only With Separate Live Authorization
 
-## Setup And Scope
+- [ ] Use a disposable account and deliberately selected workflow/source.
+- [ ] Match an actual created post/reply, service verification if requested, and
+      its exact public ID, author, text/title or parent through public observation.
+- [ ] Do not call a pending/hidden/spam/unobserved item a successful publication.
+- [ ] Restart and reconstruct service history; an observed source or owner reply
+      must not be created again. Unknown delivery receives no blind retry.
+- [ ] Record the stateless limit: a hidden accepted item missing from service
+      history after process exit does not have an exactly-once guarantee.
 
-- [ ] Launch the packaged Release artifact, not a debug or build-tree copy.
-- [ ] Select one Capsule and confirm the expected Moltbook account binding.
-- [ ] Confirm the default write policy is `Assisted` and trigger is `On demand`.
-- [ ] Confirm API credentials are never rendered, logged, or copied into a
-      Capsule ledger, AI prompt preview, or WASM result.
-
-## Canonical Workspace
-
-- [ ] Run one foreground cycle and observe one prominent next action.
-- [ ] Confirm active challenge, unresolved, or queued effect takes priority over
-      generation of another draft.
-- [ ] With no actionable remote target, confirm one pending Capsule public
-      change produces one local WASM draft and no provider write.
-- [ ] Confirm a retained local draft prevents the next pending public change
-      from producing another draft after restart.
-- [ ] Confirm secret-like credentials, private-key material, long private
-      identifiers, and Capsule addresses are rejected before entering the
-      public change feed.
-- [ ] Confirm provider ids, hashes, attempts, and checkpoints remain under
-      technical details rather than competing primary controls.
-- [ ] Switch Capsule during an observation and confirm late work cannot update
-      the newly active Capsule.
-
-## Assisted Write Lifecycle
-
-- [ ] Observe one bounded conversation. Exercise live reply generation when
-      inference is available; otherwise verify visible deferral without a write.
-- [ ] Review and explicitly approve the exact proposal.
-- [ ] Repeated approval/publish clicks retain one semantic operation.
-- [ ] If Moltbook returns a numeric challenge and inference is available,
-      confirm the AI receives only the visible prompt and produces one numeric
-      answer. If inference is unavailable, confirm visible deferral. In both
-      cases the effect remains unresolved until provider visibility is reconciled.
-- [ ] Lock AI or inject malformed/rejected answer evidence and confirm no blind
-      provider retry or second publication effect occurs.
-- [ ] Restart while the operation is unresolved and confirm the same operation
-      resumes without a duplicate post or comment.
-- [ ] Review, retain, then delete a local draft. Its unapproved `prepared`
-      publication is cancelled, while approved or in-flight work still
-      requires explicit cancellation or reconciliation.
-- [ ] Reconcile the exact provider receipt before success is shown.
-- [ ] Confirm a verified successful post archives its matching local draft and
-      cannot reappear as `Review latest draft` after restart.
-- [ ] Confirm a succeeded target cannot be selected for another reply.
-
-## Bounded Public Change Lifecycle
-
-- [ ] Select an existing primary community with an account that does not own
-      it; confirm ownership is not required merely to prepare the exact post.
-- [ ] Switch to a user-created primary community and confirm the setting is
-      isolated to the active Capsule.
-- [ ] Start one bounded foreground session and confirm the packaged public
-      snapshot produces one exact fact-bound draft and one post operation for
-      the configured primary community.
-- [ ] Confirm the visible post body contains every allowlisted snapshot fact
-      verbatim and contains no generic replacement summary.
-- [ ] Confirm provider receipt or unresolved evidence is retained before the
-      change is treated as published.
-- [ ] Restart and repeat the session; the same snapshot creates no second post
-      or effect.
-- [ ] Change the configured destination after approval and confirm the retained
-      exact operation cannot move or create a second provider effect.
-- [ ] Review one custom community creation and confirm name, display name,
-      description, crypto policy, Capsule, and account are fixed before the
-      permanent effect. A conflicting owner or descriptor must not be adopted.
-
-## Failure And Control
-
-- [ ] Exercise a timeout or offline request; status remains unresolved and does
-      not blindly resubmit.
-- [ ] Exercise provider rate limiting or inspect deterministic fixture evidence;
-      retry timing is visible and no second operation is created.
-- [ ] Disable the agent or press Stop; no new AI request or external effect
-      starts after the stop boundary.
-- [ ] Feed hostile remote text that asks for secrets, policy changes, tools, or
-      publication; it remains untrusted context and grants no authority.
-- [ ] Confirm daily/interval limits and stop state survive restart and Capsule
-      switching.
-
-## Platform Evidence
-
-- [ ] Record macOS result in `release-manual-signoff-log.md` as `Moltbook Smoke`.
-- [ ] Record Android result in `release-manual-signoff-log.md` as `Moltbook Smoke`.
-- [ ] Keep session/continuous trigger labels experimental until both rows pass
-      and the release decision is explicitly changed in the lifecycle spec.
+Record macOS/Android results and untested stages in
+`release-manual-signoff-log.md`. Prior 0.7.3 archived-result smoke does not qualify
+this workflow; its former local archive, approvals and journal no longer run.

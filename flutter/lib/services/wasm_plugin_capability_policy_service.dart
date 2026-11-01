@@ -1,11 +1,16 @@
 class WasmPluginCapabilityPolicyService {
   static const Set<String> _allowedCapabilities = <String>{
     'consensus_guard.read',
+    // Retired contract metadata stays readable for backup/removal only.
+    // Remove these names when pre-0.8 package archives are intentionally retired.
     'content.draft.prepare',
     'content.feed.plan',
     'content.engagement.plan',
     'content.reply.prepare',
     'content.reply.delegate',
+    'inference.request',
+    'network.http',
+    'credentials.use',
     'workspace.render',
     'workspace.continue',
     'workspace.schedule',

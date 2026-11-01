@@ -99,11 +99,13 @@ String _doctorErrorMessage(Object error) {
 class AiDoctorChatCard extends StatefulWidget {
   final AiCapsuleInspectionSnapshot snapshot;
   final AiDoctorChatService chatService;
+  final UiEventLogService uiLog;
 
   const AiDoctorChatCard({
     super.key,
     required this.snapshot,
     required this.chatService,
+    this.uiLog = const UiEventLogService(),
   });
 
   @override
@@ -111,20 +113,12 @@ class AiDoctorChatCard extends StatefulWidget {
 }
 
 class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
-  static const UiEventLogService _uiLog = UiEventLogService();
-
   final TextEditingController _apiKeyController = TextEditingController();
-  final TextEditingController _baseUrlController = TextEditingController(
-    text: 'http://127.0.0.1:11434',
-  );
-  final TextEditingController _modelController = TextEditingController(
-    text: AiDoctorChatService.defaultModel,
-  );
+  final TextEditingController _baseUrlController = TextEditingController();
+  final TextEditingController _modelController = TextEditingController();
   final TextEditingController _queryController = TextEditingController(
     text: 'What should I check next in this capsule?',
   );
-  final Set<AiDoctorContextSection> _sections =
-      AiDoctorContextSection.values.toSet();
   InferenceProviderKind _provider = InferenceProviderKind.openAi;
 
   AiDoctorOutboundPreview? _preview;
@@ -170,10 +164,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       setState(() {
         _provider = provider;
         _modelController.text = provider.defaultModel;
-        _baseUrlController.text =
-            provider == InferenceProviderKind.localOpenAiCompatible
-                ? 'http://127.0.0.1:11434'
-                : '';
+        _baseUrlController.clear();
       });
       await _refreshApiKeyStatus(provider);
     } catch (_) {
@@ -188,16 +179,6 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
 
   Future<void> _refreshApiKeyStatus(InferenceProviderKind provider) async {
     final revision = ++_statusRevision;
-    if (!provider.requiresApiKey) {
-      if (!mounted || _provider != provider) return;
-      setState(() {
-        _apiKeyConfigured = false;
-        _apiKeyStatusKnown = true;
-        _apiKeyStatusError = null;
-        _checkingApiKey = false;
-      });
-      return;
-    }
     if (mounted && _provider == provider) {
       setState(() {
         _checkingApiKey = true;
@@ -206,13 +187,16 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       });
     }
     try {
-      final configured = await widget.chatService.hasProviderApiKey(
-        provider.id,
-      );
+      final model = await widget.chatService.loadPreferredModel(provider.id);
+      final configured =
+          provider.requiresApiKey
+              ? await widget.chatService.hasProviderApiKey(provider.id)
+              : false;
       if (!mounted || _provider != provider || revision != _statusRevision) {
         return;
       }
       setState(() {
+        _modelController.text = model;
         _apiKeyConfigured = configured;
         _apiKeyStatusKnown = true;
         _apiKeyStatusError = null;
@@ -259,7 +243,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       } else if (_provider.requiresApiKey && !_apiKeyConfigured) {
         throw ArgumentError('${_provider.label} API token is not saved');
       }
-      await _uiLog.log(
+      await widget.chatService.savePreferredProviderId(
+        _provider.id,
+        model: _modelController.text,
+      );
+      await widget.uiLog.log(
         'ai_capsule_analyst',
         'provider_settings_saved provider=${_provider.id}',
       );
@@ -280,7 +268,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
     await _run(() async {
       await widget.chatService.clearProviderApiKey(_provider.id);
       await widget.chatService.clearProviderBaseUrl(_provider.id);
-      await _uiLog.log(
+      await widget.uiLog.log(
         'ai_capsule_analyst',
         'provider_settings_cleared provider=${_provider.id}',
       );
@@ -302,7 +290,6 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       final preview = widget.chatService.preview(
         snapshot: widget.snapshot,
         userQuery: _queryController.text,
-        sections: _sections,
       );
       setState(() {
         _preview = preview;
@@ -317,23 +304,19 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
 
   Future<void> _askAnalyst() async {
     await _run(() async {
-      final model =
-          _modelController.text.trim().isEmpty
-              ? _provider.defaultModel
-              : _modelController.text.trim();
-      await _uiLog.log(
+      final model = _modelController.text.trim();
+      await widget.uiLog.log(
         'ai_capsule_analyst',
         'ask_start provider=${_provider.id} model=$model '
-            'sections=${_sections.length}',
+            'context=technical_modules',
       );
       final result = await widget.chatService.ask(
         snapshot: widget.snapshot,
         userQuery: _queryController.text,
-        sections: _sections,
         model: model,
         providerId: _provider.id,
       );
-      await _uiLog.log(
+      await widget.uiLog.log(
         'ai_capsule_analyst',
         'ask_ok provider=${result.providerId} '
             'model=${result.model} '
@@ -358,7 +341,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       await action();
     } catch (error) {
       if (!mounted) return;
-      await _uiLog.log(
+      await widget.uiLog.log(
         'ai_capsule_analyst',
         'action_error ${_doctorErrorMessage(error)}',
       );
@@ -410,7 +393,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Optional provider call over selected redacted sections. Advisory only; no ledger mutation and no repository access.',
+              'Ask about all module diagnostics. Secrets, personal content and addresses are excluded from the technical snapshot. Advisory only; no changes to Capsule.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
@@ -437,12 +420,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                         setState(() {
                           _provider = provider;
                           _modelController.text = provider.defaultModel;
-                          _baseUrlController.text =
-                              provider ==
-                                      InferenceProviderKind
-                                          .localOpenAiCompatible
-                                  ? 'http://127.0.0.1:11434'
-                                  : '';
+                          _baseUrlController.clear();
                           _apiKeyController.clear();
                           _error = null;
                           _apiKeyConfigured = false;
@@ -454,7 +432,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                           widget.chatService
                               .savePreferredProviderId(provider.id)
                               .catchError((Object error) {
-                                return _uiLog.log(
+                                return widget.uiLog.log(
                                   'ai_capsule_analyst',
                                   'provider_preference_save_error '
                                       '${_doctorErrorMessage(error)}',
@@ -475,7 +453,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                   helperText:
                       _provider == InferenceProviderKind.cloudflareWorkersAi
                           ? '32-character Account ID from Workers AI → Use REST API. Leave blank to keep the saved account.'
-                          : 'Example: http://127.0.0.1:11434. The app calls /v1/chat/completions.',
+                          : 'Example: http://127.0.0.1:11434. Leave blank to keep the saved endpoint; requests use /v1/chat/completions.',
                   border: const OutlineInputBorder(),
                 ),
               ),
@@ -549,6 +527,17 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
               ),
             ],
             const SizedBox(height: 8),
+            TextField(
+              controller: _modelController,
+              enabled: !_busy && !_checkingApiKey,
+              decoration: const InputDecoration(
+                labelText: 'Model',
+                helperText:
+                    'Saved choice is shared by Analyst and authorized AI features.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -569,14 +558,6 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _modelController,
-              decoration: const InputDecoration(
-                labelText: 'Model',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
               controller: _queryController,
               minLines: 2,
               maxLines: 5,
@@ -584,33 +565,6 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                 labelText: 'Question',
                 border: OutlineInputBorder(),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text('Outbound sections', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: AiDoctorContextSection.values
-                  .map(
-                    (section) => FilterChip(
-                      label: Text(section.label),
-                      selected: _sections.contains(section),
-                      onSelected:
-                          _busy
-                              ? null
-                              : (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _sections.add(section);
-                                  } else {
-                                    _sections.remove(section);
-                                  }
-                                });
-                              },
-                    ),
-                  )
-                  .toList(growable: false),
             ),
             const SizedBox(height: 12),
             Wrap(

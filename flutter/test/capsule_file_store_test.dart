@@ -89,6 +89,43 @@ void main() {
     expect(await external.list().isEmpty, isTrue);
   });
 
+  test(
+    'uninstall retains opaque workspace recovery until owner chooses data deletion',
+    () async {
+      const plugin = 'example.workspace';
+      final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+      final pending = '{"unrelated_private_schema":["uncertain-client-id"]}';
+      await store.writePluginState(dir, plugin, 'workspace.v1.json', pending);
+      await store.writePluginState(
+        dir,
+        plugin,
+        'data-pending',
+        'opaque request identity',
+      );
+      await store.writePluginState(dir, plugin, 'cache.json', 'disposable');
+      await store.deletePluginStateFromAllCapsules(
+        plugin,
+        preserveFileNames: {'workspace.v1.json'},
+        preserveFilePrefixes: {'data-'},
+      );
+      expect(
+        await store.readPluginState(dir, plugin, 'workspace.v1.json'),
+        pending,
+      );
+      expect(
+        await store.readPluginState(dir, plugin, 'data-pending'),
+        'opaque request identity',
+      );
+      expect(await store.readPluginState(dir, plugin, 'cache.json'), isNull);
+      await store.deletePluginStateFromAllCapsules(plugin);
+      expect(
+        await store.readPluginState(dir, plugin, 'workspace.v1.json'),
+        isNull,
+      );
+      expect(await store.readPluginState(dir, plugin, 'data-pending'), isNull);
+    },
+  );
+
   test('readState returns null when state file is missing', () async {
     final dir = await store.capsuleDirForHex(capsuleHex, create: true);
 

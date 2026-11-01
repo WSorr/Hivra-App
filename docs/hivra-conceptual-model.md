@@ -6,13 +6,11 @@ fields, event transitions, storage schemas, or release state. Those belong to
 
 ## 1. Person-First Runtime
 
-Conventional applications create their own account, contacts, permissions,
-history, and continuity. The person exists as a record inside each application
-and starts again when the application changes.
-
-Hivra reverses that ownership. A **Person-First Runtime (PFR)** gives the person
-a persistent local execution context before any individual application. Hivra
-calls that context a **Capsule**.
+A **Person-First Runtime (PFR)** gives the person a persistent local execution
+context before any individual application. Hivra calls that context a
+**Capsule**. Applications and services let the person participate in existing
+networks while retaining identity and personal relationships across changes of
+executor. The design basis and ownership criteria belong to `product-axis.md`.
 
 A Capsule can operate alone. It owns its recovery path, keeps authenticated
 history, runs replaceable WASM drones, and may establish optional trusted links
@@ -140,8 +138,9 @@ Drones are isolated WASM extensions that provide user-facing capabilities.
 They consume bounded host capabilities instead of receiving direct access to
 keys, filesystems, networks, provider credentials, or Ledger mutation.
 
-The Capsule owns intent and authority. A drone may compute a proposal; the host
-validates policy and grants only the exact capability required for an effect.
+The person owns intent and delegates authority through Capsule. A drone owns
+its capability policy and may compute a proposal; the host checks authorization
+and executes only the capability covered by the owner's intent or delegation.
 The external adapter performs the effect and returns evidence to its one
 durable lifecycle owner.
 

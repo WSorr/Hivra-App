@@ -21,9 +21,10 @@ conditions that allowed application entropy to grow:
 - new wrappers being added while old paths remain callable;
 - plugin business behavior leaking into the host application.
 
-The target is a codebase whose module map can be derived from its declared
-owners and dependencies, and whose review gates reject architectural drift
-before it reaches a release.
+The target is an owner-controlled capability environment whose continuity
+survives changes of applications, executors and infrastructure. A derivable
+module map and review gates support that product result; they are not a
+substitute for it. The model-first workflow is owned by `development-control.md`.
 
 The permanent evaluation axis is `product-axis.md`. Hivra 2.0 may replace
 contracts and implementations, but it must preserve the same truth lane,

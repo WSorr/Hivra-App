@@ -7,12 +7,20 @@ This document complements `product-axis.md` and
 `architecture/ai-proposal-boundary.md`. The proposal boundary defines what AI
 may never authorize. This document defines the single runtime owner through
 which every Hivra feature obtains inference.
+Person-First ownership and design requirements are owned by `product-axis.md`.
+Target capabilities below are not a claim that every package/provider path is
+already implemented; current limits and selected work belong to
+`development-control.md`.
 
 ## 1. Purpose
 
 Hivra treats AI like a Capsule-owned compute subsystem, analogous to a device
 neural engine, not like a feature embedded separately into every screen or
 drone.
+
+The intelligent executor is temporary and replaceable. The person retains
+identity, relationships, local history and capability authority when it changes.
+Provider accounts supply computation; they do not become owners of continuity.
 
 ```text
 Capsule Host Runtime
@@ -116,6 +124,23 @@ No automatic provider fallback is permitted on quota, capacity, or auth failure.
 Setup and current free-plan limits are owned by the [Cloudflare REST guide](https://developers.cloudflare.com/workers-ai/get-started/rest-api/)
 and [pricing documentation](https://developers.cloudflare.com/workers-ai/platform/pricing/).
 
+### Owner-Selected Compute
+
+A compatible model update or new provider using an existing supported protocol
+must be representable as owner configuration through the same runtime path.
+Protocol, endpoint, model and the connection's secure credential reference are
+distinct from the provider's product name. New protocols or missing execution
+abilities may extend an adapter; a provider label alone is not such an ability.
+Local model weights belong to the chosen local executor, outside Capsule.
+
+Authorized packages should reuse this computation through explicit capability
+contracts. A feature-specific AI integration does not by itself establish a
+reusable package capability. Provider selection, data disclosure and budgets
+express owner choices; inference cannot expand those choices or acquire effect
+authority. Editorial policy remains capability-owned rather than an AI-runtime
+or host-wide restriction. No new provider, tool or background path is enabled
+merely by this target contract.
+
 ### 4.1 Frozen 1.x Contract V1
 
 The provider-independent 1.x boundary is frozen before implementation as two
@@ -174,11 +199,19 @@ they use the same inference runtime.
 
 Inference secrets stay in platform Secure Storage under the host AI owner. A
 user explicitly unlocks the selected provider into one process-memory lease.
-The selected provider id is non-secret host configuration and is stored
-outside Secure Storage by the same owner. One explicit unlock performs at most
-one protected credential read after configuration migration; a legacy
-Keychain-stored provider id is read once and then removed without enumerating
-unrelated Keychain records.
+The selected provider id and per-provider model choices are non-secret host
+configuration stored outside Secure Storage by the same owner, in the existing
+provider preference file. Analyst saves and restores the model together with
+provider settings. A provider-default request uses the configured model, or
+the built-in initial default when no model was saved. Explicit request models
+remain authoritative. Runtime resolves provider and model into an explicit
+execution request before scheduling; its canonical identity includes that
+resolved choice. A later preference change cannot redirect a queued request.
+No automatic model or provider fallback is performed on failure.
+
+One explicit unlock performs at most one protected credential read after
+configuration migration; a legacy Keychain-stored provider id is read once
+and then removed without enumerating unrelated Keychain records.
 
 - The lease may be reused by Capsule Analyst and authorized
   drones while the app process remains open.
@@ -195,6 +228,14 @@ capability grant. Capability and disclosure checks still run for every request.
 An explicit one-shot provider unlock changes only the process session. It does
 not silently rewrite the persisted preferred-provider choice.
 
+Technical context may be authorized as a whole by the owner's analysis request,
+without per-section UI approval. The existing disclosure owner must exclude
+secrets, personal content and owner/peer addresses while retaining useful
+technical evidence. Field allowlists and coarse error categories are mechanisms
+to evaluate against that outcome, not permanent limits on diagnostic scope.
+An outbound preview identifies what is actually disclosed. This does not grant
+arbitrary filesystem access or interpretation of package-private state.
+
 Provider-key availability is a metadata lookup through the same credential
 owner. It must not read secret bytes, unlock the process lease, or call a
 provider. Concurrent availability checks share the pending lookup without
@@ -203,11 +244,10 @@ completion only for its current selection, offers an explicit retry after a
 real storage failure, and never turns an arbitrary UI deadline into a missing
 key. Saving, clearing or asking waits until that selection's status is known.
 
-Moltbook unlocks the configured preferred provider through this same broker.
-News, replies, and numeric-challenge proposals bind the active session's stable
-provider id before inference, including bounded repair attempts. Changing or
-locking that session cannot silently reroute an in-flight proposal to Gemini
-or another provider. Package policy and external-effect authority are unchanged.
+Moltbook uses common `ai.infer` through this same broker and the Analyst-selected
+connection. The package supplies public facts, conversation input and its own
+prompts. Provider/model evidence returns through the common result. The host
+rechecks package/owner authority at actual dispatch after queue waiting.
 
 ## 7. Determinism And Persistence
 
@@ -237,6 +277,9 @@ Supported 1.x execution is foreground only:
 Closing the app stops scheduling. Future background or always-on execution is
 a separate capability proposal requiring platform lifecycle, power, privacy,
 budget, and revocation evidence.
+Foreground-only operation is a maintained 1.x implementation limit, not a
+permanent definition of person-owned delegation. Its replacement must preserve
+explicit owner scope and revocation through the existing execution owners.
 
 ## 9. 1.x Convergence
 
@@ -290,8 +333,17 @@ Capsule Analyst exposes no repository context or code-modification surface.
 ### 9.4 AI-3 Capsule Analyst Checkpoint
 
 AI-3 routes `AiDoctorChatService` through the same
-`CapsuleAiRuntimeService`. Capsule Analyst retains selected-section disclosure,
-redaction, outbound preview, payload limits, and advisory proposal semantics.
+`CapsuleAiRuntimeService`. Capsule Analyst automatically includes technical
+summaries from all diagnostic modules without section-selection controls. The
+existing prompt owner projects technical fields, excludes secrets, personal
+content, owner/peer addresses, filesystem paths and raw exception text, and
+fingerprints only that outbound context. Errors are represented by diagnostic categories; package-private state
+is not read or interpreted. This is a technical snapshot, not an AI filesystem
+or module-reading tool. Capsule Analyst retains redaction, outbound preview,
+payload limits, and advisory proposal semantics.
+This describes the pending source projection, not proof of complete technical
+coverage or exact packaged acceptance; that outcome remains under review in
+`development-control.md`.
 The runtime now owns provider preference, credential and base-URL
 configuration, explicit session unlock, canonical request identity, and exact
 provider/model response binding.
@@ -301,23 +353,21 @@ access are deleted and gated against return. Its provider/model UI uses
 semantic ids only; no Core, FFI, truth, effect, or second credential path was
 added.
 
-### 9.5 AI-4 Moltbook Checkpoint
+### 9.5 Moltbook Common Inference
 
-AI-4 routes `MoltbookPublicBulletinAiService` through the same
-`CapsuleAiRuntimeService`. Moltbook retains bounded public-note and untrusted
-conversation disclosure, strict bulletin/reply proposal schemas, prompt
-injection controls, and proposal validation. The runtime owns preferred-session
-status, unlock/lock, canonical request identity, budgets, provider dispatch,
-and provider/model evidence.
+Moltbook 0.8.0 uses common workspace `ai.infer`. Its former
+`MoltbookPublicBulletinAiService`, host prompts, durable feed checkpoint,
+approval/delegation controller and publication-effect service are removed.
+The runtime continues to own the preferred connection, process-scoped secret
+lease, inference queue, request bounds, provider dispatch and provenance.
+The package owns public input selection, content/reply/challenge prompts and
+service interpretation. No separate Moltbook AI connection is created.
 
-The automatic cycle, durable feed checkpoint, WASM draft preparation, approval
-policy, and `ExternalEffectService` path are unchanged. AI failure or Capsule
-change still defers the selected candidate before checkpoint advancement and
-cannot prepare or execute a publication effect.
+Its current workflow, stateless restart and acceptance limits belong to
+`../plugins/moltbook_engagement_lifecycle_v1.md`.
 
 No legacy feature-owned provider dispatch or credential-read path remains
-callable. The executable gate fixes both inventories at zero and rejects their
-return. Capsule AI Runtime convergence is complete; no AI-5 is implied.
+callable. Service-specific inference behavior belongs to installed packages.
 
 ## 10. Hivra 2.0 Contract
 

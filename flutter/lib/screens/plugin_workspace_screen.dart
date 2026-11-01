@@ -1,28 +1,28 @@
 import 'dart:async';
 import 'dart:io';
+import '../services/plugin_capability_dispatcher.dart';
 
 import 'package:flutter/material.dart';
 
 typedef PluginWorkspaceAction =
     Future<Map<String, dynamic>> Function(
       String action,
-      Map<String, dynamic> settings, {
-      Map<String, String>? credentials,
-      Map<String, dynamic>? approvedOrder,
-    });
+      Map<String, dynamic> settings,
+    );
 
 /// Displays bounded package-owned fields, actions and evidence. This shell
 /// does not know which product or strategy produced them.
 class PluginWorkspaceScreen extends StatefulWidget {
   final List<String> capabilities;
   final PluginWorkspaceAction runWorkspaceAction;
-  final Future<List<String>> Function(String fieldId)? readFieldOptions;
+  final Future<List<Map<String, String>>> Function()? listSecrets;
   final Future<Map<String, dynamic>> Function({
     required bool enabled,
     required int? expiresAtMs,
     int? expectedRevision,
     bool revoke,
     Map<String, dynamic>? approvedScope,
+    Map<String, Map<String, String>>? credentialBindings,
     Map<String, dynamic> settings,
   })?
   configureExecution;
@@ -39,7 +39,7 @@ class PluginWorkspaceScreen extends StatefulWidget {
     super.key,
     this.capabilities = const [],
     required this.runWorkspaceAction,
-    this.readFieldOptions,
+    this.listSecrets,
     this.configureExecution,
     this.connectVps,
     this.useOnline,
@@ -102,6 +102,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
   }
 
+  Map<String, dynamic> _settings() => {
+    for (final raw in _view?['fields'] as List? ?? const [])
+      raw['id'] as String: switch (raw['type']) {
+        'integer' => int.parse(_fields[raw['id']]!.text.trim()),
+        'number' => double.parse(_fields[raw['id']]!.text.trim()),
+        _ => _fields[raw['id']]!.text.trim(),
+      },
+  };
+
   Future<void> _run(String action) async {
     final descriptor = (_view?['actions'] as List? ?? const []).where(
       (a) => (a as Map)['id'] == action,
@@ -113,98 +122,26 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
     if (_busy || _choosing) return;
     if (_observationUnavailable &&
-        const {'workspace.start', 'bingx.order.submit'}.contains(hostAction)) {
+        const {'workspace.start'}.contains(hostAction)) {
       return;
     }
     final generation = ++_presentationGeneration;
     final preserveEdits = action == 'open' && _edited;
-    Map<String, String>? credentials;
-    Map<String, dynamic>? approvedOrder;
-    if (descriptor.isNotEmpty &&
-        (descriptor.single as Map)['host'] == 'bingx.account.connect') {
+    if (hostAction == 'workspace.authorize') {
       setState(() => _choosing = true);
       try {
-        credentials = await _accountCredentials();
-      } finally {
-        if (mounted && generation == _presentationGeneration) {
-          setState(() => _choosing = false);
-        }
-      }
-      if (!mounted ||
-          generation != _presentationGeneration ||
-          credentials == null) {
+        final granted = await _authorize(
+          Map<String, dynamic>.from(_view!['access'] as Map),
+          settings: _settings(),
+        );
+        if (!granted) return;
+      } catch (error) {
+        if (mounted) setState(() => _error = '$error');
         return;
-      }
-    }
-    if (descriptor.isNotEmpty &&
-        (descriptor.single as Map)['host'] == 'bingx.order.submit') {
-      if (_edited || _view?['confirmation'] is! Map) return;
-      final request = Map<String, dynamic>.from(_view!['confirmation'] as Map);
-      final plan = request['plan'] as Map;
-      final cancelling = request['kind'] == 'order.entry.cancel';
-      final exiting = request['kind'] == 'position.exit.place';
-      final entry = exiting ? plan['entry_plan'] as Map : plan;
-      setState(() => _choosing = true);
-      bool confirmed = false;
-      try {
-        confirmed =
-            await showDialog<bool>(
-              context: context,
-              builder:
-                  (context) => AlertDialog(
-                    title: Text(
-                      exiting
-                          ? 'Place this LIVE position exit?'
-                          : cancelling
-                          ? 'Cancel this exact LIVE entry?'
-                          : 'Place one LIVE limit order?',
-                    ),
-                    content: SingleChildScrollView(
-                      child: Text(
-                        exiting
-                            ? '${entry["symbol"]} / position ${plan["position_id"]}\n'
-                                'Limit ${plan["price"]}, reducing quantity ${plan["quantity"]}\n\n'
-                                'Exit only the journaled fill. The target stays fixed after submission. '
-                                'A limit order is not a guaranteed fill or verified stop protection.'
-                            : cancelling
-                            ? '${_view!["summary"]}\n\n${plan["symbol"]} / order ${request["order_id"]}\n'
-                                'Cancel only this journaled entry if it is still unfilled. '
-                                'A racing fill remains a position; cancellation does not close it. '
-                                'No replacement is sent by this action.'
-                            : '${_view!["summary"]}\n\n${plan["symbol"]} / ${plan["side"]} / ${plan["timeframe"]}\n'
-                                'Price ${plan["price"]}, quantity ${plan["quantity"]}\n'
-                                'Margin ${plan["margin"]} USDT, leverage ${plan["leverage"]}x\n'
-                                'Requested stop ${plan["stop_price"]}\n\n'
-                                'One entry only. Attached stop is requested, not verified position protection. '
-                                'No automatic profit exit or background trader. Fees, slippage and liquidation may exceed the estimate. '
-                                'Closing the app does not cancel the exchange order.',
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton(
-                        key: const ValueKey('plugin-confirm-entry'),
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: Text(
-                          cancelling ? 'Cancel this entry' : 'Place LIVE order',
-                        ),
-                      ),
-                    ],
-                  ),
-            ) ??
-            false;
       } finally {
-        if (mounted && generation == _presentationGeneration) {
-          setState(() => _choosing = false);
-        }
+        if (mounted) setState(() => _choosing = false);
       }
-      if (!mounted || generation != _presentationGeneration || !confirmed) {
-        return;
-      }
-      approvedOrder = request;
+      if (!mounted || generation != _presentationGeneration) return;
     }
     setState(() {
       _busy = true;
@@ -212,27 +149,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       if (action != 'open') _edited = true;
     });
     try {
-      final settings = <String, dynamic>{};
-      // Opening reads committed state. Draft input, including an incomplete
-      // number, must neither block status recovery nor be committed by it.
-      for (final raw
-          in (action == 'open'
-              ? const []
-              : _view?['fields'] as List? ?? const [])) {
-        final field = raw as Map;
-        final text = _fields[field['id']]!.text.trim();
-        settings[field['id'] as String] = switch (field['type']) {
-          'integer' => int.parse(text),
-          'number' => double.parse(text),
-          _ => text,
-        };
-      }
-      var view = await widget.runWorkspaceAction(
-        action,
-        settings,
-        credentials: credentials,
-        approvedOrder: approvedOrder,
-      );
+      final settings = action == 'open' ? <String, dynamic>{} : _settings();
+      var view = await widget.runWorkspaceAction(action, settings);
       if (!mounted || generation != _presentationGeneration) return;
       if (hostAction == 'workspace.start') {
         final configure = widget.configureExecution;
@@ -240,142 +158,30 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           throw StateError('Scheduled execution is not available in this host');
         }
         final scope = Map<String, dynamic>.from(view['schedule'] as Map);
-        final onVps = view['host_connection']?['target'] == 'vps';
-        final expectedRevision = view['execution']?['revision'] as int?;
-        var untilRevoked = false;
-        var hours = '24';
-        int? deadline =
-            DateTime.now().millisecondsSinceEpoch +
-            const Duration(hours: 24).inMilliseconds;
-        void updateDeadline() {
-          final duration = double.tryParse(hours);
-          if (duration == null ||
-              !duration.isFinite ||
-              duration <= 0 ||
-              duration >
-                  (8640000000000000 - DateTime.now().millisecondsSinceEpoch) /
-                      3600000) {
-            deadline = null;
-            return;
-          }
-          final milliseconds = (duration * 3600000).round();
-          final value = DateTime.now().millisecondsSinceEpoch + milliseconds;
-          deadline =
-              milliseconds > 0 && value <= 8640000000000000 ? value : null;
-        }
-
-        setState(() {
-          _choosing = true;
-          _busy = false;
-        });
-        final confirmed =
-            await showDialog<bool>(
-              context: context,
-              builder:
-                  (context) => StatefulBuilder(
-                    builder:
-                        (context, update) => AlertDialog(
-                          scrollable: true,
-                          title: Text(
-                            onVps
-                                ? 'Start VPS LIVE cycles?'
-                                : 'Start local LIVE cycles?',
-                          ),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SwitchListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text('Until fully revoked'),
-                                value: untilRevoked,
-                                onChanged:
-                                    (value) =>
-                                        update(() => untilRevoked = value),
-                              ),
-                              if (!untilRevoked)
-                                TextFormField(
-                                  initialValue: hours,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  decoration: InputDecoration(
-                                    labelText: 'Permission duration (hours)',
-                                    errorText:
-                                        deadline == null
-                                            ? 'Enter a positive representable duration'
-                                            : null,
-                                  ),
-                                  onChanged:
-                                      (value) => update(() {
-                                        hours = value;
-                                        updateDeadline();
-                                      }),
-                                ),
-                              Text(
-                                untilRevoked
-                                    ? 'No automatic expiry. An unreachable VPS may continue until revocation reaches it.'
-                                    : deadline == null
-                                    ? 'A valid deadline is required.'
-                                    : 'Authorization ends: ${DateTime.fromMillisecondsSinceEpoch(deadline!).toLocal()}',
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                '${scope["symbol"]} / account ${scope["account_id"]}\n'
-                                'Up to ${scope["max_margin"]} USDT margin per entry; requested stop '
-                                '${scope["max_stop_percent"]}% of entry margin.\n\n'
-                                'Authorize cancellation of invalidated, unfilled managed entries and '
-                                'repeated entries after confirmed closure. No daily loss limit: '
-                                'successive losses can exhaust the account. '
-                                '${onVps ? "The VPS will continue while Capsule is closed; exchange credentials are sent over pinned SSH into the server host store, not WASM." : "App must remain open and online."} '
-                                'Authorize reducing limit exits selected by the package for managed fills. '
-                                'Stop protection remains unverified. '
-                                'Stop disables automatic entries and cancellations; reducing exits remain authorized until expiry or full revocation. It does not '
-                                'cancel exchange orders or close positions.',
-                              ),
-                              const Text(
-                                'Full revocation ends all new automatic trading effects, including reducing exits. Existing exchange orders and positions remain. Expiry also ends reducing exits.',
-                              ),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('Cancel'),
-                            ),
-                            FilledButton(
-                              key: const ValueKey('plugin-confirm-start'),
-                              onPressed:
-                                  !untilRevoked &&
-                                          (deadline == null ||
-                                              deadline! <=
-                                                  DateTime.now()
-                                                      .millisecondsSinceEpoch)
-                                      ? null
-                                      : () => Navigator.of(context).pop(true),
-                              child: Text(
-                                onVps
-                                    ? 'Start VPS cycles'
-                                    : 'Start local cycles',
-                              ),
-                            ),
-                          ],
-                        ),
-                  ),
-            ) ??
-            false;
-        if (!mounted || generation != _presentationGeneration) return;
-        setState(() {
-          _choosing = false;
-          _busy = true;
-        });
-        if (confirmed) {
+        final access = Map<String, dynamic>.from(scope['access'] as Map);
+        if (!_hasAccess(access)) {
+          setState(() {
+            _choosing = true;
+            _busy = false;
+          });
+          final granted = await _authorize(
+            access,
+            scope: scope,
+            settings: settings,
+          );
+          if (!mounted || generation != _presentationGeneration) return;
+          setState(() {
+            _choosing = false;
+            _busy = true;
+          });
+          if (!granted) return;
+          view = await widget.runWorkspaceAction('open', const {});
+        } else {
           view = await configure(
             enabled: true,
-            expiresAtMs: untilRevoked ? null : deadline,
-            expectedRevision: expectedRevision,
-            approvedScope: scope,
+            expiresAtMs: _view!['execution']['expires_at_ms'] as int?,
+            expectedRevision: _view!['execution']['revision'] as int?,
+            approvedScope: {...scope, 'access': _view!['execution']['access']},
             settings: settings,
           );
         }
@@ -435,7 +241,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
   }
 
-  Future<void> _stopExecution({bool revoke = false}) async {
+  Future<void> _stopExecution({bool revoke = true}) async {
     // Both revocation intents supersede stale reads and share one host path.
     final generation = ++_presentationGeneration;
     setState(() => _busy = true);
@@ -502,7 +308,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           setState(
             () =>
                 _error =
-                    'Saved VPS connection was not acknowledged. Check server availability; no trading Start was granted.',
+                    'Saved VPS connection was not acknowledged. Check server availability; no execution Start was granted.',
           );
         }
       } finally {
@@ -539,10 +345,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             children: [
                               Text(
                                 reinstall
-                                    ? 'End VPS trading authority and install the runtime bundled with this Capsule. Existing exchange orders and plugin state are retained. Website and VPN are not changed. Root password is never saved. Resume trading only after a separate Start confirmation.'
+                                    ? 'End VPS execution authority and install the runtime bundled with this Capsule. Package state and already accepted external effects are retained. Website and VPN are not changed. Root password is never saved. Resume execution only after a separate Start confirmation.'
                                     : restoreAccess
-                                    ? 'Use the root password for this same VPS to restore access. This reinstalls the bundled workspace runner after checking the server identity and Capsule binding. Existing exchange orders are not cancelled; unexpired trading permissions may resume. Website and VPN are not changed. Root password is never saved; no new trading permission is granted.'
-                                    : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. To restore an existing connection, enter the original VPS address. Root password is used only for installation, never saved. No new trading permission is granted; existing unexpired permissions may resume.',
+                                    ? 'Use the root password for this same VPS to restore access. This reinstalls the bundled workspace runner after checking the server identity and Capsule binding. Accepted external effects are not undone; unexpired execution permissions may resume. Website and VPN are not changed. Root password is never saved; no new execution permission is granted.'
+                                    : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. To restore an existing connection, enter the original VPS address. Root password is used only for installation, never saved. No new execution permission is granted; existing unexpired permissions may resume.',
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
@@ -652,7 +458,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         setState(
           () =>
               _error =
-                  'VPS connection was not completed. Check installer availability, login and server identity. No trading Start was granted.',
+                  'VPS connection was not completed. Check installer availability, login and server identity. No execution Start was granted.',
         );
       }
     } finally {
@@ -682,9 +488,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             context: context,
             builder:
                 (context) => AlertDialog(
-                  title: const Text('Return trading control to this app?'),
+                  title: const Text('Return execution control to this app?'),
                   content: const Text(
-                    'End all VPS trading authority and retrieve its latest workspace and order journal. This does not cancel exchange orders or close positions. Local cycles require a new Start; the app must remain open.',
+                    'End all VPS execution authority and retrieve its latest workspace checkpoint. This does not undo previously accepted external effects. Local cycles require a new Start; the app must remain open.',
                   ),
                   actions: [
                     TextButton(
@@ -722,73 +528,202 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     if (mounted) await _run('open');
   }
 
-  Future<Map<String, String>?> _accountCredentials() async {
-    var key = '';
-    var secret = '';
-    return showDialog<Map<String, String>>(
-      context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, update) => AlertDialog(
-                  scrollable: true,
-                  insetPadding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  title: const Text('Connect BingX account'),
-                  content: SizedBox(
-                    width: 420,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          key: const ValueKey('plugin-account-api-key'),
-                          obscureText: true,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'API key',
-                          ),
-                          onChanged: (s) => update(() => key = s.trim()),
+  String _accessText(Map access) => [
+    if (access['inference'] == true)
+      'Allow inference using the owner-selected connection; package input is sent to that provider.',
+    ...(access['network'] as List).map(
+      (n) =>
+          '${n['origin']}\n${(n['methods'] as List).join(', ')}${n['credential'] == null ? '' : ' / protected credentials'}',
+    ),
+  ].join('\n\n');
+
+  bool _hasAccess(Map<String, dynamic> requested) {
+    final execution = _view?['execution'];
+    if (execution is! Map ||
+        execution['active'] != true ||
+        execution['enabled'] != true ||
+        execution['access'] is! Map) {
+      return false;
+    }
+    final granted = execution['access'] as Map;
+    if (requested['inference'] == true && granted['inference'] != true) {
+      return false;
+    }
+    for (final network in requested['network'] as List) {
+      for (final method in network['methods'] as List) {
+        if (!PluginCapabilityDispatcher.allows(granted, {
+          'url': network['origin'],
+          'method': method,
+          'credential': network['credential'],
+        })) {
+          return false;
+        }
+      }
+    }
+    final selected = execution['credentials'] as Map? ?? const {};
+    return (requested['credentials'] as Map? ?? const {}).entries.every(
+      (e) =>
+          (e.value as List).every((f) => selected[e.key]?[f['id']] is String),
+    );
+  }
+
+  Future<bool> _authorize(
+    Map<String, dynamic> access, {
+    Map<String, dynamic>? scope,
+    Map<String, dynamic> settings = const {},
+  }) async {
+    final configure = widget.configureExecution;
+    if (configure == null) throw StateError('Owner permissions unavailable');
+    final declarations = access['credentials'] as Map? ?? const {};
+    final references =
+        declarations.isEmpty
+            ? <Map<String, String>>[]
+            : await widget.listSecrets?.call() ?? <Map<String, String>>[];
+    if (!mounted) return false;
+    final selected = <String, Map<String, String>>{};
+    final previous = _view?['execution']?['credentials'] as Map? ?? const {};
+    for (final entry in declarations.entries) {
+      selected[entry.key as String] = {};
+      for (final field in entry.value as List) {
+        final id = previous[entry.key]?[field['id']];
+        if (references.any((r) => r['id'] == id)) {
+          selected[entry.key]![field['id'] as String] = id as String;
+        }
+      }
+    }
+    var untilRevoked = _view?['execution']?['expires_at_ms'] == null;
+    var hours = '24';
+    final accepted =
+        await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => StatefulBuilder(
+                builder:
+                    (context, update) => AlertDialog(
+                      scrollable: true,
+                      title: const Text('Plugin permissions'),
+                      content: SizedBox(
+                        width: 460,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_accessText(access)),
+                            for (final entry in declarations.entries)
+                              for (final field in entry.value as List)
+                                DropdownButtonFormField<String>(
+                                  key: ValueKey(
+                                    'plugin-secret-${entry.key}-${field['id']}',
+                                  ),
+                                  initialValue:
+                                      selected[entry.key]![field['id']],
+                                  isExpanded: true,
+                                  decoration: InputDecoration(
+                                    labelText: field['label'] as String,
+                                  ),
+                                  items: [
+                                    for (final reference in references)
+                                      DropdownMenuItem(
+                                        value: reference['id'],
+                                        child: Text(
+                                          reference['label']!,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                  onChanged:
+                                      (value) => update(() {
+                                        if (value != null) {
+                                          selected[entry.key]![field['id']
+                                                  as String] =
+                                              value;
+                                        }
+                                      }),
+                                ),
+                            if (declarations.isNotEmpty && references.isEmpty)
+                              const Text(
+                                'Connect secrets to this Capsule in Keychain first.',
+                              ),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Until revoked'),
+                              value: untilRevoked,
+                              onChanged:
+                                  (value) => update(() => untilRevoked = value),
+                            ),
+                            if (!untilRevoked)
+                              TextFormField(
+                                initialValue: hours,
+                                decoration: const InputDecoration(
+                                  labelText: 'Permission duration (hours)',
+                                ),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                onChanged:
+                                    (value) => update(() => hours = value),
+                              ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'This permission covers the plugin workflow. The plugin handles service logic; the service owns its account state. Revocation blocks new requests and cannot undo accepted actions.',
+                            ),
+                          ],
                         ),
-                        TextField(
-                          key: const ValueKey('plugin-account-secret-key'),
-                          obscureText: true,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          textInputAction: TextInputAction.done,
-                          decoration: const InputDecoration(
-                            labelText: 'Secret key',
-                          ),
-                          onChanged: (s) => update(() => secret = s.trim()),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel'),
                         ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Read-only account check. Keys are stored securely for this Capsule. Trading needs separate confirmation.',
+                        FilledButton(
+                          key: const ValueKey('plugin-confirm-permissions'),
+                          onPressed:
+                              declarations.entries.any(
+                                        (e) => (e.value as List).any(
+                                          (f) =>
+                                              selected[e.key]?[f['id']] == null,
+                                        ),
+                                      ) ||
+                                      (!untilRevoked &&
+                                          (double.tryParse(hours) == null ||
+                                              !double.parse(hours).isFinite ||
+                                              double.parse(hours) <= 0 ||
+                                              double.parse(hours) > 1000000))
+                                  ? null
+                                  : () => Navigator.pop(context, true),
+                          child: const Text('Allow'),
                         ),
                       ],
                     ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed:
-                          key.isEmpty || secret.isEmpty
-                              ? null
-                              : () => Navigator.of(
-                                context,
-                              ).pop({'api_key': key, 'secret_key': secret}),
-                      child: const Text('Connect and save'),
-                    ),
-                  ],
-                ),
-          ),
+              ),
+        ) ??
+        false;
+    if (!accepted || !mounted) return false;
+    final view = await configure(
+      enabled: true,
+      expiresAtMs:
+          untilRevoked
+              ? null
+              : DateTime.now().millisecondsSinceEpoch +
+                  (double.parse(hours) * 3600000).round(),
+      expectedRevision: _view?['execution']?['revision'] as int?,
+      approvedScope:
+          scope ??
+          {
+            ...?_view?['execution']?['scope'] as Map?,
+            'version': 2,
+            'access': access,
+            'description':
+                _view?['execution']?['scope']?['description'] ??
+                'Owner-granted plugin access',
+          },
+      credentialBindings: selected,
+      settings: settings,
     );
+    if (!mounted) return false;
+    setState(() => _view = view);
+    return true;
   }
 
   Widget _field(Map raw) => Padding(
@@ -796,10 +731,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     child: TextField(
       key: ValueKey('plugin-field-${raw['id']}'),
       controller: _fields[raw['id']],
-      enabled:
-          !_busy &&
-          !_choosing &&
-          _view?['execution']?['allow_new_entries'] != true,
+      enabled: !_busy && !_choosing && _view?['execution']?['running'] != true,
       readOnly: raw['type'] == 'choice',
       onTap: raw['type'] == 'choice' ? () => _choose(raw) : null,
       onChanged: (_) => setState(() => _edited = true),
@@ -820,9 +752,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     if (_busy || _choosing) return;
     final id = field['id'] as String;
     Future<List<String>> load() => Future.sync(() {
-      final read = widget.readFieldOptions;
-      if (read == null) throw StateError('Instrument selection is unavailable');
-      return read(id);
+      final action = field['source']?['action'];
+      if (action is! String) throw StateError('Choice source is unavailable');
+      return widget
+          .runWorkspaceAction(action, const {})
+          .then((view) => List<String>.from(view['options'] as List));
     });
     Future<List<String>>? options;
     var query = '';
@@ -844,7 +778,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             key: const ValueKey('plugin-choice-search'),
                             autofocus: true,
                             decoration: const InputDecoration(
-                              labelText: 'Search instruments',
+                              labelText: 'Search',
                               prefixIcon: Icon(Icons.search),
                             ),
                             onChanged:
@@ -867,7 +801,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                   return ListView(
                                     children: [
                                       Text(
-                                        'Could not load instruments: ${snapshot.error}',
+                                        'Could not load choices: ${snapshot.error}',
                                       ),
                                       TextButton(
                                         onPressed:
@@ -888,7 +822,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                         .toList();
                                 if (matches.isEmpty) {
                                   return const Center(
-                                    child: Text('No matching instruments'),
+                                    child: Text('No matching choices'),
                                   );
                                 }
                                 return ListView.builder(
@@ -940,7 +874,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             : switch (view?['host_connection']?['health']) {
               'not_started' => 'connected; press Start to begin',
               'running' => 'runner is running',
-              'detached' => 'trading authority ended',
+              'detached' => 'execution authority ended',
               _ => 'checking runner',
             };
     return Scaffold(
@@ -1017,7 +951,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Text(
-                    '${view["execution"]["allow_new_entries"] == true ? (view["execution"]["mode"] == "vps" ? "VPS entries enabled" : "Local entries enabled") : "New entries stopped or expired"}. '
+                    '${view["execution"]["enabled"] == true ? (view["execution"]["mode"] == "vps" ? "VPS execution enabled" : "Local execution enabled") : "Execution stopped or expired"}. '
                     '${view["execution"]["revoked"] == true
                         ? "Automation authorization fully revoked."
                         : view["execution"]["expires_at_ms"] == null
@@ -1027,14 +961,34 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                     '${view["execution"]["last_error"] == null ? "" : "\n${view["execution"]["last_error"]}"}',
                   ),
                 ),
-              if (_supportsExecution &&
-                  widget.configureExecution != null &&
+              if (widget.configureExecution != null &&
                   view['execution'] is Map &&
                   view['execution']['active'] == true)
                 OutlinedButton(
                   onPressed:
                       _choosing ? null : () => _stopExecution(revoke: true),
-                  child: const Text('Revoke all automation'),
+                  child: const Text('Revoke plugin permissions'),
+                ),
+              if (view['access'] is Map && widget.configureExecution != null)
+                OutlinedButton(
+                  onPressed:
+                      _busy || _choosing
+                          ? null
+                          : () async {
+                            setState(() => _choosing = true);
+                            try {
+                              await _authorize(
+                                Map<String, dynamic>.from(
+                                  view['access'] as Map,
+                                ),
+                              );
+                            } catch (error) {
+                              if (mounted) setState(() => _error = '$error');
+                            } finally {
+                              if (mounted) setState(() => _choosing = false);
+                            }
+                          },
+                  child: const Text('Plugin permissions'),
                 ),
               if (view['summary'] is String &&
                   (view['summary'] as String).isNotEmpty)
@@ -1090,10 +1044,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                     (_observationUnavailable &&
                                         const {
                                           'workspace.start',
-                                          'bingx.order.submit',
-                                        }.contains(raw['host'])) ||
-                                    (_edited &&
-                                        raw['host'] == 'bingx.order.submit')
+                                        }.contains(raw['host']))
                                 ? null
                                 : () => _run(raw['id'] as String),
                         child: Text(raw['label'] as String),

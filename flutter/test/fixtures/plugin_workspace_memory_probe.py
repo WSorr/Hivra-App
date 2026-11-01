@@ -149,7 +149,8 @@ def main():
             raise AssertionError("Runner did not recover after contained memory exhaustion")
         assert oom_at is not None and int(current["NRestarts"]) >= 1, current
         assert snapshot(root) == durable, "OOM recovery changed durable state or authority"
-        for key in ("mode", "allow_new_entries", "active", "revoked", "revision", "expires_at_ms"):
+        for key in ("mode", "enabled", "running", "active", "revoked", "revision",
+                    "expires_at_ms", "scope", "access", "credentials"):
             assert after_view["view"]["execution"][key] == before_view["view"]["execution"][key]
         assert current["MemoryMax"] == "268435456" and current["MemorySwapMax"] == "0"
         print(json.dumps({"passed": True, "memory_max_bytes": int(current["MemoryMax"]),

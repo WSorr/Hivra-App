@@ -6,6 +6,7 @@ import '../models/consensus_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import 'plugin_host_contract_handler.dart';
+import 'plugin_capability_dispatcher.dart';
 
 typedef PluginConsensusSignableReader =
     ConsensusSignableResult Function(String peerHex);
@@ -59,7 +60,7 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
     final result = runtimeInvoke.semanticResult;
     try {
       if (result == null ||
-          result['state'] is! Map ||
+          (result['state'] != null && result['state'] is! Map) ||
           utf8.encode(jsonEncode(result['state'])).length > 32 * 1024) {
         throw const FormatException('Invalid bounded plugin state');
       }
@@ -67,25 +68,31 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
         Map<String, dynamic>.from(result['view'] as Map),
         capabilities: capabilities,
       );
+      if (utf8.encode(jsonEncode(result['context'])).length > 16 * 1024) {
+        throw const FormatException('Continuation context exceeds its bound');
+      }
       final requests = result['requests'] as List;
-      if (requests.length > 8 || requests.any((r) => r is! Map)) {
+      if (requests.length > 1 || requests.any((r) => r is! Map)) {
         throw const FormatException('Invalid bounded plugin requests');
       }
-      final resume = result['resume_action'];
-      if (resume != null &&
-          (resume is! String ||
-              !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(resume) ||
-              requests.isEmpty ||
-              requests.any(
-                (r) =>
-                    !const {
-                      'market.candles.read',
-                      'account.snapshot.read',
-                      'order.snapshot.read',
-                    }.contains(r['kind']) ||
-                    r['scope'] == 'open',
-              ))) {
-        throw const FormatException('Invalid bounded workspace continuation');
+      if (result['resume_action'] != null || result['retired_entry'] != null) {
+        throw const FormatException(
+          'Legacy host continuations are not executable',
+        );
+      }
+      for (final raw in requests) {
+        final r = raw as Map;
+        final descriptor = PluginCapabilityDispatcher.catalog[r['kind']];
+        if (descriptor == null ||
+            !PluginCapabilityDispatcher.safeId(r['id']) ||
+            r['continuation'] is! String ||
+            !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(r['continuation'])) {
+          throw const FormatException('Unknown capability request');
+        }
+        final permission = descriptor['permission'];
+        if (permission != null && !capabilities.contains(permission)) {
+          throw const FormatException('Capability request is not granted');
+        }
       }
       return PluginHostContractResult.executed(result);
     } catch (_) {
@@ -119,28 +126,8 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
       throw const FormatException('Invalid workspace text');
     }
     final fields = view['fields'] as List;
-    if (view['confirmation'] != null &&
-        (view['confirmation'] is! Map ||
-            !const {
-              'order.entry.place',
-              'order.entry.cancel',
-              'position.exit.place',
-            }.contains((view['confirmation'] as Map)['kind']) ||
-            (view['confirmation'] as Map)['provider'] != 'bingx' ||
-            (view['confirmation'] as Map)['plan'] is! Map ||
-            ((view['confirmation'] as Map)['kind'] == 'order.entry.cancel' &&
-                ((view['confirmation'] as Map)['order_id'] is! String ||
-                    !RegExp(
-                      r'^[1-9][0-9]{0,29}$',
-                    ).hasMatch((view['confirmation'] as Map)['order_id']))))) {
-      throw const FormatException('Invalid order confirmation');
-    }
-    if (view['confirmation'] is Map) {
-      final kind = (view['confirmation'] as Map)['kind'] as String;
-      requireGrants({kind, 'order.snapshot.read'});
-      if (kind != 'order.entry.place') {
-        requireGrants({'position.snapshot.read'});
-      }
+    if (view['access'] != null) {
+      PluginCapabilityDispatcher.validateAccess(view['access']);
     }
     if (view['schedule'] != null) requireGrants({'workspace.schedule'});
     final actions = view['actions'] as List;
@@ -179,11 +166,12 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
       if (field['type'] == 'choice' &&
           (field['value'] is! String ||
               field['source'] is! Map ||
-              (field['source'] as Map)['kind'] != 'market.instruments.read' ||
-              (field['source'] as Map)['provider'] != 'bingx')) {
-        throw const FormatException('Invalid workspace choice source');
+              (field['source'] as Map)['action'] is! String ||
+              !RegExp(
+                r'^[a-z][a-z0-9_]{0,63}$',
+              ).hasMatch((field['source'] as Map)['action']))) {
+        throw const FormatException('Invalid package option action');
       }
-      if (field['type'] == 'choice') requireGrants({'market.instruments.read'});
     }
     ids.clear();
     for (final action in actions) {
@@ -192,27 +180,20 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
           action['label'] is! String ||
           (action['host'] != null &&
               !const {
-                'bingx.account.connect',
-                'bingx.order.submit',
+                'workspace.authorize',
                 'workspace.start',
                 'workspace.stop',
               }.contains(action['host'])) ||
           !ids.add(action['id'] as String)) {
         throw const FormatException('Invalid workspace action');
       }
+      if (action['access'] != null) {
+        throw const FormatException('Access is configured once by the owner');
+      }
       switch (action['host']) {
-        case 'bingx.account.connect':
-          requireGrants({'account.connect'});
-        case 'bingx.order.submit':
-          requireGrants({'order.snapshot.read'});
-          if (!const {
-            'order.entry.place',
-            'order.entry.cancel',
-            'position.exit.place',
-          }.any(capabilities.contains)) {
-            throw const FormatException(
-              'Workspace order control is not granted',
-            );
+        case 'workspace.authorize':
+          if (view['access'] == null) {
+            throw const FormatException('Credential access scope missing');
           }
         case 'workspace.start':
         case 'workspace.stop':
@@ -352,209 +333,6 @@ PluginHostContractResult? _consensusPreflight({
     return PluginHostContractResult.blocked(signable.blockingFacts);
   }
   return null;
-}
-
-class MoltbookAmbassadorPluginContractHandler
-    implements PluginHostContractHandler {
-  const MoltbookAmbassadorPluginContractHandler();
-
-  @override
-  String get pluginId => moltbookAmbassadorPluginId;
-
-  @override
-  String get contractKind => moltbookAmbassadorContractKind;
-
-  @override
-  Set<String> get methods => const <String>{
-    prepareMoltbookDraftMethod,
-    planMoltbookHeartbeatMethod,
-    planMoltbookEngagementMethod,
-    prepareMoltbookReplyMethod,
-    authorizeMoltbookDelegatedReplyMethod,
-  };
-
-  @override
-  bool get requiresExternalRuntime => true;
-
-  @override
-  Set<String> requiredCapabilities(String method) => switch (method) {
-    planMoltbookHeartbeatMethod => const <String>{'content.feed.plan'},
-    planMoltbookEngagementMethod => const <String>{'content.engagement.plan'},
-    prepareMoltbookReplyMethod => const <String>{'content.reply.prepare'},
-    authorizeMoltbookDelegatedReplyMethod => const <String>{
-      'content.reply.delegate',
-    },
-    _ => const <String>{'content.draft.prepare'},
-  };
-
-  @override
-  PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
-
-  @override
-  Future<PluginHostContractResult?> preflightAsync(
-    PluginHostApiRequest request,
-  ) async => null;
-
-  @override
-  PluginHostContractResult execute(
-    PluginHostApiRequest request, {
-    PluginRuntimeInvokeEvidence? runtimeInvoke,
-  }) {
-    if (runtimeInvoke == null) {
-      return const PluginHostContractResult.rejected(
-        code: 'runtime_invoke_unavailable',
-        message: 'WASM semantic result is required',
-      );
-    }
-    if (runtimeInvoke.semanticStatus == PluginHostApiStatus.rejected) {
-      return PluginHostContractResult.rejected(
-        code: runtimeInvoke.semanticErrorCode ?? 'plugin_rejected',
-        message:
-            runtimeInvoke.semanticErrorMessage ?? 'Plugin rejected the draft',
-      );
-    }
-    final semantic = runtimeInvoke.semanticResult;
-    final canonicalJson = semantic?['canonical_json']?.toString() ?? '';
-    if (request.method == planMoltbookHeartbeatMethod) {
-      final planHashHex = semantic?['plan_hash_hex']?.toString() ?? '';
-      final plan = _validatedCanonicalObject(
-        canonicalJson: canonicalJson,
-        expectedHashHex: planHashHex,
-        expectedPluginId: pluginId,
-        expectedContractKind: 'moltbook_ambassador_heartbeat_plan',
-        expectedPeerHex: null,
-      );
-      if (plan == null ||
-          plan['publish_allowed'] != false ||
-          plan['human_review_required'] != true ||
-          plan['candidate_post_ids'] is! List ||
-          plan['safety_flags'] is! List) {
-        return const PluginHostContractResult.rejected(
-          code: 'runtime_result_invalid',
-          message: 'WASM ambassador heartbeat safety gate failed',
-        );
-      }
-      final planningScope = request.args['planning_scope'];
-      if (planningScope == 'public_change' &&
-          (plan['priority'] != 'public_change' ||
-              plan['candidate_post_ids'] is! List ||
-              (plan['candidate_post_ids'] as List).length > 1 ||
-              plan['safety_flags'] is! List ||
-              !(plan['safety_flags'] as List).contains(
-                'public_change_selection_only',
-              ))) {
-        return const PluginHostContractResult.rejected(
-          code: 'runtime_result_invalid',
-          message: 'WASM public-change selection gate failed',
-        );
-      }
-      return PluginHostContractResult.executed(<String, dynamic>{
-        ...plan,
-        'plan_hash_hex': planHashHex,
-        'canonical_plan_json': canonicalJson,
-      });
-    }
-    if (request.method == planMoltbookEngagementMethod) {
-      final planHashHex = semantic?['plan_hash_hex']?.toString() ?? '';
-      final plan = _validatedCanonicalObject(
-        canonicalJson: canonicalJson,
-        expectedHashHex: planHashHex,
-        expectedPluginId: pluginId,
-        expectedContractKind: 'moltbook_ambassador_engagement_plan',
-        expectedPeerHex: null,
-      );
-      if (plan == null ||
-          plan['publish_allowed'] != false ||
-          plan['human_review_required'] != true ||
-          plan['action_class'] is! String ||
-          plan['target_post_id'] is! String ||
-          plan['safety_flags'] is! List) {
-        return const PluginHostContractResult.rejected(
-          code: 'runtime_result_invalid',
-          message: 'WASM ambassador engagement safety gate failed',
-        );
-      }
-      return PluginHostContractResult.executed(<String, dynamic>{
-        ...plan,
-        'plan_hash_hex': planHashHex,
-        'canonical_plan_json': canonicalJson,
-      });
-    }
-    if (request.method == prepareMoltbookReplyMethod) {
-      final draftHashHex = semantic?['draft_hash_hex']?.toString() ?? '';
-      final reply = _validatedCanonicalObject(
-        canonicalJson: canonicalJson,
-        expectedHashHex: draftHashHex,
-        expectedPluginId: pluginId,
-        expectedContractKind: 'moltbook_ambassador_reply_draft',
-        expectedPeerHex: null,
-      );
-      if (reply == null ||
-          reply['approval_required'] != true ||
-          reply['target_post_id'] is! String ||
-          reply['body'] is! String ||
-          reply['safety_flags'] is! List) {
-        return const PluginHostContractResult.rejected(
-          code: 'runtime_result_invalid',
-          message: 'WASM ambassador reply integrity or approval gate failed',
-        );
-      }
-      return PluginHostContractResult.executed(<String, dynamic>{
-        ...reply,
-        'draft_hash_hex': draftHashHex,
-        'canonical_draft_json': canonicalJson,
-      });
-    }
-    if (request.method == authorizeMoltbookDelegatedReplyMethod) {
-      final authorizationHashHex =
-          semantic?['authorization_hash_hex']?.toString() ?? '';
-      final authorization = _validatedCanonicalObject(
-        canonicalJson: canonicalJson,
-        expectedHashHex: authorizationHashHex,
-        expectedPluginId: pluginId,
-        expectedContractKind:
-            'moltbook_ambassador_delegated_reply_authorization',
-        expectedPeerHex: null,
-      );
-      if (authorization == null ||
-          authorization['publish_allowed'] != true ||
-          authorization['human_review_required'] != false ||
-          authorization['target_post_id'] is! String ||
-          authorization['target_comment_id'] is! String ||
-          authorization['engagement_plan_hash_hex'] is! String ||
-          authorization['reply_draft_hash_hex'] is! String ||
-          authorization['safety_flags'] is! List) {
-        return const PluginHostContractResult.rejected(
-          code: 'runtime_result_invalid',
-          message: 'WASM delegated reply authorization gate failed',
-        );
-      }
-      return PluginHostContractResult.executed(<String, dynamic>{
-        ...authorization,
-        'authorization_hash_hex': authorizationHashHex,
-        'canonical_authorization_json': canonicalJson,
-      });
-    }
-    final draftHashHex = semantic?['draft_hash_hex']?.toString() ?? '';
-    final draft = _validatedCanonicalObject(
-      canonicalJson: canonicalJson,
-      expectedHashHex: draftHashHex,
-      expectedPluginId: pluginId,
-      expectedContractKind: contractKind,
-      expectedPeerHex: null,
-    );
-    if (draft == null || draft['approval_required'] != true) {
-      return const PluginHostContractResult.rejected(
-        code: 'runtime_result_invalid',
-        message: 'WASM ambassador draft integrity or approval gate failed',
-      );
-    }
-    return PluginHostContractResult.executed(<String, dynamic>{
-      ...draft,
-      'draft_hash_hex': draftHashHex,
-      'canonical_draft_json': canonicalJson,
-    });
-  }
 }
 
 Future<PluginHostContractResult?> _consensusPreflightAsync({

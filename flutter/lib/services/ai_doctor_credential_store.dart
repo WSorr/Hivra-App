@@ -36,6 +36,9 @@ class AiDoctorCredentialStore {
   final Map<InferenceProviderKind, Future<bool>> _presenceChecks = {};
   InferenceProviderKind? _cachedPreferredProvider;
   InferenceProviderKind? _sessionPreferredProvider;
+  final Map<InferenceProviderKind, String> _preferredModels = {};
+  bool _preferencesLoaded = false;
+  Future<void> _preferenceWrites = Future<void>.value();
 
   AiDoctorCredentialStore({
     FlutterSecureStorage? secureStorage,
@@ -113,7 +116,7 @@ class AiDoctorCredentialStore {
     final key = _keyForProvider(provider);
     try {
       await _secureStorage.delete(key: key);
-      await _clearPreferredProviderIf(provider);
+      await _clearProviderPreferences(provider);
     } catch (error) {
       throw StateError('Secure AI credential cleanup failed: $error');
     }
@@ -150,26 +153,38 @@ class AiDoctorCredentialStore {
     }
   }
 
-  Future<void> savePreferredProvider(InferenceProviderKind provider) async {
-    try {
-      final file = await _preferredProviderFile(createRoot: true);
-      await _atomicWrites.writeString(
-        file,
-        jsonEncode(<String, Object>{
-          'schema_version': 1,
-          'provider_id': provider.id,
-        }),
-      );
-      _cachedPreferredProvider = provider;
+  Future<void> savePreferredProvider(
+    InferenceProviderKind provider, {
+    String? model,
+  }) {
+    final normalizedModel = model == null ? null : _validateModel(model);
+    return _serializePreferences(() async {
+      await _loadPreferences();
+      final models = Map<InferenceProviderKind, String>.of(_preferredModels);
+      if (normalizedModel != null) models[provider] = normalizedModel;
+      await _writePreferences(provider, models);
       _sessionPreferredProvider = provider;
-    } catch (error) {
-      throw StateError('AI provider preference storage failed: $error');
-    }
+    });
   }
 
   Future<InferenceProviderKind?> loadPreferredProvider() async {
-    final cached = _cachedPreferredProvider;
-    if (cached != null) return cached;
+    InferenceProviderKind? provider;
+    await _serializePreferences(() async {
+      provider = await _loadPreferences();
+    });
+    return provider;
+  }
+
+  Future<String> loadPreferredModel(InferenceProviderKind provider) async {
+    await loadPreferredProvider();
+    return preferredModel(provider);
+  }
+
+  String preferredModel(InferenceProviderKind provider) =>
+      _preferredModels[provider] ?? provider.defaultModel;
+
+  Future<InferenceProviderKind?> _loadPreferences() async {
+    if (_preferencesLoaded) return _cachedPreferredProvider;
     try {
       final file = await _preferredProviderFile();
       if (await file.exists()) {
@@ -177,9 +192,33 @@ class AiDoctorCredentialStore {
         if (decoded is! Map || decoded['schema_version'] != 1) {
           throw const FormatException('Invalid AI provider preference');
         }
-        return _cachePreferredProvider(decoded['provider_id']);
+        final provider = _providerForId(decoded['provider_id']);
+        if (decoded['provider_id'] != null && provider == null) {
+          throw const FormatException('Unknown AI provider preference');
+        }
+        final rawModels =
+            decoded.containsKey('models')
+                ? decoded['models']
+                : const <String, String>{};
+        if (rawModels is! Map) {
+          throw const FormatException('Invalid AI model preferences');
+        }
+        final models = <InferenceProviderKind, String>{};
+        for (final entry in rawModels.entries) {
+          final modelProvider = _providerForId(entry.key);
+          if (modelProvider == null || entry.value is! String) {
+            throw const FormatException('Invalid AI model preference');
+          }
+          models[modelProvider] = _validateModel(entry.value as String);
+        }
+        _preferredModels.addAll(models);
+        _cachedPreferredProvider = provider;
+        _preferencesLoaded = true;
+        return provider;
       }
-      return await _migrateLegacyPreferredProvider();
+      final provider = await _migrateLegacyPreferredProvider();
+      _preferencesLoaded = true;
+      return provider;
     } catch (error) {
       throw StateError('AI provider preference load failed: $error');
     }
@@ -209,22 +248,23 @@ class AiDoctorCredentialStore {
     if (key == null) return;
     try {
       await _secureStorage.delete(key: key);
-      await _clearPreferredProviderIf(provider);
+      await _clearProviderPreferences(provider);
     } catch (error) {
       throw StateError('Secure AI endpoint cleanup failed: $error');
     }
   }
 
-  Future<void> _clearPreferredProviderIf(InferenceProviderKind provider) async {
-    final preferred = await loadPreferredProvider();
-    if (preferred != provider) return;
-    final file = await _preferredProviderFile();
-    if (await file.exists()) await file.delete();
-    await _secureStorage.delete(key: _preferredProviderKey);
-    _cachedPreferredProvider = null;
-    if (_sessionPreferredProvider == provider) {
-      _sessionPreferredProvider = null;
-    }
+  Future<void> _clearProviderPreferences(InferenceProviderKind provider) async {
+    await _serializePreferences(() async {
+      final preferred = await _loadPreferences();
+      final models = Map<InferenceProviderKind, String>.of(_preferredModels)
+        ..remove(provider);
+      await _writePreferences(preferred == provider ? null : preferred, models);
+      await _secureStorage.delete(key: _preferredProviderKey);
+      if (_sessionPreferredProvider == provider) {
+        _sessionPreferredProvider = null;
+      }
+    });
   }
 
   InferenceProviderKind? get sessionPreferredProvider =>
@@ -259,6 +299,7 @@ class AiDoctorCredentialStore {
   Future<InferenceProviderKind> unlockProviderSession(
     InferenceProviderKind provider,
   ) async {
+    await loadPreferredProvider();
     final apiKey = await loadApiKey(provider);
     if (provider.requiresApiKey && (apiKey == null || apiKey.isEmpty)) {
       throw StateError(
@@ -285,18 +326,54 @@ class AiDoctorCredentialStore {
     final legacy = await _secureStorage.read(key: _preferredProviderKey);
     final provider = _providerForId(legacy);
     if (provider == null) return null;
-    await savePreferredProvider(provider);
+    await _writePreferences(provider, const {});
     await _secureStorage.delete(key: _preferredProviderKey);
     return provider;
   }
 
-  InferenceProviderKind? _cachePreferredProvider(Object? providerId) {
-    final provider = _providerForId(providerId);
-    if (provider == null) {
-      throw const FormatException('Unknown AI provider preference');
+  Future<void> _serializePreferences(Future<void> Function() action) {
+    final pending = _preferenceWrites.then((_) => action());
+    _preferenceWrites = pending.then<void>((_) {}, onError: (Object _) {});
+    return pending;
+  }
+
+  Future<void> _writePreferences(
+    InferenceProviderKind? provider,
+    Map<InferenceProviderKind, String> models,
+  ) async {
+    final file = await _preferredProviderFile(createRoot: true);
+    if (provider == null && models.isEmpty) {
+      if (await file.exists()) await file.delete();
+    } else {
+      await _atomicWrites.writeString(
+        file,
+        jsonEncode(<String, Object?>{
+          'schema_version': 1,
+          'provider_id': provider?.id,
+          if (models.isNotEmpty)
+            'models': {
+              for (final entry in models.entries) entry.key.id: entry.value,
+            },
+        }),
+      );
     }
     _cachedPreferredProvider = provider;
-    return provider;
+    _preferredModels
+      ..clear()
+      ..addAll(models);
+    _preferencesLoaded = true;
+  }
+
+  static String _validateModel(String model) {
+    final normalized = model.trim();
+    if (normalized.isEmpty ||
+        utf8.encode(normalized).length > 256 ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(normalized)) {
+      throw const FormatException(
+        'Model must contain 1..256 UTF-8 bytes without control characters',
+      );
+    }
+    return normalized;
   }
 
   static InferenceProviderKind? _providerForId(Object? providerId) {

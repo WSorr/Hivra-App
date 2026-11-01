@@ -23,16 +23,17 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 
 ## Verification
 
+Follow the runtime matrix in `docs/development-control.md`: use isolated test
+Capsules in the current account and preserve working data/packages/credentials.
+
 - [ ] `codesign --verify --deep --strict` succeeds for the `.app`.
 - [ ] `spctl --assess --type execute` result is recorded.
 - [ ] Packaged ZIP artifact was unpacked and verified (app bundle integrity + universal `libhivra_ffi.dylib`) from the extracted `.app`, not only from build tree.
 - [ ] Apple Silicon smoke launch was tested.
-- [ ] Intel smoke launch was tested.
-- [ ] App starts past first screen on a clean machine or clean user account.
+- [ ] App reaches selection/create/recovery and opens the isolated test Capsule
+      in the current user account.
 - [ ] Existing-user update path was evaluated for truth preservation (same ledger -> same starters/relationships/pending state).
-- [ ] Previous `~/Documents/Hivra` runtime migrated once to `~/Library/Application Support/Hivra`; copied ledger/index hashes and projected counters match.
 - [ ] Empty, unavailable, or corrupt runtime storage shows explicit Retry / Import Backup / Recover from Seed actions and does not auto-route to capsule creation.
-- [ ] `~/Documents/Hivra/Backups` and `~/Documents/Hivra/Ledger Exports` remain available as user-visible data after migration.
 - [ ] Settings -> Open local data folder opens `~/Library/Application Support/Hivra` in Finder.
 - [ ] Update build does not re-materialize previously resolved invitation history.
 - [ ] Legacy container migration does not rehydrate deleted canonical capsule files on relaunch.
@@ -44,6 +45,14 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
       (`docs/checklists/user-lifetime-safety-pack.md`) on this build.
 - [ ] For an internal `test` release, record `User Lifetime=PENDING` with a
       reason in the signoff Notes, or complete it and record `PASS`.
+
+For migration/index changes, exercise Scenario 4A with isolated fixtures:
+one-time legacy import, matching Ledger/index projections, and visible Backups
+and Ledger Exports. Keep automated migration regressions for unchanged code.
+
+Native Intel execution and first launch in a separate clean macOS account are
+optional extended evidence. Their absence does not fail the current matrix;
+universal `arm64` + `x86_64` artifact checks remain mandatory.
 
 ## Packaging
 

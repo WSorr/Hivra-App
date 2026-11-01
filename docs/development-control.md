@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-29
+Status date: 2026-10-31
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -9,22 +9,49 @@ evidence documents; historical paragraphs below never reopen a retired path.
 
 ## Development Rules
 
-### 1. Establish the owner before editing
+### 1. Model the owner journey before choosing a mechanism
 
-Before changing code, identify the complete input-to-effect path, its canonical
-owner, existing tests, compatibility paths, and the document that owns the
-contract. If the change would add an owner, reducer, DTO, lifecycle, gate, or
-document, first redesign it to reuse or replace an existing one.
+Apply the Person-First design basis in `product-axis.md`. For a substantial
+decision, first identify the object, observed behavior, states and transitions,
+invariants, authority and responsibility boundaries. Separate necessary
+constraints from restrictions inherited from the present application. Different
+local histories are not automatically a conflict requiring synchronization.
+
+State the capability the person gains and what remains theirs when an executor
+is replaced. Trace the complete input-to-effect path, its canonical owner,
+existing tests, compatibility paths and contract owner. Classify a restriction
+as a Core invariant, delegated permission, external/provider constraint,
+resource bound, owner preference or current implementation limit. Require a
+concrete failure case before preserving or adding it as a host rule.
+
+Derive the smallest mechanism from that model. For nontrivial choices compare
+at least two materially different mechanisms when credible alternatives exist;
+do not invent alternatives for a form. Challenge the mechanism with replacement,
+different local contexts and partial failure. Define an observable prediction
+and the smallest experiment that could disprove it.
+
+Then check current upstream documentation and implementations against the
+derived requirements, including ownership, compatibility, runtime cost and
+licence. Reuse or adapt a suitable library without importing its account,
+tenancy, lifecycle or coordination assumptions. Record checked links/version
+and the brief decision in the existing PR or review, proportional to the change.
+This does not authorize a dependency upgrade or change Ledger authority.
+
+If the change adds an owner, reducer, DTO, lifecycle, gate or document, first
+redesign it to reuse or replace an existing one. Keep this reasoning compact;
+routine fixes do not require a new model document, questionnaire or approval
+stage. A counterexample changes the model, not merely the error message.
 
 ### 2. Keep one truth lane and one effect lane
 
 - The Ledger owns historical domain facts.
 - Canonical projections own current state.
 - The App Shell renders projections and sends explicit intents.
-- WASM owns package-private strategy and policy semantics.
-- The host owns authorization, credentials, persistence, normalized provider
-  evidence, and permitted effects.
-- A transport or provider adapter moves data; it does not become a domain owner.
+- WASM owns product behavior and service protocol/response interpretation.
+- The host enforces the owner's access grants and supplies shared technical
+  execution and optional opaque persistence.
+- Service observations are not a second host-owned account truth. The target
+  contract and implemented v1 exceptions belong to `plugins/plugin_host_api_v1.md`.
 
 Different inputs that produce the same state change or external effect converge
 before execution. A replacement removes or seals the path it supersedes in the
@@ -45,6 +72,11 @@ evidence that proves it. Do not split one journey into status-only passes,
 release candidates, or speculative framework work. V2 remains design-only until
 an explicit migration unit is activated.
 
+Define relevant failure, restart and replacement behavior before implementation.
+Iterate with focused tests; validate the finished scope through required gates
+and its exact packaged journey. Reopen accepted work for a concrete defect,
+changed behavior or missing evidence required by the declared matrix.
+
 ### 5. Use the validation ladder in order
 
 1. Focused unit/widget or package tests for the changed semantics.
@@ -61,6 +93,13 @@ evidence are bound together.
 
 Android packaged validation follows `checklists/release-android.md`, which owns
 the local macOS emulator environment and evidence requirements.
+
+Required runtimes: Apple Silicon macOS in the current account with isolated test
+Capsules, and local macOS Android Emulator. Physical Android adds evidence.
+Native Intel and a separate clean macOS account/machine are optional, not release
+prerequisites or automatic debts; expanding the matrix needs explicit approval.
+Record untested environments. Universal binary checks, data isolation, recovery
+and channel-specific signing/signoff requirements remain mandatory.
 
 ### 6. Upgrade dependencies and tooling as one controlled unit
 
@@ -102,6 +141,13 @@ owners/paths, validation evidence, remaining risk, and required manual smoke.
 No commit, push, tag, release, VPS mutation, or external effect is implied by a
 green repository gate.
 
+Closing a runtime architectural debt additionally requires showing that the
+capability survives a relevant executor/package/provider replacement without
+moving ownership or rewriting unrelated host behavior. A repaired reference
+application or passing fixture alone closes only the stated defect. Label
+implemented behavior, tested evidence, design requirements and known limits
+separately; neither target prose nor accepted 1.x limitations prove completion.
+
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
@@ -125,47 +171,90 @@ green repository gate.
   is claimed.
 - External package versions remain replaceable when the host ABI, contract,
   capability policy, and catalog trust root are unchanged.
-- Chat, Moltbook and Jack Ventura use installed WASM packages. Moltbook now
-  keeps its last post result until public visibility, exact text, link and
-  moderation have been shown and explicitly completed. Its canonical contract
-  is `plugins/moltbook_engagement_lifecycle_v1.md`. Exact packaged archived-result
-  smoke covered refresh, reopen and restart without a new publication; a live
-  automatic reply receipt remains unobserved.
+- Chat, Moltbook and Jack Ventura use installed WASM packages. The local Moltbook
+  0.8.0 replacement uses the common workspace API, service-owned recent history,
+  Analyst inference and owner grants. Its host controller, product screen,
+  publication journal and local product stores are removed. Its authoritative
+  workflow and changed stateless recovery guarantees belong to
+  `plugins/moltbook_engagement_lifecycle_v1.md`. Earlier packaged 0.7.3 evidence
+  does not qualify the replacement; no live publication is authorized.
 - Capsule-scoped credential stores remain authoritative; AI unlock is
   process-scoped. The Flutter 3.47.4, Dart 3.13.3, Xcode 27.1, and Swift
   Package Manager baseline remains authoritative.
 
 ## Current Jack Ventura Boundary
 
-Jack Ventura is the maintained installable WASM trading capability. Its v1
-boundary is one selected instrument, host-owned credentials, one local or VPS
-executor, one durable effect journal, provider-scoped reconciliation, Stop,
-package replacement, restart recovery, and bounded VPS installation.
+Jack Ventura 0.2.0 is the local, unreleased reference package for the common
+protocol-2 workspace path. Its protocol, parsing, preflight and recovery are
+package-owned; the host owns generic access enforcement and execution. The
+implemented wire contract has one owner: `plugins/plugin_host_api_v1.md`.
 
-Existing v1 evidence proves package replacement, restart-safe workspace state,
-exact-order reconciliation, bounded provisioning, and one accepted entry
-lifecycle. It does not prove
-profitability, fill-to-closure-to-reentry, exchange-side protection, or
-continuous autonomous VPS operation. The retired Trading runner and strategy
-must remain sealed.
+The owner ended the earlier local trading test. It is not a qualification of
+fill-to-TP, stop protection, profitability or continuous autonomous operation.
+The old test heartbeat was removed; Jack and any external orders were not
+stopped or cancelled. No live trading or VPS changes are authorized for the
+API implementation. Old test-session migration is explicitly out of scope.
 
-Open Jack evidence is bounded to these items:
+Local verification covers generic permission enforcement and package replacement,
+queued inference revocation, real WASM dense six-frame processing, partial/full
+reducing observations and restart, plus a provider-free local runner's custody,
+singleton, timer and shutdown. Service responses are synthetic. The automatic
+development UI smoke on Apple Silicon macOS also passed: independent package
+installation, common catalog, owner grants/revocation, cold restart, replacement
+with a different private schema and uninstall/reinstall with retained checkpoint.
+It used Debug, the existing test-home override and a separate app identifier;
+it is not canonical guarded release acceptance. Android and Linux/VPS UI
+qualification remain untested. No live provider acceptance was established.
+Moltbook 0.8.0 now uses this same workspace path; its native/packaged
+acceptance remains separate from synthetic reference-package evidence. No new strategy, trading runner or host fallback belongs
+to this pass.
 
-- live closure/reentry, conditional-stop behavior, protection verification,
-  and loss-of-response recovery remain unproven;
-- packaged runtime-update smoke remains pending.
+## Unified API Development Decision
 
-No new strategy filter, runner, host fallback, or second effect owner is
-permitted under this boundary. Trading qualification must use the existing
-package/executor path and actual provider evidence. Host authorization maintenance
-does not require placing live orders.
+The selected documentation outcome is to make the Capsule/package boundary
+explicit under the three laws: a small Core for identity, authority and
+relationships; a shared technical host; isolated packages for capabilities.
+The development target, minimal Jack replacement and storage/recovery terms
+have one owner: `plugins/plugin_host_api_v1.md`, under Unified Capability API.
 
-The current bounded maintenance outcome is owner-selected execution duration
-and full revocation through the existing host grant. Its maintained contract is
-`plugins/plugin_host_api_v1.md`. Core, Ledger, strategy and provider effects are
-unchanged. Source tests and gates are required; exact packaged Mac/APK and
-matching-runner acceptance remain pending until a separately approved clean
-candidate can be built. No VPS deployment or trading is part of this pass.
+The authorized implementation replaces Jack's host-aware request path with
+protocol-2 common operations, package-owned protocol/lifecycle and owner-granted
+network/credential/inference access. The generic host does not inspect private
+trading state or enforce duplicate strategy policy. The old Jack adapter and
+named-request dispatcher are removed. Moltbook 0.8.0 replaces its specialized
+host workflow through the same technical API, without a product-state store.
+
+The owner ended the local trading test and explicitly excluded old-session
+migration from this pass. Do not add old journal imports or old-ID compatibility
+for those sessions. Existing files remain untouched. New sessions still persist
+unresolved intent before dispatch and reconcile exact identities after restart;
+that is ordinary delivery correctness, not historical migration. Future real
+session migrations must define preservation requirements before implementation.
+No trading, commits, release or VPS mutation are authorized. Local synthetic
+runtime checks verify the implementation; packaged/manual product acceptance
+remains distinct and requires the normal owner-selected smoke mode.
+
+The owner has now selected the product model for Moltbook comparison: owner
+permissions and native Keychain secret connection on the plugin screen,
+package-owned execution, the existing Analyst AI connection for news generation,
+and service-owned publication/comment history read on every start. Moltbook
+requires no local business-state persistence. The canonical model and current
+implementation differences belong to `plugins/plugin_host_api_v1.md`, under
+Owner-Granted Connections. Do not turn service restrictions or content policy
+into repeated host approval. The common path now supports owner-selected Keychain references, a single
+workflow grant reused by Start, stateless execution, generic choice actions and
+bounded waits. Unit/widget checks cover revocation, package replacement and
+restart without a workspace checkpoint; native WASM checks use synthetic service
+responses. Moltbook 0.8.0 now implements this boundary and has no host-owned
+workflow or product store. Native Keychain UI and guarded
+packaged acceptance of the changed path remain unverified; the dirty checkout
+and missing matching canonical runner prevent release qualification.
+
+Judge progress by product independence and removed host responsibilities,
+not by more adapters, gates or speculative extension layers. Keep development
+simple by reducing the host's obligations rather than adding product-aware
+infrastructure. Documentation changes alone do not establish runtime
+compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
@@ -199,13 +288,60 @@ certify new effects on these artifacts.
 
 This closes the bounded unsigned test matrix. Full User Lifetime, native Intel,
 a separate macOS user, long-term migration/lifetime, other Android combinations
-and the open Jack evidence remain unconfirmed. No permanently frozen host ABI
-is claimed. Future runtime changes require a new exact-artifact smoke; package
+and the open Jack evidence remain unconfirmed. Intel and separate-profile
+evidence are optional under the required matrix above; channel-specific journey
+and signoff requirements still apply. No permanently frozen host ABI is claimed.
+Future runtime changes require a new exact-artifact smoke; package
 changes within supported contracts must remain independently replaceable.
 Do not overwrite attested artifacts or reuse their smoke for changed code.
 
 ## Deferred Product Work
 
+These entries record accepted product boundaries for future selection, not
+implemented guarantees or permission to begin every item. Carry the selected
+entry's required retention, permitted eviction/re-entry and non-goals into its
+existing contract, tests and acceptance; do not expand them implicitly.
+
+- Package replacement through reconnection: installing a replacement must not
+  require preserving the old package's credentials or complete private state.
+  Host-held connection secrets may remain scoped in secure storage, or the
+  owner may supply them again when the new package reconnects. Reacquire
+  provider-verifiable orders, positions or publication state through the same
+  adapter/effect owners; do not require a duplicate permanent service archive.
+  Non-reconstructible owner data follows an explicit retention choice. Keep
+  the minimal identity/evidence needed to reconcile unresolved sends and avoid
+  duplicates. Separate package installation/UI availability from resuming a
+  remote executor: old authority must not silently transfer or create two
+  authorized financial executors. Acceptance covers replacement, reconnect,
+  provider-state recovery and restart, including an unavailable old VPS;
+  mandatory whole-checkpoint migration and automatic authority renewal are
+  not acceptance requirements. Current 1.x behavior remains unchanged pending
+  the selected implementation and its compatibility checks.
+- Lightweight Chat retention: a default owner-configurable 100 MB rolling
+  message-content cache per Capsule, shared across its conversations. Evict
+  the oldest completed messages when its storage budget is reached; retain the
+  remaining window across restart and package replacement. Each device may
+  keep its own window without mandatory complete-history synchronization.
+  Existing bounded delivery queues keep unresolved sends until their outcome
+  is handled; cache eviction must not erase their identity or repeat a send.
+  Identity, relationships and Core Ledger facts are outside this cache.
+  Acceptance covers budget eviction, retained-window recovery/restart and
+  unresolved-delivery preservation. Infinite message retention, guaranteed
+  recovery of evicted messages from Nostr and a full messaging-service archive
+  are non-goals. This is the selected design direction, not the current 1.x
+  storage limit or permission to prune existing data now.
+- Replaceable inference connections: an owner must be able to use updated or
+  new models and add providers speaking an already supported inference
+  protocol without rebuilding Capsule. Provider name, protocol, endpoint and
+  model are host configuration; credentials remain bound to that connection
+  in secure storage. Local model weights belong to the local inference
+  executor, outside Capsule. Reuse the existing AI Runtime and adapters;
+  a genuinely new protocol or execution capability may require an adapter
+  extension. The current uncommitted model-preference patch is partial work,
+  not completion of this scope. Acceptance: the same installed Mac/APK can
+  change model, add a compatible provider, retain the selection after restart
+  and report incompatibility without silently rerouting requests; Capsule
+  identity, Ledger, relationships and package state remain unchanged.
 - New Chat UX and Moltbook engagement features remain outside the selected
   package-replacement outcome; they do not reopen the Capsule release scope.
 - Jack live closure/reentry and continuous VPS evidence remain experimental
@@ -214,6 +350,14 @@ Do not overwrite attested artifacts or reuse their smoke for changed code.
   crypto-agility, and Trust Layer issue `#7` remain retained architectural
   debt. Select them only when they block the selected product journey or close
   a concrete security/correctness defect.
+- Reassess owner/capability boundaries before closing the retained host debt:
+  installation-wide package/version and deletion scope, same-owner context
+  recovery, reference-specific workspace/provider bindings, host editorial and
+  local-budget policy, and UI-bound execution lifetime are current limits to
+  evaluate, not permanent Person-First requirements. Select one bounded owner
+  journey before implementation. Recheck the pending Analyst context patch for
+  useful technical coverage as well as privacy; coarse field/error reduction
+  is not evidence that the owner has full technical diagnostics.
 
 ## Authority
 
