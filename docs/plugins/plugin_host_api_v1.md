@@ -350,8 +350,11 @@ authorize network access through the common workspace API.
   Choice sources declare a package action, never a named service request.
   Host action markers are only `workspace.authorize`, `workspace.start`,
   `workspace.stop`; capability checks use the resolved installed binding.
-  Opening sends no draft settings. Edits survive status refresh, errors cannot
-  overwrite a newer action, and failed observations mark the view unavailable.
+  Opening sends no draft settings. Automatic status reads run only for a running
+  workflow. Explicit package results and failures remain visible across timer
+  ticks and app resume until another owner action or reopening; Start resumes
+  workflow observation. Edits survive status refresh, errors cannot overwrite a
+  newer action, and failed observations mark the view unavailable.
   Local and headless execution share `PluginWorkspaceRuntime`, the same vault
   ports, workspace serialization/OS lease and package binding checks. Existing
   local/VPS custody still has one executor and no implicit local fallback.

@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-01
+Status date: 2026-11-02
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -263,10 +263,22 @@ restart and full grant revocation were exercised through an independent common
 API package on both runtimes. The macOS owner completed the native vault unlock.
 Protected requests used only a synthetic token and a closed localhost port;
 this does not establish authenticated service or live Moltbook acceptance.
-Authenticated history/Analyst preparation remains required with an owner-connected
-test account. Exact digests and native observations are retained in
-`/Volumes/Dev/projects/hivra-artifacts/owner-connection-20261101`; no test release
-was published.
+Exact digests and native observations for that connection repair are retained in
+`/Volumes/Dev/projects/hivra-artifacts/owner-connection-20261101`.
+Subsequent authenticated acceptance uses Moltbook 0.8.1 and guarded host source
+`21d35a4`: macOS reads the agent's service history and prepares both a reply and
+news through the owner's Cloudflare Workers AI connection in Analyst, without
+sending content. Cold restart reacquires history without a local draft or
+Moltbook workspace checkpoint. This exposed and repaired a common workspace
+defect: idle grants no longer trigger automatic package `open`, and explicit
+action results/errors survive timers and app resume. Android's exact APK reads
+the same authenticated history and preserves the visible unavailable-Analyst
+error across background/resume; live Android AI preparation still requires an
+owner-connected provider. This closes the disappearing-result defect, not the
+entire plugin runtime debt or publication/reply qualification. Digests and native
+observations are retained in
+`/Volumes/Dev/projects/hivra-artifacts/moltbook-live-read-prepare-20261101/workspace-result-21d35a4`;
+no test release or Moltbook content was published.
 
 Judge progress by product independence and removed host responsibilities,
 not by more adapters, gates or speculative extension layers. Keep development

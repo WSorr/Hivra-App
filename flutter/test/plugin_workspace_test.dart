@@ -556,6 +556,63 @@ void main() {
     }
   });
   testWidgets(
+    'explicit package results and failures survive polling and app resume until reopening',
+    (tester) async {
+      for (final (running, fails) in [
+        (false, false),
+        (true, false),
+        (false, true),
+        (true, true),
+      ]) {
+        final actions = <String>[];
+        Widget screen() => MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
+              if (action == 'calculate' && fails) {
+                throw StateError('Calculation unavailable');
+              }
+              return {
+                ...presentation(),
+                'message':
+                    action == 'calculate' ? 'Computed proposal' : 'Ready',
+                'execution': {'enabled': true, 'running': running},
+                'actions': [
+                  {'id': 'calculate', 'label': 'Calculate'},
+                ],
+              };
+            },
+          ),
+        );
+        await tester.pumpWidget(screen());
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Calculate'));
+        await tester.pumpAndSettle();
+        final result = find.textContaining(
+          fails ? 'Calculation unavailable' : 'Computed proposal',
+        );
+        expect(result, findsOneWidget);
+        await tester.pump(const Duration(seconds: 16));
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+        expect(result, findsOneWidget);
+        expect(actions, ['open', 'calculate']);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(screen());
+        await tester.pumpAndSettle();
+        expect(find.text('Ready'), findsOneWidget);
+        expect(actions, ['open', 'calculate', 'open']);
+        await tester.pumpWidget(const SizedBox());
+      }
+    },
+  );
+  testWidgets(
     'first connection stores only on Allow, passes references, and fails without a grant',
     (tester) async {
       for (final outcome in ['allow', 'cancel', 'fail', 'leave']) {
@@ -691,7 +748,7 @@ void main() {
     'one owner grant connects Keychain references and Start reuses it',
     (tester) async {
       final access = permission('https://one.example');
-      var grants = 0, starts = 0;
+      var grants = 0, starts = 0, opens = 0;
       Map<String, dynamic>? execution;
       Map<String, Map<String, String>>? selected;
       Map<String, dynamic> view() => {
@@ -742,6 +799,7 @@ void main() {
             },
             runWorkspaceAction: (action, settings) async {
               if (action == 'start') starts++;
+              if (action == 'open') opens++;
               return view();
             },
           ),
@@ -772,6 +830,10 @@ void main() {
       expect(starts, 1);
       expect(grants, 2);
       expect(find.text('Allow'), findsNothing);
+      final beforePolling = opens;
+      await tester.pump(const Duration(seconds: 16));
+      await tester.pumpAndSettle();
+      expect(opens, beforePolling + 1);
       await tester.pumpWidget(const SizedBox());
     },
   );
