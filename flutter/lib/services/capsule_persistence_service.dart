@@ -191,7 +191,8 @@ class CapsulePersistenceService {
     final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
     final pubKeyHex = pubKey != null ? _bytesToHex(pubKey) : null;
     final index = await _readIndex();
-    final duplicateSeedPubKeyHex = await _findCapsuleForSeed(
+    final duplicateSeedPubKeyHex = await _findOwnerForSeed(
+      hivra,
       index,
       seed,
       excludePubKeyHex: pubKeyHex,
@@ -1876,23 +1877,6 @@ class CapsulePersistenceService {
       if (current.identityMode != other.identityMode) return false;
     }
     return true;
-  }
-
-  Future<String?> _findCapsuleForSeed(
-    CapsulesIndex index,
-    Uint8List seed, {
-    String? excludePubKeyHex,
-  }) async {
-    for (final entry in index.capsules.values) {
-      final pubKeyHex = entry.pubKeyHex;
-      if (pubKeyHex.isEmpty || pubKeyHex == excludePubKeyHex) continue;
-      final storedSeed = await _loadSeedForCapsule(pubKeyHex);
-      if (storedSeed == null) continue;
-      if (_sameBytes(seed, storedSeed)) {
-        return pubKeyHex;
-      }
-    }
-    return null;
   }
 
   Future<String?> _findOwnerForSeed(

@@ -16,6 +16,10 @@ class PluginWorkspaceScreen extends StatefulWidget {
   final List<String> capabilities;
   final PluginWorkspaceAction runWorkspaceAction;
   final Future<List<Map<String, String>>> Function()? listSecrets;
+  final Future<List<Map<String, String>>> Function(
+    List<Map<String, String>> secrets,
+  )?
+  saveSecrets;
   final Future<Map<String, dynamic>> Function({
     required bool enabled,
     required int? expiresAtMs,
@@ -40,6 +44,7 @@ class PluginWorkspaceScreen extends StatefulWidget {
     this.capabilities = const [],
     required this.runWorkspaceAction,
     this.listSecrets,
+    this.saveSecrets,
     this.configureExecution,
     this.connectVps,
     this.useOnline,
@@ -593,6 +598,27 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
     var untilRevoked = _view?['execution']?['expires_at_ms'] == null;
     var hours = '24';
+    const newSecret = '=new=';
+    final names = <String, Map<String, String>>{
+      for (final entry in declarations.entries)
+        entry.key as String: {
+          for (final field in entry.value as List)
+            field['id'] as String: field['label'] as String,
+        },
+    };
+    final values = <String, Map<String, String>>{
+      for (final entry in declarations.entries)
+        entry.key as String: {
+          for (final field in entry.value as List) field['id'] as String: '',
+        },
+    };
+    bool incompleteSecret(String alias, String field) =>
+        selected[alias]?[field] == null ||
+        (selected[alias]?[field] == newSecret &&
+            (names[alias]![field]!.trim().isEmpty ||
+                names[alias]![field]!.trim().length > 128 ||
+                values[alias]![field]!.trim().isEmpty ||
+                values[alias]![field]!.trim().length > 4096));
     final accepted =
         await showDialog<bool>(
           context: context,
@@ -610,7 +636,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                           children: [
                             Text(_accessText(access)),
                             for (final entry in declarations.entries)
-                              for (final field in entry.value as List)
+                              for (final field in entry.value as List) ...[
                                 DropdownButtonFormField<String>(
                                   key: ValueKey(
                                     'plugin-secret-${entry.key}-${field['id']}',
@@ -622,6 +648,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                     labelText: field['label'] as String,
                                   ),
                                   items: [
+                                    if (widget.saveSecrets != null)
+                                      const DropdownMenuItem(
+                                        value: newSecret,
+                                        child: Text('Add new secret…'),
+                                      ),
                                     for (final reference in references)
                                       DropdownMenuItem(
                                         value: reference['id'],
@@ -640,9 +671,52 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                         }
                                       }),
                                 ),
+                                if (selected[entry.key]![field['id']] ==
+                                    newSecret) ...[
+                                  TextFormField(
+                                    key: ValueKey(
+                                      'plugin-secret-name-${entry.key}-${field['id']}',
+                                    ),
+                                    initialValue:
+                                        names[entry.key]![field['id']],
+                                    decoration: const InputDecoration(
+                                      labelText: 'Secret name',
+                                    ),
+                                    onChanged:
+                                        (value) => update(() {
+                                          names[entry.key]![field['id']
+                                                  as String] =
+                                              value;
+                                        }),
+                                  ),
+                                  TextFormField(
+                                    key: ValueKey(
+                                      'plugin-secret-value-${entry.key}-${field['id']}',
+                                    ),
+                                    initialValue:
+                                        values[entry.key]![field['id']],
+                                    obscureText: true,
+                                    autocorrect: false,
+                                    enableSuggestions: false,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Service token or key',
+                                      helperText:
+                                          'Never enter your device password here.',
+                                    ),
+                                    onChanged:
+                                        (value) => update(() {
+                                          values[entry.key]![field['id']
+                                                  as String] =
+                                              value;
+                                        }),
+                                  ),
+                                ],
+                              ],
                             if (declarations.isNotEmpty && references.isEmpty)
-                              const Text(
-                                'Connect secrets to this Capsule in Keychain first.',
+                              Text(
+                                widget.saveSecrets == null
+                                    ? 'Connect secrets to this Capsule in Keychain first.'
+                                    : 'Choose Add new secret to save a connection in secure storage.',
                               ),
                             SwitchListTile(
                               contentPadding: EdgeInsets.zero,
@@ -681,8 +755,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                           onPressed:
                               declarations.entries.any(
                                         (e) => (e.value as List).any(
-                                          (f) =>
-                                              selected[e.key]?[f['id']] == null,
+                                          (f) => incompleteSecret(
+                                            e.key as String,
+                                            f['id'] as String,
+                                          ),
                                         ),
                                       ) ||
                                       (!untilRevoked &&
@@ -700,6 +776,31 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         ) ??
         false;
     if (!accepted || !mounted) return false;
+    final additions = <Map<String, String>>[];
+    final targets = <(String, String)>[];
+    for (final entry in declarations.entries) {
+      for (final field in entry.value as List) {
+        if (selected[entry.key]![field['id']] != newSecret) continue;
+        final alias = entry.key as String;
+        final id = field['id'] as String;
+        targets.add((alias, id));
+        additions.add({
+          'label': names[alias]![id]!.trim(),
+          'value': values[alias]![id]!.trim(),
+        });
+      }
+    }
+    if (additions.isNotEmpty) {
+      final saved = await widget.saveSecrets!(additions);
+      if (!mounted) return false;
+      if (saved.length != targets.length ||
+          saved.any((r) => r['id']?.isNotEmpty != true)) {
+        throw StateError('Secret connection was not saved');
+      }
+      for (var i = 0; i < targets.length; i++) {
+        selected[targets[i].$1]![targets[i].$2] = saved[i]['id']!;
+      }
+    }
     final view = await configure(
       enabled: true,
       expiresAtMs:

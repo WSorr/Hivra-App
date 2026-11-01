@@ -131,8 +131,14 @@ access configuration, not a Moltbook account mirror. Unknown delivery and
 service errors are interpreted by the package using the service's protocol;
 Hivra must not invent independent service guarantees or another approval chain.
 
-The common workspace now implements the owner connection model: its permission
-screen selects references to existing Capsule-scoped Keychain secrets. Native
+The common workspace implements the owner connection model: its permission
+screen selects an existing Capsule-scoped Keychain reference or accepts a new
+service token/key directly from the owner. One Allow decision saves new fields
+together in the existing vault and binds only their references. Cancel and a
+failed native write do not issue a grant. The first connection does not require
+an older product screen, service adapter, terminal setup or a secret supplied by
+WASM. Secret custody and partial-failure behavior have one owner:
+`../architecture/capsule-scoped-secret-lifecycle.md`. Native
 secure storage performs authentication according to the Keychain item's access
 policy; Hivra never asks for the system password. The grant stores references,
 not copies of secret values. The package receives only its declared credential

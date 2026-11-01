@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-10-31
+Status date: 2026-11-01
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -151,8 +151,8 @@ separately; neither target prose nor accepted 1.x limitations prove completion.
 ## Current State
 
 - Hivra 1.x is the only maintained runtime; Hivra 2.0 remains design-only.
-- Protected `main` includes package/VPS recovery, the last-result Moltbook
-  lifecycle, replacement/reopen/restart and manifest capability admission.
+- Protected `main` includes package/VPS recovery, the common protocol-2
+  workspace, replacement/reopen/restart and manifest capability admission.
   Read Git for the current commit.
 - The latest published prerelease is `v1.0.5-test1`, with runtime source
   `21ae7b5` and its matching canonical runner. Its tag adds only digest-bound
@@ -230,9 +230,10 @@ for those sessions. Existing files remain untouched. New sessions still persist
 unresolved intent before dispatch and reconcile exact identities after restart;
 that is ordinary delivery correctness, not historical migration. Future real
 session migrations must define preservation requirements before implementation.
-No trading, commits, release or VPS mutation are authorized. Local synthetic
-runtime checks verify the implementation; packaged/manual product acceptance
-remains distinct and requires the normal owner-selected smoke mode.
+Live trading, publication and VPS mutation remain outside the API work.
+Integration follows explicit owner instructions and the protected-main rule.
+Local synthetic runtime checks verify implementation; exact packaged product
+acceptance remains distinct.
 
 The owner has now selected the product model for Moltbook comparison: owner
 permissions and native Keychain secret connection on the plugin screen,
@@ -246,9 +247,18 @@ workflow grant reused by Start, stateless execution, generic choice actions and
 bounded waits. Unit/widget checks cover revocation, package replacement and
 restart without a workspace checkpoint; native WASM checks use synthetic service
 responses. Moltbook 0.8.0 now implements this boundary and has no host-owned
-workflow or product store. Native Keychain UI and guarded
-packaged acceptance of the changed path remain unverified; the dirty checkout
-and missing matching canonical runner prevent release qualification.
+workflow or product store. Guarded macOS acceptance verified catalog discovery,
+permission enforcement/revocation and replacement with a different private state
+shape; the exact Android APK installed and opened Moltbook's common workspace.
+That smoke exposed a missing first-secret connection and a series of native
+Keychain prompts during Capsule recovery. The bounded owner-connection repair
+adds first-secret input to the existing permission decision and replaces the
+recovery seed scan with the existing public-owner comparison. Focused checks
+cover native storage failure/cancellation, delayed completion after leaving,
+changed owner/package before storage commit and legacy owner recovery without
+unlocking unrelated seeds. Native requalification, restart and authenticated
+history/Analyst preparation remain required; these code checks do not establish
+live Moltbook acceptance.
 
 Judge progress by product independence and removed host responsibilities,
 not by more adapters, gates or speculative extension layers. Keep development

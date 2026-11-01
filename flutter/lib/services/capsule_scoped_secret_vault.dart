@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -28,7 +29,7 @@ class CapsuleScopedSecretVault {
     required String accountId,
     required String secretName,
     required String secretValue,
-  }) {
+  }) async {
     final entry = _VaultEntry(
       capsuleHex: capsuleHex.trim().toLowerCase(),
       pluginId: pluginId.trim(),
@@ -36,14 +37,58 @@ class CapsuleScopedSecretVault {
       accountId: accountId.trim(),
       secretName: secretName.trim(),
       secretValue: secretValue.trim(),
-    )..validate();
+    );
+    await _saveEntries([entry]);
+  }
+
+  /// Owner input only; packages receive the returned references, never values.
+  /// Save all fields from one permission decision in one native storage write.
+  Future<List<Map<String, String>>> addReferences({
+    required String capsuleHex,
+    required String pluginId,
+    required List<Map<String, String>> secrets,
+    Future<void> Function()? authorize,
+  }) {
+    if (secrets.isEmpty || secrets.length > 64) {
+      throw const FormatException('Invalid number of secrets');
+    }
+    final random = Random.secure();
+    return _saveEntries([
+      for (final secret in secrets)
+        _VaultEntry(
+          capsuleHex: capsuleHex.trim().toLowerCase(),
+          pluginId: pluginId.trim(),
+          providerId: 'owner',
+          accountId:
+              List.generate(
+                16,
+                (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+              ).join(),
+          secretName: 'secret',
+          label: secret['label']?.trim(),
+          secretValue: secret['value']?.trim() ?? '',
+        ),
+    ], authorize: authorize);
+  }
+
+  Future<List<Map<String, String>>> _saveEntries(
+    List<_VaultEntry> updates, {
+    Future<void> Function()? authorize,
+  }) {
+    for (final entry in updates) {
+      entry.validate();
+    }
     return _locked(() async {
       final entries = await _loadEntries();
-      entries[entry.scopeKey] = entry;
+      for (final entry in updates) {
+        entries[entry.scopeKey] = entry;
+      }
       if (entries.length > _maxEntries) {
         throw StateError('Capsule-scoped secret vault is full');
       }
+      await authorize?.call();
       await _writeEntries(entries);
+      return [for (final entry in updates) entry.reference];
     });
   }
 
@@ -76,12 +121,7 @@ class CapsuleScopedSecretVault {
       final entries = await _loadEntries();
       return [
         for (final entry in entries.values)
-          if (entry.capsuleHex == owner)
-            {
-              'id': entry.scopeKey,
-              'label':
-                  '${entry.providerId} / ${entry.accountId} / ${entry.secretName}',
-            },
+          if (entry.capsuleHex == owner) entry.reference,
       ]..sort((a, b) => a['label']!.compareTo(b['label']!));
     });
   }
@@ -123,47 +163,6 @@ class CapsuleScopedSecretVault {
           entry.providerId == normalizedProvider &&
           entry.accountId == normalizedAccount,
     );
-  }
-
-  Future<void> replaceAccountSecret({
-    required String capsuleHex,
-    required String pluginId,
-    required String providerId,
-    String? previousAccountId,
-    required String accountId,
-    required String secretName,
-    required String secretValue,
-  }) {
-    final entry = _VaultEntry(
-      capsuleHex: capsuleHex.trim().toLowerCase(),
-      pluginId: pluginId.trim(),
-      providerId: providerId.trim(),
-      accountId: accountId.trim(),
-      secretName: secretName.trim(),
-      secretValue: secretValue.trim(),
-    )..validate();
-    final normalizedPrevious =
-        previousAccountId == null
-            ? null
-            : _identifier('previous_account_id', previousAccountId);
-    return _locked(() async {
-      final entries = await _loadEntries();
-      if (normalizedPrevious != null && normalizedPrevious != entry.accountId) {
-        entries.removeWhere(
-          (_, candidate) =>
-              candidate.capsuleHex == entry.capsuleHex &&
-              candidate.pluginId == entry.pluginId &&
-              candidate.providerId == entry.providerId &&
-              candidate.accountId == normalizedPrevious &&
-              candidate.secretName == entry.secretName,
-        );
-      }
-      entries[entry.scopeKey] = entry;
-      if (entries.length > _maxEntries) {
-        throw StateError('Capsule-scoped secret vault is full');
-      }
-      await _writeEntries(entries);
-    });
   }
 
   Future<void> deletePlugin(
@@ -318,6 +317,7 @@ class _VaultEntry {
   final String accountId;
   final String secretName;
   final String secretValue;
+  final String? label;
 
   const _VaultEntry({
     required this.capsuleHex,
@@ -326,6 +326,7 @@ class _VaultEntry {
     required this.accountId,
     required this.secretName,
     required this.secretValue,
+    this.label,
   });
 
   factory _VaultEntry.fromJson(Map<String, dynamic> json) {
@@ -336,6 +337,7 @@ class _VaultEntry {
       accountId: json['account_id']?.toString() ?? '',
       secretName: json['secret_name']?.toString() ?? '',
       secretValue: json['secret_value']?.toString() ?? '',
+      label: json['label'] as String?,
     );
   }
 
@@ -347,6 +349,11 @@ class _VaultEntry {
     secretName,
   ].join('::');
 
+  Map<String, String> get reference => {
+    'id': scopeKey,
+    'label': label ?? '$providerId / $accountId / $secretName',
+  };
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'capsule_hex': capsuleHex,
     'plugin_id': pluginId,
@@ -354,6 +361,7 @@ class _VaultEntry {
     'account_id': accountId,
     'secret_name': secretName,
     'secret_value': secretValue,
+    if (label != null) 'label': label,
   };
 
   void validate() {
@@ -362,6 +370,9 @@ class _VaultEntry {
     CapsuleScopedSecretVault._identifier('provider_id', providerId);
     CapsuleScopedSecretVault._identifier('account_id', accountId);
     CapsuleScopedSecretVault._identifier('secret_name', secretName);
+    if (label != null && (label!.isEmpty || label!.length > 128)) {
+      throw const FormatException('Secret name must contain 1..128 characters');
+    }
     if (secretValue.isEmpty || secretValue.length > 4096) {
       throw const FormatException('secret_value must contain 1..4096 chars');
     }

@@ -280,18 +280,47 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
 
   Future<List<Map<String, String>>> listWorkspaceSecretReferences(
     WasmPluginRecord record,
+  ) => _workspaceSecretReferences(
+    record,
+    (owner, _) => _secretVault.listReferences(owner),
+  );
+
+  Future<List<Map<String, String>>> saveWorkspaceSecretReferences(
+    WasmPluginRecord record,
+    List<Map<String, String>> secrets,
+  ) => _workspaceSecretReferences(
+    record,
+    (owner, authorize) => _secretVault.addReferences(
+      capsuleHex: owner,
+      pluginId: record.pluginId!,
+      secrets: secrets,
+      authorize: authorize,
+    ),
+  );
+
+  Future<List<Map<String, String>>> _workspaceSecretReferences(
+    WasmPluginRecord record,
+    Future<List<Map<String, String>>> Function(
+      String owner,
+      Future<void> Function() authorize,
+    )
+    operation,
   ) async {
     final owner = activeCapsuleRootHex();
     if (owner == null) throw StateError('Open a Capsule first');
     final binding = await registry.resolveRuntimeBinding(record.pluginId!);
     if (binding.packageId != record.id) throw StateError('Package changed');
-    final references = await _secretVault.listReferences(owner);
-    final current = await registry.resolveRuntimeBinding(record.pluginId!);
-    if (activeCapsuleRootHex() != owner ||
-        current.packageId != binding.packageId ||
-        current.packageDigestHex != binding.packageDigestHex) {
-      throw StateError('Capsule or package changed');
+    Future<void> authorize() async {
+      final current = await registry.resolveRuntimeBinding(record.pluginId!);
+      if (activeCapsuleRootHex() != owner ||
+          current.packageId != binding.packageId ||
+          current.packageDigestHex != binding.packageDigestHex) {
+        throw StateError('Capsule or package changed');
+      }
     }
+
+    final references = await operation(owner, authorize);
+    await authorize();
     return references;
   }
 

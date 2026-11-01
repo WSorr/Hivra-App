@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -6,6 +7,9 @@ import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
+  int writes = 0;
+  bool failWrite = false;
+  Future<void> Function()? beforeRead;
 
   @override
   Future<void> write({
@@ -18,6 +22,8 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    if (failWrite) throw StateError('Keychain unavailable');
+    writes++;
     if (value == null) {
       values.remove(key);
     } else {
@@ -34,7 +40,10 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     WebOptions? webOptions,
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async => values[key];
+  }) async {
+    await beforeRead?.call();
+    return values[key];
+  }
 
   @override
   Future<void> delete({
@@ -169,22 +178,80 @@ void main() {
     expect(await _load(vault, capsuleB, pluginA, 'account-b'), 'key-b');
   });
 
-  test('replaces an account secret without retaining the old scope', () async {
-    await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
+  test(
+    'owner adds labelled references atomically alongside legacy entries',
+    () async {
+      await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
+      final before = storage.writes;
+      final references = await vault.addReferences(
+        capsuleHex: capsuleA,
+        pluginId: pluginA,
+        secrets: [
+          {'label': 'Personal connection', 'value': 'new-token'},
+          {'label': 'Signing key', 'value': 'new-key'},
+        ],
+      );
+      expect(storage.writes - before, 1);
+      expect(references.map((r) => r['id']).toSet().length, 2);
+      expect(jsonEncode(references), isNot(contains('new-token')));
+      vault = CapsuleScopedSecretVault(secureStorage: storage);
+      expect(await vault.listReferences(capsuleA), containsAll(references));
+      expect(await vault.listReferences(capsuleB), isEmpty);
+      expect(
+        await vault.resolveReferences(capsuleA, {
+          'token': references[0]['id']!,
+          'key': references[1]['id']!,
+        }),
+        {'token': 'new-token', 'key': 'new-key'},
+      );
+      expect(await _load(vault, capsuleA, pluginA, 'account-a'), 'key-a');
+    },
+  );
 
-    await vault.replaceAccountSecret(
-      capsuleHex: capsuleA,
-      pluginId: pluginA,
-      providerId: 'moltbook',
-      previousAccountId: 'account-a',
-      accountId: 'account-b',
-      secretName: 'api_key',
-      secretValue: 'key-b',
+  test('failed native storage write returns no usable reference', () async {
+    storage.failWrite = true;
+    await expectLater(
+      vault.addReferences(
+        capsuleHex: capsuleA,
+        pluginId: pluginA,
+        secrets: [
+          {'label': 'Connection', 'value': 'test-token'},
+        ],
+      ),
+      throwsStateError,
     );
-
-    expect(await _load(vault, capsuleA, pluginA, 'account-a'), isNull);
-    expect(await _load(vault, capsuleA, pluginA, 'account-b'), 'key-b');
+    storage.failWrite = false;
+    expect(await vault.listReferences(capsuleA), isEmpty);
   });
+  test(
+    'a changed Capsule or package during native unlock prevents a write',
+    () async {
+      final entered = Completer<void>(), unlocked = Completer<void>();
+      storage.beforeRead = () async {
+        entered.complete();
+        await unlocked.future;
+      };
+      var stillAuthorized = true;
+      final saving = vault.addReferences(
+        capsuleHex: capsuleA,
+        pluginId: pluginA,
+        secrets: [
+          {'label': 'Connection', 'value': 'test-token'},
+        ],
+        authorize: () async {
+          if (!stillAuthorized) throw StateError('Capsule or package changed');
+        },
+      );
+      await entered.future;
+      stillAuthorized = false;
+      final rejected = expectLater(saving, throwsStateError);
+      unlocked.complete();
+      await rejected;
+      expect(storage.writes, 0);
+      storage.beforeRead = null;
+      expect(await vault.listReferences(capsuleA), isEmpty);
+    },
+  );
 }
 
 Future<void> _save(

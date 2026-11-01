@@ -401,6 +401,7 @@ Exact line counts are evaluated live by the ownership gate and are not persisted
 - `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `flutter/lib/services/capsule_persistence_service.dart`
 - `flutter/lib/services/invitation_intent_handler.dart`
+- `flutter/lib/services/plugin_runtime_module_service.dart`
 - `flutter/lib/services/plugin_workspace_runtime.dart`
 
 ## UI and Flutter/FFI Boundary Map
