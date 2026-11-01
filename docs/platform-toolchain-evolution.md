@@ -245,7 +245,9 @@ Goal:
   universal FFI packaging, Keychain access, signing, or notarization.
 
 Rules:
-- verify both Apple Silicon and Intel native slices after every Xcode update;
+- verify that both `arm64` and `x86_64` slices are present and valid after every
+  Xcode update; runtime execution follows the required matrix in
+  `development-control.md` and `checklists/release-macos.md`;
 - run real Keychain cold-start/reopen smoke, not only an unsigned local launch;
 - missing simulator runtimes are not a macOS release blocker, but block any
   future iOS test claim until repaired.

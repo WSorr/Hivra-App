@@ -7,9 +7,8 @@ import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/ffi/hivra_bindings.dart';
-import 'package:hivra_app/services/bingx_market_data_adapter.dart';
+import 'package:hivra_app/services/plugin_capability_dispatcher.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
-import 'package:hivra_app/services/external_effect_service.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/plugin_workspace_runtime.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
@@ -47,7 +46,6 @@ Future<void> main(List<String> args) async {
     final registry = _Registry();
     const owner =
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    var digest = 'b' * 64;
     var credentialCalls = 0;
     var rewriteDigest = false;
     final seen = <Map<String, dynamic>?>[];
@@ -58,7 +56,7 @@ Future<void> main(List<String> args) async {
             packageId: registry.record.id,
             packageVersion: registry.record.pluginVersion,
             packageKind: 'zip',
-            packageDigestHex: digest,
+            packageDigestHex: registry.digest,
             contractKind: pluginWorkspaceContractKind,
             capabilities: const [
               'workspace.render',
@@ -69,7 +67,7 @@ Future<void> main(List<String> args) async {
       resolveRuntimeInvoke: (request, _) async {
         final previous = request.args['state'] as Map<String, dynamic>?;
         seen.add(previous);
-        if (rewriteDigest) digest = 'c' * 64;
+        if (rewriteDigest) registry.digest = 'c' * 64;
         final next = {
           'unrelated': [previous?['unrelated'] ?? 'first', 'package-owned'],
         };
@@ -104,14 +102,6 @@ Future<void> main(List<String> args) async {
       fileStore: files,
       readActiveCapsuleRootHex: () => owner,
       readCredentials: ({required owner, required pluginId}) async {
-        credentialCalls++;
-        throw StateError('This package has no credential grant');
-      },
-      writeCredentials: ({
-        required owner,
-        required pluginId,
-        required value,
-      }) async {
         credentialCalls++;
         throw StateError('This package has no credential grant');
       },
@@ -190,15 +180,16 @@ Future<void> _checkShutdownProcess(
   File? service,
 }) async {
   final root = await Directory('/tmp').createTemp('hivra_shutdown_fixture_');
+  final previousDirectory = Directory.current;
+  Directory.current = executable.parent;
   try {
     const pluginId = 'hivra.contract.shutdown-test.v1';
     final scope = {
-      'account_id': 'c' * 64,
-      'symbol': 'BTC-USDT',
+      'version': 2,
+      'description': 'Provider-free shutdown fixture',
+      'access': {'version': 2, 'network': []},
       'action': 'open',
       'interval_seconds': 30,
-      'max_margin': 1,
-      'max_stop_percent': 20,
     };
     final response = jsonEncode({
       'schema_version': 1,
@@ -307,9 +298,6 @@ pub extern "C" fn hivra_evaluate_v1(_: u32, _: u32) -> u64 {
       readCredentials:
           ({required owner, required pluginId}) async =>
               throw StateError('No test credentials'),
-      writeCredentials:
-          ({required owner, required pluginId, required value}) async =>
-              throw StateError('No test credentials'),
     );
     await runtime.setWorkspaceExecution(
       record: record,
@@ -327,191 +315,91 @@ pub extern "C" fn hivra_evaluate_v1(_: u32, _: u32) -> u64 {
       service: service,
     );
   } finally {
+    Directory.current = previousDirectory;
     await root.delete(recursive: true);
   }
 }
 
 Future<void> _checkInstalledWasm(
   File package,
-  Directory libraryDirectory,
-  File? runnerExecutable,
+  Directory libraries,
+  File? executable,
 ) async {
-  final home = await Directory('/tmp').createTemp('hivra_real_wasm_');
   final previousDirectory = Directory.current;
-  Directory.current = libraryDirectory;
+  Directory.current = libraries;
+  final home = await Directory.systemTemp.createTemp('hivra_common_wasm_');
   try {
     final dirs = UserVisibleDataDirectoryService(homeOverride: home.path);
-    final files = CapsuleFileStore(dirs: dirs);
     final registry = WasmPluginRegistryService(dataDirs: dirs);
+    final files = CapsuleFileStore(dirs: dirs);
     final record = await registry.installPluginFromFile(package);
     final wasm = WasmPluginRuntimeService(
       invokeJson: HivraBindings.invokeInstalledWasmJson,
     );
-    final host = PluginHostApiService(
-      handlers: [],
-      resolveRuntimeBinding: registry.resolveRuntimeBinding,
-      resolveRuntimeInvoke:
-          (request, binding) => wasm.invoke(request: request, binding: binding),
-    );
     final owner = 'a' * 64;
-    final account = sha256.convert(utf8.encode('bingx:LIVE:123')).toString();
+    final keys = jsonEncode({
+      'version': 3,
+      'connections': {
+        'default': {'api_key': 'fixture-api', 'secret_key': 'fixture-secret'},
+      },
+    });
+    var phase = 'partial';
+    var writes = 0;
     final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+    final account =
+        sha256.convert(utf8.encode('bingx:LIVE:123456789')).toString();
     final plan = {
       'account_id': account,
       'symbol': 'BTC-USDT',
       'side': 'long',
-      'timeframe': '5m',
-      'origin': 10,
-      'first_known': 20,
+      'timeframe': '1m',
+      'origin': now - 3600000,
+      'first_known': now - 1800000,
       'line_price': 96.5,
       'price': 96.5,
-      'quantity': 0.518,
-      'stop_price': 96.12,
-      'margin': 0.99974,
+      'quantity': 1.0,
+      'stop_price': 96.4,
+      'margin': 1.93,
       'leverage': 50,
-      'prepared_at_ms': now - 1000,
+      'prepared_at_ms': now - 600000,
       'expires_at_ms': now + 3600000,
     };
-    var operationId = BingxMarketDataAdapter.entryOperationId(plan);
-    final payloadKeys = plan.keys.toList()..sort();
-    final payload = jsonEncode({for (final key in payloadKeys) key: plan[key]});
-    var positionOpen = true;
-    var posts = 0;
-    var cancellations = 0;
-    var orderId = '123';
-    var orderStatus = 'FILLED';
-    final market = BingxMarketDataAdapter(
-      read: (uri) async {
-        if (uri.path.endsWith('/contracts')) {
-          return jsonEncode({
-            'code': 0,
-            'data': [
-              {
-                'symbol': 'BTC-USDT',
-                'status': 1,
-                'apiStateOpen': true,
-                'pricePrecision': 2,
-                'quantityPrecision': 3,
-                'tradeMinQuantity': '0.001',
-                'tradeMinUSDT': '5',
-              },
-            ],
-          });
-        }
-        final spans = {
-          '1d': 86400000,
-          '4h': 14400000,
-          '1h': 3600000,
-          '30m': 1800000,
-          '15m': 900000,
-          '5m': 300000,
-        };
-        final span = spans[uri.queryParameters['interval']]!;
-        final time = DateTime.now().toUtc().millisecondsSinceEpoch;
-        final current = time ~/ span * span;
-        return jsonEncode({
-          'code': 0,
-          'data': List.generate(
-            600,
-            (i) => [current - (599 - i) * span, 100, 101, 99, 100],
-          ),
-        });
-      },
-      sendAuthenticated: (method, uri, headers) async {
-        dynamic data;
-        if (method == 'DELETE' && orderId == '124') {
-          if (uri.path != '/openApi/swap/v2/trade/order' ||
-              uri.queryParameters['orderId'] != orderId ||
-              uri.queryParameters['symbol'] != 'BTC-USDT') {
-            throw StateError('Cancellation lost exact provider scope');
-          }
-          cancellations++;
-          orderStatus = 'CANCELED';
-          return jsonEncode({'code': 0, 'data': {}});
-        }
-        if (method != 'GET') {
-          posts++;
-          throw StateError('Probe forbids provider writes');
-        }
-        if (uri.path.endsWith('/uid')) {
-          data = {'uid': '123'};
-        } else if (uri.path.endsWith('/balance')) {
-          data = [
-            {'asset': 'USDT', 'availableMargin': '30'},
-          ];
-        } else if (uri.path.endsWith('/leverage')) {
-          data = {'longLeverage': 50, 'shortLeverage': 20};
-        } else if (uri.path.endsWith('/positions')) {
-          data =
-              positionOpen
-                  ? [
-                    {
-                      'symbol': 'BTC-USDT',
-                      'positionId': '456',
-                      'positionSide': 'LONG',
-                      'positionAmt': '0.518',
-                      'avgPrice': '96.5',
-                    },
-                  ]
-                  : [];
-        } else if (uri.path.endsWith('/openOrders')) {
-          data = [];
-        } else if (uri.path.endsWith('/order')) {
-          data = {
-            'symbol': 'BTC-USDT',
-            'clientOrderId': operationId.substring(0, 40),
-            'orderID': orderId,
-            'side': 'BUY',
-            'positionSide': 'LONG',
-            'type': 'LIMIT',
-            'origQty': '0.518',
-            'executedQty': orderStatus == 'FILLED' ? '0.518' : '0',
-            'avgPrice': orderStatus == 'FILLED' ? '96.5' : '0',
-            'price': '96.5',
-            'status': orderStatus,
-          };
-        } else {
-          throw StateError('Unexpected provider read');
-        }
-        return jsonEncode({'code': 0, 'data': data});
-      },
-    );
-    final effects = ExternalEffectService(
-      readActiveCapsuleRootHex: () => owner,
-      fileStore: files,
-      resolveAdapter: (_) => null,
-    );
-    await effects.prepare(
-      operationId: operationId,
-      pluginId: record.pluginId!,
-      providerId: 'bingx',
-      accountBindingId: account,
-      effectKind: 'order.entry.place',
-      canonicalPayloadJson: payload,
-    );
-    final directory = await files.capsuleDirForHex(owner, create: true);
-    await files.writePluginState(
-      directory,
-      record.pluginId!,
-      'workspace.v1.json',
-      jsonEncode({
+    final exitPlan = {
+      'entry_plan': plan,
+      'position_id': '456',
+      'quantity': 1.0,
+      'average_price': 96.5,
+      'price': 105.0,
+      'prepared_at_ms': now - 1000,
+      'expires_at_ms': now + 59000,
+    };
+    final settings = {
+      'symbol': 'BTC-USDT',
+      'detection_length': 3,
+      'margin': 6.9,
+      'timeframes': '1m',
+      'entry_margin': 1.93,
+      'stop_percent': 20.0,
+    };
+    final seed = {
+      'version': 2,
+      'new_entries': true,
+      'intents': <String, String>{},
+      'clients': <String, String>{},
+      'engine': {
         'version': 1,
-        'settings': {
-          'symbol': 'BTC-USDT',
-          'detection_length': 3,
-          'margin': 6.9,
-          'entry_margin': 1.0,
-          'stop_percent': 20.0,
-        },
+        'settings': settings,
         'frames': [],
         'current_price': 100.0,
         'observed_at': now,
         'complete': false,
+        'retired_before_ms': 0,
+        'parked': [],
         'account': {
           'symbol': 'BTC-USDT',
           'endpoint': 'LIVE',
           'account_id': account,
-          'account_label': 'Test account',
+          'account_label': 'Fixture account',
           'available_margin': 30.0,
           'long_leverage': 50,
           'short_leverage': 20,
@@ -521,110 +409,209 @@ Future<void> _checkInstalledWasm(
           'min_notional': 5.0,
           'observed_at_ms': now,
         },
-        'entry': {'plan': plan, 'attempted': true, 'evidence': null},
-      }),
-    );
-    await _checkBoundedPresentation(
-      host,
+        'entry': {
+          'plan': plan,
+          'attempted': true,
+          'evidence': {
+            'account_id': account,
+            'symbol': 'BTC-USDT',
+            'client_order_id': 'b' * 40,
+            'order_id': '123',
+            'status': 'filled',
+            'filled_quantity': 1.0,
+            'average_price': 96.5,
+            'observed_at_ms': now,
+          },
+          'observed_position_id': '456',
+          'lifecycle_observed_at_ms': now,
+          'position': {
+            'position_id': '456',
+            'side': 'long',
+            'quantity': 1.0,
+            'average_price': 96.5,
+          },
+          'profit_exit': {
+            'plan': exitPlan,
+            'attempted': true,
+            'evidence': {
+              'account_id': account,
+              'symbol': 'BTC-USDT',
+              'client_order_id': 'c' * 40,
+              'order_id': '999',
+              'status': 'open',
+              'filled_quantity': 0.0,
+              'average_price': 0.0,
+              'observed_at_ms': now,
+            },
+          },
+        },
+      },
+    };
+    final directory = await files.capsuleDirForHex(owner, create: true);
+    await files.writePluginState(
+      directory,
       record.pluginId!,
-      jsonDecode(
-            (await files.readPluginState(
-              directory,
-              record.pluginId!,
-              'workspace.v1.json',
-            ))!,
-          )
-          as Map<String, dynamic>,
-      now,
+      'workspace.v1.json',
+      jsonEncode(seed),
     );
+    final access = {
+      'version': 2,
+      'credentials': {
+        'default': [
+          {'id': 'api_key', 'label': 'API key'},
+          {'id': 'secret_key', 'label': 'Secret key'},
+        ],
+      },
+      'network': [
+        {
+          'origin': 'https://open-api.bingx.com',
+          'methods': ['GET'],
+          'credential': null,
+        },
+        {
+          'origin': 'https://open-api.bingx.com',
+          'methods': ['GET'],
+          'credential': 'default',
+        },
+      ],
+    };
     PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
       registry: registry,
-      pluginHostApi: host,
+      pluginHostApi: PluginHostApiService(
+        handlers: [],
+        resolveRuntimeBinding: registry.resolveRuntimeBinding,
+        resolveRuntimeInvoke: (request, binding) async {
+          final evidence = await wasm.invoke(
+            request: request,
+            binding: binding,
+          );
+          return evidence;
+        },
+      ),
       fileStore: files,
-      market: market,
-      scheduleTimers: false,
       readActiveCapsuleRootHex: () => owner,
-      readCredentials:
-          ({required owner, required pluginId}) async => jsonEncode({
-            'api_key': 'fixture-key',
-            'secret_key': 'fixture-secret',
-          }),
-      writeCredentials:
-          ({required owner, required pluginId, required value}) async =>
-              throw StateError('No credential changes in probe'),
-    );
-    final initialView = await runtime().runWorkspaceAction(
-      record: record,
-      action: 'open',
+      scheduleTimers: false,
+      readCredentials: ({required owner, required pluginId}) async => keys,
+
+      capabilities: PluginCapabilityDispatcher(
+        send: (method, uri, headers, body) async {
+          if (method != 'GET') {
+            writes++;
+            throw StateError('No network mutations in this fixture');
+          }
+          dynamic data;
+          if (uri.path.endsWith('/uid')) {
+            data = {'uid': '123456789'};
+          } else if (uri.path.endsWith('/order')) {
+            final exit = uri.queryParameters['clientOrderId'] == 'c' * 40;
+            data = {
+              'orderId': exit ? '999' : '123',
+              'symbol': 'BTC-USDT',
+              'clientOrderId': exit ? 'c' * 40 : 'b' * 40,
+              'side': exit ? 'SELL' : 'BUY',
+              'positionSide': 'LONG',
+              'reduceOnly': exit,
+              'type': 'LIMIT',
+              'origQty': '1',
+              'price': exit ? '105' : '96.5',
+              'executedQty': exit ? (phase == 'partial' ? '0.5' : '1') : '1',
+              'avgPrice': exit ? '105' : '96.5',
+              'status':
+                  exit && phase == 'partial' ? 'PARTIALLY_FILLED' : 'FILLED',
+            };
+          } else if (uri.path.endsWith('/positions')) {
+            data =
+                phase == 'partial'
+                    ? [
+                      {
+                        'symbol': 'BTC-USDT',
+                        'positionId': '456',
+                        'positionSide': 'LONG',
+                        'positionAmt': '0.5',
+                        'avgPrice': '96.5',
+                      },
+                    ]
+                    : [];
+          } else if (uri.path.endsWith('/openOrders')) {
+            data = [
+              {
+                'symbol': 'BTC-USDT',
+                'orderId': '789',
+                'clientOrderId': '',
+                'side': 'BUY',
+                'positionSide': 'LONG',
+                'type': 'TRIGGER_LIMIT',
+                'status': 'NEW',
+                'price': '90',
+                'stopPrice': '91',
+                'origQty': '2',
+                'executedQty': '0',
+              },
+              if (phase == 'partial')
+                {
+                  'symbol': 'BTC-USDT',
+                  'orderId': '999',
+                  'clientOrderId': 'c' * 40,
+                  'side': 'SELL',
+                  'positionSide': 'LONG',
+                  'type': 'LIMIT',
+                  'status': 'PARTIALLY_FILLED',
+                  'price': '105',
+                  'stopPrice': '0',
+                  'origQty': '1',
+                  'executedQty': '0.5',
+                },
+            ];
+          } else if (uri.path.endsWith('/klines')) {
+            final start = int.tryParse(uri.queryParameters['startTime'] ?? '');
+            final end = int.tryParse(uri.queryParameters['endTime'] ?? '');
+            final clock = DateTime.now().millisecondsSinceEpoch;
+            final span =
+                const {
+                  '1m': 60000,
+                  '5m': 300000,
+                  '15m': 900000,
+                  '30m': 1800000,
+                  '1h': 3600000,
+                  '4h': 14400000,
+                  '1d': 86400000,
+                }[uri.queryParameters['interval']]!;
+            final current = clock - clock % span;
+            final first = start ?? current - span;
+            final last = end ?? current;
+            data = [
+              for (var t = first; t <= last; t += span)
+                [t, '100', '101', '99', '100', '0'],
+            ];
+          } else {
+            throw StateError('Unexpected fixture request ${uri.path}');
+          }
+          return {
+            'status': 200,
+            'body': jsonEncode({'code': 0, 'data': data}),
+          };
+        },
+      ),
     );
     await runtime().setWorkspaceExecution(
       record: record,
-      expiresAtMs: null,
-      expectedRevision:
-          (await runtime().readWorkspaceExecution(
-                record,
-                enforceHost: false,
-              ))?["revision"]
-              as int?,
       enabled: true,
-      approvedScope: Map<String, dynamic>.from(initialView['schedule'] as Map),
+      expiresAtMs: null,
+      approvedScope: {
+        'version': 2,
+        'access': access,
+        'description': 'Synthetic read-only observation',
+      },
+      credentialBindings: {
+        'default': {
+          'api_key': 'fixture-api-reference',
+          'secret_key': 'fixture-secret-reference',
+        },
+      },
     );
-    await runtime().runScheduledWorkspaceCycle(record);
-    final opened = jsonDecode(
-      (await files.readPluginState(
-        directory,
-        record.pluginId!,
-        'workspace.v1.json',
-      ))!,
-    );
-    if (opened['entry']['observed_position_id'] != '456') {
-      throw StateError('Position observation lost');
-    }
-    positionOpen = false;
-    // Recreate the executor to exercise saved state, not its in-memory reducer.
-    await runtime().runScheduledWorkspaceCycle(record);
-    final retired = await files.readPluginState(
-      directory,
-      record.pluginId!,
-      'workspace.v1.json',
-    );
-    if (jsonDecode(retired!)['entry'] != null) {
-      throw StateError('Closed entry was not retired');
-    }
-    await runtime().runWorkspaceAction(record: record, action: 'open');
-    final reopened = await files.readPluginState(
-      directory,
-      record.pluginId!,
-      'workspace.v1.json',
-    );
-    if (_canonicalJson(jsonDecode(reopened!)) !=
-        _canonicalJson(jsonDecode(retired))) {
-      throw StateError('Durable recovery resurrected a retired entry');
-    }
-    if (posts != 0) throw StateError('Unexpected provider write');
-    final next = await runtime().runScheduledWorkspaceCycle(record);
-    if (next['confirmation'] != null) {
-      throw StateError('No line must mean waiting, not a fabricated entry');
-    }
-    // A second synthetic managed entry has no original line in the refreshed
-    // market. Exercise real WASM cancellation through the same headless host.
-    final newTime = DateTime.now().toUtc().millisecondsSinceEpoch;
-    plan['prepared_at_ms'] = newTime;
-    plan['expires_at_ms'] = newTime + 3600000;
-    operationId = BingxMarketDataAdapter.entryOperationId(plan);
-    orderId = '124';
-    orderStatus = 'NEW';
-    await effects.prepare(
-      operationId: operationId,
-      pluginId: record.pluginId!,
-      providerId: 'bingx',
-      accountBindingId: account,
-      effectKind: 'order.entry.place',
-      canonicalPayloadJson: jsonEncode({
-        for (final key in payloadKeys) key: plan[key],
-      }),
-    );
-    final pending =
+    // A replacement must stay within the existing sandbox budget at the full
+    // supported private-state shape, not only with an empty candle cache.
+    final original =
         jsonDecode(
               (await files.readPluginState(
                 directory,
@@ -633,173 +620,131 @@ Future<void> _checkInstalledWasm(
               ))!,
             )
             as Map;
-    pending['entry'] = {'plan': plan, 'attempted': true, 'evidence': null};
+    final dense = jsonDecode(jsonEncode(original)) as Map;
+    final engine = dense['engine'] as Map;
+    final clock = DateTime.now().millisecondsSinceEpoch;
+    final spans = {
+      '1d': 86400000,
+      '4h': 14400000,
+      '1h': 3600000,
+      '30m': 1800000,
+      '15m': 900000,
+      '5m': 300000,
+    };
+    engine['settings']['timeframes'] = 'all';
+    engine['settings']['detection_length'] = 7;
+    engine['entry']['plan']['timeframe'] = '5m';
+    engine['entry']['profit_exit']['plan']['entry_plan']['timeframe'] = '5m';
+    engine['complete'] = true;
+    engine['observed_at'] = clock;
+    engine['frames'] = [
+      for (final tf in spans.entries)
+        {
+          'timeframe': tf.key,
+          'checked_at_ms': clock,
+          'last_open': clock ~/ tf.value * tf.value - tf.value,
+          'formation_start': clock - 500 * tf.value,
+          'atr': 2.00000123456789,
+          'seed_sum': 20.0000123456789,
+          'seed_count': 10,
+          'bars': [
+            for (var i = 0; i < 8; i++)
+              [
+                clock ~/ tf.value * tf.value - tf.value * (8 - i),
+                100.00000123456789,
+                101.00000123456789,
+                99.00000123456789,
+                100.00000123456789,
+              ],
+          ],
+          'swings': [
+            for (var i = 0; i < 50; i++)
+              [
+                i.isEven ? 1 : -1,
+                clock - (i + 10) * tf.value,
+                100.00000123456789 + i * 0.00000123456789,
+              ],
+          ],
+          for (final side in ['buy', 'sell'])
+            side: [
+              for (var i = 0; i < 3; i++)
+                {
+                  'origin': clock - (i + 12) * tf.value,
+                  'first_known': clock - (i + 10) * tf.value,
+                  'price': 100.00000123456789 + i * 0.00000123456789,
+                  'top': 101.00000123456789,
+                  'bottom': 99.00000123456789,
+                  'touched': false,
+                  'consumed': false,
+                },
+            ],
+        },
+    ];
     await files.writePluginState(
       directory,
       record.pluginId!,
       'workspace.v1.json',
-      jsonEncode(pending),
+      jsonEncode(dense),
     );
-    await runtime().runScheduledWorkspaceCycle(record);
-    final cancelled = jsonDecode(
+    await runtime().runWorkspaceAction(record: record, action: 'open');
+    await runtime().runWorkspaceAction(record: record, action: 'refresh_order');
+    await files.writePluginState(
+      directory,
+      record.pluginId!,
+      'workspace.v1.json',
+      jsonEncode(original),
+    );
+    stdout.writeln(
+      'common API actual-WASM dense six-frame streaming/presentation PASS; unchanged sandbox limits',
+    );
+    await runtime().runWorkspaceAction(record: record, action: 'refresh_order');
+    final partial =
+        jsonDecode(
+              (await files.readPluginState(
+                directory,
+                record.pluginId!,
+                'workspace.v1.json',
+              ))!,
+            )
+            as Map;
+    if (partial['engine']['entry']?['position']?['quantity'] != 0.5 ||
+        partial['engine']['entry']?['profit_exit']?['evidence']?['status'] !=
+            'partial') {
+      throw StateError(
+        'Actual WASM lost partial exit evidence: ${partial['engine']['entry']}',
+      );
+    }
+    stdout.writeln(
+      'common API actual-WASM partial reducing fill retained; manual order unchanged PASS',
+    );
+    phase = 'filled';
+    await runtime().runWorkspaceAction(record: record, action: 'refresh_order');
+    final retired = await files.readPluginState(
+      directory,
+      record.pluginId!,
+      'workspace.v1.json',
+    );
+    if ((jsonDecode(retired!) as Map)['engine']['entry'] != null) {
+      throw StateError(
+        'Actual WASM did not retire the exact filled reducing exit',
+      );
+    }
+    await runtime().runWorkspaceAction(record: record, action: 'open');
+    final reopened = jsonDecode(
       (await files.readPluginState(
         directory,
         record.pluginId!,
         'workspace.v1.json',
       ))!,
     );
-    if (cancellations != 1 || posts != 0 || cancelled['entry'] != null) {
-      throw StateError(
-        'Invalidated unfilled entry did not retire after exact cancellation',
-      );
-    }
-    await runtime().runScheduledWorkspaceCycle(record);
-    if (cancellations != 1 || posts != 0) {
-      throw StateError('Reopen duplicated cancellation or fabricated an entry');
-    }
-    await runtime().setWorkspaceExecution(
-      record: record,
-      expiresAtMs: null,
-      expectedRevision:
-          (await runtime().readWorkspaceExecution(
-                record,
-                enforceHost: false,
-              ))?["revision"]
-              as int?,
-      enabled: false,
-    );
-    final stopped = await runtime().runScheduledWorkspaceCycle(record);
-    if (stopped['execution']['allow_new_entries'] != false || posts != 0) {
-      throw StateError('Stop did not prevent new entries');
-    }
-    // Exercise retention through the installed WASM and normal provider parser,
-    // not by asking the journal directly to forget test records.
-    final unconfirmed =
-        (await effects.list(
-          pluginId: record.pluginId!,
-        )).map((o) => _canonicalJson(o.toJson())).toSet();
-    final completedIds = <String>[];
-    for (var i = 0; i < 7; i++) {
-      plan['prepared_at_ms'] = now - 7200000 + i;
-      plan['expires_at_ms'] = now - 3600000 + i;
-      operationId = BingxMarketDataAdapter.entryOperationId(plan);
-      completedIds.add(operationId);
-      orderId = '${200 + i}';
-      orderStatus = 'FILLED';
-      final prepared = await effects.prepare(
-        operationId: operationId,
-        pluginId: record.pluginId!,
-        providerId: 'bingx',
-        accountBindingId: account,
-        effectKind: 'order.entry.place',
-        canonicalPayloadJson: _canonicalJson(plan),
-      );
-      final rawJournal =
-          jsonDecode(
-                (await files.readPluginState(
-                  directory,
-                  record.pluginId!,
-                  'external_effects.v1.json',
-                ))!,
-              )
-              as Map;
-      final rows = rawJournal['operations'] as List;
-      final index = rows.indexWhere((o) => o['operation_id'] == operationId);
-      // Seed a past acceptance receipt. All later closure/retention decisions
-      // use the real host/package path; no provider write is permitted here.
-      rows[index] = {
-        ...prepared.toJson(),
-        'state': 'succeeded',
-        'attempt_count': 1,
-        'receipt': {
-          'operation_id': operationId,
-          'provider_id': 'bingx',
-          'provider_receipt_id': orderId,
-          'evidence_hash_hex': 'b' * 64,
-          'received_at_utc': DateTime.now().toUtc().toIso8601String(),
-        },
-      };
-      await files.writePluginState(
-        directory,
-        record.pluginId!,
-        'external_effects.v1.json',
-        jsonEncode(rawJournal),
-      );
-      final saved = jsonDecode(retired) as Map;
-      saved['entry'] = {'plan': plan, 'attempted': true, 'evidence': null};
-      saved['retired_before_ms'] = 0;
-      await files.writePluginState(
-        directory,
-        record.pluginId!,
-        'workspace.v1.json',
-        jsonEncode(saved),
-      );
-      await runtime().runWorkspaceAction(
-        record: record,
-        action: 'refresh_order',
-      );
-      await runtime().runWorkspaceAction(
-        record: record,
-        action: 'refresh_order',
-      );
-      final journal = await effects.list(pluginId: record.pluginId!);
-      if (!journal.any((o) => o.completedGroup == operationId)) {
-        throw StateError(
-          'Installed WASM did not confirm completed lifecycle $i',
-        );
-      }
-    }
-    final compacted = await effects.list(pluginId: record.pluginId!);
-    final groups =
-        compacted.map((o) => o.completedGroup).whereType<String>().toSet();
-    if (groups.length != 5 ||
-        !groups.containsAll(completedIds.skip(2)) ||
-        !compacted
-            .map((o) => _canonicalJson(o.toJson()))
-            .toSet()
-            .containsAll(unconfirmed)) {
-      throw StateError(
-        'Retention removed unconfirmed history or kept old closed lifecycles',
-      );
-    }
-    final beforeRestart = await files.readPluginState(
-      directory,
-      record.pluginId!,
-      'external_effects.v1.json',
-    );
-    await runtime().runWorkspaceAction(record: record, action: 'open');
-    if (await files.readPluginState(
-              directory,
-              record.pluginId!,
-              'external_effects.v1.json',
-            ) !=
-            beforeRestart ||
-        posts != 0 ||
-        cancellations != 1) {
-      throw StateError('Reopen rewrote history or dispatched another effect');
-    }
-    final journalFiles =
-        await home
-            .list(recursive: true)
-            .where((f) => f.path.endsWith('/external_effects.v1.json'))
-            .toList();
-    if (journalFiles.length != 1) {
-      throw StateError('History created another journal');
+    if (reopened['engine']['entry'] != null || writes != 0) {
+      throw StateError('Restart restored a completed plan or sent an effect');
     }
     stdout.writeln(
-      'installed WASM retention/restart PASS; seven closed lifecycles -> five; unconfirmed retained; one journal; no network',
+      'common API actual-WASM full reducing closure/reopen PASS; synthetic provider only, no network or writes',
     );
-    stdout.writeln(
-      'installed WASM headless lifecycle/cancellation PASS; synthetic DELETE=1, POST=0; no network',
-    );
-    if (runnerExecutable != null) {
-      await _checkProductionProcess(
-        runnerExecutable,
-        registry,
-        files,
-        record,
-        owner,
-      );
+    if (executable != null) {
+      await _checkProductionProcess(executable, registry, files, record, owner);
     }
   } finally {
     Directory.current = previousDirectory;
@@ -905,7 +850,7 @@ Future<void> _checkProductionProcess(
     // it cannot submit a provider request or require live credentials.
     grant['scope']['action'] = 'open';
     grant['scope']['interval_seconds'] = 30;
-    grant['allow_new_entries'] = false;
+    grant['enabled'] = true;
     grant['executor'] = 'local';
     await sourceFiles.writePluginState(
       sourceCapsule,
@@ -931,9 +876,6 @@ Future<void> _checkProductionProcess(
       readCredentials:
           ({required owner, required pluginId}) async =>
               throw StateError('No live credentials in process smoke'),
-      writeCredentials:
-          ({required owner, required pluginId, required value}) async =>
-              throw StateError('No credential writes in process smoke'),
     );
     await sourceRuntime.runWorkspaceAction(
       record: sourceRecord,
@@ -1032,7 +974,7 @@ Future<void> _checkProductionProcess(
     final first = await status();
     if (first['runner']['state'] != 'running' ||
         first['view']['execution']['mode'] != 'vps' ||
-        first['view']['execution']['allow_new_entries'] != false) {
+        first['view']['execution']['enabled'] != true) {
       throw StateError('Production runner misrepresented its authority');
     }
     await Future<void>.delayed(const Duration(seconds: 31));
@@ -1169,273 +1111,9 @@ Future<void> _checkProductionProcess(
   }
 }
 
-Future<void> _checkBoundedPresentation(
-  PluginHostApiService host,
-  String pluginId,
-  Map<String, dynamic> state,
-  int now,
-) async {
-  final spans = {
-    '1d': 86400000,
-    '4h': 14400000,
-    '1h': 3600000,
-    '30m': 1800000,
-    '15m': 900000,
-    '5m': 300000,
-  };
-  state['settings']['detection_length'] = 7;
-  List<dynamic> bar(int time, int span) {
-    final price = 100.00000123456789 + (time ~/ span % 97) * 0.00000123456789;
-    return [time, price, price + 1, price - 1, price];
-  }
-
-  state['frames'] = [
-    for (final tf in spans.entries)
-      {
-        'timeframe': tf.key,
-        'checked_at_ms': tf.key == '5m' ? null : now,
-        'last_open':
-            now ~/ tf.value * tf.value - tf.value * (tf.key == '5m' ? 2 : 1),
-        'formation_start': now - 500 * tf.value,
-        'atr': 2.00000123456789,
-        'seed_sum': 20.0000123456789,
-        'seed_count': 10,
-        'bars': List.generate(
-          8,
-          (i) => bar(
-            now ~/ tf.value * tf.value -
-                tf.value * (8 - i + (tf.key == '5m' ? 1 : 0)),
-            tf.value,
-          ),
-        ),
-        'swings': List.generate(
-          50,
-          (i) => {
-            'direction': i.isEven ? 1 : -1,
-            'time': now - (i + 10) * tf.value,
-            'price': 100.00000123456789 + i * 0.00000123456789,
-          },
-        ),
-        for (final side in ['buy', 'sell'])
-          side: List.generate(
-            3,
-            (i) => {
-              'origin': now - (i + 12) * tf.value,
-              'first_known': now - (i + 10) * tf.value,
-              'price': 100.00000123456789 + i * 0.00000123456789,
-              'top': 101.00000123456789,
-              'bottom': 99.00000123456789,
-              'touched': false,
-              'consumed': false,
-            },
-          ),
-      },
-  ];
-  state['complete'] = false;
-  final plan = Map<String, dynamic>.from(state['entry']['plan'] as Map);
-  final span = spans['5m']!;
-  final current = now ~/ span * span;
-  for (final action in ['market', 'present']) {
-    final response = await host.executeWithRuntimeHook(
-      PluginHostApiRequest(
-        schemaVersion: pluginHostApiSchemaVersion,
-        pluginId: pluginId,
-        method: pluginWorkspaceMethod,
-        args: {
-          'action': action,
-          'state': state,
-          'observed_at_ms': now,
-          if (action == 'market')
-            'snapshot': {
-              'symbol': 'BTC-USDT',
-              'timeframe': '5m',
-              'candles': List.generate(
-                12,
-                (i) => bar(current - (12 - i) * span, span),
-              ),
-              'history_end_ms': current - span,
-              'batch_complete': true,
-              'current_price': bar(current, span)[4],
-              'current_candle': bar(current, span),
-            },
-        },
-      ),
-    );
-    if (response.status != PluginHostApiStatus.executed) {
-      throw StateError(
-        'Dense six-frame $action failed: ${response.errorMessage}',
-      );
-    }
-    final output = response.result!;
-    state = Map<String, dynamic>.from(output['state'] as Map);
-    final rows = output['view']['rows'] as List;
-    final retainedPlan = state['entry']['plan'] as Map;
-    if (retainedPlan.length != plan.length ||
-        plan.entries.any((e) => retainedPlan[e.key] != e.value) ||
-        (output['requests'] as List).isNotEmpty ||
-        (action == 'market' ? rows.isNotEmpty : rows.length != 36)) {
-      throw StateError('Presentation changed the plan or lost retained lines');
-    }
-  }
-  stdout.writeln(
-    'dense six-frame streaming/presentation PASS under unchanged WASM limits',
-  );
-  state['frames'][0]['buy'][0].addAll({
-    'price': 110.0,
-    'top': 111.0,
-    'bottom': 109.0,
-    'touched': false,
-  });
-  final filled = (plan['quantity'] as num) / 2;
-  final position = {
-    'position_id': '456',
-    'side': 'long',
-    'quantity': filled,
-    'average_price': 96.4,
-  };
-  final evidence = {
-    'account_id': plan['account_id'],
-    'symbol': plan['symbol'],
-    'client_order_id': BingxMarketDataAdapter.entryOperationId(
-      plan,
-    ).substring(0, 40),
-    'order_id': '123',
-    'status': 'partial',
-    'filled_quantity': filled,
-    'average_price': 96.4,
-    'observed_at_ms': now,
-  };
-  for (final action in ['lifecycle', 'present']) {
-    final saved = _canonicalJson(state);
-    final response = await host.executeWithRuntimeHook(
-      PluginHostApiRequest(
-        schemaVersion: pluginHostApiSchemaVersion,
-        pluginId: pluginId,
-        method: pluginWorkspaceMethod,
-        args: {
-          'action': action,
-          'state': state,
-          'observed_at_ms': now,
-          if (action == 'lifecycle')
-            'snapshot': {
-              'account_id': plan['account_id'],
-              'symbol': plan['symbol'],
-              'entry': evidence,
-              'positions': [position],
-              'orders': <Object>[],
-              'observed_at_ms': now,
-            },
-        },
-      ),
-    );
-    if (response.status != PluginHostApiStatus.executed) {
-      throw StateError(
-        'Dense filled-position $action failed: ${response.errorMessage}',
-      );
-    }
-    final output = response.result!;
-    state = Map<String, dynamic>.from(output['state'] as Map);
-    final view = output['view'] as Map;
-    final message = view['message'] as String;
-    if (_canonicalJson(state['entry']['position']) !=
-            _canonicalJson(position) ||
-        _canonicalJson(state['entry']['plan']) != _canonicalJson(plan) ||
-        (output['requests'] as List).isNotEmpty ||
-        view['confirmation'] != null ||
-        !message.contains('Fill-based stop estimate: 96.03') ||
-        !message.contains('not confirmation of exchange-side protection') ||
-        !message.contains('110 on 1D') ||
-        (action == 'present' &&
-            (saved != _canonicalJson(state) ||
-                (view['rows'] as List).length != 36))) {
-      throw StateError(
-        'Fill management changed identity, invented an effect or lost its projection',
-      );
-    }
-  }
-  stdout.writeln(
-    'dense actual-WASM partial-fill management/reopen PASS; no effects',
-  );
-  Map<String, dynamic>? exitRequest;
-  for (final action in [
-    'exit_ready',
-    'place_exit',
-    'validate_exit',
-    'exit',
-    'present',
-  ]) {
-    final saved = _canonicalJson(state);
-    final response = await host.executeWithRuntimeHook(
-      PluginHostApiRequest(
-        schemaVersion: pluginHostApiSchemaVersion,
-        pluginId: pluginId,
-        method: pluginWorkspaceMethod,
-        args: {
-          'action': action,
-          'state': state,
-          'observed_at_ms': now,
-          if (action == 'exit')
-            'snapshot': {
-              'account_id': plan['account_id'],
-              'symbol': plan['symbol'],
-              'client_order_id': BingxMarketDataAdapter.exitOperationId(
-                Map<String, dynamic>.from(exitRequest!['plan'] as Map),
-              ).substring(0, 40),
-              'order_id': '987',
-              'status': 'open',
-              'filled_quantity': 0.0,
-              'average_price': 0.0,
-              'observed_at_ms': now,
-            },
-        },
-      ),
-    );
-    if (response.status != PluginHostApiStatus.executed) {
-      throw StateError('Actual-WASM $action failed: ${response.errorMessage}');
-    }
-    final output = response.result!;
-    state = Map<String, dynamic>.from(output['state'] as Map);
-    if (action == 'exit_ready') {
-      exitRequest = Map<String, dynamic>.from(
-        output['view']['confirmation'] as Map,
-      );
-      if (exitRequest['kind'] != 'position.exit.place' ||
-          exitRequest['plan']['quantity'] != filled) {
-        throw StateError('Exit is not sized to the actual partial fill');
-      }
-    }
-    if (action == 'place_exit' &&
-        _canonicalJson((output['requests'] as List).single) !=
-            _canonicalJson(exitRequest)) {
-      throw StateError('Confirmed exit plan changed');
-    }
-    if (action != 'place_exit' && (output['requests'] as List).isNotEmpty) {
-      throw StateError('Exit read/validation dispatched an effect');
-    }
-    if (action == 'present' && saved != _canonicalJson(state)) {
-      throw StateError('Reopen changed the fixed exit');
-    }
-  }
-  stdout.writeln(
-    'dense actual-WASM exit preparation, admission and fixed-order reopen PASS; synthetic evidence only',
-  );
-}
-
-String _canonicalJson(Object? value) {
-  Object? ordered(Object? v) {
-    if (v is List) return v.map(ordered).toList();
-    if (v is Map) {
-      final keys = v.keys.cast<String>().toList()..sort();
-      return {for (final key in keys) key: ordered(v[key])};
-    }
-    return v;
-  }
-
-  return jsonEncode(ordered(value));
-}
-
 class _Registry extends WasmPluginRegistryService {
   bool installed = true;
+  String digest = 'b' * 64;
   final record = const WasmPluginRecord(
     id: 'headless-test-package',
     displayName: 'Independent package',
@@ -1456,6 +1134,16 @@ class _Registry extends WasmPluginRegistryService {
       'state.plugin.read_write',
     ],
   );
+  @override
+  Future<PluginRuntimeBinding> resolveRuntimeBinding(String pluginId) async =>
+      PluginRuntimeBinding.externalPackage(
+        packageId: record.id,
+        packageVersion: '1.0.0',
+        packageKind: 'zip',
+        packageDigestHex: digest,
+        contractKind: pluginWorkspaceContractKind,
+        capabilities: record.capabilities,
+      );
   @override
   Future<List<WasmPluginRecord>> loadPlugins() async =>
       installed ? [record] : [];

@@ -5,13 +5,11 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
-import '../models/external_effect_models.dart';
-import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
+import '../models/plugin_contract_ids.dart';
 import '../models/wasm_plugin_models.dart';
-import 'bingx_market_data_adapter.dart';
+import 'plugin_capability_dispatcher.dart';
 import 'capsule_file_store.dart';
-import 'external_effect_service.dart';
 import 'plugin_host_api_service.dart';
 import 'wasm_plugin_registry_service.dart';
 
@@ -24,9 +22,7 @@ class PluginWorkspaceRuntime {
   static final Map<String, String> _scheduledBindings = {};
   static final Map<String, Object> _scheduledGenerations = {};
   static final Map<String, Map<String, dynamic>> _cycleObservations = {};
-  static final Set<String> _dispatchLeases = {};
   static const _executionFile = 'workspace-execution.v1.json';
-  static const _workspaceCandleBatchSize = 12;
   final WasmPluginRegistryService registry;
   final PluginHostApiService pluginHostApi;
   final CapsuleFileStore _fileStore;
@@ -34,15 +30,19 @@ class PluginWorkspaceRuntime {
   final Future<String?> Function({
     required String owner,
     required String pluginId,
-  })
+  })?
   _readCredentials;
-  final Future<void> Function({
-    required String owner,
-    required String pluginId,
-    required String? value,
-  })
-  _writeCredentials;
-  final BingxMarketDataAdapter _market;
+  final PluginCapabilityDispatcher _capabilities;
+  final Future<Map<String, dynamic>> Function(
+    Map<String, dynamic> request,
+    Future<void> Function() authorize,
+  )?
+  infer;
+  final Future<Map<String, String>> Function(
+    String owner,
+    Map<String, String> references,
+  )?
+  resolveCredentialReferences;
   final bool scheduleTimers;
   bool _schedulingClosed = false;
   final String executionHost;
@@ -53,26 +53,18 @@ class PluginWorkspaceRuntime {
     required this.pluginHostApi,
     required CapsuleFileStore fileStore,
     required String? Function() readActiveCapsuleRootHex,
-    required Future<String?> Function({
-      required String owner,
-      required String pluginId,
-    })
+    Future<String?> Function({required String owner, required String pluginId})?
     readCredentials,
-    required Future<void> Function({
-      required String owner,
-      required String pluginId,
-      required String? value,
-    })
-    writeCredentials,
-    BingxMarketDataAdapter? market,
+    PluginCapabilityDispatcher? capabilities,
+    this.infer,
+    this.resolveCredentialReferences,
     this.scheduleTimers = true,
     this.executionHost = 'local',
     this.executionIdentity,
   }) : _fileStore = fileStore,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
        _readCredentials = readCredentials,
-       _writeCredentials = writeCredentials,
-       _market = market ?? BingxMarketDataAdapter() {
+       _capabilities = capabilities ?? const PluginCapabilityDispatcher() {
     if (!{'local', 'vps'}.contains(executionHost)) {
       throw ArgumentError('Unsupported execution host');
     }
@@ -117,7 +109,9 @@ class PluginWorkspaceRuntime {
     if (control != null && (control['executor'] ?? 'local') != executionHost) {
       return;
     }
-    if (control != null && workspaceExecutionIsActive(control)) {
+    if (control != null &&
+        control['version'] == 2 &&
+        workspaceExecutionIsActive(control)) {
       _armScheduledExecution(record, owner, control);
     }
   }
@@ -126,10 +120,6 @@ class PluginWorkspaceRuntime {
     required WasmPluginRecord record,
     required String action,
     Map<String, dynamic> settings = const {},
-    String? optionsForField,
-    Map<String, String>? credentials,
-    Map<String, dynamic>? approvedOrder,
-    int? executionRevision,
   }) async {
     final owner = _readActiveCapsuleRootHex()?.trim().toLowerCase();
     final pluginId = record.pluginId;
@@ -137,28 +127,20 @@ class PluginWorkspaceRuntime {
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner) ||
         pluginId == null ||
         record.contractKind != pluginWorkspaceContractKind ||
-        !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(action) ||
-        (optionsForField != null && action != 'open') ||
-        (credentials != null && approvedOrder != null) ||
-        (executionRevision != null && approvedOrder == null)) {
+        !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(action)) {
       throw StateError('Installed workspace and active Capsule are required');
     }
+    // Freeze owner input before waiting for another action's executor lease.
+    final ownedSettings = Map<String, dynamic>.from(
+      jsonDecode(jsonEncode(settings)) as Map,
+    );
     final key = '$owner::$pluginId';
     return _serialize(
       key,
       () => _withWorkspaceLease(
         owner,
         record,
-        () => _runWorkspaceOwned(
-          owner,
-          record,
-          action,
-          settings,
-          optionsForField,
-          credentials,
-          approvedOrder,
-          executionRevision,
-        ),
+        () => _runWorkspaceOwned(owner, record, action, ownedSettings),
       ),
     );
   }
@@ -183,991 +165,295 @@ class PluginWorkspaceRuntime {
     WasmPluginRecord record,
     String action,
     Map<String, dynamic> settings,
-    String? optionsForField,
-    Map<String, String>? credentials,
-    Map<String, dynamic>? approvedOrder,
-    int? executionRevision,
   ) async {
     final pluginId = record.pluginId!;
     final directory = await _fileStore.capsuleDirForHex(owner, create: true);
-    final execution = await _readExecution(record, owner);
-    const stateFile = 'workspace.v1.json';
-    final saved = await _fileStore.readPluginState(
-      directory,
-      pluginId,
-      stateFile,
-    );
-    Map<String, dynamic>? state;
-    if (saved != null) {
-      if (utf8.encode(saved).length > 32 * 1024) {
-        throw StateError('Plugin state exceeds its limit');
-      }
-      final decoded = jsonDecode(saved);
-      if (decoded is! Map) throw StateError('Plugin state is unreadable');
-      state = Map<String, dynamic>.from(decoded);
+    final initial = await registry.resolveRuntimeBinding(pluginId);
+    final digest = initial.packageDigestHex;
+    if (digest == null || initial.packageId != record.id) {
+      throw StateError('Package binding unavailable');
     }
-    String? invocationPackageDigest;
-    Set<String> grantedCapabilities = {};
-    var readingOpenOrders = false;
-    var restoringEffects = false;
-    var deferringLifecycleState = false;
-    Future<void> persistState() async {
-      if (!deferringLifecycleState &&
-          !readingOpenOrders &&
-          !restoringEffects &&
-          credentials == null &&
-          approvedOrder == null) {
-        await _fileStore.writePluginState(
-          directory,
-          pluginId,
-          stateFile,
-          jsonEncode(state),
-        );
+    final persistent = initial.capabilities.contains('state.plugin.read_write');
+    final saved =
+        persistent
+            ? await _fileStore.readPluginState(
+              directory,
+              pluginId,
+              'workspace.v1.json',
+            )
+            : null;
+    Map<String, dynamic>? state =
+        saved == null
+            ? null
+            : Map<String, dynamic>.from(jsonDecode(saved) as Map);
+    final control = await _readExecution(record, owner);
+    final invocationRevision = control?['revision'];
+    final effectiveSettings =
+        settings.isNotEmpty
+            ? settings
+            : Map<String, dynamic>.from(
+              control?['settings'] as Map? ?? const {},
+            );
+    Map<String, dynamic>? currentView;
+    dynamic continuationContext;
+
+    Future<void> bound(String capability) async {
+      if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
+      final binding = await registry.resolveRuntimeBinding(pluginId);
+      if (binding.packageId != record.id ||
+          binding.packageDigestHex != digest ||
+          !binding.capabilities.contains(capability) ||
+          !_isStillOwnedBy(owner)) {
+        throw StateError('Package or capability changed during the action');
       }
     }
 
     Future<Map<String, dynamic>> invoke(
-      String nextAction, {
-      Map<String, dynamic>? snapshot,
+      String next, {
+      Map<String, dynamic>? result,
     }) async {
-      if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
-      // Removal and update must be observed before every continuation.
-      final installed = await registry.loadPlugins();
-      if (!installed.any((r) => r.id == record.id && r.pluginId == pluginId)) {
-        throw StateError('Plugin was removed or updated; reopen its workspace');
-      }
+      await bound('workspace.continue');
+      final current = await _readExecution(record, owner);
       final response = await pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: pluginHostApiSchemaVersion,
           pluginId: pluginId,
           method: pluginWorkspaceMethod,
           args: {
-            'action': nextAction,
-            if (settings.isNotEmpty) 'settings': settings,
+            'api_version': PluginCapabilityDispatcher.version,
+            'action': next,
+            'context': continuationContext,
             'state': state,
-            'observed_at_ms':
-                snapshot?['observed_at_ms'] ??
-                DateTime.now().toUtc().millisecondsSinceEpoch,
-            if (execution != null)
-              'execution': {
-                'account_id': execution['scope']['account_id'],
-                'symbol': execution['scope']['symbol'],
-                'allow_new_entries':
-                    execution['allow_new_entries'] == true &&
-                    workspaceExecutionIsActive(execution),
-              },
-            if (snapshot != null) 'snapshot': snapshot,
+            if (effectiveSettings.isNotEmpty) 'settings': effectiveSettings,
+            'observed_at_ms': DateTime.now().toUtc().millisecondsSinceEpoch,
+            'execution': {
+              'enabled':
+                  current?['version'] == 2 &&
+                  (current != null && workspaceExecutionEnabled(current)) &&
+                  workspaceExecutionIsActive(current),
+              'scope': current?['version'] == 2 ? current!['scope'] : null,
+              'running':
+                  current?['scope']?['action'] != null &&
+                  current?['version'] == 2 &&
+                  workspaceExecutionEnabled(current!) &&
+                  workspaceExecutionIsActive(current),
+            },
+            if (result != null) 'result': result,
           },
         ),
       );
-      if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
+      await bound('workspace.continue');
       if (response.executionPackageId != record.id ||
-          (invocationPackageDigest != null &&
-              invocationPackageDigest != response.executionPackageDigestHex)) {
-        throw StateError('Plugin package changed during its action');
-      }
-      invocationPackageDigest = response.executionPackageDigestHex;
-      grantedCapabilities = response.executionCapabilities.toSet();
-      if (response.status != PluginHostApiStatus.executed ||
+          response.executionPackageDigestHex != digest ||
+          response.status != PluginHostApiStatus.executed ||
           response.result == null) {
         throw StateError(
-          response.errorMessage ?? 'Plugin action could not run',
+          response.errorMessage ?? 'Package invocation unavailable',
         );
       }
       final output = response.result!;
-      if (output['retired_entry'] != null &&
-          (nextAction != 'lifecycle' ||
-              snapshot == null ||
-              output['retired_entry'] is! Map ||
-              jsonEncode(output['retired_entry']).length > 4096)) {
-        throw StateError(
-          'History completion requires exact lifecycle evidence',
-        );
-      }
-      final effectRequests = (output['requests'] as List).where(
-        (r) =>
-            r['kind'] == 'order.entry.place' ||
-            r['kind'] == 'order.entry.cancel' ||
-            r['kind'] == 'position.exit.place',
-      );
-      if (effectRequests.isNotEmpty &&
-          (effectRequests.length != 1 ||
-              approvedOrder == null ||
-              _canonical(effectRequests.single) != _canonical(approvedOrder))) {
-        throw StateError('Order request is not the confirmed effect');
-      }
-      readingOpenOrders |= (output['requests'] as List).any(
-        (r) => r['kind'] == 'order.snapshot.read' && r['scope'] == 'open',
-      );
-      if (!readingOpenOrders) {
-        state = Map<String, dynamic>.from(output['state'] as Map);
-      }
-      // Save completion in the journal first. An interrupted state write then
-      // repeats the exact provider read, rather than forgetting its cleanup.
-      if (nextAction != 'lifecycle') await persistState();
-      return output;
-    }
-
-    Future<Map<String, String>> savedCredentials() async {
-      final raw = await _readCredentials(owner: owner, pluginId: pluginId);
-      if (raw == null) throw StateError('Reconnect your BingX account');
-      return _decodeCredentials(raw);
-    }
-
-    Future<Map<String, dynamic>> presentExecution(
-      Map<String, dynamic> view,
-    ) async {
-      final currentExecution = await _readExecution(record, owner);
-      if (currentExecution != null) {
-        view['execution'] = _executionPresentation(
-          currentExecution,
-          _cycleObservations['$owner::$pluginId'],
-        );
-        _armScheduledExecution(record, owner, currentExecution);
-      }
-      return view;
-    }
-
-    final adapter = _market.scopedEffects(
-      credentials: (request) async {
-        if (!_isStillOwnedBy(owner) ||
-            request.ownerCapsuleHex != owner ||
-            request.pluginId != pluginId) {
-          throw StateError('Effect scope changed');
-        }
-        await invoke('open');
-        if (!grantedCapabilities.contains('order.snapshot.read')) {
-          throw StateError('Account/order read scope changed');
-        }
-        return savedCredentials();
-      },
-      authorize: (plan) async {
-        final cancelling = approvedOrder?['kind'] == 'order.entry.cancel';
-        final exiting = approvedOrder?['kind'] == 'position.exit.place';
-        bool allowed() =>
-            approvedOrder != null &&
-            _canonical(plan) == _canonical(approvedOrder['plan']) &&
-            grantedCapabilities.contains(
-              exiting
-                  ? 'position.exit.place'
-                  : cancelling
-                  ? 'order.entry.cancel'
-                  : 'order.entry.place',
-            ) &&
-            grantedCapabilities.contains('order.snapshot.read') &&
-            grantedCapabilities.contains('market.candles.read');
-        final admission = await invoke(
-          exiting
-              ? 'validate_exit'
-              : cancelling
-              ? 'validate_cancel'
-              : 'validate_entry',
-        );
-        if (!allowed()) throw StateError('Entry authority is unavailable');
-        if (executionRevision != null) {
-          await _authorizeScheduledEntry(
-            record,
-            owner,
-            plan,
-            executionRevision,
-            exiting: exiting,
-          );
-        }
-        if (cancelling || exiting) {
-          if (admission['resume_action'] != null ||
-              (admission['requests'] as List).isNotEmpty ||
-              !grantedCapabilities.contains('position.snapshot.read')) {
-            throw StateError(
-              'Cancellation validation changed authority or requested effects',
-            );
-          }
-          return;
-        }
-        final reads = List<Map<String, dynamic>>.from(
-          (admission['requests'] as List).map(
-            (r) => Map<String, dynamic>.from(r as Map),
-          ),
-        );
-        if (admission['resume_action'] != null ||
-            reads.isEmpty ||
-            reads.length > 7 ||
-            reads.any(
-              (r) =>
-                  r['kind'] != 'market.candles.read' ||
-                  r['provider'] != 'bingx' ||
-                  r['symbol'] != plan['symbol'],
-            )) {
-          throw StateError('Plugin must request bounded entry evidence');
-        }
-        for (final read in reads) {
-          final quote = await _market.readCandles(read);
-          final candles = quote['candles'] as List;
-          for (
-            var offset = 0;
-            offset < candles.length;
-            offset += _workspaceCandleBatchSize
-          ) {
-            final end = (offset + _workspaceCandleBatchSize).clamp(
-              0,
-              candles.length,
-            );
-            final checked = await invoke(
-              'validate_entry',
-              snapshot: {
-                ...quote,
-                'candles': candles.sublist(offset, end),
-                'history_start_ms': (candles.first as List).first,
-                'history_end_ms': (candles.last as List).first,
-                'batch_complete': end == candles.length,
-              },
-            );
-            if (!allowed() ||
-                checked['resume_action'] != null ||
-                (checked['requests'] as List).isNotEmpty) {
-              throw StateError(
-                'Entry validation changed authority or requested effects',
-              );
-            }
-          }
-        }
-        if (!allowed()) throw StateError('Entry authority is unavailable');
-        if (executionRevision != null) {
-          await _authorizeScheduledEntry(
-            record,
-            owner,
-            plan,
-            executionRevision,
-          );
-        }
-      },
-    );
-    final effects = ExternalEffectService(
-      readActiveCapsuleRootHex: _readActiveCapsuleRootHex,
-      fileStore: _fileStore,
-      resolveAdapter: (provider) => provider == 'bingx' ? adapter : null,
-    );
-
-    var output = await invoke(action);
-    Future<void> restoreEntry(
-      Map<String, dynamic> request, {
-      String? verifiedAccountId,
-    }) async {
-      bool allowed() =>
-          grantedCapabilities.contains('order.snapshot.read') &&
-          request['kind'] == 'order.snapshot.read' &&
-          request['scope'] == 'durable' &&
-          request['provider'] == 'bingx' &&
-          request['account_id'] is String &&
-          RegExp(r'^[0-9a-f]{64}$').hasMatch(request['account_id'] as String);
-      if (!allowed()) throw StateError('Durable order read is unavailable');
-      final accountId = request['account_id'] as String;
-      if (verifiedAccountId == null) {
-        await _market.verifyAccountBinding(accountId, await savedCredentials());
-      } else if (verifiedAccountId != accountId) {
-        throw StateError('Durable order read belongs to another account');
-      }
-      await invoke('open');
-      if (!allowed()) throw StateError('Durable order read authority changed');
-      final entries =
-          (await effects.list(pluginId: pluginId))
-              .where(
-                (o) =>
-                    o.providerId == 'bingx' && o.accountBindingId == accountId,
-              )
-              .toList();
-      // Stream the journal unchanged; only the package selects what to recover.
-      // Commit strategy state once the entire recovery read has succeeded.
-      restoringEffects = true;
-      try {
-        const batchSize = 1;
-        var offset = 0;
-        do {
-          final end = (offset + batchSize).clamp(0, entries.length);
-          output = await invoke(
-            'restore_entry',
-            snapshot: {
-              'account_id': accountId,
-              'operations':
-                  entries.sublist(offset, end).map((o) => o.toJson()).toList(),
-              'batch_complete': end == entries.length,
-            },
-          );
-          if (!allowed() ||
-              output['resume_action'] != null ||
-              (output['requests'] as List).isNotEmpty) {
-            throw StateError(
-              'Durable recovery changed authority or requested effects',
-            );
-          }
-          offset = end;
-        } while (offset < entries.length);
+      continuationContext = output['context'];
+      state =
+          output['state'] == null
+              ? null
+              : Map<String, dynamic>.from(output['state'] as Map);
+      if (persistent && state != null) {
         await _fileStore.writePluginState(
           directory,
           pluginId,
-          stateFile,
+          'workspace.v1.json',
           jsonEncode(state),
         );
-      } finally {
-        restoringEffects = false;
       }
+      currentView = Map<String, dynamic>.from(output['view'] as Map);
+      return output;
     }
 
-    Future<void> restoreRequestedEntries({
-      required String verifiedAccountId,
-    }) async {
-      final pending = output['requests'] as List;
-      if (output['resume_action'] != null) {
-        throw StateError('Nested workspace continuations are not supported');
-      }
-      if (pending.isEmpty) return;
-      if (pending.length != 1 ||
-          (pending.single as Map)['scope'] != 'durable') {
-        throw StateError('Nested provider requests are not supported');
-      }
-      await restoreEntry(
-        Map<String, dynamic>.from(pending.single as Map),
-        verifiedAccountId: verifiedAccountId,
+    Future<Map<String, dynamic>> accessFor(Map<String, dynamic> request) async {
+      final current = await _readExecution(
+        record,
+        owner,
+        requiredCapabilities: {
+          if (request['kind'] == 'ai.infer')
+            'inference.request'
+          else
+            'network.http',
+          if (request['credential'] != null) 'credentials.use',
+        },
       );
+      // Legacy risk-scoped grants never become network permissions.
+      if (!_isStillOwnedBy(owner) ||
+          current == null ||
+          current['version'] != 2 ||
+          !workspaceExecutionEnabled(current) ||
+          current['revision'] != invocationRevision ||
+          !workspaceExecutionIsActive(current) ||
+          !PluginCapabilityDispatcher.allows(
+            current['scope']['access'] as Map,
+            request,
+          )) {
+        throw StateError('Owner access is absent, revoked, expired or changed');
+      }
+      return Map<String, dynamic>.from(current['scope']['access'] as Map);
     }
 
-    if (optionsForField != null) {
-      final fields = (output['view'] as Map)['fields'] as List;
-      final matches = fields.where(
-        (f) => (f as Map)['id'] == optionsForField && f['type'] == 'choice',
+    Future<Map<String, String>> secrets(Map<String, dynamic> request) async {
+      final alias = request['credential'] as String;
+      final fields = (control?['credentials'] as Map?)?[alias];
+      if (fields is! Map) {
+        throw StateError('Connect this credential in plugin permissions');
+      }
+      final references = Map<String, String>.from(fields);
+      if (resolveCredentialReferences != null) {
+        return resolveCredentialReferences!(owner, references);
+      }
+      // A remote executor receives only the connections explicitly transferred
+      // by the owner; it has no access to the local Keychain.
+      final raw = await _readCredentials?.call(
+        owner: owner,
+        pluginId: pluginId,
       );
-      if (matches.length != 1 ||
-          !grantedCapabilities.contains('market.instruments.read')) {
-        throw StateError('Plugin requested an unavailable choice capability');
+      final stored = raw == null ? null : jsonDecode(raw);
+      if (stored is! Map ||
+          stored['version'] != 3 ||
+          stored['connections'] is! Map) {
+        throw StateError('Connected credentials unavailable');
       }
-      final source = Map<String, dynamic>.from(
-        (matches.single as Map)['source'] as Map,
+      final values = _decodeCredentials(
+        jsonEncode(stored['connections'][alias]),
       );
-      final options = await _market.readInstruments(source);
-      // Use the same serialized invocation boundary after the asynchronous read;
-      // a changed Capsule, removed package or replaced digest cannot continue.
-      await invoke('open');
-      if (!grantedCapabilities.contains('market.instruments.read')) {
-        throw StateError('Instrument capability is no longer available');
-      }
-      return {'options': options};
+      return {
+        for (final field in references.keys)
+          field:
+              values[field] ??
+              (throw StateError('Connected credential field unavailable')),
+      };
     }
-    final requests = List<Map<String, dynamic>>.from(
-      (output['requests'] as List).map(
-        (r) => Map<String, dynamic>.from(r as Map),
-      ),
-    );
-    final resumeAction = output['resume_action'] as String?;
-    if (credentials != null &&
-        (requests.length != 1 ||
-            requests.single['kind'] != 'account.connect')) {
-      throw StateError('Plugin did not request an account connection');
-    }
-    if (approvedOrder != null &&
-        (requests.length != 1 ||
-            _canonical(requests.single) != _canonical(approvedOrder))) {
-      throw StateError('Plugin did not request the exact confirmed effect');
-    }
-    // A recovered VPS key can restore the executor before the provider
-    // credentials are present on that executor. Keep the package-owned public
-    // presentation available in this read-only case so the user can reconnect
-    // the account from the workspace. Hide trading actions, but retain the
-    // current host authority so revocation never requires provider credentials.
-    if (action == 'open' &&
-        credentials == null &&
-        requests.isNotEmpty &&
-        requests.every(
-          (request) =>
-              (request['kind'] == 'account.snapshot.read') ||
-              (request['kind'] == 'order.snapshot.read' &&
-                  request['scope'] == 'durable'),
-        ) &&
-        await _readCredentials(owner: owner, pluginId: pluginId) == null) {
-      // Revalidate through the same invocation boundary after the vault read:
-      // replacement/removal or a Capsule switch cannot return the old view.
-      output = await invoke('open');
-      final view = Map<String, dynamic>.from(output['view'] as Map);
-      view.remove('schedule');
-      final actions =
-          (view['actions'] as List? ?? const []).where((raw) {
-            final action = raw as Map;
-            final host = action['host'];
-            return host != 'bingx.order.submit' &&
-                host != 'workspace.start' &&
-                host != 'workspace.stop';
-          }).toList();
-      view['actions'] = actions;
-      view['message'] =
-          '${view['message'] ?? ''}\nReconnect your BingX account to refresh VPS observations. No trading action is enabled.';
-      return presentExecution(view);
-    }
-    for (final request in requests) {
-      if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
-      final kind = request['kind'];
-      if (kind == 'order.snapshot.read' && request['scope'] == 'durable') {
-        await restoreEntry(request);
-        continue;
-      }
-      if (kind == 'order.snapshot.read' && request['scope'] == 'open') {
-        bool allowed() =>
-            grantedCapabilities.contains('order.snapshot.read') &&
-            request['provider'] == 'bingx' &&
-            request['account_id'] != null;
-        if (!allowed()) throw StateError('Open-order read scope changed');
-        final credentials = await savedCredentials();
-        await invoke('open');
-        if (!allowed()) throw StateError('Open-order read scope changed');
-        final snapshot = await _market.readOpenOrders(request, credentials);
-        await invoke('open');
-        if (!allowed()) throw StateError('Open-order read scope changed');
-        output = await invoke('open_orders', snapshot: snapshot);
-        if (resumeAction != null ||
-            output['resume_action'] != null ||
-            (output['requests'] as List).isNotEmpty) {
-          throw StateError('Nested provider requests are not supported');
-        }
-        continue;
-      }
-      if (kind == 'order.entry.place' ||
-          kind == 'order.entry.cancel' ||
-          kind == 'position.exit.place' ||
-          kind == 'order.snapshot.read') {
-        final cancelling = kind == 'order.entry.cancel';
-        final exiting = kind == 'position.exit.place';
-        final writing = kind != 'order.snapshot.read';
-        if (!grantedCapabilities.contains(kind) ||
-            !grantedCapabilities.contains('order.snapshot.read') ||
-            (request['scope'] != null &&
-                (kind != 'order.snapshot.read' ||
-                    request['scope'] != 'lifecycle')) ||
-            ((request['scope'] == 'lifecycle' || cancelling || exiting) &&
-                !grantedCapabilities.contains('position.snapshot.read')) ||
-            request['provider'] != 'bingx' ||
-            request['plan'] is! Map ||
-            (writing &&
-                (approvedOrder == null ||
-                    _canonical(request) != _canonical(approvedOrder)))) {
-          throw StateError(
-            'Order request is not authorized or changed after confirmation',
+
+    var output = await invoke(action);
+    for (var steps = 0; steps < 512; steps++) {
+      final requests = output['requests'] as List;
+      if (requests.isEmpty) {
+        final view = currentView!;
+        final current = await _readExecution(record, owner);
+        if (current != null) {
+          view['execution'] = _executionPresentation(
+            current,
+            _cycleObservations['$owner::$pluginId'],
           );
+          _armScheduledExecution(record, owner, current);
         }
-        final plan = Map<String, dynamic>.from(request['plan'] as Map);
-        final entryPlan =
-            exiting
-                ? Map<String, dynamic>.from(plan['entry_plan'] as Map)
-                : plan;
-        final entryId = BingxMarketDataAdapter.entryOperationId(entryPlan);
-        ExternalEffectOperation? originalEntry;
-        if (cancelling || exiting) {
-          final id = request['order_id'];
-          if (cancelling &&
-              (id is! String || !RegExp(r'^[1-9][0-9]{0,29}$').hasMatch(id))) {
-            throw StateError('An exact cancellation order ID is required');
+        return view;
+      }
+      final request = Map<String, dynamic>.from(requests.single as Map);
+      final kind = request['kind'] as String;
+      final continuation = request['continuation'] as String;
+      Map<String, dynamic> result;
+      switch (kind) {
+        case 'runtime.yield':
+          result = {};
+        case 'runtime.wait':
+          final delay = request['milliseconds'];
+          if (delay is! int || delay < 0 || delay > 60000) {
+            throw StateError('Wait exceeds runtime bound');
           }
-          final originals =
-              (await effects.list(pluginId: pluginId))
-                  .where(
-                    (o) =>
-                        o.operationId == entryId &&
-                        o.effectKind == 'order.entry.place' &&
-                        o.canonicalPayloadJson == _canonical(entryPlan),
-                  )
-                  .toList();
-          if (originals.length != 1) {
-            throw StateError('Cancellation is not bound to a journaled entry');
-          }
-          originalEntry = originals.single;
-        }
-        final operationId =
-            cancelling
-                ? BingxMarketDataAdapter.cancelOperationId(
-                  plan,
-                  request['order_id'],
-                )
-                : exiting
-                ? BingxMarketDataAdapter.exitOperationId(plan)
-                : entryId;
-        ExternalEffectOperation operation;
-        if (writing) {
-          operation = await _withEntryDispatchLease(owner, entryPlan, () async {
-            if (exiting) {
-              final journal = await effects.list(pluginId: pluginId);
-              final replay = journal.any(
-                (o) => o.operationId == operationId && o.attemptCount > 0,
-              );
-              // A receipt proves acceptance, not completion. Only an exact
-              // terminal provider read releases an earlier exit for this entry.
-              // An already-dispatched identity only reconciles its own order.
-              for (final o in replay ? <ExternalEffectOperation>[] : journal) {
-                if (o.effectKind != 'position.exit.place' ||
-                    o.operationId == operationId ||
-                    (o.state == ExternalEffectState.terminalFailure &&
-                        [
-                          'exit_not_sent',
-                          'provider_rejected',
-                        ].contains(o.lastErrorCode))) {
-                  continue;
-                }
-                final payload = jsonDecode(o.canonicalPayloadJson) as Map;
-                if (_canonical(payload['entry_plan']) !=
-                    _canonical(entryPlan)) {
-                  continue;
-                }
-                final Map<String, dynamic> prior;
-                try {
-                  prior = await adapter.readExit(
-                    ExternalEffectAdapterRequest(
-                      ownerCapsuleHex: owner,
-                      operationId: o.operationId,
-                      pluginId: pluginId,
-                      providerId: 'bingx',
-                      accountBindingId: o.accountBindingId,
-                      effectKind: o.effectKind,
-                      canonicalPayloadJson: o.canonicalPayloadJson,
-                      payloadHashHex: o.payloadHashHex,
-                      providerReferenceId:
-                          o.receipt?.providerReceiptId ?? o.providerReferenceId,
-                    ),
-                  );
-                } catch (_) {
-                  throw StateError(
-                    'Previous exit completion is unverified; no new exit sent',
-                  );
-                }
-                if (![
-                  'filled',
-                  'cancelled',
-                  'expired',
-                  'rejected',
-                ].contains(prior['status'])) {
-                  throw StateError(
-                    'A journaled exit is still active for this entry',
-                  );
-                }
-              }
-            }
-            final prepared = await effects.prepare(
-              operationId: operationId,
-              pluginId: pluginId,
-              providerId: 'bingx',
-              accountBindingId: entryPlan['account_id'] as String,
-              effectKind: kind,
-              canonicalPayloadJson: _canonical(
-                cancelling
-                    ? {'plan': plan, 'order_id': request['order_id']}
-                    : plan,
-              ),
-            );
-            if (prepared.state == ExternalEffectState.terminalFailure &&
-                prepared.lastErrorCode ==
-                    (cancelling ? 'cancel_not_sent' : 'entry_not_sent')) {
-              await effects.reauthorizeRejectedDelivery(
-                pluginId: pluginId,
-                operationId: operationId,
-                approvalEvidenceHashHex: prepared.payloadHashHex,
-              );
-            } else {
-              await effects.approve(
-                pluginId: pluginId,
-                operationId: operationId,
-                approvalEvidenceHashHex: prepared.payloadHashHex,
-              );
-              await effects.enqueue(
-                pluginId: pluginId,
-                operationId: operationId,
-              );
-            }
-            await _fileStore.writePluginState(
-              directory,
-              pluginId,
-              stateFile,
-              jsonEncode(state),
-            );
-            return await effects.process(
-              pluginId: pluginId,
-              operationId: operationId,
-            );
-          });
-        } else {
-          final matches =
-              (await effects.list(
-                pluginId: pluginId,
-              )).where((o) => o.operationId == operationId).toList();
-          if (matches.length != 1 ||
-              matches.single.canonicalPayloadJson != _canonical(plan)) {
-            throw StateError('Exact entry is not in the durable journal');
-          }
-          operation = matches.single;
-        }
-        final observedOperation =
-            exiting ? operation : originalEntry ?? operation;
-        final bound = ExternalEffectAdapterRequest(
-          ownerCapsuleHex: owner,
-          operationId: exiting ? operationId : entryId,
-          pluginId: pluginId,
-          providerId: 'bingx',
-          accountBindingId: observedOperation.accountBindingId,
-          effectKind: observedOperation.effectKind,
-          canonicalPayloadJson: observedOperation.canonicalPayloadJson,
-          payloadHashHex: observedOperation.payloadHashHex,
-          providerReferenceId:
-              cancelling
-                  ? request['order_id']
-                  : operation.receipt?.providerReceiptId ??
-                      operation.providerReferenceId,
-        );
-        final Map<String, dynamic> evidence;
-        var evidenceAction =
-            exiting
-                ? 'exit'
-                : request['scope'] == 'lifecycle' || cancelling
-                ? 'lifecycle'
-                : 'order';
-        if (!cancelling &&
-            operation.state == ExternalEffectState.terminalFailure &&
-            [
-              'entry_not_sent',
-              'provider_rejected',
-              'exit_not_sent',
-            ].contains(operation.lastErrorCode)) {
-          evidence = {
-            'account_id': entryPlan['account_id'],
-            'symbol': entryPlan['symbol'],
-            'client_order_id': operationId.substring(0, 40),
-            'order_id': null,
-            'status':
-                [
-                      'entry_not_sent',
-                      'exit_not_sent',
-                    ].contains(operation.lastErrorCode)
-                    ? 'not_sent'
-                    : 'rejected',
-            'filled_quantity': 0.0,
-            'average_price': 0.0,
-            'observed_at_ms': DateTime.now().toUtc().millisecondsSinceEpoch,
-            'error_message': operation.lastErrorMessage,
+          await Future<void>.delayed(Duration(milliseconds: delay));
+          result = {};
+        case 'api.describe':
+          result = {
+            'catalog': {
+              for (final entry in PluginCapabilityDispatcher.catalog.entries)
+                entry.key: {
+                  ...entry.value,
+                  'available': entry.key != 'ai.infer' || infer != null,
+                },
+            },
           };
-          evidenceAction = exiting ? 'exit' : 'order';
-        } else {
-          try {
-            ExternalEffectAdapterRequest? exit;
-            if (request['exit_plan'] is Map) {
-              if (request['scope'] != 'lifecycle') {
-                throw StateError('Exit evidence requires lifecycle scope');
-              }
-              final exitPlan = Map<String, dynamic>.from(
-                request['exit_plan'] as Map,
+        case 'ai.infer':
+          if (infer == null) {
+            result = {
+              'outcome': 'not_dispatched',
+              'error': 'capability_unavailable',
+            };
+          } else {
+            var admitted = false;
+            try {
+              result = await infer!(
+                {...request, 'plugin_id': pluginId},
+                () async {
+                  await accessFor(request);
+                  admitted = true;
+                },
               );
-              if (_canonical(exitPlan['entry_plan']) != _canonical(plan)) {
-                throw StateError('Exit belongs to another entry');
+              if (utf8.encode(jsonEncode(result)).length >
+                  PluginCapabilityDispatcher.maxBodyBytes) {
+                result = {
+                  'outcome': 'unknown',
+                  'error': 'result_exceeds_bound',
+                };
               }
-              final exitId = BingxMarketDataAdapter.exitOperationId(exitPlan);
-              final matches =
-                  (await effects.list(pluginId: pluginId))
-                      .where(
-                        (o) =>
-                            o.operationId == exitId &&
-                            o.effectKind == 'position.exit.place' &&
-                            o.canonicalPayloadJson == _canonical(exitPlan),
-                      )
-                      .toList();
-              if (matches.length != 1) {
-                throw StateError('Exact exit is not in the durable journal');
-              }
-              final o = matches.single;
-              exit = ExternalEffectAdapterRequest(
-                ownerCapsuleHex: owner,
-                operationId: exitId,
-                pluginId: pluginId,
-                providerId: 'bingx',
-                accountBindingId: o.accountBindingId,
-                effectKind: o.effectKind,
-                canonicalPayloadJson: o.canonicalPayloadJson,
-                payloadHashHex: o.payloadHashHex,
-                providerReferenceId:
-                    o.receipt?.providerReceiptId ?? o.providerReferenceId,
-              );
-              if (o.state == ExternalEffectState.unresolved ||
-                  o.state == ExternalEffectState.delivering) {
-                await effects.reconcileOnly(
-                  pluginId: pluginId,
-                  operationId: exitId,
-                );
-              }
-            }
-            evidence =
-                exiting
-                    ? await adapter.readExit(bound)
-                    : request['scope'] == 'lifecycle' || cancelling
-                    ? await adapter.readLifecycle(bound, exit: exit)
-                    : await adapter.readEntry(bound);
-          } catch (_) {
-            throw StateError(
-              'Exact order read unavailable; no new observation or resubmission',
-            );
-          }
-        }
-        await invoke('open');
-        if (!grantedCapabilities.contains('order.snapshot.read') ||
-            ((request['scope'] == 'lifecycle' || cancelling || exiting) &&
-                !grantedCapabilities.contains('position.snapshot.read'))) {
-          throw StateError('Order read authority changed');
-        }
-        deferringLifecycleState = evidenceAction == 'lifecycle';
-        output = await invoke(evidenceAction, snapshot: evidence);
-        if (output['resume_action'] != null ||
-            (output['requests'] as List).isNotEmpty) {
-          throw StateError('Nested provider requests are not supported');
-        }
-        if (!cancelling && evidenceAction == 'lifecycle') {
-          final orderId = (evidence['entry'] as Map)['order_id'];
-          if (orderId is String) {
-            final cancelId = BingxMarketDataAdapter.cancelOperationId(
-              plan,
-              orderId,
-            );
-            final pendingCancel = (await effects.list(pluginId: pluginId)).any(
-              (o) =>
-                  o.operationId == cancelId &&
-                  o.effectKind == 'order.entry.cancel' &&
-                  (o.state == ExternalEffectState.unresolved ||
-                      o.state == ExternalEffectState.delivering),
-            );
-            // A racing fill may stop the package proposing cancellation.
-            // Finish its durable request through read-only reconciliation.
-            if (pendingCancel) {
-              await effects.reconcileOnly(
-                pluginId: pluginId,
-                operationId: cancelId,
-              );
+            } catch (_) {
+              result = {
+                'outcome': admitted ? 'unknown' : 'not_dispatched',
+                'error': 'inference_unavailable',
+              };
             }
           }
-        }
-        if (cancelling &&
-            operation.state == ExternalEffectState.terminalFailure) {
-          deferringLifecycleState = false;
-          await persistState();
-          // The current order evidence is already saved. Surface non-dispatch
-          // without rewriting the package view or treating the entry as closed.
-          throw StateError(
-            operation.lastErrorMessage ?? 'No cancellation sent',
+        case 'http.request':
+          final access =
+              control?['version'] == 2
+                  ? Map<String, dynamic>.from(
+                    control!['scope']['access'] as Map,
+                  )
+                  : <String, dynamic>{'version': 2, 'network': []};
+          result = await _capabilities.http(
+            request,
+            access: access,
+            readCredentials: () => secrets(request),
+            authorize: () async {
+              await accessFor(request);
+            },
           );
-        }
-        if (output['retired_entry'] != null) {
-          const terminal = ['filled', 'cancelled', 'rejected', 'expired'];
-          if (evidenceAction != 'lifecycle' ||
-              _canonical(output['retired_entry']) != _canonical(entryPlan) ||
-              !terminal.contains((evidence['entry'] as Map)['status']) ||
-              evidence['positions'] is! List ||
-              (evidence['positions'] as List).isNotEmpty ||
-              evidence['orders'] is! List ||
-              (evidence['orders'] as List).isNotEmpty ||
-              (request['exit_plan'] != null &&
-                  (evidence['exit'] is! Map ||
-                      !terminal.contains(
-                        (evidence['exit'] as Map)['status'],
-                      )))) {
-            throw StateError(
-              'History completion is not confirmed by the provider',
-            );
+        case 'storage.read':
+        case 'storage.write':
+          await bound('state.plugin.read_write');
+          final key = request['key'];
+          if (!PluginCapabilityDispatcher.safeId(key) ||
+              !(key as String).startsWith('data-')) {
+            throw StateError('Storage key is outside package data');
           }
-          final group =
-              (await effects.list(pluginId: pluginId)).where((o) {
-                if (o.providerId != 'bingx' ||
-                    o.accountBindingId != entryPlan['account_id']) {
-                  return false;
-                }
-                final payload = jsonDecode(o.canonicalPayloadJson);
-                return o.operationId == entryId ||
-                    (o.effectKind == 'order.entry.cancel' &&
-                        _canonical(payload['plan']) == _canonical(entryPlan)) ||
-                    (o.effectKind == 'position.exit.place' &&
-                        _canonical(payload['entry_plan']) ==
-                            _canonical(entryPlan));
-              }).toList();
-          // Unresolved journal records remain recoverable, even if the package
-          // has retired its private lifecycle. Never turn uncertainty into age.
-          if (group.isNotEmpty && group.every((o) => o.state.isTerminal)) {
-            var deadline = entryPlan['expires_at_ms'] as int;
-            for (final o in group) {
-              if (o.effectKind != 'position.exit.place') continue;
-              final payload = jsonDecode(o.canonicalPayloadJson) as Map;
-              final notDispatched =
-                  o.state == ExternalEffectState.terminalFailure &&
-                  [
-                    'exit_not_sent',
-                    'provider_rejected',
-                  ].contains(o.lastErrorCode);
-              if (o.attemptCount > 0 && !notDispatched) {
-                final prior = await adapter.readExit(
-                  ExternalEffectAdapterRequest(
-                    ownerCapsuleHex: owner,
-                    operationId: o.operationId,
-                    pluginId: pluginId,
-                    providerId: o.providerId,
-                    accountBindingId: o.accountBindingId,
-                    effectKind: o.effectKind,
-                    canonicalPayloadJson: o.canonicalPayloadJson,
-                    payloadHashHex: o.payloadHashHex,
-                    providerReferenceId:
-                        o.receipt?.providerReceiptId ?? o.providerReferenceId,
-                  ),
-                );
-                if (!terminal.contains(prior['status'])) {
-                  throw StateError('An earlier exit is not confirmed closed');
-                }
-              }
-              final exitDeadline = payload['expires_at_ms'] as int;
-              if (exitDeadline > deadline) deadline = exitDeadline;
+          if (kind == 'storage.write') {
+            final value = request['value'];
+            if (value is! String ||
+                utf8.encode(value).length >
+                    PluginCapabilityDispatcher.maxBodyBytes) {
+              throw StateError('Storage value exceeds bound');
             }
-            // Provider reads above can outlive a package removal or replacement.
-            await invoke('open');
-            await effects.completeGroup(
-              pluginId: pluginId,
-              groupId: entryId,
-              operationIds: group.map((o) => o.operationId).toSet(),
-              retainUntil: DateTime.fromMillisecondsSinceEpoch(
-                deadline,
-                isUtc: true,
-              ),
-            );
-          }
-        }
-        deferringLifecycleState = false;
-        if (evidenceAction == 'lifecycle') await persistState();
-        continue;
-      }
-      if (kind == 'account.connect' || kind == 'account.snapshot.read') {
-        if (!grantedCapabilities.contains(kind) ||
-            request['provider'] != 'bingx' ||
-            (kind == 'account.connect' &&
-                (credentials == null || requests.length != 1))) {
-          throw StateError(
-            'Plugin requested an unavailable account capability',
-          );
-        }
-        final previous = await _readCredentials(
-          owner: owner,
-          pluginId: pluginId,
-        );
-        final pair =
-            kind == 'account.connect'
-                ? credentials!
-                : previous == null
-                ? null
-                : _decodeCredentials(previous);
-        if (pair == null) throw StateError('Reconnect your BingX account');
-        final snapshot = await _market.readAccount(request, pair);
-        // Revalidate the package and grants after the network read, before
-        // admitting the account evidence or changing its secure binding.
-        await invoke('open');
-        if (!grantedCapabilities.contains(kind)) {
-          throw StateError('Account capability is no longer available');
-        }
-        if (kind == 'account.connect') {
-          output = await invoke('account', snapshot: snapshot);
-          var savedCredentials = false;
-          try {
-            await _writeCredentials(
-              owner: owner,
-              pluginId: pluginId,
-              value: jsonEncode(pair),
-            );
-            savedCredentials = true;
-            await invoke('open');
-            if (!grantedCapabilities.contains(kind)) {
-              throw StateError('Account capability is no longer available');
-            }
-            await restoreRequestedEntries(
-              verifiedAccountId: snapshot['account_id'] as String,
-            );
-            await _fileStore.writePluginState(
+            await _fileStore.writePluginState(directory, pluginId, key, value);
+            result = {'written': true};
+          } else {
+            final value = await _fileStore.readPluginState(
               directory,
               pluginId,
-              stateFile,
-              jsonEncode(state),
+              key,
             );
-          } catch (_) {
-            if (savedCredentials) {
-              if (previous == null) {
-                await _writeCredentials(
-                  owner: owner,
-                  pluginId: pluginId,
-                  value: null,
-                );
-              } else {
-                await _writeCredentials(
-                  owner: owner,
-                  pluginId: pluginId,
-                  value: previous,
-                );
-              }
+            if (value != null &&
+                utf8.encode(value).length >
+                    PluginCapabilityDispatcher.maxBodyBytes) {
+              result = {'error': 'value_exceeds_bound'};
+            } else {
+              result = {'value': value};
             }
-            rethrow;
           }
-        } else {
-          output = await invoke('account', snapshot: snapshot);
-          await restoreRequestedEntries(
-            verifiedAccountId: snapshot['account_id'] as String,
-          );
-        }
-        continue;
+        default:
+          throw StateError('Unsupported capability operation');
       }
-      if (request['kind'] != 'market.candles.read' ||
-          !grantedCapabilities.contains('market.candles.read')) {
-        throw StateError('Plugin requested an unavailable capability');
-      }
-      final snapshot = await _market.readCandles(request);
-      final candles = snapshot['candles'] as List;
-      final historyEnd = (candles.last as List).first;
-      // Streaming bounds one WASM invocation without interpreting its data.
-      for (
-        var offset = 0;
-        offset < candles.length;
-        offset += _workspaceCandleBatchSize
-      ) {
-        final end = (offset + _workspaceCandleBatchSize).clamp(
-          0,
-          candles.length,
-        );
-        output = await invoke(
-          'market',
-          snapshot: {
-            ...snapshot,
-            'candles': candles.sublist(offset, end),
-            'history_end_ms': historyEnd,
-            'batch_complete': end == candles.length,
-          },
-        );
-        if (output['resume_action'] != null ||
-            (output['requests'] as List).isNotEmpty) {
-          throw StateError('Nested provider requests are not supported');
-        }
-      }
-    }
-    if (requests.any(
-      (r) => r['kind'] == 'order.snapshot.read' && r['scope'] == 'open',
-    )) {
-      return Map<String, dynamic>.from(output['view'] as Map);
-    }
-    if (resumeAction != null) {
-      if (!grantedCapabilities.contains('workspace.continue')) {
-        throw StateError('Workspace continuation authority changed');
-      }
-      output = await invoke(resumeAction);
-      if (output['resume_action'] != null ||
-          (output['requests'] as List).isNotEmpty) {
-        throw StateError('Workspace continuation must finish without requests');
-      }
-    }
-    if (approvedOrder != null) {
-      await _fileStore.writePluginState(
-        directory,
-        pluginId,
-        stateFile,
-        jsonEncode(state),
+      output = await invoke(
+        continuation,
+        result: {'id': request['id'], ...result},
       );
     }
-    return presentExecution(Map<String, dynamic>.from(output['view'] as Map));
+    throw StateError('Capability continuation budget exhausted');
   }
 
   /// A host-owned grant, never a field inside private package state.
@@ -1178,9 +464,22 @@ class PluginWorkspaceRuntime {
     int? expectedRevision,
     bool revoke = false,
     Map<String, dynamic>? approvedScope,
+    Map<String, Map<String, String>>? credentialBindings,
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
   }) async {
+    approvedScope =
+        approvedScope == null
+            ? null
+            : Map<String, dynamic>.from(
+              jsonDecode(jsonEncode(approvedScope)) as Map,
+            );
+    credentialBindings = credentialBindings?.map(
+      (k, v) => MapEntry(k, Map<String, String>.from(v)),
+    );
+    settings = Map<String, dynamic>.from(
+      jsonDecode(jsonEncode(settings)) as Map,
+    );
     if (enabled &&
         (revoke ||
             (expiresAtMs != null &&
@@ -1201,19 +500,40 @@ class PluginWorkspaceRuntime {
       throw StateError('Invalid VPS execution target');
     }
     final previous = await _readExecution(record, owner);
+    if (settings.isEmpty && previous?['settings'] is Map) {
+      settings = Map<String, dynamic>.from(previous!['settings'] as Map);
+    }
     if (enabled && previous?['revision'] != expectedRevision) {
       throw StateError('Execution authority changed; review Start again');
     }
-    Map<String, dynamic>? preparedView;
     final Map<String, dynamic> control;
     if (enabled) {
-      final view = await runWorkspaceAction(record: record, action: 'open');
-      preparedView = view;
-      final scope = Map<String, dynamic>.from(view['schedule'] as Map);
+      if (approvedScope == null) {
+        throw StateError('Owner permission scope is required');
+      }
+      final scope = Map<String, dynamic>.from(
+        jsonDecode(jsonEncode(approvedScope)) as Map,
+      );
       validateWorkspaceExecutionSchedule(scope);
-      if (approvedScope == null ||
-          _canonical(scope) != _canonical(approvedScope)) {
-        throw StateError('Execution scope changed; confirm Start again');
+      if (scope['version'] != 2) {
+        throw StateError('A common permission scope is required');
+      }
+      PluginCapabilityDispatcher.validateAccess(scope['access']);
+      final credentials =
+          credentialBindings ??
+          (previous?['credentials'] is Map
+              ? (previous!['credentials'] as Map).map(
+                (k, v) =>
+                    MapEntry(k as String, Map<String, String>.from(v as Map)),
+              )
+              : <String, Map<String, String>>{});
+      final fields = scope['access']['credentials'] as Map? ?? const {};
+      if (fields.entries.any(
+        (e) => (e.value as List).any(
+          (f) => credentials[e.key]?[f['id']]?.isNotEmpty != true,
+        ),
+      )) {
+        throw StateError('Choose the Keychain secrets for this permission');
       }
       if (settings.length > 8 ||
           utf8.encode(jsonEncode(settings)).length > 2048 ||
@@ -1224,11 +544,12 @@ class PluginWorkspaceRuntime {
       if (binding.packageId != record.id ||
           binding.packageDigestHex == null ||
           !RegExp(r'^[0-9a-f]{64}$').hasMatch(binding.packageDigestHex!) ||
-          !binding.capabilities.contains('workspace.schedule')) {
-        throw StateError('Scheduled execution is not granted to this package');
+          (scope['action'] != null &&
+              !binding.capabilities.contains('workspace.schedule'))) {
+        throw StateError('Execution capability is not available');
       }
       control = {
-        'version': 1,
+        'version': 2,
         'owner': owner,
         'plugin_id': record.pluginId,
         'package_id': record.id,
@@ -1244,10 +565,17 @@ class PluginWorkspaceRuntime {
         if (releaseToExecutorId == null && previous?['handoff_digest'] != null)
           'handoff_digest': previous!['handoff_digest'],
         'scope': scope,
+        'credentials': {
+          for (final e in fields.entries)
+            e.key: {
+              for (final field in e.value as List)
+                field['id']: credentials[e.key]![field['id']]!,
+            },
+        },
         'settings': settings,
         'expires_at_ms': expiresAtMs,
         'revoked': false,
-        'allow_new_entries': true,
+        'enabled': true,
         'revision': (previous?['revision'] as int? ?? 0) + 1,
       };
     } else {
@@ -1256,10 +584,13 @@ class PluginWorkspaceRuntime {
       // read cannot defer Stop until after its provider write.
       control = {
         ...previous,
-        'allow_new_entries': false,
+        workspaceExecutionFlag(previous): false,
         if (revoke) 'revoked': true,
         'revision': (previous['revision'] as int) + 1,
       };
+    }
+    if (utf8.encode(jsonEncode(control)).length > 8192) {
+      throw StateError('Permission metadata exceeds bound');
     }
     if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
     await _serialize(
@@ -1279,7 +610,8 @@ class PluginWorkspaceRuntime {
         final binding = await registry.resolveRuntimeBinding(record.pluginId!);
         if (binding.packageId != control['package_id'] ||
             binding.packageDigestHex != control['package_digest'] ||
-            !binding.capabilities.contains('workspace.schedule')) {
+            (control['scope']['action'] != null &&
+                !binding.capabilities.contains('workspace.schedule'))) {
           throw StateError('Execution package changed during confirmation');
         }
         if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
@@ -1300,8 +632,7 @@ class PluginWorkspaceRuntime {
       stopWorkspaceScheduling(pluginId: record.pluginId);
       // The target has not acknowledged adoption yet. A source-side snapshot
       // is neither a running-local status nor evidence of a running VPS.
-      preparedView!.remove('execution');
-      return preparedView;
+      return {'execution': _executionPresentation(control, null)};
     }
     return runWorkspaceAction(record: record, action: 'open');
   }
@@ -1325,31 +656,6 @@ class PluginWorkspaceRuntime {
       action: scope['action'] as String,
       settings: Map<String, dynamic>.from(control['settings'] as Map),
     );
-    if (workspaceExecutionIsActive(control) && view['confirmation'] is Map) {
-      final request = Map<String, dynamic>.from(view['confirmation'] as Map);
-      final exiting = request['kind'] == 'position.exit.place';
-      if (!exiting && control['allow_new_entries'] != true) return view;
-      final actions = (view['actions'] as List).where(
-        (a) => a['host'] == 'bingx.order.submit',
-      );
-      if (actions.length != 1) {
-        throw StateError('Package did not expose one entry action');
-      }
-      await _authorizeScheduledEntry(
-        record,
-        owner,
-        Map<String, dynamic>.from(request['plan'] as Map),
-        control['revision'] as int,
-        exiting: exiting,
-      );
-      view = await runWorkspaceAction(
-        record: record,
-        action: actions.single['id'] as String,
-        settings: Map<String, dynamic>.from(control['settings'] as Map),
-        approvedOrder: request,
-        executionRevision: control['revision'] as int,
-      );
-    }
     final latest = await _readExecution(record, owner);
     if (latest != null) {
       final observed = {
@@ -1366,6 +672,7 @@ class PluginWorkspaceRuntime {
     String owner, {
     bool enforceHost = true,
     bool allowRemoteRecoveryBinding = false,
+    Set<String> requiredCapabilities = const {},
   }) async {
     final directory = await _fileStore.capsuleDirForHex(owner, create: false);
     var raw = await _fileStore.readPluginState(
@@ -1405,10 +712,12 @@ class PluginWorkspaceRuntime {
         (executionHost == 'vps' &&
             control['executor'] == 'local' &&
             control['expires_at_ms'] == 0 &&
-            control['allow_new_entries'] == false);
+            !workspaceExecutionEnabled(control));
     if ((!packageMatches &&
             !(allowRemoteRecoveryBinding && !enforceHost && remoteAuthority)) ||
-        !binding.capabilities.contains('workspace.schedule')) {
+        !binding.capabilities.toSet().containsAll(requiredCapabilities) ||
+        (control['scope']['action'] != null &&
+            !binding.capabilities.contains('workspace.schedule'))) {
       // A replaced package may not execute a stale local grant. A VPS grant
       // and its sealed return receipt remain readable only for authenticated
       // retirement. The original digest and opaque state are not rewritten;
@@ -1427,7 +736,7 @@ class PluginWorkspaceRuntime {
     validateWorkspaceExecutionControl(control, owner, pluginId);
     if (control['executor'] != 'local' ||
         control['expires_at_ms'] != 0 ||
-        control['allow_new_entries'] != false) {
+        workspaceExecutionEnabled(control)) {
       throw StateError('Return remote authority before package replacement');
     }
   }
@@ -1572,8 +881,8 @@ class PluginWorkspaceRuntime {
               if (previous['handoff_id'] == incoming['handoff_id'] &&
                   previous['handoff_digest'] == digest &&
                   previous['executor'] == 'vps') {
-                if ((incoming['allow_new_entries'] == false &&
-                        previous['allow_new_entries'] == true) ||
+                if ((!workspaceExecutionEnabled(incoming) &&
+                        workspaceExecutionEnabled(previous)) ||
                     (incoming['revoked'] == true &&
                         previous['revoked'] != true)) {
                   final directory = await _fileStore.capsuleDirForHex(owner);
@@ -1583,7 +892,7 @@ class PluginWorkspaceRuntime {
                     _executionFile,
                     jsonEncode({
                       ...previous,
-                      'allow_new_entries': false,
+                      workspaceExecutionFlag(previous): false,
                       if (incoming['revoked'] == true) 'revoked': true,
                       'revision': (previous['revision'] as int) + 1,
                     }),
@@ -1593,7 +902,7 @@ class PluginWorkspaceRuntime {
               }
               if (previous['executor'] != 'local' ||
                   workspaceExecutionIsActive(previous) ||
-                  previous['allow_new_entries'] != false ||
+                  workspaceExecutionEnabled(previous) ||
                   previous['handoff_id'] == incoming['handoff_id']) {
                 throw StateError(
                   'VPS already owns another workspace checkpoint',
@@ -1661,7 +970,7 @@ class PluginWorkspaceRuntime {
           _executionFile,
           jsonEncode({
             ...control,
-            'allow_new_entries': enabled,
+            workspaceExecutionFlag(control): enabled,
             if (revoke || enabled) 'revoked': revoke,
             'revision': (control['revision'] as int) + 1,
           }),
@@ -1700,7 +1009,7 @@ class PluginWorkspaceRuntime {
             ...control,
             'executor': 'local',
             'expires_at_ms': 0,
-            'allow_new_entries': false,
+            workspaceExecutionFlag(control): false,
             'revision': (control['revision'] as int) + 1,
           }..remove('executor_id');
           await _fileStore.writePluginState(
@@ -1725,7 +1034,7 @@ class PluginWorkspaceRuntime {
         if (control == null ||
             control['executor'] != 'local' ||
             control['expires_at_ms'] != 0 ||
-            control['allow_new_entries'] != false) {
+            workspaceExecutionEnabled(control)) {
           throw StateError('Remote authority has not been ended');
         }
         final directory = await _fileStore.capsuleDirForHex(owner);
@@ -1782,7 +1091,7 @@ class PluginWorkspaceRuntime {
     validateWorkspaceExecutionControl(incoming, owner, record.pluginId!);
     if (incoming['executor'] != 'local' ||
         incoming['expires_at_ms'] != 0 ||
-        incoming['allow_new_entries'] != false ||
+        workspaceExecutionEnabled(incoming) ||
         incoming['package_digest'] != checkpoint['package_digest']) {
       throw StateError('Remote authority remains active');
     }
@@ -1873,7 +1182,7 @@ class PluginWorkspaceRuntime {
       ...checkpoint,
       'execution':
           {...checkpoint['execution'] as Map}
-            ..remove('allow_new_entries')
+            ..remove(workspaceExecutionFlag(checkpoint['execution'] as Map))
             ..remove('revoked')
             ..remove('revision'),
     };
@@ -1921,59 +1230,22 @@ class PluginWorkspaceRuntime {
     }
   }
 
-  Future<void> _authorizeScheduledEntry(
-    WasmPluginRecord record,
-    String owner,
-    Map<String, dynamic> plan,
-    int revision, {
-    bool exiting = false,
-  }) async {
-    final control = await _readExecution(record, owner);
-    if (!_isStillOwnedBy(owner) ||
-        control == null ||
-        control['revision'] != revision ||
-        (!exiting && control['allow_new_entries'] != true) ||
-        !workspaceExecutionIsActive(control)) {
-      throw StateError('Start authority was stopped, expired or replaced');
-    }
-    final scope = control['scope'] as Map;
-    if (exiting) {
-      final entry = plan['entry_plan'];
-      if (entry is! Map ||
-          entry['account_id'] != scope['account_id'] ||
-          entry['symbol'] != scope['symbol'] ||
-          entry['margin'] is! num ||
-          entry['margin'] > scope['max_margin']) {
-        throw StateError('Exit exceeds the authorized account and instrument');
-      }
-      return;
-    }
-    final numbers = ['price', 'quantity', 'margin', 'stop_price', 'leverage'];
-    if (plan['account_id'] != scope['account_id'] ||
-        plan['symbol'] != scope['symbol'] ||
-        numbers.any(
-          (key) => plan[key] is! num || !plan[key].isFinite || plan[key] <= 0,
-        ) ||
-        plan['margin'] > scope['max_margin'] ||
-        plan['quantity'] * plan['price'] / plan['leverage'] >
-            scope['max_margin'] + 1e-9 ||
-        (plan['price'] - plan['stop_price']).abs() * plan['quantity'] >
-            plan['margin'] * scope['max_stop_percent'] / 100 + 1e-9) {
-      throw StateError(
-        'Entry exceeds the account, instrument, margin or stop authority',
-      );
-    }
-  }
-
   Map<String, dynamic> _executionPresentation(
     Map<String, dynamic> control,
     Map<String, dynamic>? observation,
   ) => {
     'mode': executionHost,
-    'allow_new_entries':
-        control['allow_new_entries'] == true &&
+    'enabled':
+        workspaceExecutionEnabled(control) &&
         workspaceExecutionIsActive(control),
     'active': workspaceExecutionIsActive(control),
+    'running':
+        workspaceExecutionEnabled(control) &&
+        workspaceExecutionIsActive(control) &&
+        control['scope']['action'] != null,
+    'access': control['version'] == 2 ? control['scope']['access'] : null,
+    'scope': control['version'] == 2 ? control['scope'] : null,
+    'credentials': control['credentials'] ?? const {},
     'revoked': control['revoked'] == true,
     'revision': control['revision'],
     'expires_at_ms': control['expires_at_ms'],
@@ -1994,7 +1266,10 @@ class PluginWorkspaceRuntime {
     final key = '$owner::${record.pluginId}';
     final binding =
         '${record.id}::${control['package_digest']}::${control['revision']}';
-    if (!workspaceExecutionIsActive(control)) {
+    if (control['version'] != 2 ||
+        control['scope']['action'] == null ||
+        !workspaceExecutionIsActive(control) ||
+        !workspaceExecutionEnabled(control)) {
       _clearSchedule(key);
       return;
     }
@@ -2097,43 +1372,6 @@ class PluginWorkspaceRuntime {
     }
   }
 
-  Future<T> _withEntryDispatchLease<T>(
-    String owner,
-    Map<String, dynamic> plan,
-    Future<T> Function() dispatch,
-  ) async {
-    if (plan['account_id'] is! String ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(plan['account_id']) ||
-        plan['symbol'] is! String ||
-        (plan['symbol'] as String).length > 64 ||
-        !RegExp(r'^[A-Z0-9]+-USDT$').hasMatch(plan['symbol'])) {
-      throw StateError('Invalid entry dispatch scope');
-    }
-    final key = '$owner::${plan['account_id']}::${plan['symbol']}';
-    if (!_dispatchLeases.add(key)) {
-      throw StateError(
-        'This account/instrument already has an entry dispatch in progress',
-      );
-    }
-    RandomAccessFile? lock;
-    try {
-      final directory = await _fileStore.capsuleDirForHex(owner, create: true);
-      lock = await File(
-        '${directory.path}/workspace-entry-${plan['account_id']}-${plan['symbol']}.lock',
-      ).open(mode: FileMode.append);
-      // Nonblocking: a second process must not queue a financial write behind
-      // another executor and later act on an already stale preflight.
-      await lock.lock(FileLock.exclusive);
-      return await dispatch();
-    } finally {
-      try {
-        await lock?.close();
-      } finally {
-        _dispatchLeases.remove(key);
-      }
-    }
-  }
-
   static String _canonical(dynamic value) {
     dynamic sorted(dynamic v) {
       if (v is Map) {
@@ -2149,24 +1387,24 @@ class PluginWorkspaceRuntime {
 
   static Map<String, String> _decodeCredentials(String raw) {
     try {
-      if (raw.length > 2048) throw const FormatException();
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map ||
-          decoded.length != 2 ||
-          !['api_key', 'secret_key'].every(
-            (key) =>
-                decoded[key] is String &&
-                RegExp(
-                  r'^[A-Za-z0-9_-]{1,512}$',
-                ).hasMatch(decoded[key] as String),
+      if (utf8.encode(raw).length > 8192) throw const FormatException();
+      final values = jsonDecode(raw);
+      if (values is! Map ||
+          values.isEmpty ||
+          values.length > 8 ||
+          values.entries.any(
+            (e) =>
+                !PluginCapabilityDispatcher.safeId(e.key) ||
+                e.value is! String ||
+                (e.value as String).isEmpty ||
+                (e.value as String).length > 4096,
           )) {
         throw const FormatException();
       }
-      return Map<String, String>.from(decoded);
+      return Map<String, String>.from(values);
     } catch (_) {
-      // JSON parse errors can include their source: never render a vault value.
       throw StateError(
-        'Saved BingX credentials are unreadable; reconnect your account',
+        'Saved credentials are unreadable; configure access again',
       );
     }
   }

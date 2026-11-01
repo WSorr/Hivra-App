@@ -36,9 +36,12 @@ Notes. `AI Surface` must be `PASS` on macOS and may be `PASS` or `N/A` on
 Android. Historical rows and their Trading evidence remain immutable; the
 retired columns no longer authorize or gate future product behavior.
 
-`User Lifetime` is the complete new-user, recovery, migration, and long-term
-Capsule journey. It is a public-release qualification, not a substitute for
-the exact packaged smoke required by every test build.
+`User Lifetime` attests applicable journeys in `user-lifetime-safety-pack.md` on
+the matrix in `../development-control.md`. Optional Intel/separate macOS-profile
+evidence does not determine PASS/PENDING. Notes name actual environments and
+reused state; historical rows remain unchanged. Bounded exercises and automated
+clock/event cases qualify time-dependent behavior. Exact packaged smoke remains
+required for every release.
 
 `AI Surface` attests the required local Analyst and authority-boundary smoke,
 not successful live model output. Live AI availability and any skipped

@@ -203,9 +203,11 @@ abstract class CapsuleInferenceRuntime {
 
   String? get sessionProviderId;
 
-  Future<void> savePreferredProviderId(String providerId);
+  Future<void> savePreferredProviderId(String providerId, {String? model});
 
   Future<String?> loadPreferredProviderId();
+
+  Future<String> loadPreferredModel(String providerId);
 
   Future<void> saveProviderApiKey(String providerId, String apiKey);
 
@@ -269,14 +271,24 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
       _credentialStore.sessionPreferredProvider?.id;
 
   @override
-  Future<void> savePreferredProviderId(String providerId) async {
-    await _credentialStore.savePreferredProvider(_requireProvider(providerId));
+  Future<void> savePreferredProviderId(
+    String providerId, {
+    String? model,
+  }) async {
+    await _credentialStore.savePreferredProvider(
+      _requireProvider(providerId),
+      model: model,
+    );
   }
 
   @override
   Future<String?> loadPreferredProviderId() async {
     return (await _credentialStore.loadPreferredProvider())?.id;
   }
+
+  @override
+  Future<String> loadPreferredModel(String providerId) =>
+      _credentialStore.loadPreferredModel(_requireProvider(providerId));
 
   @override
   Future<void> saveProviderApiKey(String providerId, String apiKey) async {
@@ -320,14 +332,62 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   }
 
   @override
-  Future<CapsuleInferenceResultV1> infer(CapsuleInferenceRequestV1 request) {
+  Future<CapsuleInferenceResultV1> infer(CapsuleInferenceRequestV1 request) =>
+      _enqueue(request);
+
+  /// Package authorization is checked by its canonical owner after queueing,
+  /// immediately before the existing inference transport is admitted.
+  Future<CapsuleInferenceResultV1> inferAuthorized(
+    CapsuleInferenceRequestV1 request, {
+    required Future<void> Function() authorize,
+  }) => _enqueue(request, authorize: authorize);
+
+  Future<CapsuleInferenceResultV1> _enqueue(
+    CapsuleInferenceRequestV1 request, {
+    Future<void> Function()? authorize,
+  }) {
+    // Resolve mutable preferences at submission, never when a queued request
+    // eventually executes. Explicit per-request selections remain authoritative.
+    try {
+      _validateRequest(request);
+      final provider = _resolveProvider(request);
+      final requestedModel = switch (request.modelPolicy) {
+        CapsuleInferenceModelPolicyV1.providerDefault => _credentialStore
+            .preferredModel(provider),
+        CapsuleInferenceModelPolicyV1.explicit => request.model!,
+      };
+      // Final execution identity includes the resolved choice, not only a
+      // preference policy that could otherwise name different models over time.
+      request = CapsuleInferenceRequestV1.create(
+        capsuleRootHex: request.capsuleRootHex,
+        capabilityId: request.capabilityId,
+        disclosureSchemaVersion: request.disclosureSchemaVersion,
+        disclosedSectionIds: request.disclosedSectionIds,
+        proposalSchemaId: request.proposalSchemaId,
+        proposalSchemaVersion: request.proposalSchemaVersion,
+        cancellationScope: request.cancellationScope,
+        instructions: request.instructions,
+        input: jsonDecode(request.inputJson) as Object,
+        providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+        providerId: provider.id,
+        modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
+        model: requestedModel,
+        maxInputBytes: request.maxInputBytes,
+        maxOutputBytes: request.maxOutputBytes,
+        timeoutMilliseconds: request.timeoutMilliseconds,
+      );
+    } catch (error, stackTrace) {
+      return Future.error(error, stackTrace);
+    }
     final completer = Completer<CapsuleInferenceResultV1>();
     final scopeKey = _scopeKey(request);
     final generation = (_scopeGenerations[scopeKey] ?? 0) + 1;
     _scopeGenerations[scopeKey] = generation;
     _schedulerTail = _schedulerTail.then((_) async {
       try {
-        completer.complete(await _execute(request, scopeKey, generation));
+        completer.complete(
+          await _execute(request, scopeKey, generation, authorize),
+        );
       } catch (error, stackTrace) {
         completer.completeError(error, stackTrace);
       } finally {
@@ -343,11 +403,12 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     CapsuleInferenceRequestV1 request,
     String scopeKey,
     int generation,
+    Future<void> Function()? authorize,
   ) async {
-    _validateRequest(request);
     _requireCurrentGeneration(scopeKey, generation);
     _requireMatchingCapsule(request.capsuleRootHex, stale: false);
     final provider = _resolveProvider(request);
+    final requestedModel = request.model!;
     if (_credentialStore.sessionPreferredProvider != provider ||
         !_credentialStore.isPreferredProviderUnlocked) {
       throw const CapsuleInferenceFailure(
@@ -355,10 +416,6 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
         'AI access is locked for this app session',
       );
     }
-    final requestedModel = switch (request.modelPolicy) {
-      CapsuleInferenceModelPolicyV1.providerDefault => provider.defaultModel,
-      CapsuleInferenceModelPolicyV1.explicit => request.model!,
-    };
     final apiKey = _credentialStore.sessionApiKey(provider);
     final baseUrl = _credentialStore.sessionBaseUrl(provider);
     final adapter = _adapterFactory(provider);
@@ -371,6 +428,9 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     final stopwatch = Stopwatch()..start();
     late final InferenceProviderResponse response;
     try {
+      await authorize?.call();
+      _requireCurrentGeneration(scopeKey, generation);
+      _requireMatchingCapsule(request.capsuleRootHex, stale: false);
       response = await adapter
           .ask(
             apiKey: apiKey ?? '',

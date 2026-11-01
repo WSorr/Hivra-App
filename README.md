@@ -8,12 +8,12 @@ A Capsule is the persistent, recoverable execution context of that runtime. It
 can operate independently, keep its own ledger, run WASM drones, and optionally
 establish trusted links with other Capsules through invitations.
 
-Hivra is best understood as a personal capsule computer:
-
-- not a global shared world computer
-- not an account inside someone else's network
-- not a social network, public graph, or discovery product
-- but a local-first runtime for your own capsule state, history, recovery, drones, and optional trusted links
+Hivra is a personal capsule computer: a durable base for participating in
+existing networks through applications, devices and services chosen by the
+person. The person retains identity and relationships while choosing executors
+and accepting responsibility for delegated actions and disclosed data.
+The [product axis](docs/product-axis.md) owns this architectural design basis;
+current implementation limits are recorded separately.
 
 The capsule is the center of truth. Transport adapters move messages, but they do not define identity or replace local truth.
 

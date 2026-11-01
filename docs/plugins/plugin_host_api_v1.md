@@ -15,7 +15,315 @@ contract. It is not the WASM ABI version: current external packages use
 The host does not grant plugin storage, Ledger writes, transport access, or
 provider effects merely because a WASM call succeeds.
 
-## Supported Contracts
+The design basis is owned by `docs/product-axis.md`. The contracts below
+describe the implemented 1.x surface, not the permanent extent of the owner's
+possible capabilities. Fixed view sizes and installation-wide cleanup remain
+current limits; package policy does not become universal host policy.
+
+## Unified Capability API: Protocol 2
+
+The maintained 1.x workspace implements the common operations below using the
+existing bounded JSON ABI. Protocol 2 is a capability protocol version, not
+activation of Hivra 2.0. Jack 0.2.0 uses this path. The old Jack provider adapter,
+host financial preflight, normalization and host-selected continuations are
+removed. Moltbook 0.8.0 uses the common path without a storage capability.
+Chat retains its relationship-scoped specialized contract.
+
+### Responsibilities
+
+| Owner | Responsibility |
+| --- | --- |
+| Core + Ledger | Capsule identity, owner authority and relationship facts, validated domain commands and canonical projections |
+| Host/runtime | Package isolation, owner-grant enforcement, network/TLS and crypto execution, protected credential application, scheduling, generic presentation and optional opaque storage |
+| WASM package | Service API rules, request construction, response interpretation, strategy, workflow, reconciliation, settings, private checkpoints and view contents |
+| External service | Facts about its own account, accepted operations and results; these are not Hivra domain facts |
+
+Dependencies point from packages to common host contracts and validated Core
+operations. The host must not depend on package-private schemas, strategy
+commands or a named product's workflow. Access to Core never bypasses its
+invariants; granting a plugin network access does not grant identity signing
+or direct Ledger writes.
+
+### One Request/Result Path
+
+Reuse the existing JSON invocation and continuation mechanism:
+
+```text
+owner action or authorized scheduled wake
+  -> package decides and constructs a capability request
+  -> host checks the current grant and executes the permitted operation
+  -> transport result returns to the package-selected continuation
+  -> package interprets the result and decides its next step
+```
+
+For network operations the package supplies the destination, method, parameters
+or body, scoped credential reference and its own correlation/continuation data.
+The host checks that the installed package may use that destination and
+credential, applies authentication within dispatch, and returns bounded HTTP
+status/body or a transport failure. It must distinguish a proven non-dispatch
+from an uncertain outcome; it does not invent a provider receipt or silently
+retry a possibly delivered mutation. Provider status and business errors are
+interpreted by the package, not normalized into host-owned product lifecycles.
+
+Extract shared authentication from existing Bearer and HMAC implementations
+first. Protected material is applied only to the permitted destination and
+request; it never becomes plugin output or a reusable arbitrary signing oracle.
+Redirects must not carry credentials outside the granted destination. Service
+paths, payload formats, parsing and retry/rate-limit policy belong to the
+package. Common resource bounds remain host concerns. A genuinely unsupported
+authentication/system primitive may extend this boundary; adding a service
+using supported primitives does not justify another host adapter.
+
+### Owner Authorization
+
+Installation admits code, not unrestricted secret or network access. Owner
+configuration and Start can grant one complete autonomous workflow. The host
+binds access to the Capsule, installed package, destination/credential scope,
+execution host and chosen duration/revocation terms. It checks that authority
+at dispatch without judging the package's product decision or asking for each
+step again. Replacement does not silently inherit broader permission.
+
+The package owns trading rules such as margin, zones and stops, or publication
+rules such as reply selection and challenge handling. The common API must not
+encode these as universal business checks. It guarantees access enforcement,
+not independent strategy correctness or a maximum financial loss. Migration
+must not silently reinterpret an existing risk-scoped grant as a broader
+network grant; the owner must see and authorize the changed terms.
+
+Partial Stop, if a package offers it, is a package workflow choice. Full host
+revocation blocks new dispatches in the revoked scope without service keys or
+service availability; it cannot undo an admitted request or an exchange order.
+The existing local/VPS custody mechanism prevents two scheduled executors for
+the same grant. Package-defined scheduling needs no host trading state machine.
+
+### Owner-Granted Connections: Accepted Product Model
+
+The Capsule is the person's execution environment. The person is the authority
+issuing access to their installed capabilities, not a tenant whose choices
+require a second product administrator in Hivra.
+
+The owner journey is one connection decision on the plugin screen: select the
+plugin's permitted effects and the relevant Keychain secrets, then authenticate
+in the native Keychain dialog. Hivra does not collect the system password.
+The resulting binding makes those capabilities available to the plugin for the
+owner-selected scope and duration. Starting the configured workflow uses that
+binding; it does not request the same access again for each product step.
+Revocation removes availability of the binding. The technical dispatch owner
+applies the binding and protected secret; it does not issue another business
+approval based on account status, publication quality, trading strategy or a
+local copy of service rules.
+
+| Owner | Decision or fact |
+| --- | --- |
+| Person | Which plugin may use which secret, external effects and connected AI; scope, duration and revocation |
+| Keychain | Native authentication and protected secret custody |
+| Package | Protocol, requests, parsing, workflow, timing and response interpretation |
+| Analyst's existing AI connection | Executes the package's content-generation request through common `ai.infer` |
+| External service | Its account facts, accepted publications/orders, restrictions, rate limits and results |
+| Capsule host | Executes generic capabilities through the owner's binding and maintains the sandbox boundary |
+
+Moltbook's selected workflow is stateless across starts: it reads publication
+and comment history from Moltbook on every start and holds only transient work
+in memory. No local publication/comment cache, draft archive, effect journal or
+recovery checkpoint is required. Service history is not copied into Core or
+Ledger. Host permission records and Keychain secret references are the owner's
+access configuration, not a Moltbook account mirror. Unknown delivery and
+service errors are interpreted by the package using the service's protocol;
+Hivra must not invent independent service guarantees or another approval chain.
+
+The common workspace now implements the owner connection model: its permission
+screen selects references to existing Capsule-scoped Keychain secrets. Native
+secure storage performs authentication according to the Keychain item's access
+policy; Hivra never asks for the system password. The grant stores references,
+not copies of secret values. The package receives only its declared credential
+alias and service result. Connection validation is an ordinary package workflow;
+there is no `credentials.accept` operation, pending-secret acceptance lane,
+action-scoped access bypass or second Start approval for unchanged access.
+A changed destination, method or credential connection requires the owner's
+updated grant. Full revocation is available for stateless and scheduled plugins.
+
+Moltbook 0.8.0 implements this path without a host controller or product stores.
+Its service-history and stateless recovery contract belongs to
+`moltbook_engagement_lifecycle_v1.md`. The host reads no prior product checkpoint
+for a package lacking `state.plugin.read_write`.
+
+### Minimal Persistence And Recovery
+
+Keep host permissions and credential/executor bindings authoritative in their
+existing stores. Package settings and necessary private checkpoints use the
+existing optional opaque store; the package owns their schema and upgrades.
+Do not introduce another persistence service or required provider-history log.
+
+Workspace uninstall first closes package admission and drains the existing
+executor. It deletes code and secrets and invalidates the installed-package
+grant binding. The bounded opaque workspace checkpoint and `data-` storage
+remain for reconnect/recovery by default; the host never examines pending
+identities inside them. The removal dialog offers explicit saved-data deletion,
+which tells the owner that pending recovery information will be lost and
+external operations are not undone. Reinstall never restores execution access
+without a fresh owner grant. This replaces the old Jack journal's retention
+role with the package checkpoint, not a second effect archive.
+
+Re-read account facts from the service. Reconstructible candles, balances,
+orders, positions and receipts are transient observations or disposable caches,
+not a host-owned mirror. Preserve only private decisions that cannot be
+reconstructed, relevant operation identifiers and unresolved dispatch intent.
+Write the necessary intent before dispatch. The package resolves ambiguity
+using the service's actual lookup/idempotency guarantees; not-found alone is
+not proof of non-delivery. Exactly-once execution is not promised for an
+arbitrary service. If safe recovery cannot be established, the package reports
+uncertainty rather than resubmitting blindly.
+
+### Operation Catalog And Wire
+
+Every package can request `api.describe` to discover the versioned catalog.
+All requests have `kind`, a correlation `id` matching
+`[a-z][a-z0-9_.-]{0,63}`, and a package-selected `continuation` action matching
+`[a-z][a-z0-9_]{0,63}`. No operation name contains a service name.
+
+| Operation | Manifest permission | Additional request fields | Result |
+| --- | --- | --- | --- |
+| `api.describe` | none | none | `catalog`: operation descriptors |
+| `runtime.yield` | `workspace.continue` | none | correlation only; begins a fresh bounded invocation |
+| `http.request` | `network.http` and `credentials.use` when protected | `url`, `method`, optional string `body`, string-map `headers`, `credential`, `auth`, `max_response_bytes` | `outcome`, HTTP `status`, bounded `headers` and `body`, or safe `error` |
+| `runtime.wait` | `workspace.continue` | integer `milliseconds` from 0 to 60000 | correlation only after a bounded delay |
+| `storage.read` | `state.plugin.read_write` | `key` | string or null `value`, or size `error` |
+| `storage.write` | `state.plugin.read_write` | `key`, string `value` | `written` |
+| `ai.infer` | `inference.request` | package `instructions`, object `input`, optional `max_output_bytes` | `outcome` and bounded inference result |
+
+An invocation receives `api_version: 2`, `action`, opaque `state`, transient
+`context`, owner-submitted `settings`, `observed_at_ms`, current `execution`
+(`enabled`, `running`, `scope`), and the previous request's `result` when continuing.
+It returns `state`, `context`, `view`, and zero or one `requests`. The host
+adds the request's `id` to the result and invokes its exact continuation.
+For packages declaring opaque storage, non-null state is persisted before dispatch. Without that capability state is transient and may be null; no workspace file is read or written. A private strategy may have internal
+semantic commands, but they never cross this public request boundary.
+
+Example package output:
+
+```json
+{
+  "state": {"pending_operation": "package-owned-identity"},
+  "context": {"next_step": "package-private"},
+  "view": {
+    "title": "Application", "message": "Working", "details": "",
+    "fields": [], "actions": [], "columns": [], "rows": []
+  },
+  "requests": [{
+    "kind": "http.request", "id": "request-1", "continuation": "receive",
+    "method": "POST", "url": "https://service.example/items",
+    "headers": {"Content-Type": "application/json"}, "body": "{}",
+    "credential": "default",
+    "auth": {"headers": {"Authorization": {"field": "token", "prefix": "Bearer "}}}
+  }]
+}
+```
+
+Access descriptor, authorized once on the plugin screen for the workflow:
+
+```json
+{
+  "version": 2,
+  "network": [{
+    "origin": "https://service.example", "methods": ["GET", "POST"],
+    "credential": "default"
+  }],
+  "credentials": {"default": [{"id": "token", "label": "Connection token"}]},
+  "inference": false
+}
+```
+
+A null/absent credential grants only unprotected requests. Each named alias
+lists the fields the package needs. The owner selects a Keychain reference for
+each field from this Capsule's existing secrets. The host resolves only that
+mapping; the package cannot select or import a vault entry. Values never enter
+settings, private state or WASM input. Grant metadata is bound to the current
+owner, package ID/digest, executor and exact network scope in the existing
+`workspace-execution.v1.json`; its `credentials` map contains references only.
+Local dispatch resolves them through the existing Capsule-scoped vault. An
+owner-selected remote executor receives a version-3 protected provisioning
+payload (`connections: {alias: {field: value}}`) through the existing custody
+path. The updated runner advertises `execution_controls: 3`; older runners
+are refused for permission changes and package actions. Rebinding credentials
+requires returning authority locally first.
+
+A `workspace.authorize` presentation action opens owner permissions before
+running the package's ordinary connection action. Package actions cannot carry
+independent `access`. Start uses `schedule: {version: 2, action,
+interval_seconds, description, access}`; it reuses an active matching grant,
+including its expiry and secret connections. It asks for permission only when
+required access is absent or broader. Permissions need no schedule; `running`
+means a scheduled workflow, while `enabled` means the owner's access is enabled.
+The owner may choose a deadline or authorize until revocation. `workspace.stop`
+fully revokes host dispatch. A package may expose an ordinary partial-Stop
+workflow without revoking access to its remaining operations.
+
+Choice fields use `source.action` through the same action executor and return
+`view.options`. There is no field-specific host action or service lookup.
+
+HTTP permits exact HTTPS origins and explicit methods (GET, HEAD, POST, PUT,
+PATCH, DELETE, OPTIONS). Origin permission covers paths at that origin; the
+host does not implement a service's endpoint allowlist. TLS is verified,
+redirects are disabled, and transport has finite connection/response timeouts
+and no retries. `auth.headers` applies a protected field with an optional
+literal prefix. `auth.hmac_query` takes `field` and `parameter`: it appends the
+hex HMAC-SHA256 of sorted, decoded `key=value` query pairs joined by `&`.
+Duplicate query keys and an existing signature parameter are refused. This is
+a defined common signing primitive, not arbitrary access to secret-derived
+outputs. A service needing another signing primitive requires a common API
+extension. Protected values and signed URLs echoed by a service are withheld
+from response body/headers; that outcome remains uncertain.
+
+HTTP outcomes have precise delivery meaning: `not_dispatched` means no
+transport admission; `unknown` means the host cannot prove non-delivery;
+`response` means an HTTP response, including service errors. Only the package
+interprets that response as success, rejection, partial completion or a receipt.
+The host never retries. Inference uses the existing owner-selected Capsule AI
+connection and queue. The package supplies instructions and input; the same
+package/grant is rechecked at actual adapter dispatch after queue waiting.
+The result includes `text`, `provider_id`, `provider_label` and `model`. Unavailable inference is reported without a fallback product controller.
+
+Resource bounds: state 32 KiB, transient context 16 KiB, view 16 KiB; HTTP body
+24 KiB request/default response; a request may select `max_response_bytes` up to
+256 KiB. The total WASM invocation input is bounded at 512 KiB; output remains
+128 KiB, linear memory 128 MiB and fuel 5,000,000. Response headers 8 KiB/64 fields, access descriptor
+4 KiB/16 origin entries, and at most 512 continuations in one owner action or
+scheduled wake. Existing ABI input/output/fuel bounds also apply to the
+combined envelope. `storage.*` accepts only safe `data-` keys in this
+Capsule/package namespace and at most 24 KiB values. It cannot modify grants,
+executor custody, workspace state or another package. The workspace checkpoint
+already uses the existing opaque store and needs no extra archive.
+
+### Jack Checkpoint And Current Scope
+
+Jack owns its protocol, UID-derived account binding, request identities,
+preflight, parsing, lifecycle and partial/full reducing-exit decisions. It
+streams bounded candle pages and yields between chunks within the unchanged
+WASM fuel limit. Its private checkpoint keeps its necessary strategy decisions
+and unresolved dispatch intents. After timeout/restart it queries the exact
+client/order identity; a missing order does not authorize resubmission.
+Package replacement/removal, Capsule switch and grant revocation before
+dispatch deny access without asking the host to parse Jack's private state.
+
+The owner ended the old local test sessions and explicitly excluded migration
+of their trading history from this pass. There is no old-journal importer,
+old-ID mapping, old-checkpoint upgrade, or legacy named-request execution
+fallback. Jack 0.2.0 requires a fresh workspace session; an old local test
+workspace uses normal package removal with explicit saved-data deletion and
+reinstall. Incompatible state is rejected before
+persistence. Existing local files are not deleted by this source change. Future migration of real owner
+sessions must explicitly define which unresolved identities require retention
+before replacing their execution path. New protocol-2 sessions retain their
+own pending intent across ordinary restart.
+
+The common API also supplies HTTP/authentication and inference primitives for
+other packages. It does not claim Moltbook's old host workflow has migrated.
+No live trading, VPS changes or production qualification are part of this pass.
+
+## Implemented v1 Contracts
+
+The specialized contracts below remain maintained. Their permission does not
+authorize network access through the common workspace API.
 
 - `hivra.contract.capsule-chat.v1`
   - `post_capsule_chat_message`
@@ -28,287 +336,22 @@ provider effects merely because a WASM call succeeds.
     A refused queued attempt is failed, not transport-accepted or ambiguous;
     it is not retried. Package changes after worker admission do not revoke
     a network operation that has already started.
-- `hivra.contract.moltbook-ambassador.v1`
-  - `prepare_moltbook_draft`
-  - `plan_moltbook_heartbeat`
-  - `plan_moltbook_engagement`
-  - `prepare_moltbook_reply`
-  - `authorize_moltbook_delegated_reply`
-- Installed packages declaring `plugin_workspace_v1`
-  - `workspace`
-  - Require `workspace.render`, `workspace.continue` and `state.plugin.read_write`.
-  - Return bounded `state`, `view`, and `requests`. The view contains title,
-    message, optional account summary, details, up to eight text/numeric/choice fields, four actions, and a
-    table of at most 64 rows and six columns, with an optional `details_title`
-    supplied by the package. The shell renders these values;
-    it does not implement package business logic. Fields marked `advanced`
-    and calculation evidence are collapsed by default; status and errors
-    remain visible.
-    The shell receives the installed manifest capabilities with the workspace
-    binding. Executor selection, runtime update, execution status and public
-    Start/Stop controls require `workspace.schedule`; available host callbacks
-    or saved connection metadata do not opt a package into these controls.
-    Action labels always come from the package, including on a VPS. Host-owned
-    authorization dialogs still explain the exact financial scope separately.
-    Before any view reaches the shell, the existing workspace contract handler
-    binds host controls to the resolved package capabilities, never action IDs,
-    labels, private state or a stale UI record. Account connection requires
-    `account.connect`; order submission requires an order-write grant and
-    `order.snapshot.read`, and a concrete confirmation requires its exact effect
-    grant (plus `position.snapshot.read` for cancellation or reducing exit).
-    Choice fields require `market.instruments.read`; scheduling declarations and
-    Start/Stop require `workspace.schedule`. An ungranted control rejects the
-    view before credential/approval dialogs or plugin-state persistence. These
-    presentation checks do not authorize execution: existing per-effect checks
-    and package revalidation still apply after asynchronous work.
-  - State is at most 32 KiB and is persisted through the existing
-    Capsule/plugin file store. One action is serialized per Capsule/plugin;
-    Capsule and installed-package identity are checked before continuations.
-    State internals are opaque to the host: the package owns account, strategy,
-    and managed-order interpretation. Provider scope comes from explicit
-    capability requests, not private state field names.
-    Missing host credentials do not transfer recovery decisions to the host:
-    a read-only presentation retains package action IDs and labels, including
-    any package-declared account connection action. The host never invents a
-    private reconnect command or suppresses commands by their names. It may
-    withhold public financial/execution host actions and scheduling until fresh
-    evidence is available. The Capsule/package binding is revalidated after
-    awaiting the credential store before returning that presentation.
-    Status opening sends no draft settings. Visible status refresh continues
-    while fields are edited and preserves compatible field text and selection;
-    only an explicit package action submits those settings. Failed observations
-    mark retained data as stale and offer the same status retry. Public Start
-    and order submission remain unavailable until a fresh view is received;
-    Stop remains accessible. Once requested, earlier pending views or errors
-    cannot overwrite its acknowledgement or failure, or unlock a newer action.
-    A connection failure never acknowledges that remote execution has stopped.
-    Network errors are shown without raw socket
-    diagnostics. These presentation rules do not change executor authority or
-    add a local fallback.
-    A failed initial workspace read does not hide the granted VPS connection
-    form. A saved installation also exposes explicit access restoration through
-    the same connection owner, with its original host and port locked. A failed
-    saved-key attempt never automatically requests root credentials. Restoration
-    reuses pinned identity and binding checks and does not grant a new Start;
-    it can reinstall the runner and resume existing unexpired permissions.
-    Workspace content respects native system insets. Account/VPS dialog titles
-    and fields scroll together when the keyboard reduces available height;
-    protected account fields retain normal paste and Next/Done input without
-    submitting early. Start authorization also permits scrolling through its
-    complete risk and authority scope while confirmation and Cancel stay reachable.
-    `PluginWorkspaceRuntime` owns the same invocation, persistence and effect
-    path in app and headless hosts. The app module supplies its scoped vault
-    through credential ports; Flutter, Chat and Moltbook are not dependencies
-    of the executor. Installed-package bindings are resolved by the existing
-    registry, not reconstructed independently by each host.
-    Uninstall removes secrets only for Capsule directories owned by that
-    runtime root, including inactive Capsules. Sharing the macOS Keychain
-    between installations does not authorize deleting another runtime's
-    Capsule credentials; an empty runtime owns no secret cleanup scope.
-  - Root output may declare `resume_action` with a bounded action ID, alongside
-    one or more permitted reads. After all evidence is admitted through the
-    public provider continuations (`market`, `account`, `order`, `restore_entry`),
-    the host invokes that package-selected action once. It must finish without
-    requests or another continuation. Transient open-order lists, credential
-    connection and entry effects cannot request this step. The host never
-    selects private preparation commands or associates authority with their
-    names. Credential input authorizes only its single `account.connect`
-    request; entry confirmation authorizes only the exact single effect.
-    Packages without `workspace.continue` are not activated by this host, and
-    older hosts reject the new capability rather than silently skipping the
-    preparation step. There is no legacy private-command fallback.
-  - `workspace.schedule` permits a separately confirmed local execution grant.
-    The package exposes a public `schedule`: action, interval (30..3600 seconds),
-    account ID, instrument, maximum entry margin and maximum requested-stop
-    percentage. Start binds that scope, public settings and the installed package
-    digest for 24 hours in host-owned storage, separate from opaque WASM state.
-    WASM receives only account/instrument and `allow_new_entries`. The shared
-    executor calls the package-selected cycle and uses the existing exact entry
-    journal/dispatch path, checking grant revision and limits again immediately
-    before POST or exact entry cancellation. Start explicitly includes cancellation
-    of an invalidated unfilled managed entry before replacement. Stop revokes
-    both automatic entry and cancellation during in-flight reads; Stop itself
-    neither cancels orders nor closes positions. Observation may continue until expiry.
-    Replacement, removal, revocation or Capsule change does not transfer authority.
-    A per-Capsule/account/instrument dispatch lease prevents concurrent sends
-    through the same file store. Saved intent is not runner-health evidence;
-    the view reports actual cycle observations separately. This implements local
-    cycles while the app is open, not managed VPS installation, verified stop
-    protection, profit-taking or a daily loss cap.
-  - `market.candles.read` permits only the bounded BingX public-candle adapter,
-    with an explicit symbol, supported timeframe, and 1..600 candles. The host
-    normalizes evidence and excludes unclosed candles. The plugin interprets
-    the snapshots. This capability does not grant credentials or order effects.
-  - `account.connect` permits a host-owned credential dialog explicitly
-    marked by action `host: "bingx.account.connect"`. Keys are passed only to
-    the host, never to WASM settings or state. The fixed BingX LIVE read-only
-    adapter verifies exact UID, USDT available margin, side-specific leverage,
-    and contract constraints. One credential pair is kept in the existing
-    Capsule/plugin-scoped secure vault. Failed connection preserves the prior
-    binding; package and grants are checked again after reads and secure save.
-  - `account.snapshot.read` refreshes that connection for the selected
-    instrument. Its normalized snapshot contains endpoint, hashed account UID,
-    display label, available margin, long/short leverage, price/quantity
-    precision, minimum quantity/notional, and observation time. The host
-    rejects a UID that differs from the request's explicit `account_id`.
-    Cached data is labelled with its age;
-    the plugin calculates sizing and stop previews, not the host. No order
-    submission, leverage change, or financial authority is granted by either
-    account capability. API/network errors never include signed URLs or keys.
-    The account and leverage reads follow the BingX
-    [account API](https://github.com/BingX-API/api-ai-skills/blob/main/skills/swap-account/api-reference.md)
-    and [trade API](https://github.com/BingX-API/api-ai-skills/blob/main/skills/swap-trade/api-reference.md).
-  - A `choice` field declares its `source` as
-    `{"kind":"market.instruments.read","provider":"bingx"}`.
-    Its granted read uses the same serialized workspace boundary, validates
-    the installed package again after the read, and returns transient options
-    to a searchable picker. The shell accepts only an explicit selection;
-    cancellation or read failure does not change the field or run a strategy.
-    Only the selected value is passed to WASM on the next action. The catalog
-    is not stored in plugin state or the Ledger. BingX's
-    [contract information API](https://github.com/BingX-API/api-ai-skills/blob/main/skills/swap-market/api-reference.md)
-    supplies active, API-open contracts, deduplicated and sorted; the host does
-    not rank instruments. Reads are limited to 4096 contracts and 2 MiB;
-    candle-response limits remain unchanged.
-  - `order.entry.place` permits one explicitly confirmed BingX LIVE entry.
-    WASM prepares the immutable account-bound plan; a host action marked
-    `host: "bingx.order.submit"` shows the exact instrument, side, quantity,
-    price, margin, leverage and requested stop. Confirmation is required for
-    that exact plan unless a separately confirmed, package-pinned schedule grant
-    covers it; both use the same execution path. The host rechecks
-    package/grants, account UID and entry expiry before its single POST.
-    It never calculates strategy levels or sizing. The request is a PostOnly
-    limit with an attached stop request; this is not verified position
-    protection or automatic profit-taking.
-    Before dispatch, the pinned package receives `validate_entry` without a
-    snapshot and requests 1..7 bounded `market.candles.read` observations for
-    the approved instrument. The package selects the supported timeframe and
-    history depth, not the provider adapter. The host requires the market-read
-    grant, acquires those observations, and supplies each through
-    `validate_entry` with complete-history bounds and a final-batch marker.
-    Every continuation rechecks package identity and grants. Empty evidence
-    requests, foreign instruments, nested effects or rejected validation stop
-    before POST; there is no host-owned strategy-validation fallback.
-  - `order.entry.cancel` uses the same `bingx.order.submit` action, exact
-    confirmation or package-pinned schedule grant, adapter and effect journal.
-    Its request carries the original immutable `plan` and exact string `order_id`.
-    The host requires that plan's entry in the journal and verifies its account,
-    client operation, provider ID, side, price and quantity before cancellation.
-    The pinned package admits the decision through `validate_cancel` without
-    nested reads/effects; the host does not interpret private line/state fields.
-    Current position/order reads must show no position and an open zero-fill entry.
-    Package, read/cancel grants and schedule revision are rechecked immediately
-    before one exact DELETE; manual orders and bulk cancellation are not admitted.
-    An uncertain response permits read-only reconciliation, not another DELETE.
-    Subsequent exact lifecycle reads also reconcile the pending cancel journal
-    operation, even when a fill means the package no longer proposes cancellation.
-    A confirmed pre-dispatch failure is retained as `cancel_not_sent` and reported;
-    only that proven non-dispatch may be reauthorized. Terminal reconciliation
-    can mean a racing fill, not successful cancellation. The original entry's
-    lifecycle evidence is returned to WASM; neither a cancel request nor its
-    receipt authorizes a replacement. The next cycle must reconcile terminal
-    order, flat positions and no remaining orders, then obtain fresh market/account
-    evidence. The exact cancellation uses BingX's
-    [trade API](https://github.com/BingX-API/api-ai-skills/blob/main/skills/swap-trade/api-reference.md).
-  - `position.exit.place` adds a reducing BingX LIVE GTC limit exit through the
-    same `bingx.order.submit` confirmation/schedule, adapter and effect journal.
-    Its public `plan` has exactly seven fields: `entry_plan` (the immutable
-    fourteen-field entry contract), `position_id`, `quantity`, `average_price`,
-    `price`, `prepared_at_ms`, and `expires_at_ms` (at most 60 seconds later).
-    The host requires that exact entry in the package/account journal; the
-    adapter rereads its fill and the single matching current position before
-    sending only the observed remaining quantity. One-way mode uses
-    `positionSide=BOTH` and `reduceOnly=true`; hedge mode uses the opposite order
-    side and the original LONG/SHORT position side, without `reduceOnly`.
-    `closePosition` is never sent. The pinned package admits the decision via
-    `validate_exit` without nested reads/effects. The host does not select a
-    line, read private position/strategy fields, or invent a fallback exit.
-    Unknown responses permit reconciliation of the same deterministic client ID,
-    never another POST. Another exit for the same entry is blocked until its
-    existing journaled operation is resolved by the supported lifecycle.
-    This capability does not place or verify a protective conditional stop.
-    A package may add `exit_plan` to its lifecycle read to receive optional
-    normalized `exit` evidence for that exact journaled reducing order; packages
-    not requesting it retain the previous evidence shape. Stop retains reducing
-    exit authority within the current package/account/instrument grant until
-    expiry or full revocation, but disables new entries and entry replacement cancellations.
-    The host's Start confirmation carries an explicit absolute UTC deadline
-    (`expires_at_ms`), or explicit `null` for authorization until full revocation.
-    Twenty-four hours is a selectable UI default, not a host maximum. Missing
-    deadline terms are rejected; restart, reconnect and checkpoint replay never
-    renew them. A fresh Start must match the confirmed executor grant revision;
-    a duplicate or delayed request cannot reactivate a stopped/revoked grant.
-    The existing execution control owns an optional boolean `revoked` (absent
-    means false for legacy grants). Full revocation sets it true and disables
-    entries before waiting for in-flight observation to drain. It ends all new
-    automatic trading effects, including reducing exits, and disarms scheduling;
-    authenticated manual observation remains available. It neither cancels
-    provider orders nor closes positions. Existing finite grants retain their
-    original deadline, and `0` remains an ended/sealed deadline, never infinity.
-    Revocation does not transfer executor custody. Pending VPS revocation is
-    stored in the existing source grant and must be acknowledged by the assigned
-    executor; connection loss is not acknowledgement. The custody checkpoint's
-    digest excludes only mutable entry permission, full-revocation intent and
-    revision; replay can reduce authority but cannot restore it or old state.
-    The runner advertises `execution_controls: 2` in its existing status result.
-    Process shutdown rejects new control requests and permanently seals timer
-    rearming on that runtime before draining accepted work and releasing its
-    lease. It does not change the saved grant or cancel provider orders; a new
-    process may resume the existing unexpired permission.
-    The packaged systemd service bounds its entire cgroup to 256 MiB with no
-    swap. A cgroup OOM terminates the whole service group; the existing
-    on-failure policy restarts the runner after 15 seconds. Recovery uses the
-    persisted package, grant, state and effect journal; it does not renew
-    permission or authorize replay of an uncertain provider effect.
-    New Start/full-revocation RPCs carry deadline, expected revision and revocation
-    terms explicitly; unsupported runners fail with an update requirement rather
-    than granting a default duration. The old Stop-only envelope remains supported
-    until legacy 1.x clients are retired; legacy Start without terms is rejected.
-  - `order.snapshot.read` queries the exact client operation/order. Its
-    `scope: "open"` variant reads current open orders for the selected instrument
-    and connected account, not account-wide history. The host verifies the UID
-    binding and returns at most 64 normalized rows with exact IDs, side/position
-    side, type, provider status, price/trigger, quantity/fill and observation time.
-    This list is transient view evidence, not saved strategy state or managed
-    entries; failure is not an empty list, reopening requires a fresh read,
-    and foreign/manual orders are never automatically adopted or cancelled.
-    Both listing and entry preflight use the same provider parser. The existing external-effect journal owns
-    delivery identity and receipts; WASM owns managed-order interpretation.
-    A restart or uncertain response performs read-only reconciliation, never
-    a blind second POST. Provider acceptance, open order, partial/full fill,
-    cancellation, rejection, expiry, and unknown remain distinct; no position
-    or PnL is inferred. Effect receipts survive plugin uninstall while keys
-    and strategy state are deleted. Reconnecting the same account restores
-    the durable request for reconciliation; foreign accounts are not adopted.
-    For recovery the package requests `order.snapshot.read` with
-    `scope: "durable"`, `provider`, and `account_id`. After verifying the UID
-    and read grant, the host streams the existing journal's account/provider
-    scoped operations unchanged through `restore_entry`, one record per
-    invocation, with `batch_complete`. Only WASM selects eligible entries;
-    the host does not select the newest plan or reinterpret delivery state.
-    Package identity, Capsule and grants are rechecked between records;
-    recovered state is saved once, after the complete successful read.
-    Recovery neither submits an order nor fabricates fresh provider evidence.
-    An unavailable exact-order read retains the last observation and reports
-    failure. Confirmed non-dispatch reasons are evidence rendered by WASM,
-    rather than a host rewrite of the package's view.
-  - `order.snapshot.read` with `scope: "lifecycle"` additionally requires
-    `position.snapshot.read`. It reads the journal-bound exact entry, current
-    positions and all open orders of the explicit account/instrument through
-    the existing adapter. `lifecycle` receives a bounded snapshot containing
-    `account_id`, `symbol`, `entry`, `positions`, `orders`, and `observed_at_ms`.
-    Position rows expose exact ID, side, quantity and average price; they do
-    not grant management of manual positions. Incomplete, malformed, foreign
-    or excessively slow reads fail rather than become empty exposure. The
-    package owns closure interpretation and recovery checkpoints; no closure,
-    PnL, protection or authority is inferred by the host. Existing single-entry
-    confirmation or a separate schedule grant remains required. This read
-    contract alone does not authorize another entry.
-  - At most eight requested operations are processed sequentially and supplied through subsequent
-    WASM invocations in host transport batches of 12 candles. Each batch carries the
-    full history's end time and whether it is the final batch, so streaming
-    does not change the plugin's calculation window. Nested provider requests
-    are rejected. No host import or direct plugin network access is added.
+- Installed packages declaring `plugin_workspace_v1` use method `workspace`
+  and the common protocol-2 operations above. Required capabilities are
+  `workspace.render` and `workspace.continue`; opaque storage is optional.
+  The generic view supports eight text/integer/number/choice fields, four
+  actions, 64 rows/six columns and optional `details_title`.
+  Choice sources declare a package action, never a named service request.
+  Host action markers are only `workspace.authorize`, `workspace.start`,
+  `workspace.stop`; capability checks use the resolved installed binding.
+  Opening sends no draft settings. Edits survive status refresh, errors cannot
+  overwrite a newer action, and failed observations mark the view unavailable.
+  Local and headless execution share `PluginWorkspaceRuntime`, the same vault
+  ports, workspace serialization/OS lease and package binding checks. Existing
+  local/VPS custody still has one executor and no implicit local fallback.
+  Reading a v1 grant retains custody evidence; it never becomes v2 network
+  authority, arms a timer or silently upgrades its scope. The owner must approve
+  the new generic terms. The source change does not deploy or restart a VPS.
 
 ## Request Shape
 

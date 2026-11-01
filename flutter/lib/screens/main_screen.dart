@@ -21,7 +21,6 @@ import 'starters_screen.dart';
 import 'capsule_history_screen.dart';
 import 'capsule_chat_plugin_screen.dart';
 import 'invitations_screen.dart';
-import 'moltbook_ambassador_screen.dart';
 import 'relationships_screen.dart';
 import 'settings_screen.dart';
 import 'wasm_plugins_screen.dart';
@@ -144,7 +143,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _pluginRuntimeModule?.moltbook.deactivateForegroundSession();
     _connectivitySubscription?.cancel();
     _passiveReceive.removeResultListener(_handlePassiveReceiveResult);
     _passiveReceive.pauseForeground();
@@ -574,6 +572,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   VoidCallback? _installedPluginWorkspaceAction(WasmPluginRecord record) {
+    final workspaceOwner = _pluginRuntime.activeCapsuleRootHex();
     switch (installedPluginWorkspaceContractKind(record)) {
       case pluginWorkspaceContractKind:
         return () => Navigator.of(context).push(
@@ -595,40 +594,41 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         trustPeer: trustPeer,
                       ),
                   useOnline: () => _pluginRuntime.useWorkspaceOnline(record),
-                  configureExecution:
-                      ({
-                        required enabled,
-                        required expiresAtMs,
-                        expectedRevision,
-                        revoke = false,
-                        approvedScope,
-                        settings = const {},
-                      }) => _pluginRuntime.setWorkspaceExecution(
+                  configureExecution: ({
+                    required enabled,
+                    required expiresAtMs,
+                    expectedRevision,
+                    revoke = false,
+                    approvedScope,
+                    credentialBindings,
+                    settings = const {},
+                  }) {
+                    if (_pluginRuntime.activeCapsuleRootHex() !=
+                        workspaceOwner) {
+                      throw StateError(
+                        'Capsule changed; reopen the plugin permissions',
+                      );
+                    }
+                    return _pluginRuntime.setWorkspaceExecution(
+                      record: record,
+                      enabled: enabled,
+                      expiresAtMs: expiresAtMs,
+                      expectedRevision: expectedRevision,
+                      revoke: revoke,
+                      approvedScope: approvedScope,
+                      credentialBindings: credentialBindings,
+                      settings: settings,
+                    );
+                  },
+                  listSecrets:
+                      () =>
+                          _pluginRuntime.listWorkspaceSecretReferences(record),
+                  runWorkspaceAction:
+                      (action, settings) => _pluginRuntime.runWorkspaceAction(
                         record: record,
-                        enabled: enabled,
-                        expiresAtMs: expiresAtMs,
-                        expectedRevision: expectedRevision,
-                        revoke: revoke,
-                        approvedScope: approvedScope,
+                        action: action,
                         settings: settings,
                       ),
-                  readFieldOptions: (fieldId) async {
-                    final result = await _pluginRuntime.runWorkspaceAction(
-                      record: record,
-                      action: 'open',
-                      optionsForField: fieldId,
-                    );
-                    return List<String>.from(result['options'] as List);
-                  },
-                  runWorkspaceAction:
-                      (action, settings, {credentials, approvedOrder}) =>
-                          _pluginRuntime.runWorkspaceAction(
-                            record: record,
-                            action: action,
-                            settings: settings,
-                            credentials: credentials,
-                            approvedOrder: approvedOrder,
-                          ),
                 ),
           ),
         );
@@ -642,14 +642,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
           ),
         );
-      case moltbookAmbassadorContractKind:
-        return () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder:
-                (_) =>
-                    MoltbookAmbassadorScreen(module: _pluginRuntime.moltbook),
-          ),
-        );
+
       default:
         return null;
     }

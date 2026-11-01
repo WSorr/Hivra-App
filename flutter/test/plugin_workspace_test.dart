@@ -2,8795 +2,1011 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
-import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
-import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
-import 'package:hivra_app/screens/plugin_workspace_screen.dart';
-import 'package:hivra_app/screens/wasm_plugins_screen.dart';
-import 'package:hivra_app/services/bingx_market_data_adapter.dart';
-import 'package:hivra_app/services/plugin_host_api_service.dart';
-import 'package:hivra_app/services/plugin_contract_handlers.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
-import 'package:hivra_app/services/plugin_runtime_module_service.dart';
-import 'package:hivra_app/services/plugin_workspace_runtime.dart';
-import 'package:hivra_app/services/plugin_workspace_remote_service.dart';
-import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
-import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
+import 'package:hivra_app/screens/plugin_workspace_screen.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
-import 'package:hivra_app/services/atomic_file_write_service.dart';
-import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
-import 'package:hivra_app/services/manual_consensus_check_service.dart';
-import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
-import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
-import 'package:hivra_app/services/capsule_passive_receive_coordinator.dart';
-import 'package:hivra_app/services/capsule_contact_label_store.dart';
-import 'package:hivra_app/services/ui_event_log_service.dart';
-import 'package:hivra_app/services/moltbook_runtime_module.dart';
-import 'package:hivra_app/services/external_effect_service.dart';
+import 'package:hivra_app/services/plugin_capability_dispatcher.dart';
+import 'package:hivra_app/services/plugin_host_api_service.dart';
+import 'package:hivra_app/services/plugin_workspace_runtime.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
-
-import '../bin/plugin_workspace_runner.dart';
+import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 
 void main() {
-  test('workspace admits eight bounded requests and rejects a ninth', () {
-    const handler = PluginWorkspaceContractHandler(pluginId: 'fixture');
-    for (final count in [8, 9]) {
-      final result = handler.execute(
-        const PluginHostApiRequest(
-          schemaVersion: 1,
-          pluginId: 'fixture',
-          method: 'workspace',
-          args: {},
-        ),
-        runtimeInvoke: PluginRuntimeInvokeEvidence(
-          mode: 'wasmi_v1',
-          modulePath: 'plugin/module.wasm',
-          moduleSelection: 'manifest_module_path',
-          moduleDigestHex: 'a' * 64,
-          invokeDigestHex: 'b' * 64,
-          semanticStatus: PluginHostApiStatus.executed,
-          semanticErrorCode: null,
-          semanticErrorMessage: null,
-          semanticResult: {
-            'state': <String, dynamic>{},
-            'view': {
-              'title': 'Fixture',
-              'message': '',
-              'details': '',
-              'fields': [],
-              'actions': [],
-              'columns': [],
-              'rows': [],
-            },
-            'requests': List.generate(count, (_) => marketRequest()),
-          },
-        ),
-      );
-      expect(
-        result.status,
-        count == 8
-            ? PluginHostApiStatus.executed
-            : PluginHostApiStatus.rejected,
-      );
-    }
-  });
-
   test(
-    'one-minute market reads preserve closed/live candle boundaries',
+    'catalog is common and an unrelated package selects its continuation',
     () async {
-      final adapter = BingxMarketDataAdapter(
-        clock: () => DateTime.fromMillisecondsSinceEpoch(230000, isUtc: true),
-        read: (uri) async {
-          expect(uri.queryParameters['interval'], '1m');
-          return jsonEncode({
-            'code': 0,
-            'data': [
-              [180000, '100', '102', '99', '101'],
-              [120000, '100', '102', '99', '101'],
-              [60000, '100', '102', '99', '101'],
-            ],
-          });
-        },
-      );
-      final snapshot = await adapter.readCandles({
-        ...marketRequest(),
-        'timeframe': '1m',
-      });
-      expect(snapshot['candles'], [
-        [60000, 100, 102, 99, 101],
-        [120000, 100, 102, 99, 101],
-      ]);
-      expect(snapshot['current_candle'], [180000, 100, 102, 99, 101]);
-      expect(snapshot['observed_at_ms'], 230000);
+      for (final origin in ['https://one.example', 'https://two.example']) {
+        final f = await Fixture.create(origin: origin);
+        addTearDown(f.close);
+        await f.enable();
+        final view = await f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        );
+        expect(f.sends, 1);
+        expect(view['message'], 'response');
+        expect(f.actions, contains('finish_custom_operation'));
+        expect(
+          PluginCapabilityDispatcher.catalog.keys,
+          containsAll([
+            'http.request',
+            'storage.read',
+            'storage.write',
+            'api.describe',
+          ]),
+        );
+        expect(f.received.single['body'], 'arbitrary service bytes');
+      }
     },
   );
-
-  test('runner service bounds its cgroup and restarts after OOM', () async {
-    final rendered = await Process.run('bash', [
-      '../tools/release/workspace_runner.sh',
-      '--print-service',
-    ]);
-    expect(rendered.exitCode, 0, reason: rendered.stderr.toString());
-    final service = <String, String>{};
-    var section = '';
-    for (final raw in const LineSplitter().convert(
-      rendered.stdout.toString(),
-    )) {
-      final line = raw.trim();
-      if (line.startsWith('[')) section = line;
-      final separator = line.indexOf('=');
-      if (section == '[Service]' && separator > 0) {
-        service[line.substring(0, separator)] = line.substring(separator + 1);
+  test(
+    'owner permission controls destination, method, credential, expiry and revocation',
+    () async {
+      for (final fault in [
+        'absent',
+        'origin',
+        'method',
+        'credential',
+        'expired',
+        'revoked',
+        'disabled',
+      ]) {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        if (fault != 'absent') await f.enable();
+        if (fault == 'origin') f.url = 'https://elsewhere.example/action';
+        if (fault == 'method') f.method = 'DELETE';
+        if (fault == 'credential') f.credential = 'different';
+        if (['expired', 'revoked', 'disabled'].contains(fault)) {
+          await f.changeGrant((g) {
+            if (fault == 'expired') g['expires_at_ms'] = 1;
+            if (fault == 'revoked') {
+              g['revoked'] = true;
+              g['enabled'] = false;
+            }
+            if (fault == 'disabled') g['enabled'] = false;
+          });
+        }
+        await f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        );
+        expect(f.sends, 0, reason: fault);
+        expect(f.received.single['outcome'], 'not_dispatched', reason: fault);
       }
-    }
-    expect(service['MemoryMax'], '256M');
-    expect(service['MemorySwapMax'], '0');
-    expect(service['OOMPolicy'], 'kill');
-    expect(service['Restart'], 'on-failure');
-    expect(service['RestartSec'], '15');
-  });
-
-  testWidgets('credential recovery exposes full revocation without Start', (
-    tester,
-  ) async {
-    var calls = 0;
-    final recovery = {
-      ...view(),
-      'fields': <Object>[],
-      'actions': [
-        {
-          'id': 'restore_binding',
-          'label': 'Reconnect account',
-          'host': 'bingx.account.connect',
-        },
-      ],
-      'execution': {
-        'mode': 'vps',
-        'active': true,
-        'allow_new_entries': false,
-        'revoked': false,
-        'revision': 7,
-        'expires_at_ms': null,
-      },
-    };
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PluginWorkspaceScreen(
-          capabilities: const ['workspace.schedule', 'account.connect'],
-          runWorkspaceAction:
-              (action, settings, {credentials, approvedOrder}) async =>
-                  recovery,
-          configureExecution: ({
-            required enabled,
-            required int? expiresAtMs,
-            int? expectedRevision,
-            bool revoke = false,
-            approvedScope,
-            settings = const {},
-          }) async {
-            calls++;
-            expect(enabled, false);
-            expect(revoke, true);
-            return {
-              ...recovery,
-              'execution': {
-                ...recovery['execution'] as Map,
-                'active': false,
-                'revoked': true,
-                'revision': 8,
-              },
-            };
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Reconnect account'), findsOneWidget);
-    expect(find.byKey(const ValueKey('plugin-confirm-start')), findsNothing);
-    await tester.ensureVisible(find.text('Revoke all automation'));
-    await tester.tap(find.text('Revoke all automation'));
-    await tester.pumpAndSettle();
-    expect(calls, 1);
-    expect(find.text('Revoke all automation'), findsNothing);
-    expect(
-      find.textContaining('Automation authorization fully revoked.'),
-      findsOneWidget,
-    );
-    expect(find.text('Reconnect account'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  for (final indefinite in [false, true]) {
-    testWidgets(
-      'Start submits the owner-selected permission terms: indefinite=$indefinite',
-      (tester) async {
-        tester.view.physicalSize = const Size(1400, 1600);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        final before = DateTime.now().millisecondsSinceEpoch;
-        final scope = {
-          'account_id': 'a' * 64,
-          'symbol': 'BTC-USDT',
+    },
+  );
+  test(
+    'a legacy risk grant stays custody evidence and never grants network effects',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      await f.changeGrant((g) {
+        g['version'] = 1;
+        g.remove('enabled');
+        g['allow_new_entries'] = true;
+        g['scope'] = {
           'action': 'cycle',
           'interval_seconds': 60,
-          'max_margin': 1,
-          'max_stop_percent': 20,
+          'account_id': 'a' * 64,
+          'symbol': 'BTC-USDT',
+          'max_margin': 1.0,
+          'max_stop_percent': 20.0,
         };
-        final data = {
-          ...view(),
-          'fields': <Object>[],
-          'schedule': scope,
-          'execution': {
-            'revision': 7,
-            'expires_at_ms': null,
-            'allow_new_entries': false,
-            'active': true,
-            'mode': 'local',
+      });
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(f.sends, 0);
+      expect(f.received.single['outcome'], 'not_dispatched');
+      final grant = await f.runtime().readWorkspaceExecution(f.registry.record);
+      expect(grant!['version'], 1);
+    },
+  );
+  test(
+    'revocation, removal, package and Capsule changes during secret read refuse dispatch',
+    () async {
+      for (final fault in [
+        'revoke',
+        'remove',
+        'replace',
+        'capsule',
+        'capability',
+      ]) {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        await f.enable();
+        f.credential = 'default';
+        f.auth = {
+          'headers': {
+            'Authorization': {'field': 'token', 'prefix': 'Bearer '},
           },
-          'actions': [
-            {'id': 'start', 'label': 'Start cycles', 'host': 'workspace.start'},
-          ],
         };
+        f.onReadSecrets = () async {
+          if (fault == 'revoke') {
+            await f.changeGrant((g) {
+              g['enabled'] = false;
+              g['revision'] = (g['revision'] as int) + 1;
+            });
+          }
+          if (fault == 'remove') f.registry.installed = false;
+          if (fault == 'replace') f.registry.digest = 'c' * 64;
+          if (fault == 'capsule') f.owner = 'd' * 64;
+          if (fault == 'capability') f.registry.network = false;
+        };
+        try {
+          await f.runtime().runWorkspaceAction(
+            record: f.registry.record,
+            action: 'run',
+          );
+        } catch (_) {}
+        expect(f.sends, 0, reason: fault);
+      }
+    },
+  );
+  test(
+    'uncertain transport persists package intent before dispatch and never retries',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      f.onSend = () async {
+        final state = await f.state();
+        expect(state['private_schema']['pending'], true);
+        throw TimeoutException('signed URL and secret must not escape');
+      };
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(f.sends, 1);
+      expect(f.received.single, containsPair('outcome', 'unknown'));
+      expect(jsonEncode(f.received), isNot(contains('signed URL')));
+      final retained = await f.state();
+      expect(retained['private_schema']['pending'], true);
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      expect(f.sends, 1);
+      expect(await f.state(), retained);
+    },
+  );
+  test(
+    'replacement changes private schema without a host migration or inherited grant',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      f.registry.digest = 'c' * 64;
+      f.newSchema = true;
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      expect((await f.state())['entirely_different_shape'], isList);
+      expect(
+        await f.runtime().readWorkspaceExecution(f.registry.record),
+        isNull,
+      );
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(f.sends, 1);
+      expect(f.received.last['outcome'], 'not_dispatched');
+    },
+  );
+  test(
+    'owner can stop while a network read is in flight; next request is refused',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      f.onSend = () async {
+        await f.changeGrant((g) {
+          g['enabled'] = false;
+          g['revision'] = (g['revision'] as int) + 1;
+        });
+      };
+      f.chain = true;
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(f.sends, 1);
+      expect(f.received.last['outcome'], 'not_dispatched');
+    },
+  );
+  test(
+    'old service request shapes are rejected rather than routed by the host',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      f.requestKind = 'order.entry.place';
+      await expectLater(
+        f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        ),
+        throwsStateError,
+      );
+      expect(f.sends, 0);
+    },
+  );
+  test(
+    'protected authentication applies only at its granted destination',
+    () async {
+      for (final signature in [false, true]) {
         var calls = 0;
-        int? chosenDeadline;
-        await tester.pumpWidget(
-          MaterialApp(
-            home: PluginWorkspaceScreen(
-              capabilities: const ['workspace.schedule'],
-              runWorkspaceAction:
-                  (action, settings, {credentials, approvedOrder}) async =>
-                      data,
-              configureExecution: ({
-                required enabled,
-                required int? expiresAtMs,
-                int? expectedRevision,
-                bool revoke = false,
-                approvedScope,
-                settings = const {},
-              }) async {
-                calls++;
-                chosenDeadline = expiresAtMs;
-                expect(enabled, true);
-                expect(revoke, false);
-                expect(expectedRevision, 7);
-                expect(approvedScope, scope);
-                return data;
-              },
-            ),
-          ),
+        final transport = PluginCapabilityDispatcher(
+          send: (method, uri, headers, body) async {
+            calls++;
+            expect(headers['X-Key'], 'test-token');
+            if (signature) {
+              expect(
+                uri.queryParameters['signature'],
+                matches(r'^[0-9a-f]{64}$'),
+              );
+            }
+            return {'status': 201, 'body': 'created'};
+          },
         );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Start cycles'));
-        await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextFormField), 'NaN');
-        await tester.pumpAndSettle();
+        final request = {
+          'kind': 'http.request',
+          'url': 'https://one.example/action?timestamp=1',
+          'method': 'POST',
+          'credential': 'default',
+          'auth': {
+            'headers': {
+              'X-Key': {'field': 'token'},
+            },
+            if (signature)
+              'hmac_query': {'parameter': 'signature', 'field': 'secret'},
+          },
+        };
+        final access = permission('https://one.example');
+        final result = await transport.http(
+          request,
+          access: access,
+          readCredentials:
+              () async => {'token': 'test-token', 'secret': 'test-secret'},
+          authorize: () async {},
+        );
+        expect(result['outcome'], 'response');
+        expect(calls, 1);
+        request['url'] = 'https://foreign.example/action';
         expect(
-          tester
-              .widget<FilledButton>(
-                find.byKey(const ValueKey('plugin-confirm-start')),
-              )
-              .onPressed,
+          (await transport.http(
+            request,
+            access: access,
+            readCredentials: () async => fail('Secret read outside scope'),
+            authorize: () async {},
+          ))['outcome'],
+          'not_dispatched',
+        );
+        expect(calls, 1);
+      }
+    },
+  );
+  test(
+    'response limits, invalid headers and echoed credentials cannot escape into WASM',
+    () async {
+      for (final fault in ['limit', 'echo', 'header']) {
+        var calls = 0;
+        final transport = PluginCapabilityDispatcher(
+          send: (m, u, h, b) async {
+            calls++;
+            return {
+              'status': 200,
+              'body': fault == 'limit' ? 'x' * (24 * 1024 + 1) : 'test-token',
+            };
+          },
+        );
+        final request = {
+          'url': 'https://one.example/action',
+          'method': 'POST',
+          'credential': 'default',
+          'auth': {
+            'headers': {
+              'X-Key': {'field': 'token'},
+            },
+          },
+          if (fault == 'header') 'headers': {'Host': 'foreign.example'},
+        };
+        final result = await transport.http(
+          request,
+          access: permission('https://one.example'),
+          readCredentials: () async => {'token': 'test-token'},
+          authorize: () async {},
+        );
+        expect(
+          result['outcome'],
+          fault == 'header' ? 'not_dispatched' : 'unknown',
+        );
+        expect(jsonEncode(result), isNot(contains('test-token')));
+        expect(calls, fault == 'header' ? 0 : 1);
+      }
+    },
+  );
+  test(
+    'owner connects references once; only the host resolves selected secrets',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      f.credential = 'default';
+      f.auth = {
+        'headers': {
+          'Authorization': {'field': 'token', 'prefix': 'Bearer '},
+        },
+      };
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(f.sends, 1);
+      expect(jsonEncode(await f.state()), isNot(contains('test-token')));
+      expect(f.actions, isNot(contains('credentials.accept')));
+    },
+  );
+  test(
+    'remote provisioning cannot expose a field excluded from the current owner connection',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      f.secrets = jsonEncode({
+        'version': 3,
+        'connections': {
+          'default': {'token': 'test-token', 'other': 'unselected-secret'},
+        },
+      });
+      f.credential = 'default';
+      f.auth = {
+        'headers': {
+          'Authorization': {'field': 'other'},
+        },
+      };
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(f.sends, 0);
+      expect(f.received.single['outcome'], 'not_dispatched');
+    },
+  );
+  test(
+    'package timing uses a bounded generic wait without service requests',
+    () async {
+      for (final delay in [-1, 0]) {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        f.requestKind = 'runtime.wait';
+        f.extraRequest = {'milliseconds': delay};
+        final run = f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        );
+        if (delay < 0) {
+          await expectLater(run, throwsStateError);
+        } else {
+          await run;
+          expect(f.actions, contains('finish_custom_operation'));
+        }
+        expect(f.sends, 0);
+      }
+    },
+  );
+  test(
+    'a stateless package reacquires service observations after restart without a checkpoint',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      f.registry.persistent = false;
+      f.registry.scheduled = false;
+      await f.enable();
+      for (var i = 0; i < 2; i++) {
+        await f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        );
+        expect(
+          await f.files.readPluginState(
+            await f.files.capsuleDirForHex(f.owner),
+            f.registry.record.pluginId!,
+            'workspace.v1.json',
+          ),
           isNull,
         );
-        if (indefinite) {
-          await tester.tap(find.text('Until fully revoked'));
-        } else {
-          await tester.enterText(find.byType(TextFormField), '72');
-        }
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(
-          find.byKey(const ValueKey('plugin-confirm-start')),
-        );
-        await tester.tap(find.byKey(const ValueKey('plugin-confirm-start')));
-        await tester.pumpAndSettle();
-        expect(calls, 1);
-        if (indefinite) {
-          expect(chosenDeadline, isNull);
-        } else {
-          expect(
-            chosenDeadline,
-            inInclusiveRange(
-              before + const Duration(hours: 72).inMilliseconds,
-              DateTime.now().millisecondsSinceEpoch +
-                  const Duration(hours: 72).inMilliseconds,
-            ),
-          );
-        }
-        expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox());
-      },
+      }
+      expect(f.sends, 2);
+      expect(
+        (await f.runtime().readWorkspaceExecution(
+          f.registry.record,
+        ))!['enabled'],
+        true,
+      );
+    },
+  );
+  test(
+    'partial Stop is a package action; host revocation ends all further dispatch',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      await f.runtime().setWorkspaceExecution(
+        record: f.registry.record,
+        enabled: false,
+        expiresAtMs: null,
+        revoke: true,
+      );
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(f.sends, 0);
+      expect(
+        (await f.runtime().readWorkspaceExecution(
+          f.registry.record,
+        ))!['revoked'],
+        true,
+      );
+    },
+  );
+  test('queued owner access cannot be widened by its caller', () async {
+    final f = await Fixture.create();
+    addTearDown(f.close);
+    final entered = Completer<void>(), release = Completer<void>();
+    f.onInvoke = (action) async {
+      if (action == 'open' && !entered.isCompleted) {
+        entered.complete();
+        await release.future;
+      }
+    };
+    final first = f.runtime().runWorkspaceAction(
+      record: f.registry.record,
+      action: 'open',
     );
-  }
+    await entered.future;
+    final access = permission(f.origin);
+    f.url = 'https://foreign.example/action';
+    final second = f.runtime().runWorkspaceAction(
+      record: f.registry.record,
+      action: 'run',
+    );
+    (access['network'] as List).add({
+      'origin': 'https://foreign.example',
+      'methods': ['POST'],
+      'credential': null,
+    });
+    release.complete();
+    await first;
+    await second;
+    expect(f.sends, 0);
+    expect(f.received.single['outcome'], 'not_dispatched');
+  });
+  test(
+    'opaque data cannot overwrite permissions or legacy delivery evidence',
+    () async {
+      for (final key in [
+        'workspace-execution.v1.json',
+        'external_effects.v1.json',
+        '../grant',
+      ]) {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        await f.enable();
+        f.requestKind = 'storage.write';
+        f.extraRequest = {'key': key, 'value': 'overwrite'};
+        await expectLater(
+          f.runtime().runWorkspaceAction(
+            record: f.registry.record,
+            action: 'run',
+          ),
+          throwsStateError,
+        );
+        expect(
+          (await f.runtime().readWorkspaceExecution(
+            f.registry.record,
+          ))!['enabled'],
+          true,
+        );
+      }
+    },
+  );
+  test('inference rechecks owner access before adapter dispatch', () async {
+    for (final revoke in [false, true]) {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      f.requestKind = 'ai.infer';
+      f.inferenceAllowed = true;
+      await f.enable();
+      var calls = 0;
+      f.infer = (request, authorize) async {
+        if (revoke) {
+          await f.changeGrant((g) {
+            g['enabled'] = false;
+            g['revision']++;
+          });
+        }
+        await authorize();
+        calls++;
+        return {'outcome': 'response', 'text': 'bounded answer'};
+      };
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(calls, revoke ? 0 : 1);
+      expect(
+        f.received.single['outcome'],
+        revoke ? 'not_dispatched' : 'response',
+      );
+    }
+  });
   testWidgets(
-    'full revocation wins a pending observation without an entry action',
+    'one owner grant connects Keychain references and Start reuses it',
     (tester) async {
-      final late = Completer<Map<String, dynamic>>();
-      var revokeCalls = 0;
-      var reads = 0;
-      Map<String, dynamic> shown(bool active) => {
-        ...view(),
-        'fields': <Object>[],
-        'execution': {
-          'revision': active ? 1 : 2,
-          'expires_at_ms': null,
-          'allow_new_entries': active,
-          'active': active,
-          'revoked': !active,
-          'mode': 'local',
+      final access = permission('https://one.example');
+      var grants = 0, starts = 0;
+      Map<String, dynamic>? execution;
+      Map<String, Map<String, String>>? selected;
+      Map<String, dynamic> view() => {
+        ...presentation(),
+        'access': access,
+        'schedule': {
+          'version': 2,
+          'action': 'tick',
+          'interval_seconds': 60,
+          'description': 'Complete workflow',
+          'access': access,
         },
+        if (execution != null) 'execution': execution,
         'actions': [
-          {'id': 'read', 'label': 'Read observations'},
+          {'id': 'link', 'label': 'Connect', 'host': 'workspace.authorize'},
+          {'id': 'start', 'label': 'Start', 'host': 'workspace.start'},
         ],
       };
       await tester.pumpWidget(
         MaterialApp(
           home: PluginWorkspaceScreen(
-            capabilities: const ['workspace.schedule'],
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              if (action == 'read') {
-                reads++;
-                return late.future;
-              }
-              return shown(true);
-            },
+            capabilities: const ['workspace.schedule', 'credentials.use'],
+            listSecrets:
+                () async => [
+                  {'id': 'ref-token', 'label': 'Service / account / token'},
+                ],
             configureExecution: ({
               required enabled,
-              required int? expiresAtMs,
-              int? expectedRevision,
-              bool revoke = false,
+              required expiresAtMs,
+              expectedRevision,
+              revoke = false,
               approvedScope,
+              credentialBindings,
               settings = const {},
             }) async {
-              expect(enabled, false);
-              expect(revoke, true);
-              revokeCalls++;
-              return shown(false);
+              grants++;
+              selected = credentialBindings ?? selected;
+              execution = {
+                'enabled': true,
+                'active': true,
+                'running': approvedScope?['action'] != null,
+                'access': approvedScope!['access'],
+                'credentials': selected,
+                'revision': grants,
+                'expires_at_ms': expiresAtMs,
+              };
+              return view();
             },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Read observations'));
-      await tester.pump();
-      await tester.tap(find.text('Revoke all automation'));
-      await tester.pump();
-      late.complete(shown(true));
-      await tester.pumpAndSettle();
-      expect(reads, 1);
-      expect(revokeCalls, 1);
-      expect(
-        find.textContaining('Automation authorization fully revoked.'),
-        findsOneWidget,
-      );
-      expect(find.text('Revoke all automation'), findsNothing);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
-
-  test(
-    'owner deadlines and full revocation survive restart without replay renewal',
-    () async {
-      for (final deadline in [
-        null,
-        DateTime.now().add(const Duration(days: 3)).millisecondsSinceEpoch,
-      ]) {
-        final root = await Directory.systemTemp.createTemp('hivra_permission_');
-        addTearDown(() => root.delete(recursive: true));
-        final files = CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
-        );
-        final registry = _Registry();
-        final owner = 'a' * 64;
-        final scope = {
-          'account_id': 'c' * 64,
-          'symbol': 'BTC-USDT',
-          'action': 'observe',
-          'interval_seconds': 30,
-          'max_margin': 1.0,
-          'max_stop_percent': 20.0,
-        };
-        registry.executionBinding =
-            () => PluginRuntimeBinding.externalPackage(
-              packageId: registry.record.id,
-              packageVersion: registry.record.pluginVersion,
-              packageKind: 'zip',
-              packageDigestHex: 'b' * 64,
-              contractKind: pluginWorkspaceContractKind,
-              capabilities: const [
-                'workspace.render',
-                'workspace.continue',
-                'state.plugin.read_write',
-                'workspace.schedule',
-              ],
-            );
-        final host = PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding: registry.resolveRuntimeBinding,
-          resolveRuntimeInvoke:
-              (request, _) async => PluginRuntimeInvokeEvidence(
-                mode: 'wasmi_v1',
-                modulePath: 'plugin/module.wasm',
-                moduleSelection: 'zip_manifest',
-                moduleDigestHex: 'd' * 64,
-                invokeDigestHex: 'e' * 64,
-                semanticStatus: PluginHostApiStatus.executed,
-                semanticErrorCode: null,
-                semanticErrorMessage: null,
-                semanticResult: {
-                  'state': {'opaque': 'package owns this'},
-                  'requests': <Object>[],
-                  'view': {...view(), 'schedule': scope},
-                },
-              ),
-        );
-        PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
-          registry: registry,
-          pluginHostApi: host,
-          fileStore: files,
-          scheduleTimers: false,
-          readActiveCapsuleRootHex: () => owner,
-          readCredentials:
-              ({required owner, required pluginId}) async =>
-                  fail('No secrets needed'),
-          writeCredentials:
-              ({required owner, required pluginId, required value}) async =>
-                  fail('No secret writes'),
-        );
-        final started = await runtime().setWorkspaceExecution(
-          record: registry.record,
-          enabled: true,
-          expiresAtMs: deadline,
-          approvedScope: scope,
-        );
-        expect(started['execution']['active'], true);
-        expect(started['execution']['expires_at_ms'], deadline);
-        final first = await runtime().readWorkspaceExecution(registry.record);
-        await runtime().resumeWorkspaceScheduling(registry.record);
-        expect(await runtime().readWorkspaceExecution(registry.record), first);
-        await expectLater(
-          runtime().setWorkspaceExecution(
-            record: registry.record,
-            enabled: true,
-            expiresAtMs: deadline,
-            approvedScope: scope,
-          ),
-          throwsStateError,
-        );
-        expect(await runtime().readWorkspaceExecution(registry.record), first);
-        final stopped = await runtime().setWorkspaceExecution(
-          record: registry.record,
-          enabled: false,
-          expiresAtMs: null,
-        );
-        expect(stopped['execution']['active'], true);
-        expect(stopped['execution']['allow_new_entries'], false);
-        final revoked = await runtime().setWorkspaceExecution(
-          record: registry.record,
-          enabled: false,
-          expiresAtMs: null,
-          revoke: true,
-        );
-        expect(revoked['execution']['active'], false);
-        expect(revoked['execution']['revoked'], true);
-        expect(revoked['execution']['expires_at_ms'], deadline);
-        await runtime().resumeWorkspaceScheduling(registry.record);
-        expect(
-          (await runtime().runWorkspaceAction(
-            record: registry.record,
-            action: 'open',
-          ))['execution']['active'],
-          false,
-        );
-        await expectLater(
-          runtime().setWorkspaceExecution(
-            record: registry.record,
-            enabled: true,
-            expiresAtMs: deadline,
-            expectedRevision: first!['revision'] as int,
-            approvedScope: scope,
-          ),
-          throwsStateError,
-        );
-        for (final bad in [
-          0,
-          DateTime.now().millisecondsSinceEpoch - 1,
-          8640000000000001,
-        ]) {
-          await expectLater(
-            runtime().setWorkspaceExecution(
-              record: registry.record,
-              enabled: true,
-              expiresAtMs: bad,
-              expectedRevision: revoked['execution']['revision'],
-              approvedScope: scope,
-            ),
-            throwsStateError,
-          );
-        }
-        final restarted = await runtime().setWorkspaceExecution(
-          record: registry.record,
-          enabled: true,
-          expiresAtMs: deadline,
-          expectedRevision: revoked['execution']['revision'],
-          approvedScope: scope,
-        );
-        expect(restarted['execution']['active'], true);
-        expect(restarted['execution']['revoked'], false);
-        final legacy = Map<String, dynamic>.from(
-          (await runtime().readWorkspaceExecution(registry.record))!,
-        )..remove('revoked');
-        validateWorkspaceExecutionControl(
-          legacy,
-          owner,
-          registry.record.pluginId!,
-        );
-        expect(
-          workspaceExecutionIsActive(legacy, nowMs: deadline ?? 0),
-          deadline == null,
-        );
-        final sealed = sealWorkspaceExecutionForRecovery(
-          legacy,
-          owner,
-          registry.record.pluginId!,
-        );
-        expect(workspaceExecutionIsActive(sealed), false);
-        expect(
-          () => validateWorkspaceExecutionControl(
-            {...legacy}..remove('expires_at_ms'),
-            owner,
-            registry.record.pluginId!,
-          ),
-          throwsStateError,
-        );
-        expect(
-          () => validateWorkspaceExecutionControl(
-            {...legacy, 'revoked': true},
-            owner,
-            registry.record.pluginId!,
-          ),
-          throwsStateError,
-        );
-      }
-    },
-  );
-
-  testWidgets('pending removal offers retry instead of opening a workspace', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final module = _PluginScreenModule();
-    module.registry.record = WasmPluginRecord.fromJson({
-      ...module.registry.record.toJson(),
-      'removalPending': true,
-    });
-    var opened = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: WasmPluginsScreen(
-            module: module,
-            onOpenWorkspacePressed:
-                (_) => () {
-                  opened++;
-                },
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Removal pending'), findsOneWidget);
-    expect(find.text('Open'), findsNothing);
-    await tester.ensureVisible(find.text('Retry removal'));
-    await tester.tap(find.text('Retry removal'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove'));
-    await tester.pump();
-    expect(module.removalCalls, 1);
-    module.registry.installed = false;
-    module.removal.complete();
-    await tester.pumpAndSettle();
-    expect(find.text('Removal pending'), findsNothing);
-    expect(opened, 0);
-    expect(tester.takeException(), isNull);
-  });
-  test(
-    'failed secure cleanup stays removable after registry restart',
-    () async {
-      final root = await Directory.systemTemp.createTemp('hivra_remove_retry_');
-      addTearDown(() => root.delete(recursive: true));
-      final dirs = UserVisibleDataDirectoryService(
-        runtimeRootOverride: root.path,
-      );
-      final files = CapsuleFileStore(dirs: dirs);
-      final registry = WasmPluginRegistryService(dataDirs: dirs);
-      final manifest = jsonEncode({
-        'schema': 'hivra.plugin.manifest',
-        'version': 1,
-        'release_version': '1.0.0',
-        'plugin_id': 'hivra.contract.removal-test.v1',
-        'contract': {'kind': pluginWorkspaceContractKind},
-        'runtime': {
-          'abi': 'hivra_host_abi_v2',
-          'entry_export': 'hivra_evaluate_v1',
-        },
-        'capabilities': pluginWorkspaceRequiredCapabilities.toList(),
-      });
-      final archive =
-          Archive()
-            ..addFile(
-              ArchiveFile(
-                'plugin/manifest.json',
-                utf8.encode(manifest).length,
-                utf8.encode(manifest),
-              ),
-            )
-            ..addFile(
-              ArchiveFile('plugin/module.wasm', 8, [
-                0,
-                97,
-                115,
-                109,
-                1,
-                0,
-                0,
-                0,
-              ]),
-            );
-      final package = await File(
-        '${root.path}/removal.zip',
-      ).writeAsBytes(ZipEncoder().encode(archive)!);
-      final record = await registry.installPluginFromFile(package);
-      final vault = _Vault();
-      for (final owner in ['a' * 64, 'b' * 64]) {
-        final dir = await files.capsuleDirForHex(owner, create: true);
-        await files.writePluginState(
-          dir,
-          record.pluginId!,
-          'workspace.v1.json',
-          jsonEncode({
-            'arbitrary_shape': [owner, 7],
-          }),
-        );
-        await files.writePluginState(
-          dir,
-          record.pluginId!,
-          'external_effects.v1.json',
-          '{"retained":true}',
-        );
-        await vault.saveSecret(
-          capsuleHex: owner,
-          pluginId: record.pluginId!,
-          providerId: 'provider',
-          accountId: 'primary',
-          secretName: 'token',
-          secretValue: 'test-only-secret',
-        );
-      }
-      await vault.saveSecret(
-        capsuleHex: 'a' * 64,
-        pluginId: 'other.plugin',
-        providerId: 'provider',
-        accountId: 'primary',
-        secretName: 'token',
-        secretValue: 'unrelated-test-secret',
-      );
-      PluginRuntimeModule module(WasmPluginRegistryService activeRegistry) =>
-          PluginRuntimeModule(
-            registry: activeRegistry,
-            sourceCatalog: _EmptyCatalog(),
-            manualChecks: _Manual(),
-            pluginHostApi: const PluginHostApiService(handlers: []),
-            attestationExchange: _Attestations(),
-            chatDelivery: _Delivery(),
-            passiveReceive: _Passive(),
-            contactLabels: _Labels(),
-            uiLog: _ScreenLog(),
-            moltbook: _Moltbook(),
-            fileStore: files,
-            secretVault: vault,
-            readActiveCapsuleRootHex: () => 'a' * 64,
-          );
-      vault.failPluginDeletion = true;
-      await expectLater(
-        module(registry).removePlugin(record),
-        throwsStateError,
-      );
-      final restarted = WasmPluginRegistryService(dataDirs: dirs);
-      final pending = await restarted.loadPlugins();
-      expect(
-        pending.map((r) => r.id),
-        contains(record.id),
-        reason: 'Secure cleanup must remain reachable through the product',
-      );
-      expect(
-        (await restarted.resolveRuntimeBinding(record.pluginId!)).source,
-        isNot('external_package'),
-      );
-      expect(vault.values.length, 3);
-      vault.failPluginDeletion = false;
-      await module(restarted).removePlugin(pending.single);
-      expect(await restarted.loadPlugins(), isEmpty);
-      expect(vault.values.values, ['unrelated-test-secret']);
-      for (final owner in ['a' * 64, 'b' * 64]) {
-        final dir = await files.capsuleDirForHex(owner);
-        expect(
-          await files.readPluginState(
-            dir,
-            record.pluginId!,
-            'workspace.v1.json',
-          ),
-          isNull,
-        );
-        expect(
-          await files.readPluginState(
-            dir,
-            record.pluginId!,
-            'external_effects.v1.json',
-          ),
-          '{"retained":true}',
-        );
-      }
-    },
-  );
-  testWidgets(
-    'workspace host controls require package grants before reaching the shell',
-    (tester) async {
-      const request = PluginHostApiRequest(
-        schemaVersion: 1,
-        pluginId: 'hivra.contract.independent-workspace.v1',
-        method: 'workspace',
-        args: {},
-      );
-      var grants = <String>[...pluginWorkspaceRequiredCapabilities];
-      Map<String, dynamic> presentation = view();
-      final host = PluginHostApiService(
-        // A registered handler cannot substitute its grants for the package's.
-        handlers: [
-          PluginWorkspaceContractHandler(
-            pluginId: request.pluginId,
-            capabilities: {'account.connect'},
-          ),
-        ],
-        resolveRuntimeBinding:
-            (_) async => PluginRuntimeBinding.externalPackage(
-              packageId: 'package',
-              packageVersion: '1.0.0',
-              packageKind: 'zip',
-              contractKind: pluginWorkspaceContractKind,
-              capabilities: List.of(grants),
-            ),
-        resolveRuntimeInvoke:
-            (_, _) async => PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'manifest_module_path',
-              moduleDigestHex: 'a' * 64,
-              invokeDigestHex: 'b' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticResult: {
-                'state': {
-                  'unrelated_private_shape': [1, 'opaque'],
-                },
-                'view': presentation,
-                'requests': [],
-              },
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-            ),
-      );
-      for (final (hostAction, capabilities) in [
-        ('bingx.account.connect', ['account.connect']),
-        ('bingx.order.submit', ['order.entry.place', 'order.snapshot.read']),
-        ('workspace.start', ['workspace.schedule']),
-        ('workspace.stop', ['workspace.schedule']),
-      ]) {
-        presentation = {
-          ...view(),
-          'actions': [
-            {
-              'id': 'package_action',
-              'label': 'Package action',
-              'host': hostAction,
-            },
-          ],
-        };
-        grants = [...pluginWorkspaceRequiredCapabilities];
-        final denied = await host.executeWithRuntimeHook(request);
-        expect(denied.errorCode, 'invalid_workspace', reason: hostAction);
-        expect(denied.result, isNull);
-        grants.addAll(capabilities);
-        expect(
-          (await host.executeWithRuntimeHook(request)).status,
-          PluginHostApiStatus.executed,
-          reason: hostAction,
-        );
-        for (final missing in capabilities) {
-          grants = [
-            ...pluginWorkspaceRequiredCapabilities,
-            ...capabilities.where((grant) => grant != missing),
-          ];
-          expect(
-            (await host.executeWithRuntimeHook(request)).errorCode,
-            'invalid_workspace',
-            reason: '$hostAction without $missing',
-          );
-        }
-      }
-      for (final (candidate, capabilities)
-          in <(Map<String, dynamic>, List<String>)>[
-            (choiceView(), ['market.instruments.read']),
-            (
-              {
-                ...view(),
-                'schedule': {'action': 'cycle'},
-              },
-              ['workspace.schedule'],
-            ),
-            for (final kind in [
-              'order.entry.place',
-              'order.entry.cancel',
-              'position.exit.place',
-            ])
-              (
-                {
-                  ...view(),
-                  'confirmation': {
-                    'kind': kind,
-                    'provider': 'bingx',
-                    'plan': entryPlan(),
-                    if (kind == 'order.entry.cancel') 'order_id': '123',
-                  },
-                },
-                [
-                  kind,
-                  'order.snapshot.read',
-                  if (kind != 'order.entry.place') 'position.snapshot.read',
-                ],
-              ),
-          ]) {
-        presentation = candidate;
-        grants = [...pluginWorkspaceRequiredCapabilities, ...capabilities];
-        expect(
-          (await host.executeWithRuntimeHook(request)).status,
-          PluginHostApiStatus.executed,
-        );
-        for (final missing in capabilities) {
-          grants = [
-            ...pluginWorkspaceRequiredCapabilities,
-            ...capabilities.where((grant) => grant != missing),
-          ];
-          expect(
-            (await host.executeWithRuntimeHook(request)).errorCode,
-            'invalid_workspace',
-            reason: 'presentation without $missing',
-          );
-        }
-      }
-      // A package label alone must not cause the common shell to ask for keys.
-      presentation = {
-        ...view(),
-        'actions': [
-          {'id': 'link', 'label': 'Link', 'host': 'bingx.account.connect'},
-        ],
-      };
-      grants = [...pluginWorkspaceRequiredCapabilities];
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              final response = await host.executeWithRuntimeHook(request);
-              if (response.result == null) {
-                throw StateError(response.errorMessage!);
-              }
-              return Map<String, dynamic>.from(response.result!['view'] as Map);
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('plugin-action-link')), findsNothing);
-      expect(
-        find.byKey(const ValueKey('plugin-account-api-key')),
-        findsNothing,
-      );
-      expect(find.textContaining('invalid workspace'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  test(
-    'replacement cannot return old host controls and accepts unrelated private state',
-    () async {
-      const request = PluginHostApiRequest(
-        schemaVersion: 1,
-        pluginId: 'hivra.contract.independent-workspace.v1',
-        method: 'workspace',
-        args: {},
-      );
-      for (final removed in [false, true]) {
-        var replaced = false;
-        var blocking = true;
-        final entered = Completer<void>();
-        final release = Completer<void>();
-        final host = PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding:
-              (_) async =>
-                  replaced && removed
-                      ? const PluginRuntimeBinding.hostFallback()
-                      : PluginRuntimeBinding.externalPackage(
-                        packageId: replaced ? 'replacement' : 'original',
-                        packageVersion: '1.0.0',
-                        packageKind: 'zip',
-                        contractKind: pluginWorkspaceContractKind,
-                        capabilities: [
-                          ...pluginWorkspaceRequiredCapabilities,
-                          if (!replaced) 'account.connect',
-                        ],
-                      ),
-          resolveRuntimeInvoke: (_, _) async {
-            final old = !replaced;
-            if (blocking) {
-              entered.complete();
-              await release.future;
-            }
-            return PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'manifest_module_path',
-              moduleDigestHex: 'a' * 64,
-              invokeDigestHex: 'b' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticResult: {
-                'state':
-                    old
-                        ? {'old_field': 7}
-                        : {
-                          'different_shape': [
-                            'owner',
-                            {'new': true},
-                          ],
-                        },
-                'view': {
-                  ...view(),
-                  'actions': [
-                    old
-                        ? {
-                          'id': 'link',
-                          'label': 'Link',
-                          'host': 'bingx.account.connect',
-                        }
-                        : {'id': 'observe', 'label': 'Observe'},
-                  ],
-                },
-                'requests': [],
-              },
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-            );
-          },
-        );
-        final pending = host.executeWithRuntimeHook(request);
-        await entered.future;
-        replaced = true;
-        release.complete();
-        final rejected = await pending;
-        expect(rejected.errorCode, 'runtime_binding_changed');
-        expect(rejected.result, isNull);
-        blocking = false;
-        final reopened = await host.executeWithRuntimeHook(request);
-        if (removed) {
-          expect(reopened.status, PluginHostApiStatus.rejected);
-        } else {
-          expect(reopened.status, PluginHostApiStatus.executed);
-          expect((reopened.result!['view'] as Map)['actions'], [
-            {'id': 'observe', 'label': 'Observe'},
-          ]);
-          expect(reopened.result!['state'], {
-            'different_shape': [
-              'owner',
-              {'new': true},
-            ],
-          });
-        }
-      }
-    },
-  );
-
-  testWidgets('package removal shows progress and a safe retryable failure', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1400, 1600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final module = _PluginScreenModule();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: WasmPluginsScreen(
-          module: module,
-          onOpenWorkspacePressed: (_) => () {},
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Remove plugin'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-    await tester.pumpAndSettle();
-    expect(module.removalCalls, 0);
-    Future<void> confirm() async {
-      await tester.tap(find.byTooltip('Remove plugin'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, 'Remove'));
-      await tester.pump();
-    }
-
-    await confirm();
-    expect(module.removalCalls, 1);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byWidgetPredicate(
-              (widget) =>
-                  widget is IconButton && widget.tooltip == 'Remove plugin',
-            ),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.ancestor(
-              of: find.text('Add package'),
-              matching: find.byWidgetPredicate(
-                (widget) => widget is FilledButton,
-              ),
-            ),
-          )
-          .onPressed,
-      isNull,
-    );
-    const sensitive = 'Bearer test-provider-secret private-key-material';
-    module.removal.completeError(StateError(sensitive));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(module.registry.installed, true);
-    expect(find.textContaining('Removal did not complete'), findsOneWidget);
-    expect(find.textContaining(sensitive), findsNothing);
-    expect(
-      module.uiLog.messages.any((message) => message.contains(sensitive)),
-      false,
-    );
-    expect(find.byType(LinearProgressIndicator), findsNothing);
-    module.removal = Completer<void>();
-    await confirm();
-    expect(module.removalCalls, 2);
-    module.registry.installed = false;
-    module.removal.complete();
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('Remove plugin'), findsNothing);
-    expect(find.textContaining('Removal did not complete'), findsNothing);
-    expect(find.text('Removed Workspace'), findsOneWidget);
-  });
-
-  test(
-    'Capsule routes opaque workspace authority through one remote executor and returns before uninstall',
-    () async {
-      final root = await Directory('/tmp').createTemp('hivra_transport_');
-      addTearDown(() => root.delete(recursive: true));
-      const ownerHex =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      String? active = ownerHex;
-      final localFiles = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(
-          runtimeRootOverride: '${root.path}/local',
-        ),
-      );
-      final serverFiles = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(
-          runtimeRootOverride: '${root.path}/server',
-        ),
-      );
-      final localRegistry = _Registry();
-      final serverRegistry = _Registry(id: 'server-package-id');
-      final package = File('${root.path}/fixture.zip');
-      await package.writeAsBytes([0, 97, 115, 109, 1, 0, 0, 0]);
-      final digest = sha256.convert(await package.readAsBytes()).toString();
-      var serverDigest = digest;
-      for (final registry in [localRegistry, serverRegistry]) {
-        registry.executionBinding =
-            () => PluginRuntimeBinding.externalPackage(
-              packageId: registry.record.id,
-              packageVersion: registry.record.pluginVersion,
-              packageKind: 'zip',
-              packageDigestHex:
-                  identical(registry, serverRegistry) ? serverDigest : digest,
-              packageFilePath: package.path,
-              contractKind: pluginWorkspaceContractKind,
-              capabilities: const [
-                'workspace.render',
-                'workspace.continue',
-                'state.plugin.read_write',
-                'workspace.schedule',
-              ],
-            );
-      }
-      final scope = {
-        'account_id': 'c' * 64,
-        'symbol': 'DASH-USDT',
-        'action': 'independent_cycle',
-        'interval_seconds': 30,
-        'max_margin': 1.0,
-        'max_stop_percent': 20.0,
-      };
-      PluginHostApiService host(_Registry registry) => PluginHostApiService(
-        handlers: [],
-        resolveRuntimeBinding: registry.resolveRuntimeBinding,
-        resolveRuntimeInvoke: (request, _) async {
-          final state = Map<String, dynamic>.from(
-            request.args['state'] as Map? ?? {'unrelated_private_shape': 0},
-          );
-          if (request.args['action'] == 'independent_cycle') {
-            state['unrelated_private_shape'] =
-                (state['unrelated_private_shape'] as int) + 1;
-          }
-          return PluginRuntimeInvokeEvidence(
-            mode: 'wasmi_v1',
-            modulePath: 'plugin/module.wasm',
-            moduleSelection: 'zip_manifest',
-            moduleDigestHex: 'd' * 64,
-            invokeDigestHex: 'e' * 64,
-            semanticStatus: PluginHostApiStatus.executed,
-            semanticErrorCode: null,
-            semanticErrorMessage: null,
-            semanticResult: {
-              'state': state,
-              'requests': [],
-              'view': {...view(), 'schedule': scope},
-            },
-          );
-        },
-      );
-      final serverRuntime = PluginWorkspaceRuntime(
-        registry: serverRegistry,
-        pluginHostApi: host(serverRegistry),
-        fileStore: serverFiles,
-        readActiveCapsuleRootHex: () => ownerHex,
-        executionHost: 'vps',
-        executionIdentity: 'f' * 64,
-        scheduleTimers: false,
-        readCredentials: ({required owner, required pluginId}) async => null,
-        writeCredentials:
-            ({required owner, required pluginId, required value}) async =>
-                throw StateError('No package credential writes'),
-      );
-      final serverBinding = {
-        'owner': ownerHex,
-        'plugin_id': localRegistry.record.pluginId,
-        'package_id': serverRegistry.record.id,
-        'package_digest': digest,
-        'executor_id': 'f' * 64,
-      };
-      final runner = WorkspaceRunner(
-        root: root,
-        runtime: serverRuntime,
-        registry: serverRegistry,
-        binding: serverBinding,
-      );
-      final connection = {
-        'owner': ownerHex,
-        'plugin_id': localRegistry.record.pluginId,
-        'host': 'test.invalid',
-        'port': 22,
-        'fingerprint': 'SHA256:${'a' * 43}',
-        'executor_id': 'f' * 64,
-        'package_id': serverRegistry.record.id,
-        'package_digest': digest,
-        'selected': true,
-      };
-      await localFiles.writePluginState(
-        await localFiles.capsuleDirForHex(ownerHex, create: true),
-        localRegistry.record.pluginId!,
-        PluginWorkspaceRemoteService.connectionFile,
-        jsonEncode(connection),
-      );
-      var loseAdoptAck = true;
-      var oldExecutionControls = false;
-      final chosenDeadline =
-          DateTime.now().add(const Duration(days: 3)).millisecondsSinceEpoch;
-      var wrongBinding = false;
-      var offline = false;
-      final vault = _Vault();
-      final remote = PluginWorkspaceRemoteService(
-        files: localFiles,
-        vault: vault,
-        registry: localRegistry,
-        requestTransport: (c, command, bytes) async {
-          if (offline) throw TimeoutException('Peer unavailable');
-          final input = Map<String, dynamic>.from(
-            jsonDecode(utf8.decode(bytes)) as Map,
-          );
-          if (command == 'setup') return jsonEncode(serverBinding);
-          final result = await runner.dispatch(input);
-          if (oldExecutionControls && input['command'] == 'status') {
-            result['runner'] = Map<String, dynamic>.from(
-              result['runner'] as Map,
-            )..remove('execution_controls');
-          }
-          if (input['command'] == 'adopt' && loseAdoptAck) {
-            loseAdoptAck = false;
-            throw TimeoutException('Lost acknowledgement');
-          }
-          if (command == 'uninstall') serverRegistry.installed = false;
-          return jsonEncode({
-            'ok': true,
-            'result':
-                wrongBinding
-                    ? {
-                      ...result,
-                      'binding': {...serverBinding, 'owner': 'b' * 64},
-                    }
-                    : result,
-          });
-        },
-      );
-      final module = PluginRuntimeModule(
-        registry: localRegistry,
-        sourceCatalog: WasmPluginSourceCatalogService(registry: localRegistry),
-        manualChecks: _Manual(),
-        pluginHostApi: host(localRegistry),
-        attestationExchange: _Attestations(),
-        chatDelivery: _Delivery(),
-        passiveReceive: _Passive(),
-        contactLabels: _Labels(),
-        uiLog: const UiEventLogService(),
-        moltbook: _Moltbook(),
-        fileStore: localFiles,
-        secretVault: vault,
-        readActiveCapsuleRootHex: () => active,
-        workspaceRemote: remote,
-      );
-      addTearDown(module.stopWorkspaceScheduling);
-      oldExecutionControls = true;
-      await expectLater(
-        module.setWorkspaceExecution(
-          record: localRegistry.record,
-          enabled: true,
-          expiresAtMs: chosenDeadline,
-          approvedScope: scope,
-        ),
-        throwsStateError,
-      );
-      expect(
-        await module.readWorkspaceExecution(
-          localRegistry.record,
-          enforceHost: false,
-        ),
-        isNull,
-      );
-      expect(
-        await serverRuntime.readWorkspaceExecution(serverRegistry.record),
-        isNull,
-      );
-      oldExecutionControls = false;
-      expect(
-        (await module.runWorkspaceAction(
-          record: localRegistry.record,
-          action: 'open',
-        ))['host_connection']['target'],
-        'vps',
-      );
-      await expectLater(
-        module.setWorkspaceExecution(
-          record: localRegistry.record,
-          expiresAtMs: chosenDeadline,
-          expectedRevision:
-              (await module.readWorkspaceExecution(
-                    localRegistry.record,
-                    enforceHost: false,
-                  ))?["revision"]
-                  as int?,
-          enabled: true,
-          approvedScope: scope,
-        ),
-        throwsA(isA<TimeoutException>()),
-      );
-      expect(
-        (await module.readWorkspaceExecution(
-          localRegistry.record,
-          enforceHost: false,
-        ))!['executor'],
-        'vps',
-      );
-      await expectLater(
-        PluginWorkspaceRuntime(
-          registry: localRegistry,
-          pluginHostApi: host(localRegistry),
-          fileStore: localFiles,
-          readActiveCapsuleRootHex: () => active,
-          readCredentials: ({required owner, required pluginId}) async => null,
-          writeCredentials:
-              ({required owner, required pluginId, required value}) async {},
-        ).runWorkspaceAction(record: localRegistry.record, action: 'open'),
-        throwsStateError,
-      );
-      final running = await module.runWorkspaceAction(
-        record: localRegistry.record,
-        action: 'open',
-      );
-      expect(running['host_connection']['health'], 'running');
-      expect(running['execution']['mode'], 'vps');
-      active = null;
-      await serverRuntime.runScheduledWorkspaceCycle(serverRegistry.record);
-      active = ownerHex;
-      await module.runWorkspaceAction(
-        record: localRegistry.record,
-        action: 'open',
-      );
-      final serverCapsule = await serverFiles.capsuleDirForHex(ownerHex);
-      expect(
-        jsonDecode(
-          (await serverFiles.readPluginState(
-            serverCapsule,
-            serverRegistry.record.pluginId!,
-            'workspace.v1.json',
-          ))!,
-        )['unrelated_private_shape'],
-        1,
-      );
-      offline = true;
-      await expectLater(
-        module.setWorkspaceExecution(
-          record: localRegistry.record,
-          expiresAtMs: null,
-          expectedRevision:
-              (await module.readWorkspaceExecution(
-                    localRegistry.record,
-                    enforceHost: false,
-                  ))?["revision"]
-                  as int?,
-          enabled: false,
-        ),
-        throwsA(isA<TimeoutException>()),
-      );
-      expect(
-        (await module.readWorkspaceExecution(
-          localRegistry.record,
-          enforceHost: false,
-        ))!['allow_new_entries'],
-        false,
-      );
-      offline = false;
-      expect(
-        (await module.runWorkspaceAction(
-          record: localRegistry.record,
-          action: 'open',
-        ))['execution']['allow_new_entries'],
-        false,
-      );
-      final stopped = await module.setWorkspaceExecution(
-        record: localRegistry.record,
-        expiresAtMs: null,
-        expectedRevision:
-            (await module.readWorkspaceExecution(
-                  localRegistry.record,
-                  enforceHost: false,
-                ))?["revision"]
-                as int?,
-        enabled: false,
-      );
-      expect(stopped['execution']['allow_new_entries'], false);
-      final restarted = await module.setWorkspaceExecution(
-        record: localRegistry.record,
-        expiresAtMs: null,
-        expectedRevision: stopped['execution']['revision'] as int?,
-        enabled: true,
-        approvedScope: scope,
-      );
-      expect(restarted['execution']['allow_new_entries'], true);
-      expect(restarted['execution']['expires_at_ms'], isNull);
-      // Offline revocation is an owner intent, not a remote acknowledgement.
-      offline = true;
-      await expectLater(
-        module.setWorkspaceExecution(
-          record: localRegistry.record,
-          enabled: false,
-          expiresAtMs: null,
-          revoke: true,
-        ),
-        throwsA(isA<TimeoutException>()),
-      );
-      final pendingRevoke = await module.readWorkspaceExecution(
-        localRegistry.record,
-        enforceHost: false,
-      );
-      expect(pendingRevoke!['revoked'], true);
-      expect(pendingRevoke['executor'], 'vps');
-      expect(
-        (await serverRuntime.readWorkspaceExecution(
-          serverRegistry.record,
-        ))!['revoked'],
-        false,
-      );
-      offline = false;
-      oldExecutionControls = true;
-      await expectLater(
-        module.runWorkspaceAction(record: localRegistry.record, action: 'open'),
-        throwsStateError,
-      );
-      expect(
-        (await serverRuntime.readWorkspaceExecution(
-          serverRegistry.record,
-        ))!['revoked'],
-        false,
-      );
-      oldExecutionControls = false;
-      final revokedView = await module.runWorkspaceAction(
-        record: localRegistry.record,
-        action: 'open',
-      );
-      expect(revokedView['execution']['revoked'], true);
-      expect(revokedView['execution']['active'], false);
-      await expectLater(
-        runner.dispatch({
-          ...serverBinding,
-          'command': 'execution',
-          'enabled': true,
-          'settings': <String, dynamic>{},
-          'scope': scope,
-          'expires_at_ms': null,
-          'expected_revision': restarted['execution']['revision'],
-          'revoke': false,
-        }),
-        throwsStateError,
-      );
-      await expectLater(
-        runner.dispatch({
-          ...serverBinding,
-          'command': 'execution',
-          'enabled': true,
-          'settings': <String, dynamic>{},
-          'scope': scope,
-        }),
-        throwsFormatException,
-      );
-      wrongBinding = true;
-      await expectLater(
-        module.runWorkspaceAction(record: localRegistry.record, action: 'open'),
-        throwsStateError,
-      );
-      wrongBinding = false;
-      await expectLater(
-        remote.request(connection, 'status', {'owner': 'b' * 64}),
-        throwsStateError,
-      );
-      // A package replacement may have a new local install ID while the VPS
-      // still owns the old binding. Recovery must return that remote authority
-      // before rebinding the sealed local grant to the replacement.
-      final replacementDigest = digest;
-      localRegistry.record = WasmPluginRecord.fromJson({
-        ...localRegistry.record.toJson(),
-        'id': 'replacement-package',
-      });
-      localRegistry.executionBinding =
-          () => PluginRuntimeBinding.externalPackage(
-            packageId: localRegistry.record.id,
-            packageVersion: localRegistry.record.pluginVersion,
-            packageKind: 'zip',
-            packageDigestHex: replacementDigest,
-            packageFilePath: package.path,
-            contractKind: pluginWorkspaceContractKind,
-            capabilities: [
-              ...localRegistry.record.capabilities,
-              'workspace.schedule',
-            ],
-          );
-      await module.useWorkspaceOnline(localRegistry.record);
-      final localGrant = await module.readWorkspaceExecution(
-        localRegistry.record,
-      );
-      expect(localGrant!['executor'], 'local');
-      expect(localGrant['package_id'], 'replacement-package');
-      expect(localGrant['package_digest'], replacementDigest);
-      expect(localGrant['expires_at_ms'], 0);
-      expect(
-        (await remote.connection(
-          ownerHex,
-          localRegistry.record.pluginId!,
-        ))!['selected'],
-        false,
-      );
-      expect(
-        jsonDecode(
-          (await localFiles.readPluginState(
-            await localFiles.capsuleDirForHex(ownerHex),
-            localRegistry.record.pluginId!,
-            'workspace.v1.json',
-          ))!,
-        )['unrelated_private_shape'],
-        1,
-      );
-      await expectLater(
-        serverRuntime.runScheduledWorkspaceCycle(serverRegistry.record),
-        throwsStateError,
-      );
-      Future<void> reconnect() => module.connectWorkspaceVps(
-        record: localRegistry.record,
-        host: 'test.invalid',
-        port: 22,
-        password: '',
-        trustPeer: (_) async => throw StateError('Existing pin must be reused'),
-      );
-      offline = true;
-      await expectLater(reconnect(), throwsA(isA<TimeoutException>()));
-      expect(
-        (await remote.connection(
-          ownerHex,
-          localRegistry.record.pluginId!,
-        ))!['selected'],
-        false,
-      );
-      offline = false;
-      await reconnect();
-      expect(
-        (await remote.connection(
-          ownerHex,
-          localRegistry.record.pluginId!,
-        ))!['selected'],
-        true,
-      );
-      expect(
-        (await module.readWorkspaceExecution(
-          localRegistry.record,
-        ))!['expires_at_ms'],
-        0,
-      );
-      expect(
-        (await serverRuntime.readWorkspaceExecution(
-          serverRegistry.record,
-          enforceHost: false,
-        ))!['allow_new_entries'],
-        false,
-      );
-      await module.setWorkspaceExecution(
-        record: localRegistry.record,
-        expiresAtMs: null,
-        expectedRevision:
-            (await module.readWorkspaceExecution(
-                  localRegistry.record,
-                  enforceHost: false,
-                ))?["revision"]
-                as int?,
-        enabled: true,
-        approvedScope: scope,
-      );
-      await package.writeAsBytes([0, 97, 115, 109, 1, 0, 0, 0, 1]);
-      final upgradedDigest =
-          sha256.convert(await package.readAsBytes()).toString();
-      serverDigest = upgradedDigest;
-      serverBinding['package_digest'] = upgradedDigest;
-      connection['package_digest'] = upgradedDigest;
-      // Reproduce an upgrade retained by a downloaded release: the acknowledged
-      // server package is newer, but the frozen handoff still belongs to the old
-      // bytes. Neither an opaque-state rewrite nor automatic execution is safe.
-      await localFiles.writePluginState(
-        await localFiles.capsuleDirForHex(ownerHex),
-        localRegistry.record.pluginId!,
-        PluginWorkspaceRemoteService.connectionFile,
-        jsonEncode(connection),
-      );
-      await expectLater(
-        runner.dispatch({...serverBinding, 'command': 'forget'}),
-        throwsStateError,
-        reason: 'An unrecognized old grant is not proof of ended authority',
-      );
-      await expectLater(
-        serverRuntime.runScheduledWorkspaceCycle(serverRegistry.record),
-        throwsStateError,
-      );
-      localRegistry.executionBinding =
-          () => PluginRuntimeBinding.externalPackage(
-            packageId: localRegistry.record.id,
-            packageVersion: localRegistry.record.pluginVersion,
-            packageKind: 'zip',
-            packageDigestHex: upgradedDigest,
-            packageFilePath: package.path,
-            contractKind: pluginWorkspaceContractKind,
-            capabilities: [
-              ...localRegistry.record.capabilities,
-              'workspace.schedule',
-            ],
-          );
-      // Return was durable, but its acknowledgement was lost. A subsequent
-      // installation rebinds only the ended server grant to the new bytes.
-      final ended = await serverRuntime.returnWorkspaceToLocal(
-        serverRegistry.record,
-      );
-      final serverDirectory = await serverFiles.capsuleDirForHex(ownerHex);
-      await serverFiles.writePluginState(
-        serverDirectory,
-        serverRegistry.record.pluginId!,
-        'workspace-execution.v1.json',
-        jsonEncode({
-          ...ended['execution'] as Map,
-          'package_digest': upgradedDigest,
-        }),
-      );
-      final returned = await runner.dispatch({
-        ...serverBinding,
-        'command': 'return',
-      });
-      expect(returned['checkpoint']['package_digest'], upgradedDigest);
-      for (final mutation in [
-        {'handoff_id': 'b' * 64},
-        {'handoff_digest': 'b' * 64},
-        {'executor': 'vps', 'executor_id': 'f' * 64},
-        {'allow_new_entries': true},
-      ]) {
-        await expectLater(
-          module.restoreWorkspaceFromVps(
-            record: localRegistry.record,
-            executorId: connection['executor_id'] as String,
-            checkpoint: {
-              ...returned['checkpoint'] as Map<String, dynamic>,
-              'execution': {
-                ...returned['checkpoint']['execution'] as Map,
-                ...mutation,
-              },
-            },
-          ),
-          throwsStateError,
-        );
-      }
-      offline = true;
-      await expectLater(
-        module.removePlugin(localRegistry.record),
-        throwsA(isA<TimeoutException>()),
-      );
-      expect(localRegistry.installed, true);
-      expect(
-        await localFiles.readPluginState(
-          await localFiles.capsuleDirForHex(ownerHex),
-          localRegistry.record.pluginId!,
-          'workspace.v1.json',
-        ),
-        isNotNull,
-      );
-      offline = false;
-      await module.removePlugin(localRegistry.record);
-      expect(localRegistry.installed, false);
-      expect(serverRegistry.installed, false);
-      expect(
-        await remote.connection(ownerHex, localRegistry.record.pluginId!),
-        isNull,
-      );
-    },
-  );
-  for (final (
-        pluginId,
-        privateAction,
-        declaresRecovery,
-        change,
-        permission,
-        executor,
-      )
-      in [
-        (
-          'hivra.contract.workspace-test.v1',
-          'start',
-          true,
-          'none',
-          'none',
-          'local',
-        ),
-        (
-          'HIVRA.CONTRACT.WORKSPACE-TEST.V1',
-          'stop',
-          true,
-          'none',
-          'none',
-          'local',
-        ),
-        (
-          'hivra.contract.workspace-test.v1',
-          'list_orders',
-          true,
-          'none',
-          'none',
-          'local',
-        ),
-        (
-          'hivra.contract.workspace-test.v1',
-          'start',
-          false,
-          'none',
-          'none',
-          'local',
-        ),
-        for (final change in ['remove', 'replace', 'capsule', 'digest'])
-          (
-            'hivra.contract.workspace-test.v1',
-            'start',
-            true,
-            change,
-            'active',
-            'local',
-          ),
-        for (final executor in ['local', 'vps'])
-          for (final permission in ['active', 'stopped', 'expired', 'revoked'])
-            (
-              'hivra.contract.workspace-test.v1',
-              'start',
-              true,
-              'none',
-              permission,
-              executor,
-            ),
-      ]) {
-    test(
-      'credential recovery preserves package commands and binding: $pluginId $privateAction $declaresRecovery $change $permission $executor',
-      () async {
-        final root = await Directory('/tmp').createTemp('hivra_vps_recovery_');
-        addTearDown(() => root.delete(recursive: true));
-        const owner =
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-        String? active = owner;
-        var digest = 'b' * 64;
-        final files = CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
-        );
-        final registry = _Registry();
-        registry.record = WasmPluginRecord.fromJson({
-          ...registry.record.toJson(),
-          'capabilities': [
-            'workspace.render',
-            'workspace.continue',
-            'state.plugin.read_write',
-            'workspace.schedule',
-            'account.connect',
-            'account.snapshot.read',
-            'order.entry.place',
-            'order.snapshot.read',
-          ],
-        });
-        registry.record = _recordWithPluginId(registry.record, pluginId);
-        registry.executionBinding =
-            () => PluginRuntimeBinding.externalPackage(
-              packageId: registry.record.id,
-              packageVersion: registry.record.pluginVersion,
-              packageKind: 'zip',
-              packageDigestHex: digest,
-              contractKind: pluginWorkspaceContractKind,
-              capabilities: registry.record.capabilities,
-            );
-        final directory = await files.capsuleDirForHex(owner, create: true);
-        if (permission != 'none') {
-          await files.writePluginState(
-            directory,
-            pluginId,
-            'workspace-execution.v1.json',
-            jsonEncode({
-              'version': 1,
-              'owner': owner,
-              'plugin_id': pluginId,
-              'package_id': registry.record.id,
-              'package_digest': digest,
-              'executor': executor,
-              if (executor == 'vps') 'executor_id': 'e' * 64,
-              'scope': {
-                'action': 'cycle',
-                'interval_seconds': 60,
-                'account_id': 'f' * 64,
-                'symbol': 'BTC-USDT',
-                'max_margin': 1,
-                'max_stop_percent': 20,
-              },
-              'settings': <String, dynamic>{},
-              'expires_at_ms': permission == 'expired' ? 1 : null,
-              'allow_new_entries': permission == 'active',
-              'revoked': permission == 'revoked',
-              'revision': 7,
-            }),
-          );
-        }
-        final host = PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding: registry.resolveRuntimeBinding,
-          resolveRuntimeInvoke:
-              (request, _) async => PluginRuntimeInvokeEvidence(
-                mode: 'wasmi_v1',
-                modulePath: 'plugin/module.wasm',
-                moduleSelection: 'zip_manifest',
-                moduleDigestHex: 'c' * 64,
-                invokeDigestHex: 'd' * 64,
-                semanticStatus: PluginHostApiStatus.executed,
-                semanticErrorCode: null,
-                semanticErrorMessage: null,
-                semanticResult: {
-                  'state': {'opaque': 1},
-                  'requests': [
-                    if (request.args['action'] == 'open')
-                      {
-                        'kind': 'account.snapshot.read',
-                        'provider': 'bingx',
-                        'symbol': 'BTC-USDT',
-                        'account_id': 'f' * 64,
-                      },
-                  ],
-                  'view': {
-                    ...view(),
-                    'schedule': {'action': 'cycle'},
-                    'actions': [
-                      if (declaresRecovery)
-                        {
-                          'id': 'restore_broker_binding',
-                          'label': 'Package-owned reconnect',
-                          'host': 'bingx.account.connect',
-                        },
-                      {'id': privateAction, 'label': 'Package-owned action'},
-                      {
-                        'id': 'enable_cycles',
-                        'label': 'Start cycles',
-                        'host':
-                            privateAction == 'stop'
-                                ? 'workspace.stop'
-                                : 'workspace.start',
-                      },
-                      {
-                        'id': 'place',
-                        'label': 'Place',
-                        'host': 'bingx.order.submit',
-                      },
-                    ],
-                  },
-                },
-              ),
-        );
-        PluginWorkspaceRuntime makeRuntime() => PluginWorkspaceRuntime(
-          registry: registry,
-          pluginHostApi: host,
-          fileStore: files,
-          readActiveCapsuleRootHex: () => active,
-          readCredentials: ({required owner, required pluginId}) async {
-            switch (change) {
-              case 'remove':
-                registry.installed = false;
-              case 'replace':
-                registry.record = WasmPluginRecord.fromJson({
-                  ...registry.record.toJson(),
-                  'id': 'replacement-package',
-                });
-              case 'capsule':
-                active = 'e' * 64;
-              case 'digest':
-                digest = 'e' * 64;
-            }
-            return null;
-          },
-          writeCredentials:
-              ({required owner, required pluginId, required value}) async =>
-                  fail('Authority controls must not write credentials'),
-          scheduleTimers: false,
-          executionHost: executor,
-          executionIdentity: executor == 'vps' ? 'e' * 64 : null,
-        );
-        final runtime = makeRuntime();
-        final pending = runtime.runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-        );
-        if (change != 'none') {
-          await expectLater(pending, throwsStateError);
-          return;
-        }
-        final recovered = await pending;
-        expect(recovered['title'], 'Independent package');
-        expect(recovered['message'], contains('Reconnect your BingX account'));
-        expect(recovered['schedule'], isNull);
-        final actions = (recovered['actions'] as List).cast<Map>();
-        expect(actions, [
-          if (declaresRecovery)
-            {
-              'id': 'restore_broker_binding',
-              'label': 'Package-owned reconnect',
-              'host': 'bingx.account.connect',
-            },
-          {'id': privateAction, 'label': 'Package-owned action'},
-        ]);
-        final continued = await runtime.runWorkspaceAction(
-          record: registry.record,
-          action: privateAction,
-        );
-        expect(continued['title'], 'Independent package');
-        if (permission == 'none') {
-          expect(recovered['execution'], isNull);
-          return;
-        }
-        final execution = recovered['execution'] as Map;
-        expect(execution['mode'], executor);
-        expect(
-          execution['active'],
-          !['expired', 'revoked'].contains(permission),
-        );
-        expect(execution['allow_new_entries'], permission == 'active');
-        expect(execution['revoked'], permission == 'revoked');
-        expect(execution['revision'], 7);
-        // Full revocation must complete through the normal host path even
-        // when the provider cannot be read or reconnected.
-        final stopped = await runtime.setWorkspaceExecution(
-          record: registry.record,
-          enabled: false,
-          expiresAtMs: null,
-          revoke: true,
-        );
-        expect(stopped['execution']['active'], false);
-        expect(stopped['execution']['revoked'], true);
-        expect(stopped['execution']['revision'], 8);
-        final restarted = await makeRuntime().runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-        );
-        expect(restarted['execution'], stopped['execution']);
-        expect(restarted['schedule'], isNull);
-        expect(
-          (await runtime.readWorkspaceExecution(registry.record))!['revoked'],
-          true,
-        );
-      },
-    );
-  }
-  test(
-    'Capsule runner assets bind canonical source and exact distributed bytes',
-    () async {
-      final root = await Directory('/tmp').createTemp('hivra_component_');
-      addTearDown(() => root.delete(recursive: true));
-      final helper = File('${root.path}/tools/release/workspace_runner.sh');
-      await helper.parent.create(recursive: true);
-      await File('../tools/release/workspace_runner.sh').copy(helper.path);
-      final config = File('${root.path}/toolchains/hivra-baseline.conf');
-      await config.parent.create(recursive: true);
-      await File('../toolchains/hivra-baseline.conf').copy(config.path);
-      final baseline = await config.readAsString();
-      String pin(String name) =>
-          RegExp(
-            '^$name=(.+)\$',
-            multiLine: true,
-          ).firstMatch(baseline)!.group(1)!;
-      final assetDir = Directory(
-        '${root.path}/flutter/assets/workspace_runner',
-      );
-      await assetDir.create(recursive: true);
-      await File('${assetDir.path}/.keep').writeAsString('');
-      await File('${root.path}/.gitignore').writeAsString(
-        'flutter/assets/workspace_runner/*.tar.gz\nSHA256SUMS.txt\n',
-      );
-      Future<String> git(List<String> args) async {
-        final result = await Process.run(
-          'git',
-          [
-            '-c',
-            'core.hooksPath=/dev/null',
-            '-c',
-            'user.name=Fixture',
-            '-c',
-            'user.email=fixture@example.invalid',
-            ...args,
-          ],
-          workingDirectory: root.path,
-          environment: {
-            'GIT_CONFIG_GLOBAL': '/dev/null',
-            'GIT_CONFIG_NOSYSTEM': '1',
-          },
-        );
-        expect(result.exitCode, 0, reason: result.stderr.toString());
-        return result.stdout.toString().trim();
-      }
-
-      await git(['init', '-q']);
-      await git(['add', '.']);
-      await git([
-        'commit',
-        '--no-gpg-sign',
-        '-qm',
-        'Isolated packaging fixture',
-      ]);
-      final commit = await git(['rev-parse', 'HEAD']);
-      final tree = await git(['rev-parse', 'HEAD^{tree}']);
-      final stage = Directory('${root.path}/stage');
-      await Directory('${stage.path}/bin').create(recursive: true);
-      // These are packaging fixtures, not executable or provider evidence.
-      for (final name in [
-        'bin/hivra-workspace-runner',
-        'bin/libhivra_ffi.so',
-      ]) {
-        await File(
-          '${stage.path}/$name',
-        ).writeAsString('Synthetic component fixture: $name');
-      }
-      final rendered = await Process.run('bash', [
-        helper.path,
-        '--print-service',
-      ]);
-      expect(rendered.exitCode, 0, reason: rendered.stderr.toString());
-      await File(
-        '${stage.path}/hivra-workspace-runner.service',
-      ).writeAsString(rendered.stdout.toString());
-      const archiveName = 'hivra-workspace-runner-linux-x64.tar.gz';
-      final candidate = Directory('${root.path}/candidate');
-      await candidate.create();
-      final archive = File('${candidate.path}/$archiveName');
-      String metadata({String? sourceTree, String protocol = '1'}) =>
-          'source_commit=$commit\nsource_tree=${sourceTree ?? tree}\nsource_dirty=0\nplatform=linux-x64\nworkspace_protocol=$protocol\nrust=${pin('RUST_VERSION')}\ndart=${pin('DART_VERSION')}\n';
-      Future<String> pack(String raw) async {
-        await File('${stage.path}/BUILD-METADATA.txt').writeAsString(raw);
-        final result = await Process.run('tar', [
-          '-czf',
-          archive.path,
-          '-C',
-          stage.path,
-          '.',
-        ]);
-        expect(result.exitCode, 0, reason: result.stderr.toString());
-        return sha256.convert(await archive.readAsBytes()).toString();
-      }
-
-      Future<ProcessResult> run(List<String> args) =>
-          Process.run('bash', [helper.path, ...args]);
-      expect(
-        (await run(['--verify-assets'])).exitCode,
-        isNot(0),
-        reason: 'Missing assets cannot silently pass',
-      );
-      final digest = await pack(metadata());
-      PluginWorkspaceRemoteService.verifyDistribution(
-        await archive.readAsBytes(),
-        '$digest  $archiveName\n',
-      );
-      expect(
-        () => PluginWorkspaceRemoteService.verifyDistribution([
-          1,
-          2,
-          3,
-        ], '$digest  $archiveName'),
-        throwsStateError,
-      );
-      final script = PluginWorkspaceRemoteService.installationScript(
-        await archive.readAsBytes(),
-        digest,
-        'ssh-ed25519 ${base64Encode(List<int>.filled(51, 1))} hivra-workspace-${'f' * 64}',
-        {'executor_id': 'f' * 64},
-      );
-      final shell = await Process.start('/bin/sh', ['-n']);
-      final shellError = shell.stderr.transform(utf8.decoder).join();
-      final shellOutput = shell.stdout.drain<void>();
-      shell.stdin.write(script);
-      await shell.stdin.close();
-      expect(await shell.exitCode, 0, reason: await shellError);
-      await shellOutput;
-      final prepared = await run(['--prepare-assets', candidate.path, digest]);
-      expect(prepared.exitCode, 0, reason: prepared.stderr.toString());
-      expect(prepared.stdout.toString().trim(), digest);
-      final stored = File('${assetDir.path}/$archiveName');
-      final bytes = await stored.readAsBytes();
-      expect(sha256.convert(bytes).toString(), digest);
-      final tar = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
-      expect(
-        utf8.decode(
-          tar.files
-                  .singleWhere(
-                    (f) => f.name == './hivra-workspace-runner.service',
-                  )
-                  .content
-              as List<int>,
-        ),
-        rendered.stdout.toString(),
-        reason: 'Packaged service must retain the canonical resource policy',
-      );
-      final verified = await run(['--verify-assets']);
-      expect(verified.exitCode, 0, reason: verified.stderr.toString());
-      expect(verified.stdout.toString().trim(), digest);
-      final packaged = Directory('${root.path}/packaged');
-      await packaged.create();
-      await stored.copy('${packaged.path}/$archiveName');
-      await File(
-        '${assetDir.path}/SHA256SUMS.txt',
-      ).copy('${packaged.path}/SHA256SUMS.txt');
-      expect((await run(['--verify-assets', packaged.path])).exitCode, 0);
-      await File('${packaged.path}/$archiveName').writeAsBytes([...bytes, 0]);
-      expect(
-        (await run(['--verify-assets', packaged.path])).exitCode,
-        isNot(0),
-      );
-      final wrongPin = await run([
-        '--prepare-assets',
-        candidate.path,
-        '0' * 64,
-      ]);
-      expect(wrongPin.exitCode, isNot(0));
-      for (final invalid in [
-        metadata(sourceTree: '0' * 40),
-        metadata(protocol: '0'),
-        '${metadata()}source_dirty=0\n',
-      ]) {
-        final bad = await pack(invalid);
-        expect(
-          (await run(['--prepare-assets', candidate.path, bad])).exitCode,
-          isNot(0),
-        );
-        expect(
-          await stored.readAsBytes(),
-          bytes,
-          reason: 'Rejected candidates cannot replace selected assets',
-        );
-      }
-      final unexpected = File('${stage.path}/unexpected');
-      await unexpected.writeAsString('Not part of the component');
-      var bad = await pack(metadata());
-      expect(
-        (await run(['--prepare-assets', candidate.path, bad])).exitCode,
-        isNot(0),
-      );
-      await unexpected.delete();
-      final lib = File('${stage.path}/bin/libhivra_ffi.so');
-      await lib.delete();
-      await Link(lib.path).create(helper.path);
-      bad = await pack(metadata());
-      expect(
-        (await run(['--prepare-assets', candidate.path, bad])).exitCode,
-        isNot(0),
-      );
-      expect(await stored.readAsBytes(), bytes);
-      await config.writeAsString('$baseline\n# dirty fixture\n');
-      expect(
-        (await run(['--prepare-assets', candidate.path, digest])).exitCode,
-        isNot(0),
-      );
-      expect(await stored.readAsBytes(), bytes);
-    },
-  );
-  test(
-    'VPS Start admits the target directly without a local execution window',
-    () async {
-      final root = await Directory('/tmp').createTemp('hivra_direct_start_');
-      addTearDown(() => root.delete(recursive: true));
-      const owner =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      final files = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
-      );
-      final registry = _Registry();
-      final scope = {
-        'account_id': 'c' * 64,
-        'symbol': 'DASH-USDT',
-        'action': 'independent_cycle',
-        'interval_seconds': 30,
-        'max_margin': 1.0,
-        'max_stop_percent': 20.0,
-      };
-      registry.executionBinding =
-          () => PluginRuntimeBinding.externalPackage(
-            packageId: registry.record.id,
-            packageVersion: registry.record.pluginVersion,
-            packageKind: 'zip',
-            packageDigestHex: 'b' * 64,
-            contractKind: pluginWorkspaceContractKind,
-            capabilities: const [
-              'workspace.render',
-              'workspace.continue',
-              'state.plugin.read_write',
-              'workspace.schedule',
-            ],
-          );
-      var invoked = 0;
-      final runtime = PluginWorkspaceRuntime(
-        registry: registry,
-        fileStore: files,
-        readActiveCapsuleRootHex: () => owner,
-        pluginHostApi: PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding: registry.resolveRuntimeBinding,
-          resolveRuntimeInvoke: (request, _) async {
-            invoked++;
-            return PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'zip_manifest',
-              moduleDigestHex: 'd' * 64,
-              invokeDigestHex: 'e' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-              semanticResult: {
-                'state': {
-                  'unrelated': [1, 2],
-                },
-                'requests': <Object>[],
-                'view': {...view(), 'schedule': scope},
-              },
-            );
-          },
-        ),
-        readCredentials:
-            ({required owner, required pluginId}) async =>
-                throw StateError('No credentials'),
-        writeCredentials:
-            ({required owner, required pluginId, required value}) async =>
-                throw StateError('No credential writes'),
-      );
-      addTearDown(runtime.stopWorkspaceScheduling);
-      for (final invalid in [
-        (enabled: false, target: 'f' * 64),
-        (enabled: true, target: 'bad-target'),
-      ]) {
-        await expectLater(
-          runtime.setWorkspaceExecution(
-            record: registry.record,
-            expiresAtMs: null,
-            expectedRevision:
-                (await runtime.readWorkspaceExecution(
-                      registry.record,
-                      enforceHost: false,
-                    ))?["revision"]
-                    as int?,
-            enabled: invalid.enabled,
-            approvedScope: scope,
-            releaseToExecutorId: invalid.target,
-          ),
-          throwsStateError,
-        );
-        expect(invoked, 0);
-      }
-      final prepared = await runtime.setWorkspaceExecution(
-        record: registry.record,
-        expiresAtMs: null,
-        expectedRevision:
-            (await runtime.readWorkspaceExecution(
-                  registry.record,
-                  enforceHost: false,
-                ))?["revision"]
-                as int?,
-        enabled: true,
-        approvedScope: scope,
-        releaseToExecutorId: 'f' * 64,
-      );
-      expect(
-        prepared['execution'],
-        isNull,
-        reason: 'Source preparation cannot claim a running executor',
-      );
-      final capsule = await files.capsuleDirForHex(owner);
-      final raw =
-          (await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'workspace-execution.v1.json',
-          ))!;
-      final grant = jsonDecode(raw) as Map;
-      expect(grant['executor'], 'vps');
-      expect(grant['executor_id'], 'f' * 64);
-      expect(grant['handoff_id'], matches(RegExp(r'^[0-9a-f]{64}$')));
-      final afterStart = invoked;
-      await expectLater(
-        runtime.runScheduledWorkspaceCycle(registry.record),
-        throwsStateError,
-      );
-      await expectLater(
-        runtime.runWorkspaceAction(record: registry.record, action: 'open'),
-        throwsStateError,
-      );
-      await expectLater(
-        runtime.setWorkspaceExecution(
-          record: registry.record,
-          expiresAtMs: null,
-          expectedRevision:
-              (await runtime.readWorkspaceExecution(
-                    registry.record,
-                    enforceHost: false,
-                  ))?["revision"]
-                  as int?,
-          enabled: true,
-          approvedScope: scope,
-        ),
-        throwsStateError,
-      );
-      expect(
-        invoked,
-        afterStart,
-        reason: 'No local fallback after the target is assigned',
-      );
-      final checkpoint = await runtime.releaseWorkspaceToVps(
-        registry.record,
-        executorId: 'f' * 64,
-      );
-      expect(checkpoint['execution'], grant);
-      expect(
-        await files.readPluginState(
-          capsule,
-          registry.record.pluginId!,
-          'workspace-execution.v1.json',
-        ),
-        raw,
-        reason: 'Export neither renews nor rewrites the prepared grant',
-      );
-    },
-  );
-  test(
-    'native setup is bound, repeatable and never creates trading authority',
-    () async {
-      final root = await Directory('/tmp').createTemp('hivra_setup_');
-      addTearDown(() => root.delete(recursive: true));
-      await Process.run('chmod', ['700', root.path]);
-      const owner =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      const plugin = 'hivra.contract.independent-workspace.v1';
-      List<int> package({
-        String id = plugin,
-        bool scheduled = true,
-        String version = '1.0.0',
-      }) {
-        final manifest = utf8.encode(
-          jsonEncode({
-            'schema': 'hivra.plugin.manifest',
-            'version': 1,
-            'release_version': version,
-            'plugin_id': id,
-            'contract': {'kind': pluginWorkspaceContractKind},
-            'runtime': {
-              'abi': 'hivra_host_abi_v2',
-              'entry_export': 'hivra_evaluate_v1',
-            },
-            'capabilities': [
-              'workspace.render',
-              'workspace.continue',
-              'state.plugin.read_write',
-              if (scheduled) 'workspace.schedule',
-            ],
-          }),
-        );
-        final archive =
-            Archive()
-              ..addFile(
-                ArchiveFile('plugin/manifest.json', manifest.length, manifest),
-              )
-              ..addFile(
-                ArchiveFile('plugin/module.wasm', 8, [
-                  0,
-                  97,
-                  115,
-                  109,
-                  1,
-                  0,
-                  0,
-                  0,
-                ]),
-              );
-        return ZipEncoder().encode(archive)!;
-      }
-
-      Map<String, dynamic> input(List<int> bytes) => {
-        'owner': owner,
-        'plugin_id': plugin,
-        'package_digest': sha256.convert(bytes).toString(),
-        'executor_id': 'f' * 64,
-        'package': base64Encode(bytes),
-        'credentials': null,
-      };
-      final request = input(package());
-      await Process.run('chmod', ['755', root.path]);
-      await expectLater(
-        WorkspaceRunner.setup(root, request),
-        throwsFormatException,
-      );
-      await Process.run('chmod', ['700', root.path]);
-      for (final invalid in [
-        {...request, 'package_digest': 'e' * 64},
-        {
-          ...request,
-          'credentials': {'api_key': 'x'},
-        },
-        {...request, 'executor_id': 'not-a-host'},
-        {...request, 'scope': {}},
-        input(package(scheduled: false)),
-        input(package(id: 'hivra.contract.other.v1')),
-      ]) {
-        await expectLater(
-          WorkspaceRunner.setup(root, invalid),
-          throwsA(anyOf(isA<FormatException>(), isA<StateError>())),
-        );
-        expect(await File('${root.path}/runner.json').exists(), false);
-      }
-      final installed = await WorkspaceRunner.setup(root, request);
-      final dirs = UserVisibleDataDirectoryService(
-        runtimeRootOverride: root.path,
-      );
-      final registry = WasmPluginRegistryService(dataDirs: dirs);
-      final files = CapsuleFileStore(dirs: dirs);
-      final record = (await registry.loadPlugins()).single;
-      final capsule = await files.capsuleDirForHex(owner, create: true);
-      expect(installed['package_id'], record.id);
-      expect(
-        await files.readPluginState(
-          capsule,
-          plugin,
-          'workspace-execution.v1.json',
-        ),
-        isNull,
-      );
-      const opaque = '{"another_package_shape":[1,"not trading fields"]}';
-      const journal = '{"retained":"provider evidence"}';
-      await files.writePluginState(
-        capsule,
-        plugin,
-        'workspace.v1.json',
-        opaque,
-      );
-      await files.writePluginState(
-        capsule,
-        plugin,
-        'external_effects.v1.json',
-        journal,
-      );
-      await files.writePluginState(
-        capsule,
-        plugin,
-        'workspace-execution.v1.json',
-        '{"retained":"opaque to installer"}',
-      );
-      final secrets = {
-        ...request,
-        'credentials': {'api_key': 'test-key', 'secret_key': 'test-secret'},
-      };
-      expect(await WorkspaceRunner.setup(root, secrets), installed);
-      final credentialFile = File('${root.path}/credentials.json');
-      final credentials = await credentialFile.readAsString();
-      expect((await credentialFile.stat()).mode & 0x3f, 0);
-      expect((await File('${root.path}/runner.json').stat()).mode & 0x3f, 0);
-      expect(await WorkspaceRunner.setup(root, request), installed);
-      expect(await credentialFile.readAsString(), credentials);
-      expect(
-        await files.readPluginState(capsule, plugin, 'workspace.v1.json'),
-        opaque,
-      );
-      expect(
-        await files.readPluginState(
-          capsule,
-          plugin,
-          'external_effects.v1.json',
-        ),
-        journal,
-      );
-      expect(
-        await files.readPluginState(
-          capsule,
-          plugin,
-          'workspace-execution.v1.json',
-        ),
-        '{"retained":"opaque to installer"}',
-      );
-      for (final changed in [
-        {...request, 'owner': 'e' * 64},
-        {...request, 'executor_id': 'e' * 64},
-        input(package(version: '2.0.0')),
-      ]) {
-        await expectLater(
-          WorkspaceRunner.setup(root, changed),
-          throwsStateError,
-        );
-        expect(await credentialFile.readAsString(), credentials);
-        expect((await registry.loadPlugins()).single.id, record.id);
-        expect(
-          await files.readPluginState(capsule, plugin, 'workspace.v1.json'),
-          opaque,
-        );
-      }
-      final ended = {
-        'version': 1,
-        'owner': owner,
-        'plugin_id': plugin,
-        'package_id': record.id,
-        'package_digest': request['package_digest'],
-        'executor': 'local',
-        'revision': 2,
-        'expires_at_ms': 0,
-        'allow_new_entries': false,
-        'settings': <String, dynamic>{},
-        'scope': {
-          'account_id': 'c' * 64,
-          'symbol': 'DASH-USDT',
-          'action': 'independent_cycle',
-          'interval_seconds': 30,
-          'max_margin': 1.0,
-          'max_stop_percent': 20.0,
-        },
-      };
-      await files.writePluginState(
-        capsule,
-        plugin,
-        'workspace-execution.v1.json',
-        jsonEncode({
-          ...ended,
-          'executor': 'vps',
-          'executor_id': 'f' * 64,
-          'expires_at_ms': DateTime.now().millisecondsSinceEpoch + 60000,
-        }),
-      );
-      await expectLater(
-        WorkspaceRunner.setup(root, {
-          ...secrets,
-          'credentials': {'api_key': 'different', 'secret_key': 'different'},
-        }),
-        throwsStateError,
-      );
-      expect(await credentialFile.readAsString(), credentials);
-      await files.writePluginState(
-        capsule,
-        plugin,
-        'workspace-execution.v1.json',
-        jsonEncode(ended),
-      );
-      final replacement = input(package(version: '2.0.0'));
-      final upgraded = await WorkspaceRunner.setup(root, replacement);
-      expect(upgraded['package_digest'], replacement['package_digest']);
-      expect(upgraded['package_id'], isNot(record.id));
-      expect(
-        await files.readPluginState(capsule, plugin, 'workspace.v1.json'),
-        opaque,
-      );
-      expect(
-        await files.readPluginState(
-          capsule,
-          plugin,
-          'external_effects.v1.json',
-        ),
-        journal,
-      );
-      final sealed = jsonDecode(
-        (await files.readPluginState(
-          capsule,
-          plugin,
-          'workspace-execution.v1.json',
-        ))!,
-      );
-      expect(sealed['package_id'], upgraded['package_id']);
-      expect(sealed['expires_at_ms'], 0);
-      // Interrupted setup may publish package/grant before its final binding.
-      await File(
-        '${root.path}/runner.json',
-      ).writeAsString(jsonEncode(installed));
-      expect(await WorkspaceRunner.setup(root, replacement), upgraded);
-      expect(await WorkspaceRunner.setup(root, replacement), upgraded);
-      final lock = File('${root.path}/runner.lock');
-      await lock.delete();
-      final foreign = File('${root.path}/foreign')..writeAsStringSync('keep');
-      await Link(lock.path).create(foreign.path);
-      await expectLater(WorkspaceRunner.setup(root, request), throwsStateError);
-      expect(await foreign.readAsString(), 'keep');
-    },
-  );
-  test(
-    'handoff freezes local execution and exact replay never rolls back VPS',
-    () async {
-      final root = await Directory('/tmp').createTemp('hivra_handoff_');
-      addTearDown(() => root.delete(recursive: true));
-      final localFiles = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(
-          runtimeRootOverride: '${root.path}/local',
-        ),
-      );
-      final remoteFiles = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(
-          runtimeRootOverride: '${root.path}/vps',
-        ),
-      );
-      final registry = _Registry();
-      const owner =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      var digest = 'b' * 64;
-      final scope = {
-        'account_id': 'c' * 64,
-        'symbol': 'DASH-USDT',
-        'action': 'independent_cycle',
-        'interval_seconds': 30,
-        'max_margin': 1.0,
-        'max_stop_percent': 20.0,
-      };
-      registry.executionBinding =
-          () => PluginRuntimeBinding.externalPackage(
-            packageId: registry.record.id,
-            packageVersion: registry.record.pluginVersion,
-            packageKind: 'zip',
-            packageDigestHex: digest,
-            contractKind: pluginWorkspaceContractKind,
-            capabilities: const [
-              'workspace.render',
-              'workspace.continue',
-              'state.plugin.read_write',
-              'workspace.schedule',
-            ],
-          );
-      Completer<void>? hold;
-      final entered = Completer<void>();
-      var invocations = 0;
-      final host = PluginHostApiService(
-        handlers: [],
-        resolveRuntimeBinding: registry.resolveRuntimeBinding,
-        resolveRuntimeInvoke: (request, _) async {
-          invocations++;
-          if (request.args['action'] == 'held') {
-            entered.complete();
-            await hold!.future;
-          }
-          return PluginRuntimeInvokeEvidence(
-            mode: 'wasmi_v1',
-            modulePath: 'plugin/module.wasm',
-            moduleSelection: 'zip_manifest',
-            moduleDigestHex: 'd' * 64,
-            invokeDigestHex: 'e' * 64,
-            semanticStatus: PluginHostApiStatus.executed,
-            semanticErrorCode: null,
-            semanticErrorMessage: null,
-            semanticResult: {
-              'state':
-                  request.args['state'] ??
-                  {
-                    'not_a_trading_state': [3, 'opaque'],
-                  },
-              'requests': <Object>[],
-              'view': {...view(), 'schedule': scope},
-            },
-          );
-        },
-      );
-      PluginWorkspaceRuntime runtime(CapsuleFileStore files, String location) =>
-          PluginWorkspaceRuntime(
-            registry: registry,
-            pluginHostApi: host,
-            fileStore: files,
-            readActiveCapsuleRootHex: () => owner,
-            executionHost: location,
-            executionIdentity: location == 'vps' ? 'f' * 64 : null,
-            scheduleTimers: false,
-            readCredentials:
-                ({required owner, required pluginId}) async =>
-                    throw StateError('No credentials'),
-            writeCredentials:
-                ({required owner, required pluginId, required value}) async =>
-                    throw StateError('No credentials'),
-          );
-      final local = runtime(localFiles, 'local');
-      final remote = runtime(remoteFiles, 'vps');
-      final record = registry.record;
-      await local.setWorkspaceExecution(
-        record: record,
-        expiresAtMs: null,
-        expectedRevision:
-            (await local.readWorkspaceExecution(
-                  record,
-                  enforceHost: false,
-                ))?["revision"]
-                as int?,
-        enabled: true,
-        approvedScope: scope,
-      );
-      final directory = await localFiles.capsuleDirForHex(owner);
-      final effects = ExternalEffectService(
-        readActiveCapsuleRootHex: () => owner,
-        fileStore: localFiles,
-        resolveAdapter: (_) => null,
-      );
-      await effects.prepare(
-        operationId: 'f' * 64,
-        pluginId: record.pluginId!,
-        providerId: 'bingx',
-        accountBindingId: 'c' * 64,
-        effectKind: 'order.entry.place',
-        canonicalPayloadJson: '{"existing":"receipt identity"}',
-      );
-      final originalGrant = jsonDecode(
-        (await localFiles.readPluginState(
-          directory,
-          record.pluginId!,
-          'workspace-execution.v1.json',
-        ))!,
-      );
-      hold = Completer<void>();
-      final action = local.runWorkspaceAction(record: record, action: 'held');
-      await entered.future;
-      var exported = false;
-      final transfer = local
-          .releaseWorkspaceToVps(record, executorId: 'f' * 64)
-          .then((value) {
-            exported = true;
-            return value;
-          });
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(exported, false, reason: 'Handoff must drain the current action');
-      hold.complete();
-      await action;
-      final checkpoint = await transfer;
-      expect(checkpoint['workspace'], contains('not_a_trading_state'));
-      expect(
-        checkpoint['execution']['expires_at_ms'],
-        originalGrant['expires_at_ms'],
-      );
-      expect(
-        checkpoint['effects'],
-        await localFiles.readPluginState(
-          directory,
-          record.pluginId!,
-          'external_effects.v1.json',
-        ),
-      );
-      final before = invocations;
-      final restartedLocal = runtime(localFiles, 'local');
-      await expectLater(
-        restartedLocal.runWorkspaceAction(record: record, action: 'open'),
-        throwsStateError,
-      );
-      await expectLater(
-        restartedLocal.setWorkspaceExecution(
-          record: record,
-          expiresAtMs: null,
-          expectedRevision:
-              (await restartedLocal.readWorkspaceExecution(
-                    record,
-                    enforceHost: false,
-                  ))?["revision"]
-                  as int?,
-          enabled: true,
-          approvedScope: scope,
-        ),
-        throwsStateError,
-      );
-      await expectLater(
-        restartedLocal.setWorkspaceExecution(
-          record: record,
-          expiresAtMs: null,
-          expectedRevision:
-              (await restartedLocal.readWorkspaceExecution(
-                    record,
-                    enforceHost: false,
-                  ))?["revision"]
-                  as int?,
-          enabled: false,
-        ),
-        throwsStateError,
-      );
-      await expectLater(
-        restartedLocal.runScheduledWorkspaceCycle(record),
-        throwsStateError,
-      );
-      expect(
-        invocations,
-        before,
-        reason: 'The detached source must not invoke WASM',
-      );
-      expect(
-        jsonEncode(
-          await local.releaseWorkspaceToVps(record, executorId: 'f' * 64),
-        ),
-        jsonEncode(checkpoint),
-      );
-      final destination = await remoteFiles.capsuleDirForHex(owner);
-      await remoteFiles.writePluginState(
-        destination,
-        record.pluginId!,
-        'workspace.v1.json',
-        '{"existing":"must survive rejected adoption"}',
-      );
-      await expectLater(
-        remote.adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint),
-        throwsStateError,
-      );
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'workspace.v1.json',
-        ),
-        '{"existing":"must survive rejected adoption"}',
-      );
-      await remoteFiles.deletePluginState(
-        destination,
-        record.pluginId!,
-        'workspace.v1.json',
-      );
-      final missingJournal =
-          {...checkpoint}
-            ..remove('effects')
-            ..['unrecognized'] = null;
-      await expectLater(
-        remote.adoptWorkspaceFromLocal(
-          record: record,
-          checkpoint: missingJournal,
-        ),
-        throwsStateError,
-        reason: 'Missing fields must not silently discard the effect journal',
-      );
-      final destinationState = await remoteFiles.pluginStateDirectory(
-        destination,
-        record.pluginId!,
-      );
-      final interruptedStage = Directory('${destinationState.path}.checkpoint');
-      await interruptedStage.create();
-      await File(
-        '${interruptedStage.path}/workspace.v1.json',
-      ).writeAsString('interrupted');
-      await remote.adoptWorkspaceFromLocal(
-        record: record,
-        checkpoint: checkpoint,
-      );
-      await expectLater(
-        local.releaseWorkspaceToVps(record, executorId: 'e' * 64),
-        throwsStateError,
-      );
-      final otherVps = PluginWorkspaceRuntime(
-        registry: registry,
-        pluginHostApi: host,
-        fileStore: remoteFiles,
-        readActiveCapsuleRootHex: () => owner,
-        executionHost: 'vps',
-        executionIdentity: 'e' * 64,
-        scheduleTimers: false,
-        readCredentials: ({required owner, required pluginId}) async => null,
-        writeCredentials:
-            ({required owner, required pluginId, required value}) async {},
-      );
-      await expectLater(
-        otherVps.adoptWorkspaceFromLocal(
-          record: record,
-          checkpoint: checkpoint,
-        ),
-        throwsStateError,
-      );
-      expect(await interruptedStage.exists(), false);
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'workspace.v1.json',
-        ),
-        checkpoint['workspace'],
-      );
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'external_effects.v1.json',
-        ),
-        checkpoint['effects'],
-      );
-      await remote.runScheduledWorkspaceCycle(record);
-      await remote.setWorkspaceExecution(
-        record: record,
-        expiresAtMs: null,
-        expectedRevision:
-            (await remote.readWorkspaceExecution(
-                  record,
-                  enforceHost: false,
-                ))?["revision"]
-                as int?,
-        enabled: false,
-      );
-      const progressed = '{"new_shape":{"after":"server progress"}}';
-      await remoteFiles.writePluginState(
-        destination,
-        record.pluginId!,
-        'workspace.v1.json',
-        progressed,
-      );
-      final stopped = await remoteFiles.readPluginState(
-        destination,
-        record.pluginId!,
-        'workspace-execution.v1.json',
-      );
-      await runtime(
-        remoteFiles,
-        'vps',
-      ).adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint);
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'workspace.v1.json',
-        ),
-        progressed,
-      );
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'workspace-execution.v1.json',
-        ),
-        stopped,
-      );
-      final expired = jsonEncode({
-        ...jsonDecode(stopped!) as Map,
-        'expires_at_ms': DateTime.now().millisecondsSinceEpoch - 1,
-      });
-      await remoteFiles.writePluginState(
-        destination,
-        record.pluginId!,
-        'workspace-execution.v1.json',
-        expired,
-      );
-      await runtime(
-        remoteFiles,
-        'vps',
-      ).adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint);
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'workspace-execution.v1.json',
-        ),
-        expired,
-        reason: 'Replay cannot renew expired authority',
-      );
-      expect(
-        (await effects.list(pluginId: record.pluginId!)).single.operationId,
-        'f' * 64,
-      );
-      for (final mutation in [
-        {...checkpoint, 'owner': 'e' * 64},
-        {...checkpoint, 'workspace': '{"changed":true}'},
-        {
-          ...checkpoint,
-          'execution': {
-            ...checkpoint['execution'] as Map,
-            'handoff_id': 'e' * 64,
-          },
-        },
-        {...checkpoint, 'package_digest': 'e' * 64},
-      ]) {
-        await expectLater(
-          remote.adoptWorkspaceFromLocal(record: record, checkpoint: mutation),
-          throwsStateError,
-        );
-      }
-      final module = PluginRuntimeModule(
-        registry: registry,
-        sourceCatalog: const WasmPluginSourceCatalogService(),
-        manualChecks: _Manual(),
-        pluginHostApi: host,
-        attestationExchange: _Attestations(),
-        chatDelivery: _Delivery(),
-        passiveReceive: _Passive(),
-        contactLabels: _Labels(),
-        uiLog: const UiEventLogService(),
-        moltbook: _Moltbook(),
-        fileStore: localFiles,
-        secretVault: _Vault(),
-        readActiveCapsuleRootHex: () => owner,
-      );
-      await expectLater(module.removePlugin(record), throwsStateError);
-      expect(
-        registry.installed,
-        true,
-        reason: 'An unreachable assigned VPS must be stopped before uninstall',
-      );
-      expect(
-        await localFiles.readPluginState(
-          directory,
-          record.pluginId!,
-          'workspace.v1.json',
-        ),
-        isNotNull,
-      );
-      expect(
-        jsonDecode(
-          (await localFiles.readPluginState(
-            directory,
-            record.pluginId!,
-            'workspace-execution.v1.json',
-          ))!,
-        )['executor_id'],
-        'f' * 64,
-        reason: 'Uninstall must not erase remote ownership',
-      );
-      registry.installed = true;
-      digest = 'e' * 64;
-      await expectLater(
-        restartedLocal.runWorkspaceAction(record: record, action: 'open'),
-        throwsStateError,
-      );
-      await expectLater(
-        remote.adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint),
-        throwsStateError,
-      );
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'workspace.v1.json',
-        ),
-        progressed,
-      );
-      digest = 'b' * 64;
-      final returned = await remote.returnWorkspaceToLocal(record);
-      expect(returned['workspace'], progressed);
-      expect(returned['execution']['expires_at_ms'], 0);
-      expect(returned['execution']['allow_new_entries'], false);
-      await expectLater(
-        remote.runScheduledWorkspaceCycle(record),
-        throwsStateError,
-      );
-      await expectLater(
-        remote.setWorkspaceExecution(
-          record: record,
-          expiresAtMs: null,
-          expectedRevision:
-              (await remote.readWorkspaceExecution(
-                    record,
-                    enforceHost: false,
-                  ))?["revision"]
-                  as int?,
-          enabled: true,
-          approvedScope: scope,
-        ),
-        throwsStateError,
-      );
-      await expectLater(
-        remote.adoptWorkspaceFromLocal(record: record, checkpoint: checkpoint),
-        throwsStateError,
-      );
-      await expectLater(
-        local.restoreWorkspaceFromVps(
-          record: record,
-          executorId: 'e' * 64,
-          checkpoint: returned,
-        ),
-        throwsStateError,
-      );
-      await local.restoreWorkspaceFromVps(
-        record: record,
-        executorId: 'f' * 64,
-        checkpoint: returned,
-      );
-      expect(
-        (await local.readWorkspaceExecution(record))!['allow_new_entries'],
-        false,
-      );
-      expect(
-        await localFiles.readPluginState(
-          directory,
-          record.pluginId!,
-          'workspace.v1.json',
-        ),
-        progressed,
-      );
-      expect(
-        await localFiles.readPluginState(
-          directory,
-          record.pluginId!,
-          'external_effects.v1.json',
-        ),
-        returned['effects'],
-      );
-      await local.setWorkspaceExecution(
-        record: record,
-        expiresAtMs: null,
-        expectedRevision:
-            (await local.readWorkspaceExecution(
-                  record,
-                  enforceHost: false,
-                ))?["revision"]
-                as int?,
-        enabled: true,
-        approvedScope: scope,
-        releaseToExecutorId: 'f' * 64,
-      );
-      final next = await local.releaseWorkspaceToVps(
-        record,
-        executorId: 'f' * 64,
-      );
-      expect(
-        next['execution']['handoff_id'],
-        isNot(checkpoint['execution']['handoff_id']),
-      );
-      await remote.adoptWorkspaceFromLocal(record: record, checkpoint: next);
-      expect(
-        await remoteFiles.readPluginState(
-          destination,
-          record.pluginId!,
-          'workspace.v1.json',
-        ),
-        progressed,
-      );
-    },
-  );
-  test(
-    'runner drains shutdown without rearming and restores authority',
-    () async {
-      final root = await Directory('/tmp').createTemp('hivra_runner_');
-      addTearDown(() => root.delete(recursive: true));
-      expect((await Process.run('chmod', ['700', root.path])).exitCode, 0);
-      final files = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
-      );
-      final registry = _Registry();
-      const owner =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      var digest = 'b' * 64;
-      final scope = {
-        'account_id': 'c' * 64,
-        'symbol': 'DASH-USDT',
-        'action': 'independent_cycle',
-        'interval_seconds': 30,
-        'max_margin': 1.0,
-        'max_stop_percent': 20.0,
-      };
-      registry.executionBinding =
-          () => PluginRuntimeBinding.externalPackage(
-            packageId: registry.record.id,
-            packageVersion: registry.record.pluginVersion,
-            packageKind: 'zip',
-            packageDigestHex: digest,
-            contractKind: pluginWorkspaceContractKind,
-            capabilities: const [
-              'workspace.render',
-              'workspace.continue',
-              'state.plugin.read_write',
-              'workspace.schedule',
-            ],
-          );
-      var observed = 0;
-      var providerDown = false;
-      var observationFails = false;
-      Completer<void>? observationEntered;
-      Completer<void>? observationRelease;
-      final host = PluginHostApiService(
-        handlers: [],
-        resolveRuntimeBinding: registry.resolveRuntimeBinding,
-        resolveRuntimeInvoke: (request, _) async {
-          if (providerDown) throw StateError('secret-key provider URL');
-          final release = observationRelease;
-          if (release != null) {
-            observationRelease = null;
-            observationEntered!.complete();
-            await release.future;
-            if (observationFails) throw StateError('Observation unavailable');
-          }
-          observed++;
-          return PluginRuntimeInvokeEvidence(
-            mode: 'wasmi_v1',
-            modulePath: 'plugin/module.wasm',
-            moduleSelection: 'zip_manifest',
-            moduleDigestHex: 'd' * 64,
-            invokeDigestHex: 'e' * 64,
-            semanticStatus: PluginHostApiStatus.executed,
-            semanticErrorCode: null,
-            semanticErrorMessage: null,
-            semanticResult: {
-              'state':
-                  request.args['state'] ??
-                  {
-                    'unrelated_private_shape': ['not', 'Jack', 'fields'],
-                  },
-              'requests': <Object>[],
-              'view': {...view(), 'schedule': scope},
-            },
-          );
-        },
-      );
-      PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
-        registry: registry,
-        pluginHostApi: host,
-        fileStore: files,
-        readActiveCapsuleRootHex: () => owner,
-        executionHost: 'vps',
-        executionIdentity: 'f' * 64,
-        readCredentials:
-            ({required owner, required pluginId}) async =>
-                throw StateError('No credentials for this package'),
-        writeCredentials:
-            ({required owner, required pluginId, required value}) async =>
-                throw StateError('No credential writes'),
-      );
-      final binding = {
-        'owner': owner,
-        'plugin_id': registry.record.pluginId,
-        'package_id': registry.record.id,
-        'package_digest': digest,
-        'executor_id': 'f' * 64,
-      };
-      WorkspaceRunner runner({PluginWorkspaceRuntime? workspace}) =>
-          WorkspaceRunner(
-            root: root,
-            runtime: workspace ?? runtime(),
-            registry: registry,
-            binding: binding,
-          );
-      final firstRuntime = runtime();
-      final first = runner(workspace: firstRuntime);
-      addTearDown(first.close);
-      await first.start();
-      expect(
-        observed,
-        0,
-        reason: 'Process startup must not require the provider',
-      );
-      Future<Map<String, dynamic>> command(
-        String command, [
-        Map<String, dynamic> fields = const {},
-      ]) => WorkspaceRunner.request(root, {
-        ...binding,
-        'command': command,
-        ...fields,
-      });
-      final initial = await command('status');
-      expect(initial['ok'], true);
-      expect(initial['result']['runner']['state'], 'running');
-      expect(initial['result']['view'], isNull);
-      expect(
-        observed,
-        0,
-        reason: 'An unassigned status must not fork private package state',
-      );
-      expect(
-        await files.readPluginState(
-          await files.capsuleDirForHex(owner),
-          registry.record.pluginId!,
-          'workspace.v1.json',
-        ),
-        isNull,
-      );
-      await expectLater(runner().start(), throwsStateError);
-      expect((await command('status'))['ok'], true);
-      final mismatched = await command('status', {'owner': 'f' * 64});
-      expect(mismatched['ok'], false);
-      final before = observed;
-      expect((await command('status', {'approvedOrder': {}}))['ok'], false);
-      expect(observed, before, reason: 'Extra authority cannot reach WASM');
-      final started = await command('execution', {
-        'enabled': true,
-        'expires_at_ms': null,
-        'expected_revision': null,
-        'revoke': false,
-        'scope': scope,
-        'settings': <String, dynamic>{},
-      });
-      expect(started['ok'], true);
-      expect(started['result']['view']['execution']['mode'], 'vps');
-      expect(started['result']['view']['execution']['allow_new_entries'], true);
-      providerDown = true;
-      final unavailable = await command('status');
-      expect(unavailable['ok'], true);
-      expect(unavailable['result']['runner']['state'], 'running');
-      expect(unavailable['result']['view'], isNull);
-      expect(
-        unavailable['result']['observation_error'],
-        contains('unavailable'),
-      );
-      expect(jsonEncode(unavailable), isNot(contains('secret-key')));
-      providerDown = false;
-      final capsule = await files.capsuleDirForHex(owner);
-      final grant = await files.readPluginState(
-        capsule,
-        registry.record.pluginId!,
-        'workspace-execution.v1.json',
-      );
-      final state = await files.readPluginState(
-        capsule,
-        registry.record.pluginId!,
-        'workspace.v1.json',
-      );
-      final idle = await Socket.connect(
-        InternetAddress(
-          '${root.path}/runner.sock',
-          type: InternetAddressType.unix,
-        ),
-        0,
-      );
-      final partial = await Socket.connect(
-        InternetAddress(
-          '${root.path}/runner.sock',
-          type: InternetAddressType.unix,
-        ),
-        0,
-      );
-      partial.write('{"command":');
-      await partial.flush();
-      // The status round trip ensures both stalled connections were accepted.
-      expect((await command('status'))['ok'], true);
-      final idleDisconnected = idle.drain<void>();
-      final partialDisconnected = partial.drain<void>();
-      final timers = <Timer>[];
-      final release = Completer<void>();
-      try {
-        await runZoned(
-          () async {
-            observationEntered = Completer<void>();
-            observationRelease = release;
-            final observing = firstRuntime.runWorkspaceAction(
-              record: registry.record,
-              action: 'open',
-            );
-            await observationEntered!.future;
-            final closing = first.close();
-            final repeatedClose = first.close();
-            var closed = false;
-            unawaited(closing.then((_) => closed = true));
-            await Future.wait([
-              idleDisconnected,
-              partialDisconnected,
-            ]).timeout(const Duration(seconds: 2));
-            expect(
-              closed,
-              false,
-              reason: 'Pending work must drain before unlock',
-            );
-            await expectLater(runner().start(), throwsStateError);
-            final completedObservation = expectLater(
-              observing,
-              observationFails ? throwsStateError : completes,
-            );
-            release.complete();
-            await completedObservation;
-            await Future.wait([
-              closing,
-              repeatedClose,
-            ]).timeout(const Duration(seconds: 2));
-          },
-          zoneSpecification: ZoneSpecification(
-            createTimer: (self, parent, zone, duration, callback) {
-              final timer = parent.createTimer(zone, duration, callback);
-              timers.add(timer);
-              return timer;
-            },
-          ),
-        );
-        expect(
-          timers.where((timer) => timer.isActive),
-          isEmpty,
-          reason:
-              'A drained observation must not keep the stopped process alive',
-        );
-      } finally {
-        if (!release.isCompleted) release.complete();
-        for (final timer in timers) {
-          timer.cancel();
-        }
-        idle.destroy();
-        partial.destroy();
-      }
-      final restarted = runner();
-      addTearDown(restarted.close);
-      await restarted.start();
-      expect(
-        (await command(
-          'status',
-        ))['result']['view']['execution']['allow_new_entries'],
-        true,
-      );
-      expect(
-        await files.readPluginState(
-          capsule,
-          registry.record.pluginId!,
-          'workspace-execution.v1.json',
-        ),
-        grant,
-        reason: 'Restart must not renew or replace authority',
-      );
-      expect(
-        await files.readPluginState(
-          capsule,
-          registry.record.pluginId!,
-          'workspace.v1.json',
-        ),
-        state,
-        reason: 'Runner must not migrate private state',
-      );
-      observationFails = true;
-      observationEntered = Completer<void>();
-      final failedReadRelease = Completer<void>();
-      observationRelease = failedReadRelease;
-      final failedRead = restarted.runtime.runWorkspaceAction(
-        record: registry.record,
-        action: 'open',
-      );
-      await observationEntered!.future;
-      final failedReadShutdown = restarted.close();
-      final failedObservation = expectLater(failedRead, throwsStateError);
-      failedReadRelease.complete();
-      await failedObservation;
-      await failedReadShutdown.timeout(const Duration(seconds: 2));
-      final recovered = runner();
-      addTearDown(recovered.close);
-      await recovered.start();
-      expect((await command('status'))['ok'], true);
-      final stopped = await command('execution', {
-        'enabled': false,
-        'scope': null,
-        'settings': <String, dynamic>{},
-      });
-      expect(
-        stopped['result']['view']['execution']['allow_new_entries'],
-        false,
-      );
-      digest = 'f' * 64;
-      expect((await command('status'))['ok'], false);
-      await recovered.close();
-      await expectLater(runner().start(), throwsStateError);
-    },
-  );
-  test(
-    'exact cancellation reconciles uncertainty and fill races without another DELETE',
-    () async {
-      for (final mode in [
-        'cancelled',
-        'unknown',
-        'fill',
-        'partial',
-        'position',
-        'foreign',
-        'wrong_id',
-        'revoked',
-      ]) {
-        final home = await Directory.systemTemp.createTemp('hivra_cancel_');
-        addTearDown(() => home.delete(recursive: true));
-        final files = CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
-        );
-        final provider =
-            _EntryProvider()
-              ..deleteTimeout = mode == 'unknown'
-              ..deleteStaysOpen = mode == 'unknown'
-              ..deleteFillRace = mode == 'fill';
-        if (mode == 'partial') {
-          provider.status = 'PARTIALLY_FILLED';
-          provider.filled = '0.1';
-        }
-        if (mode == 'position') {
-          provider.positionData = [
-            {
-              'symbol': 'BTC-USDT',
-              'positionId': '42',
-              'positionSide': 'LONG',
-              'positionAmt': '0.1',
-              'avgPrice': '96.4',
-            },
-          ];
-        }
-        if (mode == 'foreign') provider.clientIdOverride = 'f' * 40;
-        if (mode == 'revoked') {
-          provider.afterOrderRead = () async {
-            provider.authorized = false;
-          };
-        }
-        final plan = entryPlan();
-        final orderId = mode == 'wrong_id' ? '999' : '2103610529511862272';
-        final payload = jsonEncode({'order_id': orderId, 'plan': plan});
-        final id = BingxMarketDataAdapter.cancelOperationId(plan, orderId);
-        ExternalEffectService effects() => ExternalEffectService(
-          readActiveCapsuleRootHex: () => 'a' * 64,
-          fileStore: files,
-          resolveAdapter: (_) => provider.adapter(),
-        );
-        final service = effects();
-        final prepared = await service.prepare(
-          operationId: id,
-          pluginId: 'hivra.contract.jack-ventura.v1',
-          providerId: 'bingx',
-          accountBindingId: plan['account_id'],
-          effectKind: 'order.entry.cancel',
-          canonicalPayloadJson: payload,
-        );
-        await service.approve(
-          pluginId: prepared.pluginId,
-          operationId: id,
-          approvalEvidenceHashHex: prepared.payloadHashHex,
-        );
-        await service.enqueue(pluginId: prepared.pluginId, operationId: id);
-        final result = await service.process(
-          pluginId: prepared.pluginId,
-          operationId: id,
-        );
-        expect(provider.posts, 0);
-        expect(
-          provider.deletes,
-          ['cancelled', 'unknown', 'fill'].contains(mode) ? 1 : 0,
-          reason: mode,
-        );
-        expect(
-          result.state,
-          ['unknown', 'fill'].contains(mode)
-              ? ExternalEffectState.unresolved
-              : mode == 'cancelled'
-              ? ExternalEffectState.succeeded
-              : ExternalEffectState.terminalFailure,
-          reason: mode,
-        );
-        if (result.state != ExternalEffectState.terminalFailure) {
-          await effects().process(pluginId: prepared.pluginId, operationId: id);
-          expect(
-            provider.deletes,
-            1,
-            reason: 'Restart must not repeat DELETE: $mode',
-          );
-        } else {
-          expect(result.lastErrorCode, 'cancel_not_sent');
-        }
-        if (mode == 'fill') {
-          final observed = await provider.adapter().readEntry(
-            entryEffect(plan),
-          );
-          expect(observed['status'], 'partial');
-          expect(observed['filled_quantity'], 0.1);
-        }
-        expect(
-          provider.deleteParams?['orderId'],
-          provider.deletes == 0 ? null : '2103610529511862272',
-        );
-      }
-    },
-  );
-
-  for (final scheduled in [false, true]) {
-    testWidgets(
-      'workspace tools follow the package schedule capability: $scheduled',
-      (tester) async {
-        tester.view.physicalSize = const Size(1400, 1600);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        final opening = Completer<Map<String, dynamic>>();
-        final actions = <String>[];
-        var hostCalls = 0;
-        final data = {
-          ...view(),
-          'fields': [
-            {
-              'id': 'opaque_option',
-              'label': 'Package option',
-              'type': 'text',
-              'value': 'package value',
-              'advanced': true,
-            },
-          ],
-          'host_connection': {
-            'target': 'vps',
-            'host': 'example.invalid',
-            'installed': true,
-            'health': 'not_started',
-          },
-          'execution': {
-            'allow_new_entries': false,
-            'mode': 'vps',
-            'expires_at_ms': 2000000000000,
-          },
-          'actions': [
-            {'id': 'start', 'label': 'Package inspection'},
-            {
-              'id': 'authorize',
-              'label': 'Package schedule label',
-              'host': 'workspace.start',
-            },
-            {
-              'id': 'halt',
-              'label': 'Package stop label',
-              'host': 'workspace.stop',
-            },
-          ],
-        };
-        await tester.pumpWidget(
-          MaterialApp(
-            home: PluginWorkspaceScreen(
-              capabilities: [
-                'workspace.render',
-                if (scheduled) 'workspace.schedule',
-              ],
-              runWorkspaceAction: (
-                action,
-                settings, {
-                credentials,
-                approvedOrder,
-              }) async {
-                actions.add(action);
-                return action == 'open' ? await opening.future : data;
-              },
-              connectVps:
-                  ({
-                    required host,
-                    required port,
-                    required password,
-                    required trustPeer,
-                  }) async => hostCalls++,
-              useOnline: () async => hostCalls++,
-              configureExecution: ({
-                required enabled,
-                required int? expiresAtMs,
-                int? expectedRevision,
-                bool revoke = false,
-                approvedScope,
-                settings = const {},
-              }) async {
-                hostCalls++;
-                return data;
-              },
-            ),
-          ),
-        );
-        await tester.pump();
-        expect(find.text('Connect VPS'), findsNothing);
-        opening.complete(data);
-        await tester.pumpAndSettle();
-        for (final label in [
-          'Connect VPS',
-          'Restore VPS access',
-          'Use local execution',
-          'Package schedule label',
-          'Package stop label',
-        ]) {
-          expect(find.text(label), scheduled ? findsOneWidget : findsNothing);
-        }
-        expect(find.text('Start VPS cycles'), findsNothing);
-        expect(find.text('Trade online'), findsNothing);
-        expect(
-          find.textContaining('New entries stopped or expired'),
-          scheduled ? findsOneWidget : findsNothing,
-        );
-        await tester.tap(find.text('Package inspection'));
-        await tester.pumpAndSettle();
-        expect(actions, ['open', 'start']);
-        expect(hostCalls, 0);
-        await tester.tap(find.text('Advanced settings'));
-        await tester.pumpAndSettle();
-        expect(find.text('Package option'), findsOneWidget);
-        expect(
-          find.text('Update VPS runtime'),
-          scheduled ? findsOneWidget : findsNothing,
-        );
-        await tester.pumpWidget(const SizedBox());
-        expect(tester.takeException(), isNull);
-      },
-    );
-  }
-
-  for (final remote in [true, false]) {
-    testWidgets(
-      '${remote ? "VPS" : "Local"} status refresh is visible-only and independent of execution',
-      (tester) async {
-        final navigator = GlobalKey<NavigatorState>();
-        var reads = 0;
-        final actions = <String>[];
-        final interval = Duration(seconds: remote ? 60 : 15);
-        tester.binding.handleAppLifecycleStateChanged(
-          AppLifecycleState.resumed,
-        );
-        await tester.pumpWidget(
-          MaterialApp(
-            navigatorKey: navigator,
-            home: PluginWorkspaceScreen(
-              capabilities: const ['workspace.schedule'],
-              runWorkspaceAction: (
-                action,
-                settings, {
-                credentials,
-                approvedOrder,
-              }) async {
-                actions.add(action);
-                reads++;
-                return {
-                  ...view(),
-                  'fields': <dynamic>[],
-                  'execution': {
-                    'allow_new_entries': true,
-                    'mode': remote ? 'vps' : 'local',
-                    'expires_at_ms': 2000000000000,
-                  },
-                  'host_connection': {'target': remote ? 'vps' : 'local'},
-                };
-              },
-            ),
-          ),
-        );
-        await tester.pump();
-        expect(reads, 1);
-        await tester.pump(interval - const Duration(seconds: 1));
-        expect(reads, 1);
-        await tester.pump(const Duration(seconds: 1));
-        await tester.pump();
-        expect(reads, 2);
-        for (final state in [
-          AppLifecycleState.inactive,
-          AppLifecycleState.hidden,
-          AppLifecycleState.paused,
-        ]) {
-          tester.binding.handleAppLifecycleStateChanged(state);
-        }
-        await tester.pump(const Duration(minutes: 2));
-        expect(reads, 2);
-        for (final state in [
-          AppLifecycleState.hidden,
-          AppLifecycleState.inactive,
-          AppLifecycleState.resumed,
-        ]) {
-          tester.binding.handleAppLifecycleStateChanged(state);
-        }
-        await tester.pump();
-        expect(reads, 3);
-        unawaited(
-          navigator.currentState!.push(
-            MaterialPageRoute<void>(
-              builder: (_) => const Scaffold(body: Text('Another screen')),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(minutes: 2));
-        expect(reads, 3);
-        navigator.currentState!.pop();
-        await tester.pump();
-        await tester.pumpAndSettle();
-        expect(
-          ModalRoute.of(
-            tester.element(find.byType(PluginWorkspaceScreen)),
-          )!.isCurrent,
-          isTrue,
-        );
-        await tester.pump(interval);
-        await tester.pump();
-        expect(reads, 4);
-        await tester.pumpWidget(const SizedBox());
-        await tester.pump(const Duration(minutes: 2));
-        expect(reads, 4);
-        expect(actions, List.filled(4, 'open'));
-      },
-    );
-  }
-
-  testWidgets(
-    'VPS status recovers without committing drafts or trusting stale controls',
-    (tester) async {
-      var reads = 0;
-      final retry = Completer<Map<String, dynamic>>();
-      final calls = <String>[];
-      final sent = <Map<String, dynamic>>[];
-      Map<String, dynamic> shown() => {
-        ...view(),
-        'fields': [
-          ...view()['fields'] as List,
-          {'id': 'limit', 'label': 'Limit', 'type': 'number', 'value': 1.0},
-        ],
-        'execution': {
-          'allow_new_entries': false,
-          'mode': 'vps',
-          'expires_at_ms': 2000000000000,
-        },
-        'host_connection': {'target': 'vps', 'health': 'running'},
-        'actions': [
-          {'id': 'inspect', 'label': 'Inspect'},
-          {'id': 'begin', 'label': 'Begin', 'host': 'workspace.start'},
-          {'id': 'effect', 'label': 'Confirm', 'host': 'bingx.order.submit'},
-          {'id': 'halt', 'label': 'Halt', 'host': 'workspace.stop'},
-        ],
-      };
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            capabilities: const ['workspace.schedule'],
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              calls.add(action);
-              sent.add(Map.from(settings));
-              if (action == 'open') {
-                reads++;
-                if (reads == 2) {
-                  throw const SocketException('synthetic-sensitive-endpoint');
-                }
-                if (reads == 3) return retry.future;
-              }
-              return shown();
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final symbol = find.byKey(const ValueKey('plugin-field-symbol'));
-      final limit = find.byKey(const ValueKey('plugin-field-limit'));
-      FilledButton button(String id) => tester.widget<FilledButton>(
-        find.byKey(ValueKey('plugin-action-$id')),
-      );
-      await tester.enterText(symbol, 'XRP-USDT');
-      // An unfinished number must not prevent an independent status read.
-      await tester.enterText(limit, '');
-      final selection = tester.widget<TextField>(symbol).controller!.selection;
-      await tester.pump(const Duration(seconds: 60));
-      await tester.pumpAndSettle();
-      expect(reads, 2);
-      expect(sent, [{}, {}]);
-      expect(find.textContaining('SocketException'), findsNothing);
-      expect(find.textContaining('synthetic-sensitive-endpoint'), findsNothing);
-      expect(find.textContaining('Connection unavailable.'), findsOneWidget);
-      expect(find.textContaining('Last received data'), findsOneWidget);
-      expect(
-        find.textContaining('New entries stopped or expired'),
-        findsNothing,
-      );
-      expect(button('begin').onPressed, isNull);
-      expect(button('effect').onPressed, isNull);
-      expect(button('halt').onPressed, isNotNull);
-      expect(button('inspect').onPressed, isNotNull);
-      expect(find.text('Calculation details'), findsNothing);
-      await tester.tap(find.text('Retry connection'));
-      await tester.pump();
-      expect(reads, 3);
-      expect(button('begin').onPressed, isNull);
-      retry.complete(shown());
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Last received data'), findsNothing);
-      expect(find.text('Retry connection'), findsNothing);
-      expect(tester.widget<TextField>(symbol).controller!.text, 'XRP-USDT');
-      expect(tester.widget<TextField>(symbol).controller!.selection, selection);
-      expect(tester.widget<TextField>(limit).controller!.text, isEmpty);
-      expect(button('begin').onPressed, isNotNull);
-      expect(
-        button('effect').onPressed,
-        isNull,
-        reason: 'Draft is still dirty',
-      );
-      // The next automatic read also keeps the draft and its invalid number.
-      await tester.pump(const Duration(seconds: 60));
-      await tester.pumpAndSettle();
-      expect(reads, 4);
-      expect(tester.widget<TextField>(limit).controller!.text, isEmpty);
-      expect(sent, [{}, {}, {}, {}]);
-      await tester.enterText(limit, '2.5');
-      await tester.tap(find.text('Inspect'));
-      await tester.pumpAndSettle();
-      expect(calls, ['open', 'open', 'open', 'open', 'inspect']);
-      expect(sent.last, {'symbol': 'XRP-USDT', 'limit': 2.5});
-      await tester.pumpWidget(const SizedBox());
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  for (final error in [
-    const SocketException('synthetic-sensitive-endpoint'),
-    TimeoutException('synthetic-sensitive-endpoint'),
-  ]) {
-    testWidgets('initial ${error.runtimeType} has a bounded retry', (
-      tester,
-    ) async {
-      var reads = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              expect(action, 'open');
-              expect(settings, isEmpty);
-              if (++reads == 1) throw error;
+            runWorkspaceAction: (action, settings) async {
+              if (action == 'start') starts++;
               return view();
             },
           ),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('Connection unavailable.'), findsOneWidget);
-      expect(find.textContaining('synthetic-sensitive-endpoint'), findsNothing);
-      await tester.tap(find.text('Retry opening plugin'));
+      await tester.tap(find.text('Connect'));
       await tester.pumpAndSettle();
-      expect(reads, 2);
-      expect(find.text('Independent package'), findsOneWidget);
-      expect(find.textContaining('Connection unavailable.'), findsNothing);
-      await tester.pumpWidget(const SizedBox());
-    });
-  }
-
-  testWidgets(
-    'VPS connection failure stays visible and Start confirms its target',
-    (tester) async {
-      var remote = false;
-      var reads = 0;
-      var grants = 0;
-      Map<String, dynamic> shown() => {
-        ...view(),
-        'fields': <dynamic>[],
-        'host_connection': {
-          'target': remote ? 'vps' : 'local',
-          'host': 'example.invalid',
-          'health': 'not_started',
-        },
-        'schedule': {
-          'action': 'package_cycle',
-          'interval_seconds': 60,
-          'account_id': 'a' * 64,
-          'symbol': 'BTC-USDT',
-          'max_margin': 1,
-          'max_stop_percent': 10,
-        },
-        'actions': [
-          {'id': 'start', 'label': 'Start cycles', 'host': 'workspace.start'},
-        ],
-      };
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            capabilities: const ['workspace.schedule'],
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              reads++;
-              return shown();
-            },
-            configureExecution: ({
-              required enabled,
-              required int? expiresAtMs,
-              int? expectedRevision,
-              bool revoke = false,
-              approvedScope,
-              settings = const {},
-            }) async {
-              expect(enabled, isTrue);
-              expect(approvedScope, shown()['schedule']);
-              grants++;
-              return shown();
-            },
-            connectVps: ({
-              required host,
-              required port,
-              required password,
-              required trustPeer,
-            }) async {
-              expect(host, 'example.invalid');
-              expect(port, 22);
-              expect(password, 'synthetic-password');
-              throw StateError('Synthetic installation failure');
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Connect VPS'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Root password (installation only)'),
-        'synthetic-password',
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Connect securely'));
-      await tester.pumpAndSettle();
+      expect(find.text('Plugin permissions'), findsNWidgets(2));
       expect(
-        find.textContaining('VPS connection was not completed'),
-        findsOneWidget,
+        find.byKey(const ValueKey('plugin-credential-token')),
+        findsNothing,
       );
-      expect(reads, 1);
-      expect(grants, 0);
-      // Confirmation uses the fresh host target, not the previous screen snapshot.
-      remote = true;
-      await tester.tap(find.text('Start cycles'));
-      await tester.pumpAndSettle();
-      expect(find.text('Start VPS LIVE cycles?'), findsOneWidget);
-      expect(
-        find.textContaining('The VPS will continue while Capsule is closed'),
-        findsOneWidget,
-      );
-      expect(find.text('Start local cycles'), findsNothing);
-      expect(grants, 0);
-      await tester.tap(find.text('Start VPS cycles'));
-      await tester.pumpAndSettle();
-      expect(grants, 1);
-      await tester.pumpWidget(const SizedBox());
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'Saved VPS selection reuses its key without a password or Start',
-    (tester) async {
-      var selected = false;
-      var starts = 0;
-      Map<String, dynamic> shown() => {
-        ...view(),
-        'fields': <dynamic>[],
-        'host_connection': {
-          'target': selected ? 'vps' : 'local',
-          'host': 'test.invalid',
-          'port': 2222,
-          'installed': true,
-          'health': 'not_started',
-        },
-      };
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            capabilities: const ['workspace.schedule'],
-            runWorkspaceAction:
-                (action, settings, {credentials, approvedOrder}) async =>
-                    shown(),
-            configureExecution: ({
-              required enabled,
-              required int? expiresAtMs,
-              int? expectedRevision,
-              bool revoke = false,
-              approvedScope,
-              settings = const {},
-            }) async {
-              starts++;
-              return shown();
-            },
-            connectVps: ({
-              required host,
-              required port,
-              required password,
-              required trustPeer,
-            }) async {
-              expect(host, 'test.invalid');
-              expect(port, 2222);
-              expect(password, isEmpty);
-              selected = true;
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Connect VPS'));
-      await tester.pumpAndSettle();
-      expect(selected, true);
-      expect(starts, 0);
-      expect(find.text('Connect your VPS'), findsNothing);
-      expect(find.text('Root password (installation only)'), findsNothing);
-      await tester.pumpWidget(const SizedBox());
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets('failed initial workspace retains VPS access recovery', (
-    tester,
-  ) async {
-    var connected = false;
-    var connections = 0;
-    var grants = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PluginWorkspaceScreen(
-          capabilities: const ['workspace.schedule'],
-          runWorkspaceAction: (
-            action,
-            settings, {
-            credentials,
-            approvedOrder,
-          }) async {
-            expect(action, 'open');
-            if (!connected) throw StateError('Unlock the Capsule VPS key');
-            return view();
-          },
-          connectVps: ({
-            required host,
-            required port,
-            required password,
-            required trustPeer,
-          }) async {
-            expect(host, 'original.test');
-            expect(port, 2222);
-            expect(password, 'synthetic-password');
-            connections++;
-            connected = true;
-          },
-          configureExecution: ({
-            required enabled,
-            required int? expiresAtMs,
-            int? expectedRevision,
-            bool revoke = false,
-            approvedScope,
-            settings = const {},
-          }) async {
-            grants++;
-            return view();
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Use local execution'), findsNothing);
-    expect(find.textContaining('Local execution:'), findsNothing);
-    await tester.tap(find.text('Connect VPS'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(connections, 0);
-    expect(find.textContaining('Unlock the Capsule VPS key'), findsOneWidget);
-    await tester.tap(find.text('Connect VPS'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'VPS IP or hostname'),
-      'original.test',
-    );
-    await tester.enterText(
-      find.widgetWithText(TextFormField, 'SSH port'),
-      '2222',
-    );
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Root password (installation only)'),
-      'synthetic-password',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Connect securely'));
-    await tester.pumpAndSettle();
-    expect(connections, 1);
-    expect(grants, 0);
-    expect(find.text('Independent package'), findsOneWidget);
-    expect(find.textContaining('synthetic-password'), findsNothing);
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets('saved key failure offers explicit repair of the same VPS', (
-    tester,
-  ) async {
-    final passwords = <String>[];
-    var returnedOnline = 0;
-    var grants = 0;
-    final shown = {
-      ...view(),
-      'host_connection': {
-        'target': 'vps',
-        'host': 'original.test',
-        'port': 2222,
-        'installed': true,
-        'health': 'running',
-      },
-    };
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PluginWorkspaceScreen(
-          capabilities: const ['workspace.schedule'],
-          runWorkspaceAction:
-              (action, settings, {credentials, approvedOrder}) async => shown,
-          connectVps: ({
-            required host,
-            required port,
-            required password,
-            required trustPeer,
-          }) async {
-            expect(host, 'original.test');
-            expect(port, 2222);
-            passwords.add(password);
-            if (password.isEmpty) throw const SocketException('Unavailable');
-          },
-          useOnline: () async => returnedOnline++,
-          configureExecution: ({
-            required enabled,
-            required int? expiresAtMs,
-            int? expectedRevision,
-            bool revoke = false,
-            approvedScope,
-            settings = const {},
-          }) async {
-            grants++;
-            return shown;
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Connect VPS'));
-    await tester.pumpAndSettle();
-    expect(passwords, ['']);
-    // An ordinary network failure must not automatically ask for root access.
-    expect(find.byType(AlertDialog), findsNothing);
-    await tester.tap(find.text('Restore VPS access'));
-    await tester.pumpAndSettle();
-    for (final label in ['VPS IP or hostname', 'SSH port']) {
-      expect(
-        tester
-            .widget<TextField>(
-              find.descendant(
-                of: find.widgetWithText(TextFormField, label),
-                matching: find.byType(TextField),
-              ),
-            )
-            .readOnly,
-        isTrue,
-      );
-    }
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(passwords, ['']);
-    await tester.tap(find.text('Restore VPS access'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Root password (installation only)'),
-      'synthetic-repair-password',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Restore securely'));
-    await tester.pumpAndSettle();
-    expect(passwords, ['', 'synthetic-repair-password']);
-    expect(returnedOnline, 0);
-    expect(grants, 0);
-    expect(find.textContaining('synthetic-repair-password'), findsNothing);
-    expect(
-      find.textContaining('Saved VPS connection was not acknowledged'),
-      findsNothing,
-    );
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  for (final failure in ['none', 'return', 'install']) {
-    testWidgets(
-      'VPS runtime update retains the order and ends authority before install: $failure',
-      (tester) async {
-        final calls = <String>[];
-        var returnedOnline = false;
-        var starts = 0;
-        Map<String, dynamic> shown() => {
-          ...view(),
-          'fields': <dynamic>[],
-          'summary': 'Managed order 2106703408299995136',
-          'host_connection': {
-            'target': returnedOnline ? 'local' : 'vps',
-            'host': 'test.invalid',
-            'port': 2222,
-            'installed': true,
-            'health': 'not_started',
-          },
-        };
-        await tester.pumpWidget(
-          MaterialApp(
-            home: PluginWorkspaceScreen(
-              capabilities: const ['workspace.schedule'],
-              runWorkspaceAction:
-                  (action, settings, {credentials, approvedOrder}) async =>
-                      shown(),
-              configureExecution: ({
-                required enabled,
-                required int? expiresAtMs,
-                int? expectedRevision,
-                bool revoke = false,
-                approvedScope,
-                settings = const {},
-              }) async {
-                starts++;
-                return shown();
-              },
-              useOnline: () async {
-                calls.add('return');
-                if (failure == 'return') throw StateError('Lost return ack');
-                returnedOnline = true;
-              },
-              connectVps: ({
-                required host,
-                required port,
-                required password,
-                required trustPeer,
-              }) async {
-                calls.add('install');
-                if (!returnedOnline ||
-                    host != 'test.invalid' ||
-                    port != 2222 ||
-                    password != 'fixture-password') {
-                  throw StateError('Unexpected installation input');
-                }
-                if (failure == 'install') throw StateError('Install failed');
-              },
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Advanced settings'));
-        await tester.pumpAndSettle();
-        final update = find.widgetWithText(TextButton, 'Update VPS runtime');
-        await tester.ensureVisible(update);
-        await tester.tap(update);
-        await tester.pumpAndSettle();
-        expect(
-          find.textContaining('End VPS trading authority'),
-          findsOneWidget,
-        );
-        await tester.tap(find.text('Cancel'));
-        await tester.pumpAndSettle();
-        expect(calls, isEmpty);
-        await tester.tap(update);
-        await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextField).last, 'fixture-password');
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Update securely'));
-        await tester.pumpAndSettle();
-        expect(calls, failure == 'return' ? ['return'] : ['return', 'install']);
-        expect(starts, 0);
-        expect(find.text('Managed order 2106703408299995136'), findsOneWidget);
-        if (failure == 'none') {
-          expect(
-            find.textContaining('VPS connection was not completed'),
-            findsNothing,
-          );
-        } else {
-          expect(
-            find.textContaining('VPS connection was not completed'),
-            findsOneWidget,
-          );
-        }
-        if (failure != 'return') {
-          expect(
-            find.text(
-              'Local execution: keep this app open for scheduled cycles.',
-            ),
-            findsOneWidget,
-          );
-        }
-        await tester.pumpWidget(const SizedBox());
-        expect(tester.takeException(), isNull);
-      },
-    );
-  }
-
-  for (final operation in ['connect', 'restore', 'update']) {
-    testWidgets('VPS password remains usable under keyboard: $operation', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(900, 400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetViewInsets);
-      var connections = 0;
-      var returns = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            capabilities: const ['workspace.schedule'],
-            runWorkspaceAction:
-                (action, settings, {credentials, approvedOrder}) async => {
-                  ...view(),
-                  'host_connection': {
-                    'target': 'vps',
-                    'installed': operation != 'connect',
-                    'host': 'test.example',
-                    'port': 22,
-                  },
-                },
-            connectVps:
-                ({
-                  required host,
-                  required port,
-                  required password,
-                  required trustPeer,
-                }) async => connections++,
-            useOnline: () async => returns++,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      if (operation == 'update') {
-        await tester.tap(find.text('Advanced settings'));
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Update VPS runtime'));
-      }
       await tester.tap(
-        find.text(switch (operation) {
-          'restore' => 'Restore VPS access',
-          'update' => 'Update VPS runtime',
-          _ => 'Connect VPS',
-        }),
+        find.byKey(const ValueKey('plugin-secret-default-token')),
       );
       await tester.pumpAndSettle();
-      final password = find.byWidgetPredicate(
-        (widget) => widget is TextField && widget.obscureText,
-      );
-      await tester.showKeyboard(password);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+      await tester.tap(find.text('Service / account / token').last);
       await tester.pumpAndSettle();
-      final field = tester.renderObject<RenderBox>(password);
-      int visibleHeight() {
-        final bounds = tester.getRect(password);
-        var height = 0;
-        for (var y = bounds.top + 0.5; y < bounds.bottom; y++) {
-          final hit = tester.hitTestOnBinding(Offset(bounds.center.dx, y));
-          if (hit.path.any((entry) => identical(entry.target, field))) {
-            height++;
-          }
-        }
-        return height;
-      }
-
-      for (var i = 0; i < 8 && visibleHeight() < 48; i++) {
-        await tester.dragFrom(const Offset(450, 100), const Offset(0, -70));
-        await tester.pumpAndSettle();
-      }
-      expect(visibleHeight(), greaterThanOrEqualTo(48));
-      expect(connections, 0);
-      expect(returns, 0);
-      await tester.tap(find.text('Cancel'));
+      await tester.tap(find.text('Allow'));
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
-      expect(connections, 0);
-      expect(returns, 0);
-      expect(tester.takeException(), isNull);
+      expect(selected, {
+        'default': {'token': 'ref-token'},
+      });
+      expect(grants, 1);
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+      expect(starts, 1);
+      expect(grants, 2);
+      expect(find.text('Allow'), findsNothing);
       await tester.pumpWidget(const SizedBox());
-    });
-  }
-
-  for (final target in ['local', 'vps']) {
-    testWidgets('Start consent remains readable on short screens: $target', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(900, 400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      var grants = 0;
-      final shown = {
-        ...view(),
-        'fields': <dynamic>[],
-        'host_connection': {'target': target},
-        'schedule': {
-          'action': 'package_cycle',
-          'interval_seconds': 60,
-          'account_id': 'a' * 64,
-          'symbol': 'BTC-USDT',
-          'max_margin': 1,
-          'max_stop_percent': 20,
-        },
-        'actions': [
-          {'id': 'start', 'label': 'Start cycles', 'host': 'workspace.start'},
-        ],
-      };
+    },
+  );
+  testWidgets(
+    'a choice asks the package-selected action through the common executor',
+    (tester) async {
+      final actions = <String>[];
       await tester.pumpWidget(
         MaterialApp(
           home: PluginWorkspaceScreen(
-            capabilities: const ['workspace.schedule'],
-            runWorkspaceAction:
-                (action, settings, {credentials, approvedOrder}) async => shown,
-            configureExecution: ({
-              required enabled,
-              required int? expiresAtMs,
-              int? expectedRevision,
-              bool revoke = false,
-              approvedScope,
-              settings = const {},
-            }) async {
-              grants++;
-              return shown;
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Start cycles'));
-      await tester.pumpAndSettle();
-      // Assert visibility of the final authority explanation, independent of
-      // the dialog's layout/container implementation.
-      final content = tester.widget<Text>(
-        find.textContaining(
-          'Full revocation ends all new automatic trading effects',
-        ),
-      );
-      final paragraph = tester.renderObject<RenderParagraph>(
-        find.byWidget(content),
-      );
-      bool lastLineVisible() {
-        final text = content.data!;
-        final boxes = paragraph.getBoxesForSelection(
-          TextSelection(baseOffset: text.length - 1, extentOffset: text.length),
-        );
-        if (boxes.isEmpty) return false;
-        final point = paragraph.localToGlobal(boxes.last.toRect().center);
-        return tester
-            .hitTestOnBinding(point)
-            .path
-            .any((entry) => identical(entry.target, paragraph));
-      }
-
-      for (var i = 0; i < 8 && !lastLineVisible(); i++) {
-        await tester.dragFrom(
-          tester.getCenter(find.byType(AlertDialog)),
-          const Offset(0, -120),
-        );
-        await tester.pumpAndSettle();
-      }
-      expect(lastLineVisible(), isTrue);
-      expect(grants, 0);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
-      expect(grants, 0);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    });
-  }
-
-  testWidgets('Start requires consent and Stop stays available during reads', (
-    tester,
-  ) async {
-    var enabled = false;
-    var grants = 0;
-    final reading = Completer<void>();
-    Map<String, dynamic> shown() => {
-      ...view(),
-      'fields': <dynamic>[],
-      'schedule': {
-        'action': 'package_cycle',
-        'interval_seconds': 60,
-        'account_id': 'a' * 64,
-        'symbol': 'BTC-USDT',
-        'max_margin': 1,
-        'max_stop_percent': 10,
-      },
-      if (grants > 0)
-        'execution': {'allow_new_entries': enabled, 'expires_at_ms': 200000000},
-      'actions': [
-        {
-          'id': enabled ? 'stop' : 'start',
-          'label': enabled ? 'Stop new entries' : 'Start cycles',
-          'host': enabled ? 'workspace.stop' : 'workspace.start',
-        },
-        {'id': 'read', 'label': 'Read observations'},
-      ],
-    };
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PluginWorkspaceScreen(
-          capabilities: const ['workspace.schedule'],
-          runWorkspaceAction: (
-            action,
-            settings, {
-            credentials,
-            approvedOrder,
-          }) async {
-            expect(credentials, isNull);
-            expect(approvedOrder, isNull);
-            if (action == 'read') await reading.future;
-            return shown();
-          },
-          configureExecution: ({
-            required enabled,
-            required int? expiresAtMs,
-            int? expectedRevision,
-            bool revoke = false,
-            approvedScope,
-            settings = const {},
-          }) async {
-            if (enabled) {
-              expect(approvedScope, shown()['schedule']);
-              grants++;
-            }
-            // Keep the test's host state separate from the parameter.
-            final data = shown();
-            data['execution'] = {
-              'allow_new_entries': enabled,
-              'expires_at_ms': 200000000,
-            };
-            data['actions'] = [
-              {
-                'id': enabled ? 'stop' : 'start',
-                'label': enabled ? 'Stop new entries' : 'Start cycles',
-                'host': enabled ? 'workspace.stop' : 'workspace.start',
-              },
-              {'id': 'read', 'label': 'Read observations'},
-            ];
-            return data;
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Start cycles'));
-    await tester.pumpAndSettle();
-    expect(find.text('Start local LIVE cycles?'), findsOneWidget);
-    expect(grants, 0);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(grants, 0);
-    await tester.tap(find.text('Start cycles'));
-    await tester.pumpAndSettle();
-    enabled = true;
-    await tester.tap(find.byKey(const ValueKey('plugin-confirm-start')));
-    await tester.pumpAndSettle();
-    expect(grants, 1);
-    expect(
-      find.textContaining('No cycle observed in this process'),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Read observations'));
-    await tester.pump();
-    enabled = false;
-    await tester.tap(find.text('Stop new entries'));
-    await tester.pump();
-    expect(
-      find.textContaining('New entries stopped or expired'),
-      findsOneWidget,
-    );
-    reading.complete();
-    await tester.pumpAndSettle();
-    expect(grants, 1);
-    await tester.pumpWidget(const SizedBox());
-    expect(tester.takeException(), isNull);
-  });
-
-  for (final lateRead in ['view', 'error']) {
-    for (final stopAcknowledged in [true, false]) {
-      testWidgets(
-        'Stop owns presentation after late $lateRead; acknowledged=$stopAcknowledged',
-        (tester) async {
-          final reading = Completer<Map<String, dynamic>>();
-          var stops = 0;
-          var starts = 0;
-          Map<String, dynamic> shown(bool enabled) => {
-            ...view(),
-            'fields': <dynamic>[],
-            'execution': {
-              'mode': 'vps',
-              'allow_new_entries': enabled,
-              'expires_at_ms': 200000000,
-            },
-            'actions': [
-              {
-                'id': enabled ? 'stop' : 'start',
-                'label': enabled ? 'Stop new entries' : 'Start cycles',
-                'host': enabled ? 'workspace.stop' : 'workspace.start',
-              },
-              {'id': 'read', 'label': 'Read observations'},
-            ],
-          };
-          await tester.pumpWidget(
-            MaterialApp(
-              home: PluginWorkspaceScreen(
-                capabilities: const ['workspace.schedule'],
-                runWorkspaceAction:
-                    (action, settings, {credentials, approvedOrder}) async =>
-                        action == 'read' ? reading.future : shown(true),
-                configureExecution: ({
-                  required enabled,
-                  required int? expiresAtMs,
-                  int? expectedRevision,
-                  bool revoke = false,
-                  approvedScope,
-                  settings = const {},
-                }) async {
-                  if (enabled) {
-                    starts++;
-                  } else {
-                    stops++;
-                  }
-                  if (!stopAcknowledged) {
-                    throw StateError('Stop acknowledgement unavailable');
-                  }
-                  return shown(false);
-                },
-              ),
-            ),
-          );
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Read observations'));
-          await tester.pump();
-          await tester.tap(find.text('Stop new entries'));
-          await tester.pump();
-          await tester.pump();
-          expect(stops, 1);
-          if (lateRead == 'view') {
-            reading.complete(shown(true));
-          } else {
-            reading.completeError(StateError('Obsolete read failed'));
-          }
-          await tester.pumpAndSettle();
-          if (stopAcknowledged) {
-            expect(find.text('Stop new entries'), findsNothing);
-            expect(find.text('Start cycles'), findsOneWidget);
-            expect(find.text('Retry connection'), findsNothing);
-          } else {
-            expect(find.text('Retry connection'), findsOneWidget);
-            expect(
-              find.textContaining('Stop acknowledgement unavailable'),
-              findsOneWidget,
-            );
-            expect(find.text('Start cycles'), findsNothing);
-          }
-          expect(find.textContaining('Obsolete read failed'), findsNothing);
-          expect(starts, 0);
-          expect(tester.takeException(), isNull);
-          await tester.pumpWidget(const SizedBox());
-        },
-      );
-    }
-  }
-
-  testWidgets('superseded read cannot unlock a newer workspace action', (
-    tester,
-  ) async {
-    final earlier = Completer<Map<String, dynamic>>();
-    final newer = Completer<Map<String, dynamic>>();
-    var reads = 0;
-    Map<String, dynamic> shown(bool enabled) => {
-      ...view(),
-      'fields': <dynamic>[],
-      'execution': {'allow_new_entries': enabled, 'expires_at_ms': 200000000},
-      'actions': [
-        if (enabled)
-          {'id': 'stop', 'label': 'Stop new entries', 'host': 'workspace.stop'},
-        {'id': 'read', 'label': 'Read observations'},
-      ],
-    };
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PluginWorkspaceScreen(
-          capabilities: const ['workspace.schedule'],
-          runWorkspaceAction: (
-            action,
-            settings, {
-            credentials,
-            approvedOrder,
-          }) async {
-            if (action == 'read') {
-              return ++reads == 1 ? earlier.future : newer.future;
-            }
-            return shown(true);
-          },
-          configureExecution:
-              ({
-                required enabled,
-                required int? expiresAtMs,
-                int? expectedRevision,
-                bool revoke = false,
-                approvedScope,
-                settings = const {},
-              }) async => shown(false),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Read observations'));
-    await tester.pump();
-    await tester.tap(find.text('Stop new entries'));
-    await tester.pump();
-    await tester.pump();
-    await tester.tap(find.text('Read observations'));
-    await tester.pump();
-    expect(reads, 2);
-    earlier.complete(shown(true));
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('Stop new entries'), findsNothing);
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey('plugin-action-read')),
-          )
-          .onPressed,
-      isNull,
-    );
-    newer.complete(shown(false));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey('plugin-action-read')),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  test(
-    'scheduled entries use host grants, opaque state and the existing journal',
-    () async {
-      for (final fault in [
-        'none',
-        'stop',
-        'full_revoke',
-        'full_revoke_during_read',
-        'expire',
-        'account',
-        'margin',
-        'loss',
-        'replace',
-        'during_read',
-        'cancel',
-        'cancel_unknown',
-        'cancel_fill',
-        'cancel_unjournaled',
-        'cancel_during_read',
-        'cancel_revoked',
-        'cancel_replaced',
-        'exit',
-        'exit_stop',
-        'exit_full_revoke',
-        'exit_full_revoke_during_read',
-        'exit_unknown',
-        'exit_unjournaled',
-        'exit_replaced',
-        'exit_revoked',
-        'exit_position',
-        'exit_oneway',
-        'exit_removed',
-        'exit_unsafe_evidence',
-        'exit_prior_open',
-        'exit_prior_partial',
-        'exit_prior_filled',
-        'exit_prior_cancelled',
-        'exit_prior_unavailable',
-        'exit_prior_foreign',
-        'exit_prior_replaced',
-        'exit_prior_removed',
-      ]) {
-        final home = await Directory.systemTemp.createTemp('hivra_scheduled_');
-        addTearDown(() => home.delete(recursive: true));
-        final files = CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
-        );
-        final registry = _Registry();
-        final fixture = _EntryProvider();
-        final cancelling = fault.startsWith('cancel');
-        final exiting = fault.startsWith('exit');
-        if (exiting) {
-          fixture.exitMode = true;
-          fixture.status = 'FILLED';
-          fixture.filled = '0.518';
-          fixture.positionData = [
-            {
-              'symbol': 'BTC-USDT',
-              'positionId': '42',
-              'positionSide': 'LONG',
-              'positionAmt': fault == 'exit_position' ? '0.1' : '0.518',
-              'avgPrice': '96.4',
-            },
-          ];
-          fixture.postTimeout = fault == 'exit_unknown';
-          fixture.exitQueryUnavailable = fault == 'exit_unknown';
-          if (['exit_oneway', 'exit_unsafe_evidence'].contains(fault)) {
-            fixture.modeData = {'dualSidePosition': false};
-            fixture.positionSide = 'BOTH';
-          }
-          fixture.unsafeExit = fault == 'exit_unsafe_evidence';
-        }
-        if (cancelling) {
-          fixture.deleteTimeout = fault == 'cancel_unknown';
-          fixture.deleteStaysOpen = fault == 'cancel_unknown';
-          fixture.deleteFillRace = fault == 'cancel_fill';
-        }
-        final plan = entryPlan();
-        final priorFilled = fault == 'exit_prior_filled';
-        final exitQuantity = priorFilled ? 0.418 : 0.518;
-        if (priorFilled) {
-          fixture.positionData[0]['positionAmt'] = '$exitQuantity';
-          fixture.exitQuantity = '$exitQuantity';
-        }
-        final exitPlan = {
-          'entry_plan': plan,
-          'position_id': '42',
-          'quantity': exitQuantity,
-          'average_price': 96.4,
-          'price': 105.0,
-          'prepared_at_ms': fixture.now,
-          'expires_at_ms': fixture.now + 60000,
-        };
-        final effectRequest = {
-          'kind':
-              exiting
-                  ? 'position.exit.place'
-                  : cancelling
-                  ? 'order.entry.cancel'
-                  : 'order.entry.place',
-          'provider': 'bingx',
-          'plan': exiting ? exitPlan : plan,
-          if (cancelling) 'order_id': '2103610529511862272',
-        };
-        final owner = 'a' * 64;
-        var digest = 'b' * 64;
-        final scope = {
-          'action': 'package_cycle',
-          'interval_seconds': 60,
-          'account_id': plan['account_id'],
-          'symbol': 'BTC-USDT',
-          'max_margin': 1.0,
-          'max_stop_percent': 20.0,
-        };
-        registry.executionBinding =
-            () => PluginRuntimeBinding.externalPackage(
-              packageId: registry.record.id,
-              packageVersion: '0.1.0',
-              packageKind: 'zip',
-              packageDigestHex: digest,
-              contractKind: pluginWorkspaceContractKind,
-              capabilities: [
-                'workspace.render',
-                'workspace.continue',
-                'workspace.schedule',
-                'state.plugin.read_write',
-                'order.entry.place',
-                if (fault != 'cancel_revoked') 'order.entry.cancel',
-                'order.snapshot.read',
-                'position.snapshot.read',
-                if (fault != 'exit_revoked') 'position.exit.place',
-                'market.candles.read',
-              ],
-            );
-        final host = PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding:
-              (_) => registry.resolveRuntimeBinding(registry.record.pluginId!),
-          resolveRuntimeInvoke: (request, _) async {
-            final action = request.args['action'];
-            final previous = request.args['state'] as Map?;
-            var sent = previous?['unrelated_bundle'] == true;
-            final requests = <Map<String, dynamic>>[];
-            if (action == 'package_send') {
-              sent = !cancelling;
-              requests.add(effectRequest);
-            }
-            if (cancelling && action == 'lifecycle') {
-              // An unrelated package shape decides from normalized evidence,
-              // not a host inspection of its private state.
-              sent =
-                  (request.args['snapshot'] as Map)['entry']['status'] !=
-                  'open';
-            }
-            if (cancelling && action == 'package_cycle' && sent) {
-              requests.add({
-                'kind': 'order.snapshot.read',
-                'scope': 'lifecycle',
-                'provider': 'bingx',
-                'plan': plan,
-              });
-            }
-            if (action == 'validate_entry' &&
-                request.args['snapshot'] == null) {
-              requests.add({
-                'kind': 'market.candles.read',
-                'provider': 'bingx',
-                'symbol': 'BTC-USDT',
-                'timeframe': '5m',
-                'limit': 600,
-              });
-            }
-            final presentation = {
-              ...view(),
-              'schedule': scope,
-              'confirmation':
-                  action == 'package_cycle' && !sent ? effectRequest : null,
-              'actions': [
-                {
-                  'id': 'package_send',
-                  'label': 'Entry',
-                  'host': 'bingx.order.submit',
-                },
-              ],
-            };
-            expect(jsonEncode(request.args), isNot(contains('test-secret')));
-            return PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'manifest_module_path',
-              moduleDigestHex: 'e' * 64,
-              invokeDigestHex: 'f' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-              semanticResult: {
-                'state': {'unrelated_bundle': sent},
-                'view': presentation,
-                'requests': requests,
-              },
-            );
-          },
-        );
-        PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
-          registry: registry,
-          pluginHostApi: host,
-          fileStore: files,
-          market: fixture.adapter(),
-          scheduleTimers: false,
-          readActiveCapsuleRootHex: () => owner,
-          readCredentials:
-              ({required owner, required pluginId}) async => jsonEncode({
-                'api_key': 'test-key',
-                'secret_key': 'test-secret',
-              }),
-          writeCredentials:
-              ({required owner, required pluginId, required value}) async =>
-                  fail('No credential write'),
-        );
-        final executor = runtime();
-        await expectLater(
-          executor.runScheduledWorkspaceCycle(registry.record),
-          throwsStateError,
-        );
-        await executor.setWorkspaceExecution(
-          record: registry.record,
-          expiresAtMs: null,
-          expectedRevision:
-              (await executor.readWorkspaceExecution(
-                    registry.record,
-                    enforceHost: false,
-                  ))?["revision"]
-                  as int?,
-          enabled: true,
-          approvedScope: scope,
-        );
-        final directory = await files.capsuleDirForHex(owner);
-        if ((cancelling || exiting) &&
-            !['cancel_unjournaled', 'exit_unjournaled'].contains(fault)) {
-          final keys = plan.keys.toList()..sort();
-          await ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => null,
-          ).prepare(
-            operationId: BingxMarketDataAdapter.entryOperationId(plan),
-            pluginId: registry.record.pluginId!,
-            providerId: 'bingx',
-            accountBindingId: plan['account_id'],
-            effectKind: 'order.entry.place',
-            canonicalPayloadJson: jsonEncode({
-              for (final k in keys) k: plan[k],
-            }),
-          );
-        }
-        if (fault.startsWith('exit_prior_')) {
-          final previous = {...exitPlan, 'quantity': 0.1, 'price': 106.0};
-          final previousId = BingxMarketDataAdapter.exitOperationId(previous);
-          final previousClient = previousId.substring(0, 40);
-          fixture.exitOrders[previousClient] = {
-            'orderID': '2103610529511862274',
-            'symbol': fault == 'exit_prior_foreign' ? 'DASH-USDT' : 'BTC-USDT',
-            'clientOrderId': previousClient,
-            'side': 'SELL',
-            'positionSide': 'LONG',
-            'type': 'LIMIT',
-            'origQty': '0.1',
-            'price': '106.0',
-            'executedQty':
-                priorFilled
-                    ? '0.1'
-                    : fault == 'exit_prior_partial'
-                    ? '0.05'
-                    : '0',
-            'avgPrice':
-                priorFilled || fault == 'exit_prior_partial' ? '106.0' : '0',
-            'status':
-                priorFilled
-                    ? 'FILLED'
-                    : [
-                      'exit_prior_cancelled',
-                      'exit_prior_replaced',
-                      'exit_prior_removed',
-                    ].contains(fault)
-                    ? 'CANCELED'
-                    : fault == 'exit_prior_partial'
-                    ? 'PARTIALLY_FILLED'
-                    : 'NEW',
-          };
-          if (fault == 'exit_prior_unavailable') {
-            fixture.exitOrders[previousClient] = null;
-          }
-          if (fault == 'exit_prior_replaced') {
-            fixture.afterExitRead = () => digest = 'c' * 64;
-          }
-          if (fault == 'exit_prior_removed') {
-            fixture.afterExitRead = () => registry.installed = false;
-          }
-          final keys = previous.keys.toList()..sort();
-          await ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => null,
-          ).prepare(
-            operationId: previousId,
-            pluginId: registry.record.pluginId!,
-            providerId: 'bingx',
-            accountBindingId: plan['account_id'],
-            effectKind: 'position.exit.place',
-            canonicalPayloadJson: jsonEncode({
-              for (final k in keys) k: previous[k],
-            }),
-          );
-        }
-        Future<void> revoke() async {
-          final saved =
-              jsonDecode(
-                    (await files.readPluginState(
-                      directory,
-                      registry.record.pluginId!,
-                      'workspace-execution.v1.json',
-                    ))!,
-                  )
-                  as Map;
-          await files.writePluginState(
-            directory,
-            registry.record.pluginId!,
-            'workspace-execution.v1.json',
-            jsonEncode({
-              ...saved,
-              'allow_new_entries': false,
-              'revision': (saved['revision'] as int) + 1,
-            }),
-          );
-        }
-
-        if (fault == 'stop' ||
-            fault == 'exit_stop' ||
-            fault == 'full_revoke' ||
-            fault == 'exit_full_revoke') {
-          await executor.setWorkspaceExecution(
-            record: registry.record,
-            expiresAtMs: null,
-            expectedRevision:
-                (await executor.readWorkspaceExecution(
-                      registry.record,
-                      enforceHost: false,
-                    ))?["revision"]
-                    as int?,
-            enabled: false,
-            revoke: fault.contains('full_revoke'),
-          );
-        }
-        if (fault == 'expire') {
-          final saved =
-              jsonDecode(
-                    (await files.readPluginState(
-                      directory,
-                      registry.record.pluginId!,
-                      'workspace-execution.v1.json',
-                    ))!,
-                  )
-                  as Map;
-          await files.writePluginState(
-            directory,
-            registry.record.pluginId!,
-            'workspace-execution.v1.json',
-            jsonEncode({...saved, 'expires_at_ms': 1}),
-          );
-        }
-        if (fault == 'account') plan['account_id'] = 'd' * 64;
-        if (fault == 'margin') plan['margin'] = 2.0;
-        if (fault == 'loss') plan['stop_price'] = 90.0;
-        if (fault == 'replace') digest = 'c' * 64;
-        if (fault == 'during_read') fixture.beforeMarketRead = revoke;
-        Future<Map<String, dynamic>>? pendingFullRevoke;
-        Future<void> revokeAll() async {
-          pendingFullRevoke = executor.setWorkspaceExecution(
-            record: registry.record,
-            enabled: false,
-            expiresAtMs: null,
-            revoke: true,
-          );
-          // The concurrent command persists revocation before waiting for the
-          // current read to drain. Do not await its final status inside that read.
-          for (var i = 0; i < 1000; i++) {
-            final saved = await executor.readWorkspaceExecution(
-              registry.record,
-            );
-            if (saved?['revoked'] == true) return;
-            await Future<void>.delayed(const Duration(milliseconds: 1));
-          }
-          fail(
-            'Full revocation did not become durable before provider dispatch',
-          );
-        }
-
-        if (fault == 'full_revoke_during_read') {
-          fixture.beforeMarketRead = revokeAll;
-        }
-        if (fault == 'exit_full_revoke_during_read') {
-          fixture.afterModeRead = revokeAll;
-        }
-        if (fault == 'cancel_during_read') fixture.afterOrderRead = revoke;
-        if (fault == 'cancel_replaced') {
-          fixture.afterOrderRead = () async {
-            digest = 'c' * 64;
-          };
-        }
-        if (fault == 'exit_replaced') {
-          fixture.afterModeRead = () => digest = 'c' * 64;
-        }
-        if (fault == 'exit_removed') {
-          fixture.afterModeRead = () => registry.installed = false;
-        }
-        if ([
-          'account',
-          'margin',
-          'loss',
-          'replace',
-          'cancel_unjournaled',
-          'cancel_revoked',
-          'cancel_during_read',
-          'cancel_replaced',
-          'exit_unjournaled',
-          'exit_revoked',
-          'exit_replaced',
-          'exit_unknown',
-          'exit_removed',
-          'exit_unsafe_evidence',
-          'exit_prior_open',
-          'exit_prior_partial',
-          'exit_prior_unavailable',
-          'exit_prior_foreign',
-          'exit_prior_replaced',
-          'exit_prior_removed',
-        ].contains(fault)) {
-          await expectLater(
-            executor.runScheduledWorkspaceCycle(registry.record),
-            throwsStateError,
-            reason: fault,
-          );
-        } else {
-          await executor.runScheduledWorkspaceCycle(registry.record);
-        }
-        if (pendingFullRevoke != null) await pendingFullRevoke;
-        if (fault.contains('full_revoke')) {
-          expect(
-            (await executor.readWorkspaceExecution(
-              registry.record,
-            ))!['revoked'],
-            true,
-          );
-          expect(
-            (await executor.readWorkspaceExecution(
-              registry.record,
-            ))!['allow_new_entries'],
-            false,
-          );
-        }
-        expect(
-          fixture.posts,
-          [
-                'none',
-                'exit',
-                'exit_stop',
-                'exit_unknown',
-                'exit_oneway',
-                'exit_unsafe_evidence',
-                'exit_prior_filled',
-                'exit_prior_cancelled',
-              ].contains(fault)
-              ? 1
-              : 0,
-          reason: fault,
-        );
-        if ([
-          'exit',
-          'exit_stop',
-          'exit_unknown',
-          'exit_oneway',
-          'exit_unsafe_evidence',
-        ].contains(fault)) {
-          expect(fixture.postParams!['side'], 'SELL');
-          final oneWay = [
-            'exit_oneway',
-            'exit_unsafe_evidence',
-          ].contains(fault);
-          expect(fixture.postParams!['positionSide'], oneWay ? 'BOTH' : 'LONG');
-          expect(fixture.postParams!['reduceOnly'], oneWay ? 'true' : null);
-          expect(fixture.postParams!.containsKey('closePosition'), false);
-          expect(fixture.postParams!['positionId'], '42');
-          final journal = ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => fixture.adapter(),
-          );
-          final operation = (await journal.list(
-            pluginId: registry.record.pluginId!,
-          )).singleWhere((o) => o.effectKind == 'position.exit.place');
-          expect(
-            operation.state,
-            ['exit_unknown', 'exit_unsafe_evidence'].contains(fault)
-                ? ExternalEffectState.unresolved
-                : ExternalEffectState.succeeded,
-          );
-          fixture.exitQueryUnavailable = false;
-          fixture.unsafeExit = false;
-          await journal.process(
-            pluginId: operation.pluginId,
-            operationId: operation.operationId,
-          );
-          expect(
-            fixture.posts,
-            1,
-            reason: 'Restart reconciles the same exit without another POST',
-          );
-        }
-        expect(
-          fixture.deletes,
-          ['cancel', 'cancel_unknown', 'cancel_fill'].contains(fault) ? 1 : 0,
-          reason: fault,
-        );
-        if (fault.startsWith('exit_prior_')) {
-          expect(
-            fixture.exitOrderReads,
-            greaterThanOrEqualTo(1),
-            reason: fault,
-          );
-          if (['exit_prior_filled', 'exit_prior_cancelled'].contains(fault)) {
-            fixture.exitOrders.updateAll((_, _) => null);
-            await files.writePluginState(
-              directory,
-              registry.record.pluginId!,
-              'workspace.v1.json',
-              jsonEncode({'unrelated_bundle': false}),
-            );
-            await runtime().runScheduledWorkspaceCycle(registry.record);
-            expect(
-              fixture.posts,
-              1,
-              reason:
-                  'Lost private state replays the exact exit without another POST, even if older provider history is unavailable',
-            );
-          }
-          expect(fixture.deletes, 0, reason: 'No broad exit cancellation');
-          expect(
-            fixture.postParams?['quantity'],
-            ['exit_prior_filled', 'exit_prior_cancelled'].contains(fault)
-                ? '$exitQuantity'
-                : null,
-            reason: fault,
-          );
-        }
-        if (['cancel', 'cancel_unknown', 'cancel_fill'].contains(fault)) {
-          await runtime().runScheduledWorkspaceCycle(registry.record);
-          expect(
-            fixture.deletes,
-            1,
-            reason: 'Reopen must reconcile, not repeat cancellation',
-          );
-          expect(fixture.posts, 0);
-          final operations = await ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => null,
-          ).list(pluginId: registry.record.pluginId!);
-          expect(
-            operations
-                .where((o) => o.effectKind == 'order.entry.cancel')
-                .single
-                .state,
-            fault == 'cancel'
-                ? ExternalEffectState.succeeded
-                : ExternalEffectState.unresolved,
-          );
-          if (fault == 'cancel_fill') {
-            fixture.status = 'FILLED';
-            fixture.filled = '0.518';
-            await runtime().runScheduledWorkspaceCycle(registry.record);
-            final resolved = await ExternalEffectService(
-              readActiveCapsuleRootHex: () => owner,
-              fileStore: files,
-              resolveAdapter: (_) => null,
-            ).list(pluginId: registry.record.pluginId!);
-            expect(
-              resolved
-                  .where((o) => o.effectKind == 'order.entry.cancel')
-                  .single
-                  .state,
-              ExternalEffectState.succeeded,
-            );
-            expect(fixture.deletes, 1);
-            expect(fixture.posts, 0);
-          }
-        }
-        if (fault == 'none') {
-          await runtime().runScheduledWorkspaceCycle(registry.record);
-          expect(
-            fixture.posts,
-            1,
-            reason: 'Restart must not duplicate an entry',
-          );
-          final journal = ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => null,
-          );
-          expect(
-            (await journal.list(pluginId: registry.record.pluginId!)).length,
-            1,
-          );
-          expect(
-            await files.readPluginState(
-              directory,
-              registry.record.pluginId!,
-              'workspace.v1.json',
-            ),
-            '{"unrelated_bundle":true}',
-          );
-          await executor.setWorkspaceExecution(
-            record: registry.record,
-            expiresAtMs: null,
-            expectedRevision:
-                (await executor.readWorkspaceExecution(
-                      registry.record,
-                      enforceHost: false,
-                    ))?["revision"]
-                    as int?,
-            enabled: false,
-          );
-          final saved = await files.readPluginState(
-            directory,
-            registry.record.pluginId!,
-            'workspace-execution.v1.json',
-          );
-          expect(jsonDecode(saved!)['allow_new_entries'], false);
-          expect(saved, isNot(contains('test-secret')));
-        }
-      }
-    },
-  );
-  test(
-    'lifecycle evidence validates grants, opaque-state completion and replacement before retention',
-    () async {
-      for (final fault in [
-        'none',
-        'denied',
-        'revoked',
-        'replaced',
-        'capsule',
-        'closed',
-        'retirement_foreign',
-        'retirement_nonflat',
-        'retirement_open',
-        'retirement_wrong_action',
-        'closed_replaced',
-        'closed_removed',
-        'closed_journal_write_failure',
-        'closed_state_write_failure',
-      ]) {
-        final home = await Directory.systemTemp.createTemp(
-          'hivra_lifecycle_scope_',
-        );
-        addTearDown(() => home.delete(recursive: true));
-        final writes = _CompletionWrites();
-        final files = CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
-          atomicWrites: writes,
-        );
-        final registry = _Registry();
-        var owner = 'a' * 64;
-        var digest = 'b' * 64;
-        var positionGrant = fault != 'denied';
-        final fixture = _EntryProvider();
-        final plan = entryPlan();
-        final keys = plan.keys.toList()..sort();
-        final operationId = BingxMarketDataAdapter.entryOperationId(plan);
-        final effects = ExternalEffectService(
-          readActiveCapsuleRootHex: () => owner,
-          fileStore: files,
-          resolveAdapter: (_) => fixture.adapter(),
-        );
-        final operation = await effects.prepare(
-          operationId: operationId,
-          pluginId: registry.record.pluginId!,
-          providerId: 'bingx',
-          accountBindingId: plan['account_id'] as String,
-          effectKind: 'order.entry.place',
-          canonicalPayloadJson: jsonEncode({
-            for (final key in keys) key: plan[key],
-          }),
-        );
-        await effects.approve(
-          pluginId: registry.record.pluginId!,
-          operationId: operationId,
-          approvalEvidenceHashHex: operation.payloadHashHex,
-        );
-        await effects.enqueue(
-          pluginId: registry.record.pluginId!,
-          operationId: operationId,
-        );
-        await effects.process(
-          pluginId: registry.record.pluginId!,
-          operationId: operationId,
-        );
-        fixture.posts = 0;
-        writes.failJournal = fault == 'closed_journal_write_failure';
-        writes.failClosedState = fault == 'closed_state_write_failure';
-        final completing =
-            fault == 'closed' ||
-            fault.startsWith('retirement_') ||
-            fault.startsWith('closed_');
-        if (completing && fault != 'retirement_open') {
-          fixture.status = 'FILLED';
-          fixture.filled = '0.518';
-        }
-        if (fault == 'retirement_nonflat') {
-          fixture.positionData = [
-            {
-              'symbol': 'BTC-USDT',
-              'positionId': '123',
-              'positionSide': 'LONG',
-              'positionAmt': '0.518',
-              'avgPrice': '96.4',
-            },
-          ];
-        }
-        fixture.afterOpenOrdersRead = () {
-          if (fault == 'revoked') positionGrant = false;
-          if (fault == 'replaced') digest = 'c' * 64;
-          if (fault == 'capsule') owner = 'd' * 64;
-          if (fault == 'closed_replaced') digest = 'c' * 64;
-          if (fault == 'closed_removed') registry.installed = false;
-        };
-        Map<String, dynamic>? admitted;
-        final host = PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding:
-              (_) async => PluginRuntimeBinding.externalPackage(
-                packageId: registry.record.id,
-                packageVersion: '1.0.0',
-                packageKind: 'zip',
-                packageDigestHex: digest,
-                contractKind: pluginWorkspaceContractKind,
-                capabilities: [
-                  'workspace.render',
-                  'workspace.continue',
-                  'state.plugin.read_write',
-                  'order.snapshot.read',
-                  if (positionGrant) 'position.snapshot.read',
-                ],
-              ),
-          resolveRuntimeInvoke: (request, binding) async {
-            if (request.args['action'] == 'lifecycle') {
-              admitted = Map<String, dynamic>.from(
-                request.args['snapshot'] as Map,
-              );
-            }
-            return PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'manifest_module_path',
-              moduleDigestHex: 'e' * 64,
-              invokeDigestHex: 'f' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-              semanticResult: {
-                'state': {
-                  ...?request.args['state'] as Map?,
-                  'opaque': [1, 2, 3],
-                  if (request.args['action'] == 'lifecycle') 'closed': true,
-                },
-                'view': view(),
-                if (completing &&
-                    (request.args['action'] == 'lifecycle' ||
-                        fault == 'retirement_wrong_action'))
-                  'retired_entry':
-                      fault == 'retirement_foreign'
-                          ? {...plan, 'symbol': 'DASH-USDT'}
-                          : plan,
-                'requests':
-                    request.args['action'] == 'observe_position'
-                        ? [
-                          {
-                            'kind': 'order.snapshot.read',
-                            'scope': 'lifecycle',
-                            'provider': 'bingx',
-                            'plan': plan,
-                          },
-                        ]
-                        : [],
-              },
-            );
-          },
-        );
-        final runtime = PluginWorkspaceRuntime(
-          registry: registry,
-          pluginHostApi: host,
-          fileStore: files,
-          market: fixture.adapter(),
-          readActiveCapsuleRootHex: () => owner,
-          readCredentials:
-              ({required owner, required pluginId}) async => jsonEncode({
-                'api_key': 'test-key',
-                'secret_key': 'test-secret',
-              }),
-          writeCredentials:
-              ({required owner, required pluginId, required value}) async =>
-                  fail('No credential writes are authorized'),
-        );
-        final observation = runtime.runWorkspaceAction(
-          record: registry.record,
-          action: 'observe_position',
-        );
-        if (fault == 'none' || fault == 'closed') {
-          await observation;
-          expect(admitted?['account_id'], plan['account_id']);
-          expect(admitted?['positions'], isEmpty);
-          expect(
-            (admitted?['entry'] as Map)['order_id'],
-            '2103610529511862272',
-          );
-          expect(jsonEncode(admitted), isNot(contains('test-secret')));
-        } else {
-          await expectLater(observation, throwsStateError);
-          if (![
-            'retirement_foreign',
-            'retirement_nonflat',
-            'retirement_open',
-            'closed_journal_write_failure',
-            'closed_state_write_failure',
-          ].contains(fault)) {
-            expect(admitted, isNull, reason: fault);
-          }
-        }
-        expect(fixture.posts, 0, reason: fault);
-        final retained = await ExternalEffectService(
-          readActiveCapsuleRootHex: () => 'a' * 64,
-          fileStore: files,
-          resolveAdapter: (_) => fixture.adapter(),
-        ).list(pluginId: registry.record.pluginId!);
-        expect(
-          retained.single.completedGroup,
-          ['closed', 'closed_state_write_failure'].contains(fault)
-              ? operationId
-              : null,
-          reason: fault,
-        );
-        if (completing) {
-          final raw = await files.readPluginState(
-            await files.capsuleDirForHex('a' * 64),
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          );
-          expect(
-            raw == null ? null : (jsonDecode(raw) as Map)['closed'],
-            fault == 'closed' ? true : null,
-            reason: fault,
-          );
-        }
-        if (fault.endsWith('_write_failure')) {
-          final beforeRetry = retained.single.revision;
-          await runtime.runWorkspaceAction(
-            record: registry.record,
-            action: 'observe_position',
-          );
-          final afterRetry = await effects.list(
-            pluginId: registry.record.pluginId!,
-          );
-          expect(afterRetry.single.completedGroup, operationId);
-          if (fault == 'closed_state_write_failure') {
-            expect(afterRetry.single.revision, beforeRetry);
-          }
-          final saved = await files.readPluginState(
-            await files.capsuleDirForHex(owner),
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          );
-          expect((jsonDecode(saved!) as Map)['closed'], true);
-          expect(fixture.posts, 0);
-        }
-      }
-    },
-  );
-  test(
-    'workspace executor compiles and runs without Flutter or a platform vault',
-    () async {
-      final output = await Directory.systemTemp.createTemp(
-        'hivra_headless_binary_',
-      );
-      addTearDown(() => output.delete(recursive: true));
-      final executable =
-          '${output.path}/bundle/bin/plugin_workspace_headless_probe';
-      final compiled = await Process.run('dart', [
-        'build',
-        'cli',
-        '--target',
-        'test/fixtures/plugin_workspace_headless_probe.dart',
-        '--output',
-        output.path,
-      ]);
-      expect(
-        compiled.exitCode,
-        0,
-        reason: '${compiled.stdout}\n${compiled.stderr}',
-      );
-      final checked = await Process.run(executable, []);
-      expect(
-        checked.exitCode,
-        0,
-        reason: '${checked.stdout}\n${checked.stderr}',
-      );
-      expect(checked.stdout, contains('headless workspace PASS'));
-    },
-  );
-  test(
-    'lifecycle observation is exact, bounded and read-only; failure is not flat',
-    () async {
-      final fixture =
-          _EntryProvider()
-            ..status = 'FILLED'
-            ..filled = '0.518'
-            ..positionData = [
-              {
-                'symbol': 'BTC-USDT',
-                'positionId': '123',
-                'positionSide': 'LONG',
-                'positionAmt': '0.518',
-                'avgPrice': '96.4',
-              },
-            ];
-      final effect = entryEffect(entryPlan());
-      final observed = await fixture.adapter().readLifecycle(effect);
-      expect((observed['entry'] as Map)['status'], 'filled');
-      expect(observed['positions'], [
-        {
-          'position_id': '123',
-          'side': 'long',
-          'quantity': 0.518,
-          'average_price': 96.4,
-        },
-      ]);
-      expect(observed['orders'], isEmpty);
-      for (final malformed in [
-        null,
-        {},
-        [
-          {'symbol': 'ETH-USDT', 'positionAmt': '0'},
-        ],
-        [
-          {'symbol': 'BTC-USDT', 'positionAmt': 'NaN'},
-        ],
-        [
-          {'symbol': 'BTC-USDT', 'positionAmt': '1'},
-        ],
-        List.generate(65, (_) => {'symbol': 'BTC-USDT', 'positionAmt': '0'}),
-        [fixture.positionData.single, fixture.positionData.single],
-      ]) {
-        fixture.positionData = malformed;
-        await expectLater(
-          fixture.adapter().readLifecycle(effect),
-          throwsFormatException,
-        );
-      }
-      fixture.positionData = [];
-      expect(
-        (await fixture.adapter().readLifecycle(effect))['positions'],
-        isEmpty,
-      );
-      fixture.positionData = [
-        {
-          'symbol': 'BTC-USDT',
-          'positionId': '124',
-          'positionSide': 'BOTH',
-          'positionAmt': '-0.1',
-          'avgPrice': '100',
-        },
-      ];
-      expect((await fixture.adapter().readLifecycle(effect))['positions'], [
-        {
-          'position_id': '124',
-          'side': 'short',
-          'quantity': 0.1,
-          'average_price': 100,
-        },
-      ]);
-      fixture.afterOpenOrdersRead = () => fixture.now += 60001;
-      await expectLater(
-        fixture.adapter().readLifecycle(effect),
-        throwsStateError,
-      );
-      expect(fixture.posts, 0);
-    },
-  );
-  test('entry identity binds the complete plan, independent of map order', () {
-    final plan = entryPlan();
-    final id = BingxMarketDataAdapter.entryOperationId(plan);
-    expect(
-      BingxMarketDataAdapter.entryOperationId(
-        Map.fromEntries(plan.entries.toList().reversed),
-      ),
-      id,
-    );
-    for (final field in [
-      'price',
-      'quantity',
-      'stop_price',
-      'margin',
-      'leverage',
-      'prepared_at_ms',
-      'expires_at_ms',
-    ]) {
-      final changed = {...plan, field: (plan[field] as num) + 1};
-      expect(BingxMarketDataAdapter.entryOperationId(changed), isNot(id));
-    }
-  });
-
-  test(
-    'workspace effect approval, package pinning and reinstall use one durable operation',
-    () async {
-      const placementAction = 'confirm_package_entry';
-      const preparationAction = 'update_plan';
-      const completionAction = 'finish_selected_plan';
-      for (final mode in [
-        'normal',
-        'normal_15m',
-        'normal_1m',
-        'denied',
-        'replaced',
-        'not_sent',
-        'missing_evidence',
-        'foreign_evidence',
-        'nested_evidence',
-        'market_denied',
-        'evidence_replaced',
-      ]) {
-        final home = await Directory.systemTemp.createTemp(
-          'hivra_workspace_entry_',
-        );
-        addTearDown(() => home.delete(recursive: true));
-        final files = CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
-        );
-        final registry = _Registry();
-        final vault = _Vault();
-        var owner = 'a' * 64;
-        final plan = entryPlan();
-        final request = {
-          'kind': 'order.entry.place',
-          'provider': 'bingx',
-          'plan': plan,
-        };
-        var packageDigest = 'c' * 64;
-        var orderReadGrant = true;
-        var listRequest = openOrdersRequest();
-        var listAdmissions = 0;
-        String? recoveryFault;
-        var recoveryAdmissions = 0;
-        final recoverySnapshots = <Map>[];
-        final validationSnapshots = <Map>[];
-        final fixture = _EntryProvider();
-        if (mode == 'normal_15m') {
-          fixture.evidenceTimeframe = '15m';
-          fixture.evidenceLimit = 49;
-        }
-        if (mode == 'normal_1m') {
-          fixture.evidenceTimeframe = '1m';
-          plan['timeframe'] = '1m';
-        }
-        if (mode == 'not_sent') fixture.existingOrder = true;
-        if (mode == 'replaced') {
-          fixture.afterModeRead = () => packageDigest = 'f' * 64;
-        }
-        if (mode == 'evidence_replaced') {
-          fixture.afterMarketRead = () => packageDigest = 'f' * 64;
-        }
-        final host = PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding:
-              (_) async => PluginRuntimeBinding.externalPackage(
-                packageId: registry.record.id,
-                packageVersion: '0.1.0',
-                packageKind: 'zip',
-                packageDigestHex: packageDigest,
-                contractKind: pluginWorkspaceContractKind,
-                capabilities: [
-                  'workspace.render',
-                  'workspace.continue',
-                  'state.plugin.read_write',
-                  if (orderReadGrant) 'order.snapshot.read',
-                  if (mode != 'denied') 'order.entry.place',
-                  if (mode != 'market_denied') 'market.candles.read',
-                ],
-              ),
-          resolveRuntimeInvoke: (call, _) async {
-            final state = Map<String, dynamic>.from(
-              (call.args['state'] as Map?)?['package_state'] as Map? ??
-                  {
-                    'account': {'account_id': plan['account_id']},
-                    'settings': {'symbol': 'BTC-USDT'},
-                  },
-            );
-            final action = call.args['action'];
-            final requests = <Map<String, dynamic>>[];
-            if (action == 'open' &&
-                (state['entry'] as Map?)?['attempted'] != true) {
-              requests.add({
-                'kind': 'order.snapshot.read',
-                'scope': 'durable',
-                'provider': 'bingx',
-                'account_id': plan['account_id'],
-              });
-            }
-            if (action == placementAction) {
-              state['entry'] = {'plan': plan, 'attempted': true};
-              requests.add(request);
-            }
-            if (action == 'validate_entry') {
-              if (call.args['snapshot'] == null) {
-                if (mode != 'missing_evidence') {
-                  requests.add({
-                    'kind':
-                        mode == 'nested_evidence'
-                            ? 'order.entry.place'
-                            : 'market.candles.read',
-                    'provider': 'bingx',
-                    'symbol':
-                        mode == 'foreign_evidence'
-                            ? 'ETH-USDT'
-                            : plan['symbol'],
-                    'timeframe': fixture.evidenceTimeframe,
-                    'limit': fixture.evidenceLimit,
-                  });
-                }
-              } else {
-                validationSnapshots.add(call.args['snapshot'] as Map);
-              }
-            }
-            if (action == preparationAction) {
-              state['entry'] = null;
-              requests.add(marketRequest());
-            }
-            if (action == completionAction) {
-              state['entry'] = {'plan': plan, 'attempted': false};
-            }
-            if (action == 'refresh_order') {
-              requests.add({...request, 'kind': 'order.snapshot.read'});
-            }
-            if (action == 'list_orders') {
-              requests.add(listRequest);
-              // Rendering may reorder JSON; an observation must not rewrite state.
-              final fields = state.entries.toList().reversed.toList();
-              state
-                ..clear()
-                ..addEntries(fields);
-            }
-            if (action == 'open_orders') listAdmissions++;
-            if (action == 'order') {
-              (state['entry'] as Map)['evidence'] = call.args['snapshot'];
-            }
-            if (action == 'restore_entry') {
-              recoveryAdmissions++;
-              recoverySnapshots.add(call.args['snapshot'] as Map);
-              if (recoveryFault == 'reject' && recoveryAdmissions == 2) {
-                throw StateError('Package rejected the remaining history');
-              }
-              for (final operation
-                  in (call.args['snapshot'] as Map)['operations'] as List) {
-                if (operation['state'] == 'terminal_failure' &&
-                    [
-                      'entry_not_sent',
-                      'provider_rejected',
-                    ].contains(operation['last_error_code']) &&
-                    operation['receipt'] == null) {
-                  continue;
-                }
-                state['entry'] = {
-                  'plan': jsonDecode(
-                    operation['canonical_payload_json'] as String,
-                  ),
-                  'attempted': true,
-                };
-              }
-              if (recoveryAdmissions == 1) {
-                if (recoveryFault == 'replace') packageDigest = 'f' * 64;
-                if (recoveryFault == 'capsule') owner = 'b' * 64;
-                if (recoveryFault == 'remove') registry.installed = false;
-                if (recoveryFault == 'revoke') orderReadGrant = false;
-                if (recoveryFault == 'nested') requests.add(request);
-              }
-            }
-            expect(jsonEncode(call.args), isNot(contains('test-secret')));
-            return PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'manifest_module_path',
-              moduleDigestHex: 'd' * 64,
-              invokeDigestHex: 'e' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-              semanticResult: {
-                'state': {'package_state': state},
-                'view':
-                    action == 'open_orders'
-                        ? {
-                          ...view(),
-                          'details_title': 'Open orders',
-                          'columns': ['Order ID'],
-                          'rows': [
-                            for (final order
-                                in (call.args['snapshot'] as Map)['orders']
-                                    as List)
-                              [order['order_id']],
-                          ],
-                        }
-                        : view(),
-                'requests': requests,
-                if (action == preparationAction)
-                  'resume_action': completionAction,
-              },
-            );
-          },
-        );
-        PluginRuntimeModule module() => PluginRuntimeModule(
-          registry: registry,
-          sourceCatalog: const WasmPluginSourceCatalogService(),
-          manualChecks: _Manual(),
-          pluginHostApi: host,
-          attestationExchange: _Attestations(),
-          chatDelivery: _Delivery(),
-          passiveReceive: _Passive(),
-          contactLabels: _Labels(),
-          uiLog: const UiEventLogService(),
-          moltbook: _Moltbook(),
-          fileStore: files,
-          secretVault: vault,
-          readActiveCapsuleRootHex: () => owner,
-          market: fixture.adapter(),
-        );
-        await vault.saveSecret(
-          capsuleHex: owner,
-          pluginId: registry.record.pluginId!,
-          providerId: 'bingx',
-          accountId: 'primary',
-          secretName: 'credentials',
-          secretValue: jsonEncode({
-            'api_key': 'test-key',
-            'secret_key': 'test-secret',
-          }),
-        );
-        await expectLater(
-          module().runWorkspaceAction(
-            record: registry.record,
-            action: placementAction,
-          ),
-          throwsStateError,
-        );
-        expect(fixture.posts, 0);
-        final initialDirectory = await files.capsuleDirForHex(owner);
-        expect(
-          await files.readPluginState(
-            initialDirectory,
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          ),
-          isNull,
-        );
-        await expectLater(
-          module().runWorkspaceAction(
-            record: registry.record,
-            action: placementAction,
-            approvedOrder: {
-              ...request,
-              'plan': {...plan, 'price': 1},
-            },
-          ),
-          throwsStateError,
-        );
-        expect(
-          await files.readPluginState(
-            initialDirectory,
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          ),
-          isNull,
-        );
-        expect(fixture.posts, 0);
-        if (mode == 'denied' ||
-            mode == 'replaced' ||
-            mode == 'evidence_replaced') {
-          await expectLater(
-            module().runWorkspaceAction(
-              record: registry.record,
-              action: placementAction,
-              approvedOrder: request,
-            ),
-            throwsStateError,
-          );
-          expect(fixture.posts, 0);
-          if (mode == 'evidence_replaced') {
-            final failed = await ExternalEffectService(
-              readActiveCapsuleRootHex: () => owner,
-              fileStore: files,
-              resolveAdapter: (_) => fixture.adapter(),
-            ).list(pluginId: registry.record.pluginId!);
-            expect(failed.single.lastErrorCode, 'entry_not_sent');
-          }
-          continue;
-        }
-        await module().runWorkspaceAction(
-          record: registry.record,
-          action: placementAction,
-          approvedOrder: request,
-        );
-        if ([
-          'missing_evidence',
-          'foreign_evidence',
-          'nested_evidence',
-          'market_denied',
-          'evidence_replaced',
-        ].contains(mode)) {
-          expect(fixture.posts, 0, reason: mode);
-          final failed = await ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => fixture.adapter(),
-          ).list(pluginId: registry.record.pluginId!);
-          expect(failed.single.lastErrorCode, 'entry_not_sent', reason: mode);
-          continue;
-        }
-        if (mode == 'not_sent') {
-          expect(fixture.posts, 0);
-          final effects = ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => fixture.adapter(),
-          );
-          final old =
-              (await effects.list(pluginId: registry.record.pluginId!)).single;
-          expect(old.lastErrorCode, 'entry_not_sent');
-          fixture.existingOrder = false;
-          plan['prepared_at_ms'] += 1;
-          plan['expires_at_ms'] += 1;
-          fixture.now += 1;
-          await module().runWorkspaceAction(
-            record: registry.record,
-            action: preparationAction,
-          );
-          await module().runWorkspaceAction(
-            record: registry.record,
-            action: 'open',
-          );
-          final fresh = jsonDecode(
-            (await files.readPluginState(
-              await files.capsuleDirForHex(owner),
-              registry.record.pluginId!,
-              'workspace.v1.json',
-            ))!,
-          );
-          expect(fresh['package_state']['entry']['attempted'], false);
-          expect(fresh['package_state']['entry']['plan'], plan);
-          expect(fixture.posts, 0);
-          expect(
-            (await effects.list(
-              pluginId: registry.record.pluginId!,
-            )).single.canonicalPayloadJson,
-            old.canonicalPayloadJson,
-          );
-          await module().runWorkspaceAction(
-            record: registry.record,
-            action: placementAction,
-            approvedOrder: request,
-          );
-          final history = await effects.list(
-            pluginId: registry.record.pluginId!,
-          );
-          expect(history.length, 2);
-          expect(history.first.operationId, old.operationId);
-          expect(history.last.operationId, isNot(old.operationId));
-        }
-        expect(fixture.posts, 1);
-        expect(validationSnapshots, isNotEmpty);
-        expect(
-          validationSnapshots.every(
-            (s) => s['timeframe'] == fixture.evidenceTimeframe,
-          ),
-          true,
-        );
-        final validationCandles =
-            validationSnapshots.expand((s) => s['candles'] as List).toList();
-        final span =
-            {'15m': 900000, '5m': 300000, '1m': 60000}[fixture
-                .evidenceTimeframe]!;
-        final expectedCount =
-            (fixture.now ~/ span + 1).clamp(2, fixture.evidenceLimit) - 1;
-        expect(validationCandles.length, expectedCount);
-        expect(
-          validationSnapshots.every((s) => (s['candles'] as List).length <= 12),
-          true,
-        );
-        expect(validationSnapshots.last['batch_complete'], true);
-        for (var i = 1; i < validationCandles.length; i++) {
-          expect(validationCandles[i][0] - validationCandles[i - 1][0], span);
-        }
-        await module().runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-        );
-        fixture.status = 'PARTIALLY_FILLED';
-        fixture.filled = '0.1';
-        await module().runWorkspaceAction(
-          record: registry.record,
-          action: 'refresh_order',
-        );
-        final capsule = await files.capsuleDirForHex(owner);
-        final raw = await files.readPluginState(
-          capsule,
-          registry.record.pluginId!,
-          'workspace.v1.json',
-        );
-        expect(
-          jsonDecode(raw!)['package_state']['entry']['evidence']['status'],
-          'partial',
-        );
-        expect(raw, isNot(contains('test-secret')));
-        await module().removePlugin(registry.record);
-        expect(
-          await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          ),
-          isNull,
-        );
-        expect(
-          await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'external_effects.v1.json',
-          ),
-          isNotNull,
-        );
-        registry.installed = true;
-        await vault.saveSecret(
-          capsuleHex: owner,
-          pluginId: registry.record.pluginId!,
-          providerId: 'bingx',
-          accountId: 'primary',
-          secretName: 'credentials',
-          secretValue: jsonEncode({
-            'api_key': 'test-key',
-            'secret_key': 'test-secret',
-          }),
-        );
-        await module().runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-        );
-        await module().runWorkspaceAction(
-          record: registry.record,
-          action: 'refresh_order',
-        );
-        expect(fixture.posts, 1);
-        final recovered = jsonDecode(
-          (await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          ))!,
-        );
-        expect(
-          recovered['package_state']['entry']['evidence']['order_id'],
-          '2103610529511862272',
-        );
-        expect(
-          recovered['package_state']['entry']['evidence']['filled_quantity'],
-          0.1,
-        );
-        final retainedState = await files.readPluginState(
-          capsule,
-          registry.record.pluginId!,
-          'workspace.v1.json',
-        );
-        final retainedJournal = await files.readPluginState(
-          capsule,
-          registry.record.pluginId!,
-          'external_effects.v1.json',
-        );
-        fixture.queryUnavailable = true;
-        await expectLater(
-          module().runWorkspaceAction(
-            record: registry.record,
-            action: 'refresh_order',
-          ),
-          throwsStateError,
-        );
-        expect(
-          await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          ),
-          retainedState,
-        );
-        expect(
-          await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'external_effects.v1.json',
-          ),
-          retainedJournal,
-        );
-        expect(fixture.posts, 1);
-        fixture.queryUnavailable = false;
-        if (mode == 'normal') {
-          final beforeState = await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'workspace.v1.json',
-          );
-          final beforeJournal = await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'external_effects.v1.json',
-          );
-          fixture.existingOrder = true;
-          final listed = await module().runWorkspaceAction(
-            record: registry.record,
-            action: 'list_orders',
-          );
-          expect(listed['rows'], [
-            ['2103610529511862272'],
-          ]);
-          expect(listAdmissions, 1);
-          expect(
-            await files.readPluginState(
-              capsule,
-              registry.record.pluginId!,
-              'workspace.v1.json',
-            ),
-            beforeState,
-          );
-          expect(
-            await files.readPluginState(
-              capsule,
-              registry.record.pluginId!,
-              'external_effects.v1.json',
-            ),
-            beforeJournal,
-          );
-          for (final fault in [
-            'grant',
-            'account',
-            'symbol',
-            'revoke',
-            'replace',
-            'capsule',
-            'remove',
-          ]) {
-            orderReadGrant = fault != 'grant';
-            listRequest = {
-              ...openOrdersRequest(),
-              if (fault == 'account') 'account_id': 'b' * 64,
-              if (fault == 'symbol') 'symbol': 'VET-USDT',
-            };
-            fixture.afterOpenOrdersRead = () {
-              if (fault == 'revoke') orderReadGrant = false;
-              if (fault == 'replace') packageDigest = 'f' * 64;
-              if (fault == 'capsule') owner = 'b' * 64;
-              if (fault == 'remove') registry.installed = false;
-            };
-            final listedResult = module().runWorkspaceAction(
-              record: registry.record,
-              action: 'list_orders',
-            );
-            if (fault == 'symbol') {
-              expect((await listedResult)['rows'], isA<List>(), reason: fault);
-            } else {
-              await expectLater(listedResult, throwsStateError, reason: fault);
-            }
-            expect(listAdmissions, greaterThanOrEqualTo(1), reason: fault);
-            expect(fixture.posts, 1, reason: fault);
-            owner = 'a' * 64;
-            packageDigest = 'c' * 64;
-            registry.installed = true;
-          }
-          fixture.afterOpenOrdersRead = null;
-          orderReadGrant = true;
-          final effects = ExternalEffectService(
-            readActiveCapsuleRootHex: () => owner,
-            fileStore: files,
-            resolveAdapter: (_) => fixture.adapter(),
-          );
-          for (var i = 0; i < 8; i++) {
-            final historicPlan = {
-              ...plan,
-              'prepared_at_ms': (plan['prepared_at_ms'] as int) + i + 1,
-            };
-            await effects.prepare(
-              operationId: BingxMarketDataAdapter.entryOperationId(
-                historicPlan,
-              ),
-              pluginId: registry.record.pluginId!,
-              providerId: 'bingx',
-              accountBindingId: plan['account_id'] as String,
-              effectKind: 'order.entry.place',
-              canonicalPayloadJson: jsonEncode(historicPlan),
-            );
-          }
-          final journal = await files.readPluginState(
-            capsule,
-            registry.record.pluginId!,
-            'external_effects.v1.json',
-          );
-          final empty = jsonDecode(beforeState!) as Map;
-          empty['package_state']['entry'] = null;
-          final baseline = jsonEncode(empty);
-          for (final fault in [
-            'replace',
-            'capsule',
-            'remove',
-            'revoke',
-            'nested',
-            'reject',
-            'normal',
-          ]) {
-            await files.writePluginState(
-              capsule,
-              registry.record.pluginId!,
-              'workspace.v1.json',
-              baseline,
-            );
-            recoveryFault = fault;
-            recoveryAdmissions = 0;
-            recoverySnapshots.clear();
-            final run = module().runWorkspaceAction(
-              record: registry.record,
-              action: 'open',
-            );
-            if (fault == 'normal') {
-              await run;
-              expect(recoveryAdmissions, 9);
-              expect(recoverySnapshots.last['batch_complete'], true);
-              expect(
-                recoverySnapshots.expand((s) => s['operations'] as List).length,
-                9,
-              );
-              final restored = jsonDecode(
-                (await files.readPluginState(
-                  capsule,
-                  registry.record.pluginId!,
-                  'workspace.v1.json',
-                ))!,
-              );
-              final operations = await effects.list(
-                pluginId: registry.record.pluginId!,
-              );
-              expect(
-                restored['package_state']['entry']['plan'],
-                jsonDecode(operations.last.canonicalPayloadJson),
-              );
-            } else {
-              await expectLater(run, throwsStateError, reason: fault);
-              expect(recoveryAdmissions, greaterThanOrEqualTo(1));
-              expect(
-                await files.readPluginState(
-                  capsule,
-                  registry.record.pluginId!,
-                  'workspace.v1.json',
-                ),
-                baseline,
-                reason: fault,
-              );
-            }
-            expect(fixture.posts, 1, reason: fault);
-            expect(
-              await files.readPluginState(
-                capsule,
-                registry.record.pluginId!,
-                'external_effects.v1.json',
-              ),
-              journal,
-              reason: fault,
-            );
-            owner = 'a' * 64;
-            packageDigest = 'c' * 64;
-            registry.installed = true;
-            orderReadGrant = true;
-          }
-        }
-      }
-    },
-  );
-  test(
-    'one signed entry has an attached stop and exact string-ID reconciliation',
-    () async {
-      final fixture = _EntryProvider();
-      final adapter = fixture.adapter();
-      final request = entryEffect(entryPlan());
-      final result = await adapter.deliver(request);
-      expect(result.status, ExternalEffectAdapterStatus.succeeded);
-      expect(result.receipt!.providerReceiptId, '2103610529511862272');
-      expect(fixture.posts, 1);
-      expect(
-        fixture.postParams!['clientOrderId'],
-        request.operationId.substring(0, 40),
-      );
-      expect(fixture.postParams!['timeInForce'], 'PostOnly');
-      expect(fixture.postParams!['positionSide'], 'LONG');
-      expect(jsonDecode(fixture.postParams!['stopLoss']!), {
-        'type': 'STOP_MARKET',
-        'stopPrice': 96.12,
-        'workingType': 'CONTRACT_PRICE',
-      });
-      fixture.status = 'PARTIALLY_FILLED';
-      fixture.filled = '0.1';
-      final read = await adapter.readEntry(request);
-      expect(read['status'], 'partial');
-      expect(read['filled_quantity'], 0.1);
-      fixture.status = 'CANCELED';
-      expect((await adapter.readEntry(request))['status'], 'cancelled');
-      expect(fixture.posts, 1);
-      fixture.positionSide = 'SHORT';
-      await expectLater(adapter.readEntry(request), throwsFormatException);
-      fixture.positionSide = 'BOTH';
-      expect((await adapter.readEntry(request))['status'], 'cancelled');
-      fixture.positionSide = 'LONG';
-      fixture.clientIdOverride = 'foreign';
-      await expectLater(adapter.readEntry(request), throwsFormatException);
-      fixture.clientIdOverride = null;
-      fixture.uid = '999999';
-      await expectLater(adapter.readEntry(request), throwsStateError);
-      expect((await adapter.deliver(request)).errorCode, 'entry_not_sent');
-      expect(fixture.posts, 1);
-    },
-  );
-
-  test('position mode accepts exact BingX values without guessing', () async {
-    for (final value in [true, 'true', false, 'false']) {
-      final fixture = _EntryProvider()..modeData = {'dualSidePosition': value};
-      final result = await fixture.adapter().deliver(entryEffect(entryPlan()));
-      expect(result.status, ExternalEffectAdapterStatus.succeeded);
-      expect(fixture.posts, 1);
-      expect(
-        fixture.postParams!['positionSide'],
-        value == true || value == 'true' ? 'LONG' : 'BOTH',
-      );
-    }
-    for (final data in [
-      null,
-      [],
-      {},
-      {'dualSidePosition': null},
-      {'dualSidePosition': 1},
-      {'dualSidePosition': 'TRUE'},
-      {'dualSidePosition': 'false '},
-    ]) {
-      final fixture = _EntryProvider()..modeData = data;
-      final result = await fixture.adapter().deliver(entryEffect(entryPlan()));
-      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
-      expect(result.errorCode, 'entry_not_sent');
-      expect(result.errorMessage, contains('position mode is unreadable'));
-      expect(fixture.posts, 0);
-    }
-  });
-
-  test(
-    'delayed confirmation retains the exact plan and requests full final history',
-    () async {
-      final plan = entryPlan();
-      plan['expires_at_ms'] = plan['prepared_at_ms'] + 48 * 60 * 60 * 1000;
-      final fixture = _EntryProvider()..now = 100900000;
-      final request = entryEffect(plan);
-      final result = await fixture.adapter().deliver(request);
-      expect(result.status, ExternalEffectAdapterStatus.succeeded);
-      expect(fixture.posts, 1);
-      expect(fixture.postParams!['price'], plan['price'].toString());
-      expect(fixture.postParams!['quantity'], plan['quantity'].toString());
-      expect(
-        fixture.postParams!['clientOrderId'],
-        request.operationId.substring(0, 40),
-      );
-    },
-  );
-
-  test(
-    'non-dispatch survives restart and only explicit approval retries the same journal operation',
-    () async {
-      final home = await Directory.systemTemp.createTemp('hivra_not_sent_');
-      addTearDown(() => home.delete(recursive: true));
-      final files = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
-      );
-      final fixture = _EntryProvider()..existingOrder = true;
-      final request = entryEffect(entryPlan());
-      ExternalEffectService service() => ExternalEffectService(
-        readActiveCapsuleRootHex: () => 'a' * 64,
-        fileStore: files,
-        resolveAdapter: (_) => fixture.adapter(),
-      );
-      await service().prepare(
-        operationId: request.operationId,
-        pluginId: request.pluginId,
-        providerId: request.providerId,
-        accountBindingId: request.accountBindingId,
-        effectKind: request.effectKind,
-        canonicalPayloadJson: request.canonicalPayloadJson,
-      );
-      await service().approve(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-        approvalEvidenceHashHex: request.payloadHashHex,
-      );
-      await service().enqueue(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-      );
-      final failure = await service().process(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-      );
-      expect(failure.state, ExternalEffectState.terminalFailure);
-      expect(failure.lastErrorCode, 'entry_not_sent');
-      fixture.existingOrder = false;
-      expect(
-        (await service().process(
-          pluginId: request.pluginId,
-          operationId: request.operationId,
-        )).state,
-        ExternalEffectState.terminalFailure,
-      );
-      expect(fixture.posts, 0);
-      await service().reauthorizeRejectedDelivery(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-        approvalEvidenceHashHex: request.payloadHashHex,
-      );
-      final delivered = await service().process(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-      );
-      expect(delivered.state, ExternalEffectState.succeeded);
-      expect(delivered.operationId, failure.operationId);
-      expect(delivered.canonicalPayloadJson, failure.canonicalPayloadJson);
-      expect(fixture.posts, 1);
-    },
-  );
-
-  test(
-    'timeout, not-found and restart never permit a second POST; durable evidence survives uninstall',
-    () async {
-      final home = await Directory.systemTemp.createTemp('hivra_entry_effect_');
-      addTearDown(() => home.delete(recursive: true));
-      final files = CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
-      );
-      final fixture =
-          _EntryProvider()
-            ..postTimeout = true
-            ..queryUnavailable = true;
-      final request = entryEffect(entryPlan());
-      ExternalEffectService service() => ExternalEffectService(
-        readActiveCapsuleRootHex: () => 'a' * 64,
-        fileStore: files,
-        resolveAdapter:
-            (provider) => provider == 'bingx' ? fixture.adapter() : null,
-      );
-      await service().prepare(
-        operationId: request.operationId,
-        pluginId: request.pluginId,
-        providerId: 'bingx',
-        accountBindingId: request.accountBindingId,
-        effectKind: request.effectKind,
-        canonicalPayloadJson: request.canonicalPayloadJson,
-      );
-      await service().approve(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-        approvalEvidenceHashHex: request.payloadHashHex,
-      );
-      await service().enqueue(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-      );
-      expect(
-        (await service().process(
-          pluginId: request.pluginId,
-          operationId: request.operationId,
-        )).state,
-        ExternalEffectState.unresolved,
-      );
-      expect(fixture.posts, 1);
-      expect(
-        (await service().process(
-          pluginId: request.pluginId,
-          operationId: request.operationId,
-        )).state,
-        ExternalEffectState.unresolved,
-      );
-      expect(fixture.posts, 1);
-      final capsule = await files.capsuleDirForHex('a' * 64);
-      await files.writePluginState(
-        capsule,
-        request.pluginId,
-        'workspace.v1.json',
-        '{}',
-      );
-      await files.deletePluginStateFromAllCapsules(
-        request.pluginId,
-        preserveFileNames: const {'external_effects.v1.json'},
-      );
-      expect(
-        await files.readPluginState(
-          capsule,
-          request.pluginId,
-          'workspace.v1.json',
-        ),
-        isNull,
-      );
-      expect(
-        (await service().list(pluginId: request.pluginId)).single.attemptCount,
-        1,
-      );
-      fixture.queryUnavailable = false;
-      final recovered = await service().reconcileOnly(
-        pluginId: request.pluginId,
-        operationId: request.operationId,
-      );
-      expect(recovered.state, ExternalEffectState.succeeded);
-      expect(recovered.receipt!.providerReceiptId, '2103610529511862272');
-      expect(fixture.posts, 1);
-    },
-  );
-
-  test(
-    'BingX order envelope is normalized without treating malformed evidence as empty',
-    () async {
-      final wrapped = _EntryProvider()..wrappedOrders = true;
-      expect(
-        (await wrapped.adapter().deliver(entryEffect(entryPlan()))).status,
-        ExternalEffectAdapterStatus.succeeded,
-      );
-      expect(wrapped.posts, 1);
-      for (final data in <dynamic>[
-        {},
-        {'orders': null},
-        {'orders': 'invalid'},
-      ]) {
-        final invalid = _EntryProvider()..openDataOverride = data;
-        final failure = await invalid.adapter().deliver(
-          entryEffect(entryPlan()),
-        );
-        expect(failure.status, ExternalEffectAdapterStatus.terminalFailure);
-        expect(failure.errorCode, 'entry_not_sent');
-        expect(invalid.posts, 0);
-      }
-      final conflict =
-          _EntryProvider()
-            ..wrappedOrders = true
-            ..existingOrder = true;
-      expect(
-        (await conflict.adapter().deliver(entryEffect(entryPlan()))).errorCode,
-        'entry_not_sent',
-      );
-      expect(conflict.posts, 0);
-    },
-  );
-
-  test(
-    'open-order conflicts require exact instrument while ignoring foreign orders',
-    () async {
-      for (final data in <dynamic>[
-        [null],
-        [{}],
-        [
-          {'symbol': 'BTC-USDT'},
-        ],
-        [
-          {'symbol': 'BTC-USDT', 'orderId': 'invalid'},
-        ],
-        [
-          {'symbol': 'BTC-USDT', 'orderId': 1.5},
-        ],
-        [
-          {'orderId': '2103610529511862272'},
-        ],
-      ]) {
-        final fixture = _EntryProvider()..openDataOverride = {'orders': data};
-        final result = await fixture.adapter().deliver(
-          entryEffect(entryPlan()),
-        );
-        expect(result.errorCode, 'entry_not_sent');
-        expect(result.errorMessage, contains('evidence is unreadable'));
-        expect(fixture.posts, 0);
-      }
-      final foreign =
-          _EntryProvider()
-            ..openDataOverride = {
-              'orders': [
-                {'symbol': 'VET-USDT', 'orderId': '2103610529511862272'},
-              ],
-            };
-      final mismatch = await foreign.adapter().deliver(
-        entryEffect(entryPlan()),
-      );
-      expect(mismatch.status, ExternalEffectAdapterStatus.succeeded);
-      expect(foreign.posts, 1);
-      for (final key in ['orderId', 'orderID']) {
-        final exact =
-            _EntryProvider()
-              ..openDataOverride = {
-                'orders': [
-                  {...openOrder(), key: '2103610529511862272'},
-                ],
-              };
-        final result = await exact.adapter().deliver(entryEffect(entryPlan()));
-        expect(result.errorCode, 'entry_not_sent');
-        expect(result.errorMessage, contains('BTC-USDT'));
-        expect(result.errorMessage, contains('2103610529511862272'));
-        expect(exact.posts, 0);
-      }
-    },
-  );
-
-  test(
-    'scope changes, existing orders, leverage drift, expired plans and crossed lines stop before POST',
-    () async {
-      for (final mode in [
-        'revoked',
-        'open',
-        'leverage',
-        'invalid_leverage',
-        'expired',
-        'crossed',
-      ]) {
-        final fixture = _EntryProvider();
-        if (mode == 'revoked') fixture.authorized = false;
-        if (mode == 'open') fixture.existingOrder = true;
-        if (mode == 'leverage') fixture.longLeverage = '20';
-        if (mode == 'invalid_leverage') fixture.longLeverage = 'NaN';
-        if (mode == 'expired') fixture.now = 100060001;
-        if (mode == 'crossed') fixture.currentPrice = 95;
-        final failure = await fixture.adapter().deliver(
-          entryEffect(entryPlan()),
-        );
-        expect(
-          failure.status,
-          ExternalEffectAdapterStatus.terminalFailure,
-          reason: mode,
-        );
-        expect(failure.errorCode, 'entry_not_sent', reason: mode);
-        expect(fixture.posts, 0, reason: mode);
-      }
-      final fixture = _EntryProvider()..queryUnavailable = true;
-      final result = await fixture.adapter().deliver(entryEffect(entryPlan()));
-      expect(result.status, ExternalEffectAdapterStatus.unresolved);
-      expect(result.receipt, isNull);
-      expect(fixture.posts, 1);
-    },
-  );
-
-  test(
-    'open-order listing is a bound GET observation, not an entry effect',
-    () async {
-      final fixture = _EntryProvider()..existingOrder = true;
-      final request = openOrdersRequest();
-      final snapshot = await fixture.adapter().readOpenOrders(request, {
-        'api_key': 'test-key',
-        'secret_key': 'test-secret',
-      });
-      expect(snapshot['account_id'], request['account_id']);
-      expect(snapshot['symbol'], 'BTC-USDT');
-      expect(snapshot['orders'], [
-        {
-          'order_id': '2103610529511862272',
-          'side': 'BUY',
-          'position_side': 'LONG',
-          'type': 'LIMIT',
-          'status': 'NEW',
-          'price': '96.5',
-          'stop_price': '0',
-          'quantity': '0.518',
-          'filled_quantity': '0.1',
-        },
-      ]);
-      expect(jsonEncode(snapshot), isNot(contains('test-secret')));
-      fixture.existingOrder = false;
-      expect(
-        (await fixture.adapter().readOpenOrders(request, {
-          'api_key': 'test-key',
-          'secret_key': 'test-secret',
-        }))['orders'],
-        isEmpty,
-      );
-      fixture.uid = '999999';
-      await expectLater(
-        fixture.adapter().readOpenOrders(request, {
-          'api_key': 'test-key',
-          'secret_key': 'test-secret',
-        }),
-        throwsStateError,
-      );
-      expect(fixture.posts, 0);
-    },
-  );
-
-  test(
-    'open-order listing ignores foreign instruments but rejects malformed evidence',
-    () async {
-      for (final rows in <dynamic>[
-        [openOrder(), openOrder()],
-        [
-          {...openOrder(), 'price': 'NaN'},
-        ],
-        [
-          {...openOrder(), 'origQty': '0.01'},
-        ],
-        [
-          {...openOrder(), 'orderID': '2103610529511862273'},
-        ],
-        [
-          {...openOrder(), 'status': 'untrusted prose'},
-        ],
-        [
-          {...openOrder(), 'positionSide': 'INVALID'},
-        ],
-        List.generate(65, (i) => {...openOrder(), 'orderId': '${i + 1}'}),
-      ]) {
-        final fixture = _EntryProvider()..openDataOverride = {'orders': rows};
-        await expectLater(
-          fixture.adapter().readOpenOrders(openOrdersRequest(), {
-            'api_key': 'test-key',
-            'secret_key': 'test-secret',
-          }),
-          throwsFormatException,
-        );
-        expect(fixture.posts, 0);
-      }
-      final mixed =
-          _EntryProvider()
-            ..openDataOverride = {
-              'orders': [
-                {
-                  ...openOrder(),
-                  'symbol': 'DASH-USDT',
-                  'orderId': '2103610529511862273',
-                },
-                openOrder(),
-              ],
-            };
-      expect(
-        (await mixed.adapter().readOpenOrders(openOrdersRequest(), {
-          'api_key': 'test-key',
-          'secret_key': 'test-secret',
-        }))['orders'],
-        hasLength(1),
-      );
-      final unavailable =
-          _EntryProvider()
-            ..afterOpenOrdersRead = () => throw TimeoutException('test-secret');
-      await expectLater(
-        unavailable.adapter().readOpenOrders(openOrdersRequest(), {
-          'api_key': 'test-key',
-          'secret_key': 'test-secret',
-        }),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'sanitized read error',
-            allOf(contains('read unavailable'), isNot(contains('test-secret'))),
-          ),
-        ),
-      );
-      expect(unavailable.posts, 0);
-    },
-  );
-
-  testWidgets(
-    'financial confirmation cancellation does not invoke the effect',
-    (tester) async {
-      for (final cancelling in [false, true]) {
-        var submitted = 0;
-        var approved = <String, dynamic>{};
-        final request = {
-          'kind': cancelling ? 'order.entry.cancel' : 'order.entry.place',
-          'provider': 'bingx',
-          'plan': entryPlan(),
-          if (cancelling) 'order_id': '2103610529511862272',
-        };
-        final data = {
-          ...view(),
-          'summary': 'BingX LIVE / account ending 6789',
-          'confirmation': request,
-          'actions': [
-            {
-              'id': 'place_entry',
-              'label': 'Place this entry',
-              'host': 'bingx.order.submit',
-            },
-          ],
-        };
-        await tester.pumpWidget(
-          MaterialApp(
-            home: PluginWorkspaceScreen(
-              runWorkspaceAction: (
-                action,
-                settings, {
-                credentials,
-                approvedOrder,
-              }) async {
-                if (action == 'place_entry') {
-                  submitted++;
-                  approved = approvedOrder!;
-                }
-                return data;
-              },
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Place this entry'));
-        await tester.pumpAndSettle();
-        expect(
-          find.text(
-            cancelling
-                ? 'Cancel this exact LIVE entry?'
-                : 'Place one LIVE limit order?',
-          ),
-          findsOneWidget,
-        );
-        if (cancelling) {
-          expect(find.textContaining('2103610529511862272'), findsOneWidget);
-        }
-        expect(submitted, 0);
-        await tester.tap(find.text('Cancel'));
-        await tester.pumpAndSettle();
-        expect(submitted, 0);
-        await tester.tap(find.text('Place this entry'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('plugin-confirm-entry')));
-        await tester.pumpAndSettle();
-        expect(submitted, 1);
-        expect(approved, request);
-        await tester.pumpWidget(const SizedBox());
-      }
-    },
-  );
-
-  testWidgets(
-    'package order list uses existing table and hides stale data on failed refresh',
-    (tester) async {
-      var fail = false;
-      var reads = 0;
-      final reading = Completer<void>();
-      final base = {
-        ...view(),
-        'actions': [
-          {'id': 'list_orders', 'label': 'Refresh open orders'},
-        ],
-      };
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              expect(credentials, isNull);
-              expect(approvedOrder, isNull);
-              if (action != 'list_orders') return base;
-              reads++;
-              if (fail) throw StateError('Order read unavailable');
-              await reading.future;
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
               return {
-                ...base,
-                'details_title': 'Open orders',
-                'columns': ['Order ID', 'Status'],
-                'rows': [
-                  ['2103610529511862272', 'PARTIALLY_FILLED'],
+                ...presentation(),
+                'fields': [
+                  {
+                    'id': 'destination',
+                    'type': 'choice',
+                    'label': 'Destination',
+                    'value': 'alpha',
+                    'source': {'action': 'list_destinations'},
+                  },
                 ],
-                'message': 'Exchange observations; not adopted',
+                if (action == 'list_destinations') 'options': ['alpha', 'beta'],
               };
             },
           ),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Refresh open orders'));
-      await tester.pump();
-      expect(
-        find.textContaining('Complete any system permission prompt'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('Settings or inputs changed'), findsNothing);
-      reading.complete();
+      await tester.tap(find.byKey(const ValueKey('plugin-field-destination')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Open orders'));
+      expect(actions, ['open', 'list_destinations']);
+      await tester.tap(find.text('beta'));
       await tester.pumpAndSettle();
-      expect(find.text('2103610529511862272'), findsOneWidget);
-      expect(find.text('PARTIALLY_FILLED'), findsOneWidget);
-      fail = true;
-      await tester.tap(find.text('Refresh open orders'));
-      await tester.pumpAndSettle();
-      expect(reads, 2);
-      expect(find.textContaining('Order read unavailable'), findsOneWidget);
-      expect(find.text('2103610529511862272'), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  test(
-    'private account reads sign fixed GET endpoints and expose only bounded evidence',
-    () async {
-      final calls = <Uri>[];
-      final adapter = BingxMarketDataAdapter(
-        clock:
-            () => DateTime.fromMillisecondsSinceEpoch(100000000, isUtc: true),
-        readAuthenticated: (uri, headers) async {
-          calls.add(uri);
-          expect(uri.host, 'open-api.bingx.com');
-          expect(headers['X-BX-APIKEY'], 'test-key');
-          final params = Map<String, String>.from(uri.queryParameters)
-            ..remove('signature');
-          final canonical = params.entries
-              .map((entry) => '${entry.key}=${entry.value}')
-              .join('&');
-          expect(
-            uri.queryParameters['signature'],
-            Hmac(
-              sha256,
-              utf8.encode('test-secret'),
-            ).convert(utf8.encode(canonical)).toString(),
-          );
-          final data =
-              uri.path.endsWith('/uid')
-                  ? {'uid': '123456789'}
-                  : uri.path.endsWith('/balance')
-                  ? [
-                    {
-                      'asset': 'USDT',
-                      'availableMargin': '30',
-                      'userId': '****6789',
-                    },
-                  ]
-                  : {'longLeverage': 50, 'shortLeverage': '20'};
-          return jsonEncode({'code': 0, 'data': data});
-        },
-        read:
-            (_) async => jsonEncode({
-              'code': 0,
-              'data': [accountContract()],
-            }),
-      );
-      final snapshot = await adapter.readAccount(accountRequest(), {
-        'api_key': 'test-key',
-        'secret_key': 'test-secret',
-      });
-      expect(calls.map((u) => u.path), [
-        '/openApi/account/v1/uid',
-        '/openApi/swap/v3/user/balance',
-        '/openApi/swap/v2/trade/leverage',
-      ]);
-      expect(
-        snapshot['account_id'],
-        sha256.convert(utf8.encode('bingx:LIVE:123456789')).toString(),
-      );
-      expect(snapshot['long_leverage'], 50);
-      expect(snapshot['short_leverage'], 20);
-      expect(snapshot['available_margin'], 30);
-      expect(jsonEncode(snapshot), isNot(contains('test-key')));
-      expect(jsonEncode(snapshot), isNot(contains('test-secret')));
-      expect(jsonEncode(snapshot), isNot(contains('****')));
-      await expectLater(
-        adapter.readAccount(
-          {...accountRequest(), 'provider': 'http://attacker.invalid'},
-          {'api_key': 'test-key', 'secret_key': 'test-secret'},
-        ),
-        throwsFormatException,
-      );
-      expect(calls.length, 3);
-    },
-  );
-
-  test(
-    'private errors do not echo credentials, URLs or provider messages',
-    () async {
-      for (final mode in ['provider', 'network', 'masked']) {
-        final adapter = BingxMarketDataAdapter(
-          readAuthenticated: (uri, _) async {
-            if (mode == 'network') throw StateError('$uri secret-key');
-            return jsonEncode(
-              mode == 'provider'
-                  ? {'code': 100001, 'msg': 'secret-key $uri'}
-                  : {
-                    'code': 0,
-                    'data': {'uid': '***1234'},
-                  },
-            );
-          },
-        );
-        try {
-          await adapter.readAccount(accountRequest(), {
-            'api_key': 'api-key',
-            'secret_key': 'secret-key',
-          });
-          fail('Expected rejection');
-        } catch (error) {
-          expect(error.toString(), isNot(contains('secret-key')));
-          expect(error.toString(), isNot(contains('signature=')));
-          expect(error.toString(), isNot(contains('***1234')));
-        }
-      }
-    },
-  );
-
-  testWidgets('workspace avoids the Android landscape navigation inset', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(900, 400);
-    tester.view.devicePixelRatio = 1;
-    tester.view.padding = const FakeViewPadding(left: 48);
-    tester.view.viewPadding = const FakeViewPadding(left: 48);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPadding);
-    addTearDown(tester.view.resetViewPadding);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PluginWorkspaceScreen(
-          runWorkspaceAction:
-              (action, settings, {credentials, approvedOrder}) async => view(),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      tester.getRect(find.byKey(const ValueKey('plugin-field-symbol'))).left,
-      greaterThanOrEqualTo(48),
-    );
-    expect(
-      tester.getRect(find.byKey(const ValueKey('plugin-action-inspect'))).left,
-      greaterThanOrEqualTo(48),
-    );
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets(
-    'BingX paste stays usable with landscape keyboard and protected fields',
-    (tester) async {
-      tester.view.physicalSize = const Size(900, 400);
-      tester.view.devicePixelRatio = 1;
-      tester.view.padding = const FakeViewPadding(left: 48);
-      tester.view.viewPadding = const FakeViewPadding(left: 48);
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPadding);
-      addTearDown(tester.view.resetViewPadding);
-      addTearDown(tester.view.resetViewInsets);
-      var clipboard = 'public-test-api-key';
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        (call) async => switch (call.method) {
-          'Clipboard.hasStrings' => {'value': true},
-          'Clipboard.getData' => {'text': clipboard},
-          _ => null,
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          null,
-        ),
-      );
-      Map<String, String>? sent;
-      final shown = {
-        ...view(),
-        'fields': <Object>[],
-        'actions': [
-          {
-            'id': 'link_account',
-            'label': 'Connect account',
-            'host': 'bingx.account.connect',
-          },
-        ],
-      };
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(platform: TargetPlatform.android),
-          home: PluginWorkspaceScreen(
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              if (action != 'open') sent = credentials;
-              return shown;
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Connect account'));
-      await tester.pumpAndSettle();
-      final api = find.byKey(const ValueKey('plugin-account-api-key'));
-      final secret = find.byKey(const ValueKey('plugin-account-secret-key'));
-      await tester.tap(api);
-      await tester.showKeyboard(api);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 200);
-      await tester.pumpAndSettle();
-      const available = Rect.fromLTRB(48, 0, 900, 200);
-      expect(
-        tester.getRect(api).intersect(available).height,
-        greaterThanOrEqualTo(48),
-      );
-      await tester.longPress(api);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Paste'));
-      await tester.pumpAndSettle();
-      clipboard = 'public-test-secret';
-      await tester.testTextInput.receiveAction(TextInputAction.next);
-      await tester.pumpAndSettle();
-      expect(
-        tester.getRect(secret).intersect(available).height,
-        greaterThanOrEqualTo(48),
-      );
-      await tester.longPress(secret);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Paste'));
-      await tester.pumpAndSettle();
-      expect(tester.widget<TextField>(api).obscureText, isTrue);
-      expect(tester.widget<TextField>(secret).obscureText, isTrue);
-      expect(sent, isNull);
-      await tester.tap(find.text('Connect and save'));
-      await tester.pumpAndSettle();
-      expect(sent, {
-        'api_key': 'public-test-api-key',
-        'secret_key': 'public-test-secret',
-      });
+      expect(find.text('beta'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     },
   );
-
-  testWidgets(
-    'advanced fields are optional and account credentials use a host-only dialog',
-    (tester) async {
-      Map<String, String>? sentCredentials;
-      Map<String, dynamic>? sentSettings;
-      final shown = {
-        ...view(),
-        'summary': 'BingX LIVE / account not connected',
-        'fields': [
-          ...view()['fields'] as List,
-          {
-            'id': 'detection_length',
-            'label': 'Detection length',
-            'type': 'integer',
-            'value': 7,
-            'advanced': true,
+  test(
+    'HTTP response budget is opt-in and bounded independently of request size',
+    () async {
+      for (final selected in [null, 128 * 1024, 300 * 1024]) {
+        var calls = 0;
+        final dispatcher = PluginCapabilityDispatcher(
+          send: (m, u, h, b) async {
+            calls++;
+            return {'status': 200, 'body': 'x' * (80 * 1024)};
           },
-        ],
-        'actions': [
+        );
+        final result = await dispatcher.http(
           {
-            'id': 'connect',
-            'label': 'Connect account',
-            'host': 'bingx.account.connect',
+            'kind': 'http.request',
+            'url': 'https://one.example/history',
+            'method': 'GET',
+            if (selected != null) 'max_response_bytes': selected,
           },
-        ],
-      };
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              if (action != 'open') {
-                sentCredentials = credentials;
-                sentSettings = settings;
-              }
-              return shown;
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Detection length'), findsNothing);
-      expect(find.text('BingX LIVE / account not connected'), findsOneWidget);
-      await tester.tap(find.text('Advanced settings'));
-      await tester.pumpAndSettle();
-      expect(find.text('Detection length'), findsOneWidget);
-      await tester.tap(find.text('Connect account'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('plugin-account-api-key')),
-        'test-key',
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('plugin-account-secret-key')),
-        'test-secret',
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Connect and save'));
-      await tester.pumpAndSettle();
-      expect(sentCredentials, {
-        'api_key': 'test-key',
-        'secret_key': 'test-secret',
-      });
-      expect(sentSettings, {'symbol': 'BTC-USDT', 'detection_length': 7});
-      expect(find.text('test-key'), findsNothing);
-      expect(tester.takeException(), isNull);
+          access: permission('https://one.example'),
+          readCredentials: () async => {},
+          authorize: () async {},
+        );
+        expect(
+          result['outcome'],
+          selected == null
+              ? 'unknown'
+              : selected <= 256 * 1024
+              ? 'response'
+              : 'not_dispatched',
+        );
+        expect(calls, selected == 300 * 1024 ? 0 : 1);
+      }
     },
   );
-
   test(
-    'workspace persists only plugin state and recovers it after reopening',
+    'stateless restart receives owner settings from the existing permission record',
     () async {
-      final registry = _Registry();
-      var owner = 'a' * 64;
-      var requests = 0;
-      var receivedState = <String, dynamic>{};
-      bool marketGrant = true;
-      bool instrumentGrant = true;
-      bool accountGrant = true;
-      bool continuationGrant = true;
-      bool revokeContinuationDuringRead = false;
-      String? continuationFault;
-      var continuations = 0;
-      var privateReads = 0;
-      var uid = '123456789';
-      var revokeAccountDuringRead = false;
-      var candleCount = 1;
-      var clockMs = 950000;
-      final streamed = <Map<String, dynamic>>[];
-      final vault = _Vault();
-      String packageDigest = 'c' * 64;
-      final host = PluginHostApiService(
-        handlers: [],
-        resolveRuntimeBinding:
-            (_) async => PluginRuntimeBinding.externalPackage(
-              packageId: registry.record.id,
-              packageVersion: '0.1.0',
-              packageKind: 'zip',
-              packageDigestHex: packageDigest,
-              contractKind: pluginWorkspaceContractKind,
-              capabilities: [
-                'workspace.render',
-                if (continuationGrant) 'workspace.continue',
-                'state.plugin.read_write',
-                if (marketGrant) 'market.candles.read',
-                if (instrumentGrant) 'market.instruments.read',
-                if (accountGrant) 'account.connect',
-                if (accountGrant) 'account.snapshot.read',
-              ],
-            ),
-        resolveRuntimeInvoke: (request, _) async {
-          expect(jsonEncode(request.args), isNot(contains('test-secret')));
-          expect(jsonEncode(request.args), isNot(contains('test-key')));
-          if (request.args['action'] == 'market') {
-            streamed.add(
-              Map<String, dynamic>.from(request.args['snapshot'] as Map),
-            );
-          }
-          receivedState = Map<String, dynamic>.from(
-            request.args['state'] as Map? ?? {},
-          );
-          if (request.args['action'] == 'open') {
-            expect(request.args.containsKey('settings'), isFalse);
-          }
-          final counter = (receivedState['counter'] as int? ?? 0) + 1;
-          if (request.args['action'] == 'finish_observation') {
-            continuations++;
-            expect(streamed.last['batch_complete'], true);
-            expect(
-              streamed.expand((s) => s['candles'] as List).length,
-              candleCount,
-            );
-          }
-          return PluginRuntimeInvokeEvidence(
-            mode: 'wasmi_v1',
-            modulePath: 'plugin/module.wasm',
-            moduleSelection: 'manifest_module_path',
-            moduleDigestHex: 'd' * 64,
-            invokeDigestHex: 'e' * 64,
-            semanticStatus: PluginHostApiStatus.executed,
-            semanticErrorCode: null,
-            semanticErrorMessage: null,
-            semanticResult: {
-              'state': {
-                'counter': counter,
-                if (receivedState['account'] != null)
-                  'account': receivedState['account'],
-                if (request.args['action'] == 'account')
-                  'account': request.args['snapshot'],
-              },
-              'view': choiceView(),
-              'requests':
-                  request.args['action'] == 'link_account'
-                      ? [accountRequest()]
-                      : request.args['action'] == 'update_observation' ||
-                          (request.args['action'] == 'market' &&
-                              const [
-                                'nested',
-                                'nested_resume',
-                              ].contains(continuationFault)) ||
-                          (request.args['action'] == 'finish_observation' &&
-                              continuationFault == 'chained')
-                      ? [marketRequest()]
-                      : request.args['action'] == 'inspect'
-                      ? [
-                        marketRequest(),
-                        if (receivedState['account'] != null)
-                          {
-                            ...accountRequest(),
-                            'kind': 'account.snapshot.read',
-                            'account_id':
-                                (receivedState['account'] as Map)['account_id'],
-                          },
-                      ]
-                      : [],
-              if (request.args['action'] == 'update_observation' ||
-                  (request.args['action'] == 'market' &&
-                      continuationFault == 'nested_resume') ||
-                  (request.args['action'] == 'finish_observation' &&
-                      continuationFault == 'chained'))
-                'resume_action': 'finish_observation',
-            },
-          );
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      f.registry.persistent = false;
+      f.registry.scheduled = false;
+      await f.runtime().setWorkspaceExecution(
+        record: f.registry.record,
+        enabled: true,
+        expiresAtMs: null,
+        approvedScope: f.schedule,
+        credentialBindings: {
+          'default': {'token': 'ref-token'},
         },
+        settings: {'repository': 'owner/new-source'},
       );
-      bool switchCapsule = false;
-      Completer<void>? readPause;
-      Completer<void>? readStarted;
-      bool replaceDuringRead = false;
-      final market = BingxMarketDataAdapter(
-        clock: () => DateTime.fromMillisecondsSinceEpoch(clockMs, isUtc: true),
-        readAuthenticated: (uri, headers) async {
-          privateReads++;
-          expect(headers['X-BX-APIKEY'], 'test-key');
-          if (revokeAccountDuringRead) accountGrant = false;
-          return jsonEncode({
-            'code': 0,
-            'data':
-                uri.path.endsWith('/uid')
-                    ? {'uid': uid}
-                    : uri.path.endsWith('/balance')
-                    ? [
-                      {'asset': 'USDT', 'availableMargin': '30'},
-                    ]
-                    : {'longLeverage': 50, 'shortLeverage': 20},
-          });
-        },
-        read: (uri) async {
-          requests++;
-          if (switchCapsule) owner = 'b' * 64;
-          if (replaceDuringRead) packageDigest = 'f' * 64;
-          if (revokeContinuationDuringRead) continuationGrant = false;
-          readStarted?.complete();
-          if (readPause != null) await readPause.future;
-          if (uri.path.endsWith('/contracts')) {
-            return jsonEncode({
-              'code': 0,
-              'data': [accountContract()],
-            });
-          }
-          return jsonEncode({
-            'code': 0,
-            'data': List.generate(
-              candleCount,
-              (i) => [600000 + i * 300000, 100, 102, 99, 101],
-            ),
-          });
-        },
-      );
-      PluginRuntimeModule module() => PluginRuntimeModule(
-        registry: registry,
-        sourceCatalog: const WasmPluginSourceCatalogService(),
-        manualChecks: _Manual(),
-        pluginHostApi: host,
-        attestationExchange: _Attestations(),
-        chatDelivery: _Delivery(),
-        passiveReceive: _Passive(),
-        contactLabels: _Labels(),
-        uiLog: const UiEventLogService(),
-        moltbook: _Moltbook(),
-        fileStore: const CapsuleFileStore(),
-        secretVault: vault,
-        readActiveCapsuleRootHex: () => owner,
-        market: market,
-      );
-      await module().runWorkspaceAction(
-        record: registry.record,
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
         action: 'open',
       );
-      await module().runWorkspaceAction(
-        record: registry.record,
-        action: 'open',
-      );
-      expect(receivedState, {'counter': 1});
-      await module().runWorkspaceAction(
-        record: registry.record,
-        action: 'inspect',
-      );
-      expect(requests, 1);
-      expect(receivedState, {'counter': 3});
-      marketGrant = false;
-      await expectLater(
-        module().runWorkspaceAction(record: registry.record, action: 'inspect'),
-        throwsStateError,
-      );
-      expect(requests, 1);
-      marketGrant = true;
-      switchCapsule = true;
-      await expectLater(
-        module().runWorkspaceAction(record: registry.record, action: 'inspect'),
-        throwsStateError,
-      );
-      expect(receivedState, {'counter': 5});
+      expect(f.settingsSeen.last, {'repository': 'owner/new-source'});
       expect(
-        await const CapsuleFileStore().readPluginState(
-          await const CapsuleFileStore().capsuleDirForHex(owner),
-          registry.record.pluginId!,
+        await f.files.readPluginState(
+          await f.files.capsuleDirForHex(f.owner),
+          f.registry.record.pluginId!,
           'workspace.v1.json',
         ),
         isNull,
       );
-      owner = 'a' * 64;
-      registry.installed = false;
-      await expectLater(
-        module().runWorkspaceAction(record: registry.record, action: 'open'),
-        throwsStateError,
-      );
-      registry.installed = true;
-      switchCapsule = false;
-      readPause = Completer<void>();
-      readStarted = Completer<void>();
-      final interrupted = expectLater(
-        module().runWorkspaceAction(record: registry.record, action: 'inspect'),
-        throwsStateError,
-      );
-      await readStarted.future;
-      final removed = module().removePlugin(registry.record);
-      for (var i = 0; i < 100 && registry.installed; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-      }
-      expect(registry.installed, isFalse);
-      readPause.complete();
-      await interrupted;
-      await removed;
-      expect(
-        await const CapsuleFileStore().readPluginState(
-          await const CapsuleFileStore().capsuleDirForHex(owner),
-          registry.record.pluginId!,
-          'workspace.v1.json',
-        ),
-        isNull,
-      );
-      registry.installed = true;
-      readPause = null;
-      readStarted = null;
-      instrumentGrant = false;
-      final beforeCatalog = requests;
-      await expectLater(
-        module().runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-          optionsForField: 'symbol',
-        ),
-        throwsStateError,
-      );
-      expect(requests, beforeCatalog);
-      instrumentGrant = true;
-      final options = await module().runWorkspaceAction(
-        record: registry.record,
-        action: 'open',
-        optionsForField: 'symbol',
-      );
-      expect(options, {
-        'options': ['XRP-USDT'],
-      });
-      final saved = await const CapsuleFileStore().readPluginState(
-        await const CapsuleFileStore().capsuleDirForHex(owner),
-        registry.record.pluginId!,
-        'workspace.v1.json',
-      );
-      expect(jsonDecode(saved!).keys, ['counter']);
-      await expectLater(
-        module().runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-          optionsForField: 'unknown',
-        ),
-        throwsStateError,
-      );
-      expect(requests, beforeCatalog + 1);
-      replaceDuringRead = true;
-      await expectLater(
-        module().runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-          optionsForField: 'symbol',
-        ),
-        throwsStateError,
-      );
-      replaceDuringRead = false;
-      switchCapsule = true;
-      await expectLater(
-        module().runWorkspaceAction(
-          record: registry.record,
-          action: 'open',
-          optionsForField: 'symbol',
-        ),
-        throwsStateError,
-      );
-      switchCapsule = false;
-      owner = 'a' * 64;
-      streamed.clear();
-      candleCount = 49;
-      clockMs = 15350000;
-      await module().runWorkspaceAction(
-        record: registry.record,
-        action: 'inspect',
-      );
-      expect(streamed.map((s) => (s['candles'] as List).length), [
-        12,
-        12,
-        12,
-        12,
-        1,
-      ]);
-      expect(
-        streamed.expand((s) => s['candles'] as List).map((bar) => bar[0]),
-        List.generate(candleCount, (i) => 600000 + i * 300000),
-      );
-      expect(streamed.map((s) => s['history_end_ms']).toSet(), {15000000});
-      expect(streamed.map((s) => s['batch_complete']), [
-        false,
-        false,
-        false,
-        false,
-        true,
-      ]);
-      candleCount = 1;
-      clockMs = 950000;
-      for (final fault in [
-        'normal',
-        'nested',
-        'nested_resume',
-        'chained',
-        'revoke',
-        'replace',
-        'capsule',
-      ]) {
-        streamed.clear();
-        continuations = 0;
-        continuationFault = fault;
-        revokeContinuationDuringRead = fault == 'revoke';
-        replaceDuringRead = fault == 'replace';
-        switchCapsule = fault == 'capsule';
-        final run = module().runWorkspaceAction(
-          record: registry.record,
-          action: 'update_observation',
-        );
-        if (fault == 'normal') {
-          await run;
-          expect(continuations, 1);
-        } else {
-          await expectLater(run, throwsStateError, reason: fault);
-          expect(continuations, fault == 'chained' ? 1 : 0, reason: fault);
-        }
-        owner = 'a' * 64;
-        packageDigest = 'c' * 64;
-        continuationGrant = true;
-        revokeContinuationDuringRead = false;
-        replaceDuringRead = false;
-        switchCapsule = false;
-      }
-      continuationFault = null;
-      accountGrant = false;
-      final pair = {'api_key': 'test-key', 'secret_key': 'test-secret'};
-      await expectLater(
-        module().runWorkspaceAction(
-          record: registry.record,
-          action: 'link_account',
-          credentials: pair,
-        ),
-        throwsStateError,
-      );
-      expect(privateReads, 0);
-      expect(vault.values, isEmpty);
-      accountGrant = true;
-      await module().runWorkspaceAction(
-        record: registry.record,
-        action: 'link_account',
-        credentials: pair,
-      );
-      expect(privateReads, 3);
-      expect(vault.values.length, 1);
-      final connected = await const CapsuleFileStore().readPluginState(
-        await const CapsuleFileStore().capsuleDirForHex(owner),
-        registry.record.pluginId!,
-        'workspace.v1.json',
-      );
-      expect(connected, isNot(contains('test-secret')));
-      expect(
-        jsonDecode(connected!)['account']['account_id'],
-        sha256.convert(utf8.encode('bingx:LIVE:$uid')).toString(),
-      );
-      await module().runWorkspaceAction(
-        record: registry.record,
-        action: 'inspect',
-      );
-      expect(
-        privateReads,
-        6,
-      ); // Reopening the runtime reuses the secure binding.
-      final retained = Map<String, String>.from(vault.values);
-      uid = '987654321';
-      await expectLater(
-        module().runWorkspaceAction(record: registry.record, action: 'inspect'),
-        throwsStateError,
-      );
-      expect(vault.values, retained);
-      revokeAccountDuringRead = true;
-      await expectLater(
-        module().runWorkspaceAction(
-          record: registry.record,
-          action: 'link_account',
-          credentials: pair,
-        ),
-        throwsStateError,
-      );
-      expect(vault.values, retained);
-      revokeAccountDuringRead = false;
-      accountGrant = true;
-      final foreignOwner = 'f' * 64;
-      await vault.saveSecret(
-        capsuleHex: foreignOwner,
-        pluginId: registry.record.pluginId!,
-        providerId: 'bingx',
-        accountId: 'foreign-runtime',
-        secretName: 'credentials',
-        secretValue: 'foreign-secret',
-      );
-      await module().removePlugin(registry.record);
-      expect(vault.values.length, 1);
-      expect(vault.values.values.single, 'foreign-secret');
-      expect(vault.values.keys.single, startsWith('$foreignOwner/'));
-    },
-  );
-  test('package workspace requires grants and actual WASM evidence', () async {
-    var invocations = 0;
-    PluginHostApiService host({
-      bool grant = true,
-      bool continuationGrant = true,
-      bool evidence = true,
-      bool invalidTable = false,
-      bool invalidSource = false,
-      Object? resume,
-      List<Map<String, dynamic>> requests = const [],
-    }) => PluginHostApiService(
-      handlers: [],
-      resolveRuntimeBinding:
-          (_) async => PluginRuntimeBinding.externalPackage(
-            packageId: 'package',
-            packageVersion: '0.1.0',
-            packageKind: 'zip',
-            contractKind: pluginWorkspaceContractKind,
-            capabilities: [
-              'workspace.render',
-              if (continuationGrant) 'workspace.continue',
-              if (grant) 'state.plugin.read_write',
-            ],
-          ),
-      resolveRuntimeInvoke: (_, _) async {
-        invocations++;
-        return evidence
-            ? PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'manifest_module_path',
-              moduleDigestHex: 'a' * 64,
-              invokeDigestHex: 'b' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticResult: {
-                'state': {},
-                'view':
-                    invalidTable
-                        ? {
-                          ...view(),
-                          'columns': [],
-                          'rows': [[]],
-                        }
-                        : invalidSource
-                        ? {
-                          ...choiceView(),
-                          'fields': [
-                            {
-                              ...(choiceView()['fields'] as List).single as Map,
-                              'source': {
-                                'kind': 'market.instruments.read',
-                                'provider': 'https://attacker.invalid',
-                              },
-                            },
-                          ],
-                        }
-                        : view(),
-                'requests': requests,
-                if (resume != null) 'resume_action': resume,
-              },
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-            )
-            : null;
-      },
-    );
-    const request = PluginHostApiRequest(
-      schemaVersion: 1,
-      pluginId: 'hivra.contract.independent-workspace.v1',
-      method: 'workspace',
-      args: {},
-    );
-    expect(
-      (await host(grant: false).executeWithRuntimeHook(request)).errorCode,
-      'runtime_capability_mismatch',
-    );
-    expect(invocations, 0);
-    expect(
-      (await host(
-        continuationGrant: false,
-      ).executeWithRuntimeHook(request)).errorCode,
-      'runtime_capability_mismatch',
-    );
-    expect(invocations, 0);
-    expect(
-      (await host(evidence: false).executeWithRuntimeHook(request)).errorCode,
-      'runtime_invoke_unavailable',
-    );
-    expect(
-      (await host().executeWithRuntimeHook(request)).result?['view'],
-      view(),
-    );
-    expect(host().execute(request).errorCode, 'unsupported_plugin');
-    final resumed = await host(
-      resume: 'package_finish',
-      requests: [marketRequest()],
-    ).executeWithRuntimeHook(request);
-    expect(resumed.result?['resume_action'], 'package_finish');
-    for (final resume in [
-      '',
-      'A',
-      'a' * 65,
-      3,
-      ['package_finish'],
-    ]) {
-      expect(
-        (await host(
-          resume: resume,
-          requests: [marketRequest()],
-        ).executeWithRuntimeHook(request)).errorCode,
-        'invalid_workspace',
-      );
-    }
-    for (final requests in <List<Map<String, dynamic>>>[
-      [],
-      [accountRequest()],
-      [openOrdersRequest()],
-      [
-        {'kind': 'order.entry.place', 'provider': 'bingx', 'plan': entryPlan()},
-      ],
-    ]) {
-      expect(
-        (await host(
-          resume: 'package_finish',
-          requests: requests,
-        ).executeWithRuntimeHook(request)).errorCode,
-        'invalid_workspace',
-      );
-    }
-    expect(
-      (await host(
-        invalidTable: true,
-      ).executeWithRuntimeHook(request)).errorCode,
-      'invalid_workspace',
-    );
-    expect(
-      (await host(
-        invalidSource: true,
-      ).executeWithRuntimeHook(request)).errorCode,
-      'invalid_workspace',
-    );
-  });
-
-  test('instrument catalog is provider-owned, bounded and retryable', () async {
-    var reads = 0;
-    var data = <dynamic>[
-      {'symbol': 'XRP-USDT', 'status': 1, 'apiStateOpen': 'true'},
-      {'symbol': 'BTC-USDT', 'status': 1, 'apiStateOpen': true},
-      {
-        'symbol': 'NCSIRUSSELL20002USD-USDT',
-        'status': 1,
-        'apiStateOpen': 'true',
-      },
-      {'symbol': 'XRP-USDT', 'status': 1, 'apiStateOpen': 'true'},
-      {'symbol': 'OLD-USDT', 'status': 0, 'apiStateOpen': 'true'},
-      {'symbol': 'CLOSED-USDT', 'status': 1, 'apiStateOpen': 'false'},
-    ];
-    final adapter = BingxMarketDataAdapter(
-      read: (uri) async {
-        reads++;
-        expect(uri.host, 'open-api.bingx.com');
-        expect(uri.path, '/openApi/swap/v2/quote/contracts');
-        expect(uri.queryParameters.keys, ['timestamp']);
-        return jsonEncode({'code': 0, 'data': data});
-      },
-    );
-    const source = {'kind': 'market.instruments.read', 'provider': 'bingx'};
-    expect(await adapter.readInstruments(source), [
-      'BTC-USDT',
-      'NCSIRUSSELL20002USD-USDT',
-      'XRP-USDT',
-    ]);
-    await expectLater(
-      adapter.readInstruments({...source, 'provider': 'arbitrary'}),
-      throwsFormatException,
-    );
-    expect(reads, 1);
-    for (final bad in <List<dynamic>>[
-      [],
-      [null],
-      [
-        {'symbol': '../secret', 'status': 1, 'apiStateOpen': true},
-      ],
-      List.filled(4097, {}),
-      [
-        {'symbol': '${'A' * 61}-USDT', 'status': 1, 'apiStateOpen': true},
-      ],
-    ]) {
-      data = bad;
-      await expectLater(adapter.readInstruments(source), throwsFormatException);
-    }
-    data = [
-      {'symbol': 'BTC-USDT', 'status': 1, 'apiStateOpen': 'true'},
-    ];
-    expect(await adapter.readInstruments(source), ['BTC-USDT']);
-  });
-
-  test(
-    'provider normalizes both candle shapes and excludes live candle',
-    () async {
-      final now = DateTime.fromMillisecondsSinceEpoch(950000, isUtc: true);
-      for (final objects in [false, true]) {
-        final adapter = BingxMarketDataAdapter(
-          clock: () => now,
-          read: (uri) async {
-            expect(uri.host, 'open-api.bingx.com');
-            expect(uri.queryParameters['symbol'], 'XRP-USDT');
-            final rows = [
-              [900000, '100', '102', '99', '101'],
-              [600000, '100', '102', '99', '101'],
-              [300000, '100', '102', '99', '101'],
-            ];
-            return jsonEncode({
-              'code': 0,
-              'data':
-                  objects
-                      ? rows
-                          .map(
-                            (r) => {
-                              'time': r[0],
-                              'open': r[1],
-                              'high': r[2],
-                              'low': r[3],
-                              'close': r[4],
-                            },
-                          )
-                          .toList()
-                      : rows,
-            });
-          },
-        );
-        final snapshot = await adapter.readCandles(marketRequest());
-        expect(snapshot['candles'], [
-          [300000, 100, 102, 99, 101],
-          [600000, 100, 102, 99, 101],
-        ]);
-        expect(snapshot['current_price'], 101);
-        expect(snapshot['symbol'], 'XRP-USDT');
-      }
-    },
-  );
-
-  test(
-    'provider rejects arbitrary URLs, non-market requests, gaps and bad OHLC',
-    () async {
-      var reads = 0;
-      String response = jsonEncode({
-        'code': 0,
-        'data': [
-          [600000, 100, 102, 99, 101],
-        ],
-      });
-      final adapter = BingxMarketDataAdapter(
-        clock: () => DateTime.fromMillisecondsSinceEpoch(950000, isUtc: true),
-        read: (_) async {
-          reads++;
-          return response;
-        },
-      );
-      for (final mutation in [
-        {'provider': 'http://localhost'},
-        {'kind': 'order.submit'},
-        {'symbol': '../secret'},
-        {'symbol': '${'A' * 61}-USDT'},
-        {'limit': 601},
-        {'timeframe': 'unsupported'},
-      ]) {
-        await expectLater(
-          adapter.readCandles({...marketRequest(), ...mutation}),
-          throwsFormatException,
-        );
-      }
-      expect(reads, 0);
-      for (final data in [
-        [
-          [300000, 100, 102, 99, 101],
-          [900000, 100, 102, 99, 101],
-        ],
-        [
-          [600000, 100, 98, 99, 101],
-        ],
-        [
-          [600000, 100, 102, 99, 101],
-          [600000, 100, 102, 99, 101],
-        ],
-        [
-          [0, 100, 102, 99, 101],
-        ],
-      ]) {
-        response = jsonEncode({'code': 0, 'data': data});
-        await expectLater(
-          adapter.readCandles(marketRequest()),
-          throwsFormatException,
-        );
-      }
-    },
-  );
-
-  testWidgets(
-    'package defines its form; edited or failed actions hide previous results',
-    (tester) async {
-      final pending = Completer<Map<String, dynamic>>();
-      String? sentAction;
-      Map<String, dynamic>? sentSettings;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PluginWorkspaceScreen(
-            runWorkspaceAction: (
-              action,
-              settings, {
-              credentials,
-              approvedOrder,
-            }) async {
-              if (action == 'open') return view();
-              sentAction = action;
-              sentSettings = settings;
-              return pending.future;
-            },
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Observed levels'), findsOneWidget);
-      expect(find.text('105.5'), findsNothing);
-      expect(find.text('Provider evidence'), findsNothing);
-      await tester.tap(find.text('Calculation details'));
-      await tester.pumpAndSettle();
-      expect(find.text('105.5'), findsOneWidget);
-      expect(find.text('Provider evidence'), findsOneWidget);
-      await tester.tap(find.text('Calculation details'));
-      await tester.pumpAndSettle();
-      expect(find.text('105.5'), findsNothing);
-      expect(find.text('Observed levels'), findsOneWidget);
-      await tester.tap(find.text('Calculation details'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('plugin-field-symbol')),
-        'XRP-USDT',
-      );
-      await tester.pump();
-      expect(find.text('105.5'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('plugin-action-inspect')));
-      await tester.pump();
-      expect(sentAction, 'inspect');
-      expect(sentSettings, {'symbol': 'XRP-USDT'});
-      expect(
-        tester
-            .widget<FilledButton>(
-              find.byKey(const ValueKey('plugin-action-inspect')),
-            )
-            .onPressed,
-        isNull,
-      );
-      pending.completeError(StateError('Market unavailable'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Market unavailable'), findsOneWidget);
-      expect(find.text('105.5'), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'search chooses one instrument; cancel and retry do not invent a selection',
-    (tester) async {
-      var selected = 'BTC-USDT';
-      var reads = 0;
-      var fail = true;
-      Map<String, dynamic> shown() => {
-        ...choiceView(),
-        'fields': [
-          {
-            ...(choiceView()['fields'] as List).single as Map,
-            'value': selected,
-          },
-        ],
-      };
-      Widget screen() => MaterialApp(
-        home: PluginWorkspaceScreen(
-          runWorkspaceAction: (
-            action,
-            settings, {
-            credentials,
-            approvedOrder,
-          }) async {
-            if (action == 'inspect') selected = settings['symbol'] as String;
-            return shown();
-          },
-          readFieldOptions: (id) async {
-            expect(id, 'symbol');
-            reads++;
-            if (fail) throw StateError('Network unavailable');
-            return ['BTC-USDT', 'XRP-USDT', 'VET-USDT'];
-          },
-        ),
-      );
-      await tester.pumpWidget(screen());
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<TextField>(
-              find.byKey(const ValueKey('plugin-field-symbol')),
-            )
-            .readOnly,
-        isTrue,
-      );
-      await tester.tap(find.byKey(const ValueKey('plugin-field-symbol')));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Network unavailable'), findsOneWidget);
-      fail = false;
-      await tester.tap(find.text('Retry'));
-      await tester.pumpAndSettle();
-      expect(reads, 2);
-      await tester.enterText(
-        find.byKey(const ValueKey('plugin-choice-search')),
-        'xrp',
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('XRP-USDT'), findsOneWidget);
-      expect(find.text('VET-USDT'), findsNothing);
-      await tester.tap(find.text('XRP-USDT'));
-      await tester.pumpAndSettle();
-      expect(find.text('105.5'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('plugin-action-inspect')));
-      await tester.pumpAndSettle();
-      expect(selected, 'XRP-USDT');
-      expect(find.text('105.5'), findsNothing);
-      await tester.tap(find.text('Calculation details'));
-      await tester.pumpAndSettle();
-      expect(find.text('105.5'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('plugin-field-symbol')));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('plugin-choice-search')),
-        'not-a-symbol',
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('No matching instruments'), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(selected, 'XRP-USDT');
-      expect(find.text('105.5'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-      await tester.pumpWidget(screen());
-      await tester.pumpAndSettle();
-      expect(find.text('XRP-USDT'), findsOneWidget);
-      expect(tester.takeException(), isNull);
     },
   );
 }
 
-Map<String, dynamic> choiceView() => {
-  ...view(),
-  'fields': [
+Map<String, dynamic> permission(String origin) => {
+  'version': 2,
+  'credentials': {
+    'default': [
+      {'id': 'token', 'label': 'Connection token'},
+    ],
+  },
+  'network': [
     {
-      'id': 'symbol',
-      'label': 'Instrument',
-      'type': 'choice',
-      'value': 'BTC-USDT',
-      'source': {'kind': 'market.instruments.read', 'provider': 'bingx'},
+      'origin': origin,
+      'methods': ['GET', 'POST'],
+      'credential': null,
     },
-  ],
-};
-
-Map<String, dynamic> marketRequest() => {
-  'kind': 'market.candles.read',
-  'provider': 'bingx',
-  'symbol': 'XRP-USDT',
-  'timeframe': '5m',
-  'limit': 600,
-};
-
-Map<String, dynamic> accountRequest() => {
-  'kind': 'account.connect',
-  'provider': 'bingx',
-  'symbol': 'XRP-USDT',
-};
-
-Map<String, dynamic> entryPlan() => {
-  'account_id': sha256.convert(utf8.encode('bingx:LIVE:123456789')).toString(),
-  'symbol': 'BTC-USDT',
-  'side': 'long',
-  'timeframe': '5m',
-  'origin': 10,
-  'first_known': 20,
-  'line_price': 96.5,
-  'price': 96.5,
-  'quantity': 0.518,
-  'stop_price': 96.12,
-  'margin': 0.999740,
-  'leverage': 50,
-  'prepared_at_ms': 100000000,
-  'expires_at_ms': 100060000,
-};
-
-ExternalEffectAdapterRequest entryEffect(Map<String, dynamic> plan) {
-  final payload = jsonEncode(plan);
-  return ExternalEffectAdapterRequest(
-    ownerCapsuleHex: 'a' * 64,
-    operationId: BingxMarketDataAdapter.entryOperationId(plan),
-    pluginId: 'hivra.contract.jack-ventura.v1',
-    providerId: 'bingx',
-    accountBindingId: plan['account_id'] as String,
-    effectKind: 'order.entry.place',
-    canonicalPayloadJson: payload,
-    payloadHashHex: sha256.convert(utf8.encode(payload)).toString(),
-  );
-}
-
-Map<String, dynamic> openOrdersRequest() => {
-  'kind': 'order.snapshot.read',
-  'scope': 'open',
-  'provider': 'bingx',
-  'account_id': entryPlan()['account_id'],
-  'symbol': 'BTC-USDT',
-};
-
-class _CompletionWrites extends AtomicFileWriteService {
-  bool failJournal = false;
-  bool failClosedState = false;
-
-  @override
-  Future<void> writeString(File target, String contents) async {
-    if (failJournal && target.path.endsWith('/external_effects.v1.json')) {
-      failJournal = false;
-      throw StateError('Interrupted completion journal write');
-    }
-    if (failClosedState &&
-        target.path.endsWith('/workspace.v1.json') &&
-        (jsonDecode(contents) as Map)['closed'] == true) {
-      failClosedState = false;
-      throw StateError('Interrupted private state write');
-    }
-    await super.writeString(target, contents);
-  }
-}
-
-class _EntryProvider {
-  int posts = 0;
-  int deletes = 0;
-  bool deleteTimeout = false;
-  bool deleteStaysOpen = false;
-  bool deleteFillRace = false;
-  Map<String, String>? deleteParams;
-  Future<void> Function()? afterOrderRead;
-  int now = 100000000;
-  String uid = '123456789';
-  String status = 'NEW';
-  String filled = '0';
-  String longLeverage = '50';
-  String positionSide = 'LONG';
-  String? clientIdOverride;
-  bool postTimeout = false;
-  bool queryUnavailable = false;
-  bool exitMode = false;
-  bool exitQueryUnavailable = false;
-  bool unsafeExit = false;
-  String exitQuantity = '0.518';
-  final exitOrders = <String, Map<String, dynamic>?>{};
-  int exitOrderReads = 0;
-  void Function()? afterExitRead;
-  bool existingOrder = false;
-  bool wrappedOrders = false;
-  dynamic openDataOverride;
-  dynamic positionData = [];
-  dynamic modeData = {'dualSidePosition': 'true'};
-  bool authorized = true;
-  double currentPrice = 100;
-  String evidenceTimeframe = '5m';
-  int evidenceLimit = 600;
-  Map<String, String>? postParams;
-  FutureOr<void> Function()? afterModeRead;
-  void Function()? afterOpenOrdersRead;
-  void Function()? afterMarketRead;
-  Future<void> Function()? beforeMarketRead;
-
-  BingxMarketDataAdapter adapter() => BingxMarketDataAdapter(
-    clock: () => DateTime.fromMillisecondsSinceEpoch(now, isUtc: true),
-    credentials:
-        (_) async => {'api_key': 'test-key', 'secret_key': 'test-secret'},
-    authorize: (plan) async {
-      if (!authorized) throw StateError('Revoked');
-      if (!plan.containsKey('entry_plan') && currentPrice <= plan['price']) {
-        throw StateError('Passed entry');
-      }
-    },
-    read: (uri) async {
-      await beforeMarketRead?.call();
-      expect(uri.queryParameters['limit'], '$evidenceLimit');
-      expect(uri.queryParameters['interval'], evidenceTimeframe);
-      final span =
-          {'15m': 900000, '5m': 300000, '1m': 60000}[evidenceTimeframe]!;
-      final currentOpen = now ~/ span * span;
-      final count = (currentOpen ~/ span + 1).clamp(2, evidenceLimit);
-      afterMarketRead?.call();
-      return jsonEncode({
-        'code': 0,
-        'data': List.generate(
-          count,
-          (i) => [
-            currentOpen - (count - 1 - i) * span,
-            100,
-            101,
-            currentPrice < 99 ? currentPrice : 99,
-            currentPrice,
-          ],
-        ),
-      });
-    },
-    sendAuthenticated: (method, uri, headers) async {
-      expect(uri.host, 'open-api.bingx.com');
-      expect(headers['X-BX-APIKEY'], 'test-key');
-      final params = Map<String, String>.from(uri.queryParameters)
-        ..remove('signature');
-      final names = params.keys.toList()..sort();
-      expect(uri.queryParameters.keys.toList(), [...names, 'signature']);
-      expect(
-        uri.queryParameters['signature'],
-        Hmac(sha256, utf8.encode('test-secret'))
-            .convert(utf8.encode(names.map((k) => '$k=${params[k]}').join('&')))
-            .toString(),
-      );
-      dynamic data;
-      if (method == 'POST') {
-        expect(uri.path, '/openApi/swap/v2/trade/order');
-        posts++;
-        postParams = params;
-        if (postTimeout) throw TimeoutException('secret-key $uri');
-        data = {'orderId': '2103610529511862272'};
-      } else if (method == 'DELETE') {
-        expect(uri.path, '/openApi/swap/v2/trade/order');
-        expect(params['orderId'], '2103610529511862272');
-        expect(params['symbol'], 'BTC-USDT');
-        expect(params.containsKey('clientOrderId'), isFalse);
-        deletes++;
-        deleteParams = params;
-        if (deleteFillRace) {
-          status = 'PARTIALLY_FILLED';
-          filled = '0.1';
-        } else if (!deleteStaysOpen) {
-          status = 'CANCELED';
-          existingOrder = false;
-          openDataOverride = null;
-        }
-        if (deleteTimeout) throw TimeoutException('secret-key $uri');
-        data = {};
-      } else if (uri.path.endsWith('/uid')) {
-        data = {'uid': uid};
-      } else if (uri.path.endsWith('/openOrders')) {
-        data = existingOrder ? [openOrder()] : [];
-        if (wrappedOrders) data = {'orders': data};
-        if (openDataOverride != null) data = openDataOverride;
-        afterOpenOrdersRead?.call();
-      } else if (uri.path.endsWith('/positions')) {
-        data = positionData;
-      } else if (uri.path.endsWith('/dual')) {
-        data = modeData;
-        await afterModeRead?.call();
-      } else if (uri.path.endsWith('/leverage')) {
-        expect(params['symbol'], 'BTC-USDT');
-        data = {'longLeverage': longLeverage, 'shortLeverage': '20'};
-      } else {
-        expect(uri.path, '/openApi/swap/v2/trade/order');
-        final isExit =
-            exitMode &&
-            params['clientOrderId'] !=
-                BingxMarketDataAdapter.entryOperationId(
-                  entryPlan(),
-                ).substring(0, 40);
-        if (isExit) {
-          if (exitQueryUnavailable) throw TimeoutException('Unavailable');
-          if (exitOrders.containsKey(params['clientOrderId'])) {
-            exitOrderReads++;
-            final exact = exitOrders[params['clientOrderId']];
-            if (exact == null) throw TimeoutException('Unavailable');
-            afterExitRead?.call();
-            return jsonEncode({'code': 0, 'data': exact});
-          }
-          return jsonEncode({
-            'code': 0,
-            'data': {
-              'orderID': '2103610529511862273',
-              'symbol': 'BTC-USDT',
-              'clientOrderId': params['clientOrderId'],
-              'side': 'SELL',
-              'positionSide': positionSide,
-              'reduceOnly': !unsafeExit,
-              'type': 'LIMIT',
-              'origQty': exitQuantity,
-              'price': '105.0',
-              'executedQty': '0',
-              'avgPrice': '0',
-              'status': 'NEW',
-            },
-          });
-        }
-        if (queryUnavailable) {
-          return jsonEncode({'code': 100001, 'msg': 'secret-key $uri'});
-        }
-        data = {
-          'orderID': '2103610529511862272',
-          'symbol': 'BTC-USDT',
-          'clientOrderId': clientIdOverride ?? params['clientOrderId'],
-          'side': 'BUY',
-          'positionSide': positionSide,
-          'type': 'LIMIT',
-          'origQty': '0.518',
-          'price': '96.5',
-          'executedQty': filled,
-          'avgPrice': filled == '0' ? '0' : '96.4',
-          'status': status,
-        };
-        await afterOrderRead?.call();
-      }
-      return jsonEncode({'code': 0, 'data': data});
-    },
-  );
-}
-
-Map<String, dynamic> openOrder() => {
-  'symbol': 'BTC-USDT',
-  'orderId': '2103610529511862272',
-  'side': 'BUY',
-  'positionSide': 'LONG',
-  'type': 'LIMIT',
-  'status': 'NEW',
-  'price': '96.5',
-  'stopPrice': '',
-  'origQty': '0.518',
-  'executedQty': '0.1',
-};
-
-Map<String, dynamic> accountContract() => {
-  'symbol': 'XRP-USDT',
-  'status': 1,
-  'apiStateOpen': 'true',
-  'pricePrecision': 4,
-  'quantityPrecision': 1,
-  'tradeMinQuantity': '1',
-  'tradeMinUSDT': '5',
-};
-
-Map<String, dynamic> view() => {
-  'title': 'Independent package',
-  'message': 'Observed levels',
-  'details': 'Provider evidence',
-  'fields': [
     {
-      'id': 'symbol',
-      'label': 'Instrument',
-      'type': 'text',
-      'value': 'BTC-USDT',
+      'origin': origin,
+      'methods': ['GET', 'POST'],
+      'credential': 'default',
     },
   ],
-  'actions': [
-    {'id': 'inspect', 'label': 'Inspect'},
-  ],
-  'columns': ['Price'],
-  'rows': [
-    ['105.5'],
-  ],
+};
+Map<String, dynamic> presentation() => {
+  'title': 'Unrelated application',
+  'message': 'Ready',
+  'details': '',
+  'fields': [],
+  'actions': [],
+  'columns': [],
+  'rows': [],
+  'confirmation': null,
 };
 
-class _PluginScreenModule extends Fake implements PluginRuntimeModule {
-  @override
-  final _Registry registry = _Registry();
-  @override
-  final _EmptyCatalog sourceCatalog = _EmptyCatalog();
-  @override
-  final _ScreenLog uiLog = _ScreenLog();
-  var removal = Completer<void>();
-  var removalCalls = 0;
-  @override
-  Future<void> removePlugin(WasmPluginRecord record) {
-    removalCalls++;
-    return removal.future;
-  }
-}
-
-class _EmptyCatalog extends Fake implements WasmPluginSourceCatalogService {
-  @override
-  Future<WasmPluginSourceCatalog> fetchCatalogWithFallback({
-    String primaryCatalogUrl = WasmPluginSourceCatalogService.defaultCatalogUrl,
-    String secondaryCatalogUrl =
-        WasmPluginSourceCatalogService.fallbackCatalogUrl,
-    String? localCatalogPathOverride,
-  }) async => const WasmPluginSourceCatalog(
-    sourceId: 'fixture',
-    sourceName: 'Fixture',
-    fetchedAtIso: '',
-    entries: [],
-  );
-}
-
-class _ScreenLog extends Fake implements UiEventLogService {
-  final messages = <String>[];
-  @override
-  Future<void> log(String source, String message) async =>
-      messages.add(message);
-}
-
-class _Registry extends WasmPluginRegistryService {
-  PluginRuntimeBinding Function()? executionBinding;
+class Registry extends WasmPluginRegistryService {
   bool installed = true;
-  _Registry({String id = 'workspace-package'}) {
-    if (id != record.id) {
-      record = WasmPluginRecord.fromJson({...record.toJson(), 'id': id});
-    }
-  }
-  var record = const WasmPluginRecord(
-    id: 'workspace-package',
-    displayName: 'Workspace',
-    originalFileName: 'workspace.zip',
-    storedFileName: 'workspace.zip',
+  bool network = true;
+  bool persistent = true, scheduled = true;
+  String digest = 'b' * 64;
+  final record = const WasmPluginRecord(
+    id: 'package',
+    displayName: 'Unrelated application',
+    originalFileName: 'app.zip',
+    storedFileName: 'app.zip',
     sizeBytes: 100,
-    installedAtIso: '2026-09-30T00:00:00Z',
+    installedAtIso: '2026-11-01T00:00:00Z',
     packageKind: 'zip',
-    pluginId: 'hivra.contract.workspace-test.v1',
-    pluginVersion: '0.1.0',
+    pluginId: 'example.unrelated',
+    pluginVersion: '1.0.0',
     contractKind: pluginWorkspaceContractKind,
     runtimeAbi: 'hivra_host_abi_v2',
     runtimeEntryExport: 'hivra_evaluate_v1',
     runtimeModulePath: 'plugin/module.wasm',
-    // An apparent UI grant must not override the resolved package grants.
     capabilities: [
       'workspace.render',
       'workspace.continue',
+      'workspace.schedule',
       'state.plugin.read_write',
-      'market.candles.read',
-      'market.instruments.read',
+      'network.http',
+      'credentials.use',
+      'inference.request',
     ],
   );
   @override
   Future<List<WasmPluginRecord>> loadPlugins() async =>
       installed ? [record] : [];
   @override
-  Future<PluginRuntimeBinding> resolveRuntimeBinding(String pluginId) async =>
-      executionBinding != null && installed
-          ? executionBinding!()
-          : super.resolveRuntimeBinding(pluginId);
-  @override
-  Future<void> removePlugin(
-    String id, {
-    Future<void> Function()? cleanup,
-  }) async {
-    installed = false;
-    await cleanup?.call();
-  }
+  Future<PluginRuntimeBinding> resolveRuntimeBinding(String id) async =>
+      installed
+          ? PluginRuntimeBinding.externalPackage(
+            packageId: record.id,
+            packageVersion: '1.0.0',
+            packageKind: 'zip',
+            packageDigestHex: digest,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities:
+                record.capabilities
+                    .where(
+                      (c) =>
+                          (network || c != 'network.http') &&
+                          (persistent || c != 'state.plugin.read_write') &&
+                          (scheduled || c != 'workspace.schedule'),
+                    )
+                    .toList(),
+          )
+          : throw StateError('Package removed');
 }
 
-WasmPluginRecord _recordWithPluginId(
-  WasmPluginRecord source,
-  String pluginId,
-) => WasmPluginRecord(
-  id: source.id,
-  displayName: source.displayName,
-  originalFileName: source.originalFileName,
-  storedFileName: source.storedFileName,
-  sizeBytes: source.sizeBytes,
-  installedAtIso: source.installedAtIso,
-  packageKind: source.packageKind,
-  pluginId: pluginId,
-  pluginVersion: source.pluginVersion,
-  contractKind: source.contractKind,
-  runtimeAbi: source.runtimeAbi,
-  runtimeEntryExport: source.runtimeEntryExport,
-  runtimeModulePath: source.runtimeModulePath,
-  capabilities: source.capabilities,
-);
-
-class _Vault extends Fake implements CapsuleScopedSecretVault {
-  final values = <String, String>{};
-  bool failPluginDeletion = false;
-  String scope(
-    String capsule,
-    String plugin,
-    String provider,
-    String account,
-    String name,
-  ) => '$capsule/$plugin/$provider/$account/$name';
-  @override
-  Future<String?> loadSecret({
-    required String capsuleHex,
-    required String pluginId,
-    required String providerId,
-    required String accountId,
-    required String secretName,
-  }) async =>
-      values[scope(capsuleHex, pluginId, providerId, accountId, secretName)];
-  @override
-  Future<void> saveSecret({
-    required String capsuleHex,
-    required String pluginId,
-    required String providerId,
-    required String accountId,
-    required String secretName,
-    required String secretValue,
-  }) async {
-    values[scope(capsuleHex, pluginId, providerId, accountId, secretName)] =
-        secretValue;
+class Fixture {
+  final Directory home;
+  final CapsuleFileStore files;
+  final String origin;
+  final registry = Registry();
+  String owner = 'a' * 64;
+  String? secrets;
+  int sends = 0;
+  bool newSchema = false, chain = false;
+  String requestKind = 'http.request', method = 'POST', url;
+  String? credential;
+  Map<String, dynamic>? auth;
+  Map<String, dynamic> extraRequest = {};
+  bool inferenceAllowed = false;
+  Future<void> Function(String)? onInvoke;
+  Future<Map<String, dynamic>> Function(
+    Map<String, dynamic>,
+    Future<void> Function(),
+  )?
+  infer;
+  Future<void> Function()? onReadSecrets, onSend;
+  final actions = <String>[];
+  final settingsSeen = <Map<String, dynamic>>[];
+  final received = <Map<String, dynamic>>[];
+  Fixture(this.home, this.files, this.origin) : url = '$origin/action';
+  static Future<Fixture> create({String origin = 'https://one.example'}) async {
+    final home = await Directory.systemTemp.createTemp('hivra_common_api_');
+    final f = Fixture(
+      home,
+      CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+      ),
+      origin,
+    );
+    f.secrets = jsonEncode({
+      'version': 3,
+      'connections': {
+        'default': {'token': 'test-token'},
+      },
+    });
+    return f;
   }
 
-  @override
-  Future<void> deleteAccount({
-    required String capsuleHex,
-    required String pluginId,
-    required String providerId,
-    required String accountId,
-  }) async {
-    values.removeWhere(
-      (k, v) => k.startsWith('$capsuleHex/$pluginId/$providerId/$accountId/'),
+  Map<String, dynamic> get schedule => {
+    'version': 2,
+    if (registry.scheduled) 'action': 'run',
+    if (registry.scheduled) 'interval_seconds': 60,
+    'description': 'Owner-configured application workflow',
+    'access': {...permission(origin), if (inferenceAllowed) 'inference': true},
+  };
+  Map<String, dynamic> request() => {
+    'kind': requestKind,
+    'id': 'semantic-effect',
+    'continuation': 'finish_custom_operation',
+    'url': url,
+    'method': method,
+    if (credential != null) 'credential': credential,
+    if (auth != null) 'auth': auth,
+    ...extraRequest,
+  };
+  PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
+    registry: registry,
+    infer: infer,
+    fileStore: files,
+    readActiveCapsuleRootHex: () => owner,
+    scheduleTimers: false,
+    readCredentials: ({required owner, required pluginId}) async {
+      await onReadSecrets?.call();
+      return secrets;
+    },
+
+    capabilities: PluginCapabilityDispatcher(
+      send: (m, u, h, b) async {
+        sends++;
+        await onSend?.call();
+        return {'status': 200, 'body': 'arbitrary service bytes'};
+      },
+    ),
+    pluginHostApi: PluginHostApiService(
+      handlers: [],
+      resolveRuntimeBinding: registry.resolveRuntimeBinding,
+      resolveRuntimeInvoke: (request, binding) async {
+        final action = request.args['action'] as String;
+        settingsSeen.add(
+          Map<String, dynamic>.from(
+            request.args['settings'] as Map? ?? const {},
+          ),
+        );
+        actions.add(action);
+        await onInvoke?.call(action);
+        final state = Map<String, dynamic>.from(
+          request.args['state'] as Map? ?? {},
+        );
+        var requests = <Map<String, dynamic>>[];
+        if (action == 'run') {
+          state['private_schema'] = {'pending': true};
+          requests = [this.request()];
+        }
+        if (action == 'finish_custom_operation') {
+          received.add(
+            Map<String, dynamic>.from(request.args['result'] as Map),
+          );
+          if (chain && received.length == 1) requests = [this.request()];
+        }
+        if (newSchema && action == 'open') {
+          state['entirely_different_shape'] = [state.remove('private_schema')];
+        }
+        return PluginRuntimeInvokeEvidence(
+          mode: 'wasmi_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex: 'e' * 64,
+          invokeDigestHex: 'f' * 64,
+          semanticStatus: PluginHostApiStatus.executed,
+          semanticErrorCode: null,
+          semanticErrorMessage: null,
+          semanticResult: {
+            'state': registry.persistent ? state : null,
+            'context': {'package_selected': 'opaque'},
+            'view': {
+              ...presentation(),
+              'message':
+                  received.isEmpty
+                      ? 'Ready'
+                      : received.last['outcome'] ?? 'accepted',
+              if (registry.scheduled) 'schedule': schedule,
+            },
+            'requests': requests,
+          },
+        );
+      },
+    ),
+  );
+  Future<void> enable() async {
+    await runtime().setWorkspaceExecution(
+      record: registry.record,
+      enabled: true,
+      expiresAtMs: DateTime.now().millisecondsSinceEpoch + 3600000,
+      approvedScope: schedule,
+      credentialBindings: {
+        'default': {'token': 'ref-token'},
+      },
     );
   }
 
-  @override
-  Future<void> deletePlugin(
-    String pluginId, {
-    required Set<String> capsuleHexes,
-  }) async {
-    if (failPluginDeletion) throw StateError('Injected Keychain denial');
-    values.removeWhere(
-      (k, v) =>
-          k.split('/')[1] == pluginId && capsuleHexes.contains(k.split('/')[0]),
+  Future<Map<String, dynamic>> state() async => Map<String, dynamic>.from(
+    jsonDecode(
+          (await files.readPluginState(
+            await files.capsuleDirForHex('a' * 64),
+            registry.record.pluginId!,
+            'workspace.v1.json',
+          ))!,
+        )
+        as Map,
+  );
+  Future<void> changeGrant(void Function(Map<String, dynamic>) edit) async {
+    final dir = await files.capsuleDirForHex('a' * 64);
+    final g = Map<String, dynamic>.from(
+      jsonDecode(
+            (await files.readPluginState(
+              dir,
+              registry.record.pluginId!,
+              'workspace-execution.v1.json',
+            ))!,
+          )
+          as Map,
+    );
+    edit(g);
+    await files.writePluginState(
+      dir,
+      registry.record.pluginId!,
+      'workspace-execution.v1.json',
+      jsonEncode(g),
     );
   }
+
+  Future<void> close() => home.delete(recursive: true);
 }
-
-class _Manual extends Fake implements ManualConsensusCheckService {}
-
-class _Attestations extends Fake
-    implements ConsensusAttestationExchangeService {}
-
-class _Delivery extends Fake implements CapsuleChatDeliveryService {}
-
-class _Passive extends Fake implements CapsulePassiveReceivePort {}
-
-class _Labels extends Fake implements CapsuleContactLabelStore {}
-
-class _Moltbook extends Fake implements MoltbookRuntimeModule {}

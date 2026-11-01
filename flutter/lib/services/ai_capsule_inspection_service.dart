@@ -182,7 +182,8 @@ class AiCapsuleInspectionService {
       'installed_count': plugins.length,
       'plugin_ids':
           plugins
-              .map((plugin) => plugin.pluginId ?? plugin.displayName)
+              .map((plugin) => plugin.pluginId)
+              .whereType<String>()
               .toSet()
               .toList()
             ..sort(),

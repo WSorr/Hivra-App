@@ -8,7 +8,7 @@ pub const DEALLOC_EXPORT: &str = "hivra_dealloc_v1";
 pub const DEFAULT_ENTRY_EXPORT: &str = "hivra_evaluate_v1";
 
 const MAX_MODULE_BYTES: usize = 4 * 1024 * 1024;
-const MAX_INPUT_BYTES: usize = 64 * 1024;
+const MAX_INPUT_BYTES: usize = 512 * 1024;
 const MAX_OUTPUT_BYTES: usize = 128 * 1024;
 const MAX_LINEAR_MEMORY_BYTES: usize = 128 * 1024 * 1024;
 const FUEL_LIMIT: u64 = 5_000_000;
@@ -248,13 +248,15 @@ mod tests {
             );
         }
         let input = vec![b' '; MAX_INPUT_BYTES];
+        // The response remains independently bounded at 128 KiB.
         let module = wat::parse_str(
-            echo_module_text().replace("(export \"memory\") 1", "(export \"memory\") 2"),
+            module_text("local.get $ptr i64.extend_i32_u i64.const 32 i64.shl i64.const 2 i64.or")
+                .replace("(export \"memory\") 1", "(export \"memory\") 9"),
         )
         .unwrap();
         assert_eq!(
             invoke_json(&module, DEFAULT_ENTRY_EXPORT, &input),
-            Ok(input)
+            Ok(b"  ".to_vec())
         );
     }
 

@@ -38,7 +38,7 @@ void main() {
             packageDigestHex: sha256.convert(_wasmHeader).toString(),
             runtimeAbi: WasmPluginRuntimeService.requiredRuntimeAbi,
             runtimeEntryExport: WasmPluginRuntimeService.requiredEntryExport,
-            contractKind: 'moltbook_ambassador_draft',
+            contractKind: 'plugin_workspace_v1',
           ),
         ),
         throwsA(isA<FormatException>()),
@@ -69,7 +69,7 @@ void main() {
             expect(moduleBytes.take(4), <int>[0, 0x61, 0x73, 0x6d]);
             final input = jsonDecode(utf8.decode(inputJsonBytes));
             expect(input['plugin_id'], _pluginId);
-            expect(input['host_method'], 'place_moltbook_ambassador_draft');
+            expect(input['host_method'], 'place_plugin_workspace_v1');
             expect(input['symbol'], 'BTC-USDT');
             return _executedOutput;
           },
@@ -142,7 +142,7 @@ void main() {
             runtimeAbi: 'hivra_host_abi_v1',
             runtimeEntryExport: WasmPluginRuntimeService.requiredEntryExport,
             runtimeModulePath: 'plugin/module.wasm',
-            contractKind: 'moltbook_ambassador_draft',
+            contractKind: 'plugin_workspace_v1',
           ),
         ),
         throwsA(isA<FormatException>()),
@@ -160,7 +160,7 @@ String? _executedInvoker({
 PluginHostApiRequest _request() => const PluginHostApiRequest(
   schemaVersion: 1,
   pluginId: _pluginId,
-  method: 'place_moltbook_ambassador_draft',
+  method: 'place_plugin_workspace_v1',
   args: <String, dynamic>{'symbol': 'BTC-USDT'},
 );
 
@@ -185,7 +185,7 @@ Future<_TestPackage> _writePackage() async {
       runtimeAbi: WasmPluginRuntimeService.requiredRuntimeAbi,
       runtimeEntryExport: WasmPluginRuntimeService.requiredEntryExport,
       runtimeModulePath: 'plugin/module.wasm',
-      contractKind: 'moltbook_ambassador_draft',
+      contractKind: 'plugin_workspace_v1',
     ),
   );
 }

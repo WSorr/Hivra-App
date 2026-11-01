@@ -60,7 +60,9 @@ implementation decision. No later V2 pass is selected.
 ## Retained Debt
 
 - Flutter host product logic remains too large and too aware of concrete
-  plugins.
+  plugins. The common API target and bounded Jack replacement are defined in
+  `plugins/plugin_host_api_v1.md`; the current decision belongs to
+  `development-control.md`.
 - Plugin UI activation is hardcoded in the application shell.
 - Several 1.x FFI and screen surfaces remain measured compatibility boundaries
   in `architecture/ownership-registry.v1.json`.

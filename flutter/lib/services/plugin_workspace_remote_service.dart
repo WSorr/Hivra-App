@@ -272,8 +272,9 @@ class PluginWorkspaceRemoteService {
 
   Future<Map<String, dynamic>> _setupInput(
     Map<String, dynamic> c,
-    WasmPluginRecord record,
-  ) async {
+    WasmPluginRecord record, {
+    Map<String, Map<String, String>>? credentialBindings,
+  }) async {
     final binding = await registry.resolveRuntimeBinding(record.pluginId!);
     if (binding.packageId != record.id ||
         binding.packageFilePath == null ||
@@ -285,30 +286,51 @@ class PluginWorkspaceRemoteService {
         sha256.convert(bytes).toString() != binding.packageDigestHex) {
       throw StateError('Package bytes changed');
     }
-    final raw = await vault.loadSecret(
-      capsuleHex: c['owner'] as String,
-      pluginId: record.pluginId!,
-      providerId: 'bingx',
-      accountId: 'primary',
-      secretName: 'credentials',
+    final owner = c['owner'] as String;
+    final directory = await files.capsuleDirForHex(owner, create: false);
+    final saved = await files.readPluginState(
+      directory,
+      record.pluginId!,
+      'workspace-execution.v1.json',
     );
+    final grant = saved == null ? null : _json(saved);
+    final references =
+        credentialBindings ??
+        (grant?['credentials'] as Map? ?? const {}).map(
+          (k, v) => MapEntry(k as String, Map<String, String>.from(v as Map)),
+        );
+    final connections = <String, Map<String, String>>{};
+    for (final entry in references.entries) {
+      connections[entry.key] = await vault.resolveReferences(
+        owner,
+        entry.value,
+      );
+    }
     return {
       'owner': c['owner'],
       'plugin_id': record.pluginId,
       'executor_id': c['executor_id'],
       'package_digest': binding.packageDigestHex,
       'package': base64Encode(bytes),
-      'credentials': raw == null ? null : _json(raw),
+      'credentials':
+          connections.isEmpty
+              ? null
+              : {'version': 3, 'connections': connections},
     };
   }
 
   Future<Map<String, dynamic>> ensurePackage(
     String owner,
-    WasmPluginRecord record,
-  ) async {
+    WasmPluginRecord record, {
+    Map<String, Map<String, String>>? credentialBindings,
+  }) async {
     final c = await connection(owner, record.pluginId!);
     if (c == null) throw StateError('Connect your VPS first');
-    final input = await _setupInput(c, record);
+    final input = await _setupInput(
+      c,
+      record,
+      credentialBindings: credentialBindings,
+    );
     final result = _json(
       await _exchange(c, 'setup', utf8.encode('${jsonEncode(input)}\n')),
     );

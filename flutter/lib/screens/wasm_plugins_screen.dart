@@ -183,27 +183,54 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   Future<void> _removePlugin(WasmPluginRecord record) async {
     if (_packageBusy) return;
+    final workspace = record.contractKind == pluginWorkspaceContractKind;
+    var deleteSavedData = false;
     final confirmed =
         await showDialog<bool>(
           context: context,
           builder:
-              (context) => AlertDialog(
-                title: const Text('Remove plugin'),
-                content: Text(
-                  'Remove ${record.displayName}, its local settings and secrets '
-                  'from all Capsules on this device? Any assigned VPS must '
-                  'return authority before its runner is removed.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Remove'),
-                  ),
-                ],
+              (context) => StatefulBuilder(
+                builder:
+                    (context, update) => AlertDialog(
+                      title: const Text('Remove plugin'),
+                      content: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              workspace
+                                  ? 'Remove ${record.displayName} and its secrets from all Capsules on this device? Saved app data is retained for recovery. Reinstalling requires fresh access. Existing external operations are not undone.'
+                                  : 'Remove ${record.displayName}, its local settings and secrets from all Capsules on this device?',
+                            ),
+                            if (workspace)
+                              CheckboxListTile(
+                                value: deleteSavedData,
+                                onChanged:
+                                    (value) => update(
+                                      () => deleteSavedData = value ?? false,
+                                    ),
+                                title: const Text('Delete saved app data'),
+                                subtitle: const Text(
+                                  'Also erase pending operation identities. External operations may still exist; their recovery data will be lost.',
+                                ),
+                              ),
+                            const Text(
+                              'Any assigned VPS must return authority before its runner is removed.',
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Remove'),
+                        ),
+                      ],
+                    ),
               ),
         ) ??
         false;
@@ -213,7 +240,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       _removalError = null;
     });
     try {
-      await _module.removePlugin(record);
+      await _module.removePlugin(record, deleteSavedData: deleteSavedData);
       await _reload();
       if (!mounted) return;
       ScaffoldMessenger.of(

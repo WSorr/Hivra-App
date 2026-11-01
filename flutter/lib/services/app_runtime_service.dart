@@ -237,7 +237,6 @@ class AppRuntimeService {
           readSignable: consensus.signable,
           readAttestedSignable: attestedGuard.signable,
         ),
-        const MoltbookAmbassadorPluginContractHandler(),
       ],
       resolveRuntimeBinding:
           const WasmPluginRegistryService().resolveRuntimeBinding,

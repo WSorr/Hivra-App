@@ -67,6 +67,45 @@ class CapsuleScopedSecretVault {
     });
   }
 
+  /// Owner-facing metadata only. Native Keychain access happens here; neither
+  /// the picker nor a package receives secret values.
+  Future<List<Map<String, String>>> listReferences(String capsuleHex) {
+    final owner = _capsuleHex(capsuleHex);
+    return _locked(() async {
+      _coordinator.cache = null;
+      final entries = await _loadEntries();
+      return [
+        for (final entry in entries.values)
+          if (entry.capsuleHex == owner)
+            {
+              'id': entry.scopeKey,
+              'label':
+                  '${entry.providerId} / ${entry.accountId} / ${entry.secretName}',
+            },
+      ]..sort((a, b) => a['label']!.compareTo(b['label']!));
+    });
+  }
+
+  /// Resolve only the references explicitly connected by this Capsule's owner.
+  Future<Map<String, String>> resolveReferences(
+    String capsuleHex,
+    Map<String, String> references,
+  ) {
+    final owner = _capsuleHex(capsuleHex);
+    return _locked(() async {
+      final entries = await _loadEntries();
+      final values = <String, String>{};
+      for (final reference in references.entries) {
+        final entry = entries[reference.value];
+        if (entry == null || entry.capsuleHex != owner) {
+          throw StateError('Connected Keychain secret is unavailable');
+        }
+        values[reference.key] = entry.secretValue;
+      }
+      return values;
+    });
+  }
+
   Future<void> deleteAccount({
     required String capsuleHex,
     required String pluginId,

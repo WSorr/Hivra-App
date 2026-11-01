@@ -4,7 +4,7 @@ import 'package:bech32/bech32.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ffi/capsule_runtime_bootstrap_runtime.dart';
-import '../models/external_effect_models.dart';
+import '../models/plugin_host_api_models.dart';
 import '../ffi/capsule_persistence_bindings.dart';
 import 'atomic_file_write_service.dart';
 import 'capsule_backup_codec.dart';

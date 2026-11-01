@@ -7,7 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:hivra_app/ffi/hivra_bindings.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
-import 'package:hivra_app/models/external_effect_models.dart';
+import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
@@ -93,11 +93,9 @@ Future<void> main(List<String> args) async {
         }
         return jsonEncode(stored['credentials']);
       },
+
       // Credential provisioning is a separate host operation. A package
       // action cannot replace the server's host-only credential binding.
-      writeCredentials:
-          ({required owner, required pluginId, required value}) async =>
-              throw StateError('Connect the account through Capsule'),
     );
     final runner = WorkspaceRunner(
       root: root,
@@ -201,14 +199,10 @@ class WorkspaceRunner {
     }
     final credentials = input['credentials'];
     if (credentials != null &&
-        (credentials.length != 2 ||
-            !['api_key', 'secret_key'].every(
-              (key) =>
-                  credentials[key] is String &&
-                  (credentials[key] as String).trim().isNotEmpty,
-            ) ||
-            utf8.encode(jsonEncode(credentials)).length > 4096)) {
-      throw const FormatException('Invalid host credentials');
+        (credentials['version'] != 3 ||
+            credentials['connections'] is! Map ||
+            utf8.encode(jsonEncode(credentials)).length > 8192)) {
+      throw const FormatException('Invalid protected credential record');
     }
     final ownedRoot = await root.resolveSymbolicLinks();
     if (!_ownedRoots.add(ownedRoot)) {
@@ -333,10 +327,7 @@ class WorkspaceRunner {
               File('${root.path}/credentials.json'),
             );
             if (saved['credentials'] is! Map ||
-                [
-                  'api_key',
-                  'secret_key',
-                ].any((k) => saved['credentials'][k] != credentials[k])) {
+                jsonEncode(saved['credentials']) != jsonEncode(credentials)) {
               throw StateError(
                 'Return authority before changing exchange credentials',
               );
@@ -534,24 +525,15 @@ class WorkspaceRunner {
               'runner is running, retained lifecycle is not verified';
         }
       case 'action':
-        if (request.length != 10 ||
+        if (request.length != 8 ||
             request['action'] is! String ||
-            request['settings'] is! Map ||
-            (request['approved_order'] != null &&
-                request['approved_order'] is! Map) ||
-            (request['options_field'] != null &&
-                request['options_field'] is! String)) {
+            request['settings'] is! Map) {
           throw const FormatException();
         }
         view = await runtime.runWorkspaceAction(
           record: record,
           action: request['action'] as String,
           settings: Map<String, dynamic>.from(request['settings'] as Map),
-          approvedOrder:
-              request['approved_order'] == null
-                  ? null
-                  : Map<String, dynamic>.from(request['approved_order'] as Map),
-          optionsForField: request['options_field'] as String?,
         );
       case 'return':
         if (request.length != 6) throw const FormatException();
@@ -561,7 +543,7 @@ class WorkspaceRunner {
           'runner': {
             'state': 'detached',
             'started_at_ms': _startedAt,
-            'execution_controls': 2,
+            'execution_controls': 3,
           },
           'checkpoint': checkpoint,
         };
@@ -609,12 +591,12 @@ class WorkspaceRunner {
         if (control != null &&
             (control['executor'] != 'local' ||
                 control['expires_at_ms'] != 0 ||
-                control['allow_new_entries'] != false)) {
+                workspaceExecutionEnabled(control))) {
           throw StateError('Return authority before uninstalling');
         }
         return {
           'binding': binding,
-          'runner': {'state': 'detached', 'execution_controls': 2},
+          'runner': {'state': 'detached', 'execution_controls': 3},
         };
       default:
         throw const FormatException('Unsupported workspace command');
@@ -624,7 +606,7 @@ class WorkspaceRunner {
       'runner': {
         'state': 'running',
         'started_at_ms': _startedAt,
-        'execution_controls': 2,
+        'execution_controls': 3,
       },
       'view': view,
       if (observationError != null) 'observation_error': observationError,

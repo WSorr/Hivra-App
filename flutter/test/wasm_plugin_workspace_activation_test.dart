@@ -8,14 +8,14 @@ void main() {
   test('installed manifest profiles select the canonical workspace', () {
     final profiles = <(String, String)>[
       (capsuleChatPluginId, capsuleChatContractKind),
-      (moltbookAmbassadorPluginId, moltbookAmbassadorContractKind),
+      ('example.service', pluginWorkspaceContractKind),
     ];
 
     for (final (pluginId, contractKind) in profiles) {
       final capabilities = switch (contractKind) {
         capsuleChatContractKind => capsuleChatRequiredCapabilities.toList(),
-        moltbookAmbassadorContractKind =>
-          moltbookAmbassadorRequiredCapabilities.toList(),
+        pluginWorkspaceContractKind =>
+          pluginWorkspaceRequiredCapabilities.toList(),
         _ => const <String>[],
       };
       expect(
@@ -39,9 +39,9 @@ void main() {
         capsuleChatRequiredCapabilities,
       ),
       (
-        moltbookAmbassadorPluginId,
-        moltbookAmbassadorContractKind,
-        moltbookAmbassadorRequiredCapabilities,
+        'example.service',
+        pluginWorkspaceContractKind,
+        pluginWorkspaceRequiredCapabilities,
       ),
       (
         'hivra.contract.independent.v1',
@@ -107,7 +107,6 @@ void main() {
                   'No consensus read during capability inspection',
                 ),
       ),
-      const MoltbookAmbassadorPluginContractHandler(),
     ];
     for (final handler in handlers) {
       final requiredByHost = <String>{
@@ -127,16 +126,16 @@ void main() {
   test('readiness shares the activation capability contract', () {
     expect(
       pluginCapabilitiesSatisfyContract(
-        pluginId: moltbookAmbassadorPluginId,
-        contractKind: moltbookAmbassadorContractKind,
-        capabilities: moltbookAmbassadorRequiredCapabilities.toList(),
+        pluginId: 'example.service',
+        contractKind: pluginWorkspaceContractKind,
+        capabilities: pluginWorkspaceRequiredCapabilities.toList(),
       ),
       isTrue,
     );
     expect(
       pluginCapabilitiesSatisfyContract(
-        pluginId: moltbookAmbassadorPluginId,
-        contractKind: moltbookAmbassadorContractKind,
+        pluginId: 'example.service',
+        contractKind: pluginWorkspaceContractKind,
         capabilities: const [
           'content.draft.prepare',
           'content.engagement.plan',

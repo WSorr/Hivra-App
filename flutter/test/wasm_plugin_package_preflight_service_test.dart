@@ -65,13 +65,13 @@ void main() {
             'version': 1,
             'release_version': '0.1.0',
             'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
-            'contract': {'kind': 'moltbook_ambassador_draft'},
+            'contract': {'kind': 'plugin_workspace_v1'},
             'runtime': {
               'abi': 'hivra_host_abi_v2',
               'entry_export': 'hivra_evaluate_v1',
               'module_path': 'plugin/module.wasm',
             },
-            'capabilities': ['content.draft.prepare', 'consensus_guard.read'],
+            'capabilities': ['workspace.render', 'consensus_guard.read'],
           }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
@@ -84,13 +84,13 @@ void main() {
     expect(preflight.packageKind, 'zip');
     expect(preflight.pluginId, 'hivra.contract.moltbook-ambassador.v1');
     expect(preflight.pluginVersion, '0.1.0');
-    expect(preflight.contractKind, 'moltbook_ambassador_draft');
+    expect(preflight.contractKind, 'plugin_workspace_v1');
     expect(preflight.runtimeAbi, 'hivra_host_abi_v2');
     expect(preflight.runtimeEntryExport, 'hivra_evaluate_v1');
     expect(preflight.runtimeModulePath, 'plugin/module.wasm');
     expect(preflight.capabilities, [
       'consensus_guard.read',
-      'content.draft.prepare',
+      'workspace.render',
     ]);
   });
 
@@ -127,13 +127,13 @@ void main() {
             'schema': 'hivra.plugin.manifest',
             'version': 1,
             'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
-            'contract': {'kind': 'moltbook_ambassador_draft'},
+            'contract': {'kind': 'plugin_workspace_v1'},
             'runtime': {
               'abi': 'hivra_host_abi_v2',
               'entry_export': 'hivra_evaluate_v1',
               'module_path': 'plugin/v1..2/module.wasm',
             },
-            'capabilities': ['consensus_guard.read', 'content.draft.prepare'],
+            'capabilities': ['consensus_guard.read', 'workspace.render'],
           }),
           'plugin/v1..2/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
@@ -206,13 +206,13 @@ void main() {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
               'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
-              'contract': {'kind': 'moltbook_ambassador_draft'},
+              'contract': {'kind': 'plugin_workspace_v1'},
               'runtime': {
                 'abi': 'hivra_host_abi_v2',
                 'entry_export': 'hivra_evaluate_v1',
                 'module_path': 'plugin/module.wasm',
               },
-              'capabilities': ['consensus_guard.read', 'content.draft.prepare'],
+              'capabilities': ['consensus_guard.read', 'workspace.render'],
             }),
             '../evil.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
             'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
@@ -240,7 +240,7 @@ void main() {
               'abi': 'hivra_host_abi_v2',
               'entry_export': 'hivra_evaluate_v1',
             },
-            'capabilities': ['content.draft.prepare'],
+            'capabilities': ['workspace.render', 'workspace.continue'],
           }),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
@@ -260,7 +260,7 @@ void main() {
             'schema': 'hivra.plugin.manifest',
             'version': 1,
             'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
-            'contract': {'kind': 'moltbook_ambassador_draft'},
+            'contract': {'kind': 'plugin_workspace_v1'},
             'runtime': {
               'abi': 'hivra_host_abi_v2',
               'entry_export': 'hivra_evaluate_v1',
