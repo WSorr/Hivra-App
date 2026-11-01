@@ -63,6 +63,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   bool _edited = false;
   bool _observationUnavailable = false;
   bool _choosing = false;
+  bool _actionResultVisible = false;
   int _presentationGeneration = 0;
   Timer? _refresh;
   AppLifecycleState? _appState;
@@ -100,7 +101,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         _appState == AppLifecycleState.resumed &&
         ModalRoute.of(context)?.isCurrent == true &&
         _supportsExecution &&
-        _view?['execution'] != null &&
+        _view?['execution']?['running'] == true &&
+        !_actionResultVisible &&
         !_busy &&
         !_choosing) {
       _run('open');
@@ -151,6 +153,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     setState(() {
       _busy = true;
       _error = null;
+      _actionResultVisible = action != 'open' && hostAction == null;
       if (action != 'open') _edited = true;
     });
     try {
@@ -221,7 +224,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       });
       _refresh?.cancel();
       _refresh = null;
-      if (_supportsExecution && view['execution'] != null) {
+      if (_supportsExecution &&
+          view['execution']?['running'] == true &&
+          !_actionResultVisible) {
         final remote = view['host_connection']?['target'] == 'vps';
         _refresh = Timer.periodic(
           Duration(seconds: remote ? 60 : 15),
@@ -249,7 +254,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   Future<void> _stopExecution({bool revoke = true}) async {
     // Both revocation intents supersede stale reads and share one host path.
     final generation = ++_presentationGeneration;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _actionResultVisible = false;
+    });
     try {
       final stopped = await widget.configureExecution!(
         enabled: false,
