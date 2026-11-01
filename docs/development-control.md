@@ -265,19 +265,20 @@ Protected requests used only a synthetic token and a closed localhost port;
 this does not establish authenticated service or live Moltbook acceptance.
 Exact digests and native observations for that connection repair are retained in
 `/Volumes/Dev/projects/hivra-artifacts/owner-connection-20261101`.
-Subsequent authenticated acceptance uses Moltbook 0.8.1 and guarded host source
-`21d35a4`: macOS reads the agent's service history and prepares both a reply and
-news through the owner's Cloudflare Workers AI connection in Analyst, without
-sending content. Cold restart reacquires history without a local draft or
+Subsequent authenticated acceptance uses Moltbook 0.8.2 and guarded host source
+`21d35a4`: macOS and Android read the agent's service history and prepare a reply
+and news through the owner's Cloudflare Workers AI connection in Analyst,
+without sending content. Cold restart reacquires history without a local draft or
 Moltbook workspace checkpoint. This exposed and repaired a common workspace
 defect: idle grants no longer trigger automatic package `open`, and explicit
-action results/errors survive timers and app resume. Android's exact APK reads
-the same authenticated history and preserves the visible unavailable-Analyst
-error across background/resume; live Android AI preparation still requires an
-owner-connected provider. This closes the disappearing-result defect, not the
+action results/errors survive timers and app resume. Android also preserves the
+visible unavailable-Analyst error across background/resume before the owner
+connects a provider. Package 0.8.2 removes false zero-history counts after
+preparation without retaining observations or changing the host. This closes
+the read-and-prepare journey and disappearing-result defect, not the
 entire plugin runtime debt or publication/reply qualification. Digests and native
 observations are retained in
-`/Volumes/Dev/projects/hivra-artifacts/moltbook-live-read-prepare-20261101/workspace-result-21d35a4`;
+`/Volumes/Dev/projects/hivra-artifacts/moltbook-live-read-prepare-20261101`;
 no test release or Moltbook content was published.
 
 Judge progress by product independence and removed host responsibilities,
