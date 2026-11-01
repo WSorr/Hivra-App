@@ -256,9 +256,17 @@ adds first-secret input to the existing permission decision and replaces the
 recovery seed scan with the existing public-owner comparison. Focused checks
 cover native storage failure/cancellation, delayed completion after leaving,
 changed owner/package before storage commit and legacy owner recovery without
-unlocking unrelated seeds. Native requalification, restart and authenticated
-history/Analyst preparation remain required; these code checks do not establish
-live Moltbook acceptance.
+unlocking unrelated seeds. Exact guarded macOS/Android requalification of
+source `82814bc` passed the bounded owner-connection journey: new public-owner recovery on macOS avoided
+unrelated seed unlocks; first-secret save, reference reuse after cold process
+restart and full grant revocation were exercised through an independent common
+API package on both runtimes. The macOS owner completed the native vault unlock.
+Protected requests used only a synthetic token and a closed localhost port;
+this does not establish authenticated service or live Moltbook acceptance.
+Authenticated history/Analyst preparation remains required with an owner-connected
+test account. Exact digests and native observations are retained in
+`/Volumes/Dev/projects/hivra-artifacts/owner-connection-20261101`; no test release
+was published.
 
 Judge progress by product independence and removed host responsibilities,
 not by more adapters, gates or speculative extension layers. Keep development
