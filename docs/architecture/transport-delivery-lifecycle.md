@@ -245,6 +245,11 @@ The existing backup limits allow 192 MiB of Capsule files and 320 MiB of
 clear backup payload, accommodating the default window's encrypted/base64 file
 alongside the former 64 MiB state allowance. Larger owner-selected windows may
 still exceed these explicit backup bounds; backup failure must not prune them.
+Android document import stages the owner-selected stream in private temporary
+storage through the existing file-document bridge. JSON and package selection
+use this same path; no full document byte array crosses the Java/Flutter channel.
+Cancellation, copy failure or activity closure cannot complete another pending
+document request. This is file transport, not another backup or cache owner.
 
 Quarantine recovery MUST re-enter the same canonical FFI ingress router with
 the original adapter event id and envelope. It cannot invoke a capability
