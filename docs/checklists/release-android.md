@@ -32,10 +32,6 @@ Emulator execution does not waive any behavior or test/public channel gate.
 - [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/release/android_release.sh --version <version> --channel <test|public>` is used for packaging.
 - [ ] `--channel` was chosen explicitly (`test` for internal/pre-release, `public` for stable release).
-- [ ] `public` uses the owner's dedicated release key. The packager passes the
-      channel to Gradle and verifies the APK with the pinned SDK's `apksigner`;
-      Android Debug signing is rejected. Metadata records signing mode and the
-      public certificate SHA-256. Keep that key for subsequent APK updates.
 - [ ] Android build includes Rust FFI artifacts from the current source state.
 - [ ] Release APK was built from the intended commit.
 
@@ -72,14 +68,4 @@ Emulator execution does not waive any behavior or test/public channel gate.
 - [ ] `RELEASE-METADATA.txt` was generated and kept with release artifacts.
 - [ ] `RELEASE-METADATA.txt` records the source commit and `source_tree_dirty=no`.
 - [ ] Release notes mention testing scope and known Android limitations, if any.
-- [ ] A first release-key APK cannot update the older debug-signed test APK in
-      place. Preserve Core backup and the separately held seed before choosing
-      a clean install; application content and connected secrets are not in a
-      new Core-only backup. Never uninstall a working test installation silently.
 - [ ] GitHub Release `Pre-release` flag matches channel (`test` => pre-release, `public` => stable release).
-
-The existing Gradle signing owner reads `flutter/android/key.properties` only
-for the public channel. This ignored local file contains `storeFile` (absolute
-path or relative to `flutter/android`), `storePassword`, `keyAlias`, and
-`keyPassword`. Supply the owner's keystore and these values locally, never in
-Git or release notes. Test-channel builds retain debug signing.

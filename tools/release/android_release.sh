@@ -23,8 +23,6 @@ Options:
 Notes:
   - This script packages one universal APK artifact.
   - Output includes APK, SHA256SUMS.txt, and RELEASE-METADATA.txt.
-  - public requires an owner release key in local flutter/android/key.properties.
-  - test keeps debug signing; neither keys nor passwords belong in Git.
 EOF
 }
 
@@ -96,14 +94,6 @@ require_cmd flutter
 require_cmd unzip
 require_cmd shasum
 
-SDK_DIR="$(sed -n 's/^sdk.dir=//p' "$FLUTTER_DIR/android/local.properties" | head -n1)"
-BUILD_TOOLS="$(sed -n 's/^ANDROID_BUILD_TOOLS=//p' "$ROOT/toolchains/hivra-baseline.conf")"
-APKSIGNER="$SDK_DIR/build-tools/$BUILD_TOOLS/apksigner"
-[ -x "$APKSIGNER" ] || die "Pinned Android SDK apksigner is unavailable"
-if [ "$CHANNEL" = public ]; then
-  [ -f "$FLUTTER_DIR/android/key.properties" ] || die "public requires local flutter/android/key.properties"
-fi
-
 info "Release preflight"
 "$ROOT/tools/release/preflight.sh"
 require_clean_worktree
@@ -112,25 +102,13 @@ info "Build Android release APK"
 RUNNER_DIGEST="$(bash "$ROOT/tools/release/workspace_runner.sh" --verify-assets)"
 (
   cd "$FLUTTER_DIR"
-  HIVRA_RELEASE_CHANNEL="$CHANNEL" flutter build apk --release \
+  flutter build apk --release \
     --build-name "$FLUTTER_BUILD_NAME" \
     --build-number "$FLUTTER_BUILD_NUMBER"
 )
 require_clean_worktree
 
 [ -f "$APK_SOURCE_PATH" ] || die "Release APK not found at $APK_SOURCE_PATH"
-
-info "Verify APK signature"
-SIGNATURE_INFO="$("$APKSIGNER" verify --print-certs "$APK_SOURCE_PATH")"
-SIGNER_SHA="$(awk '/^Signer #1 certificate SHA-256 digest:/ {print $NF}' <<< "$SIGNATURE_INFO")"
-[[ "$SIGNER_SHA" =~ ^[0-9a-f]{64}$ ]] || die "APK signer certificate digest is unavailable"
-SIGNING_MODE=release
-if grep -Eiq '^Signer #[0-9]+ certificate DN:.*CN=Android Debug([, ]|$)' <<< "$SIGNATURE_INFO"; then
-  SIGNING_MODE=debug
-fi
-if [ "$CHANNEL" = public ] && [ "$SIGNING_MODE" != release ]; then
-  die "public APK must use a dedicated release key, not Android Debug"
-fi
 
 info "Validate bundled FFI libraries in APK"
 apk_entries="$(unzip -Z1 "$APK_SOURCE_PATH")"
@@ -166,8 +144,6 @@ flutter_build_name=$FLUTTER_BUILD_NAME
 flutter_build_number=$FLUTTER_BUILD_NUMBER
 channel=$CHANNEL
 pre_release_expected=$([ "$CHANNEL" = "test" ] && echo "yes" || echo "no")
-signing=$SIGNING_MODE
-signer_cert_sha256=$SIGNER_SHA
 asset=$ASSET_NAME
 asset_sha256=$APK_SHA
 workspace_runner_sha256=$RUNNER_DIGEST

@@ -289,18 +289,17 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
-The owner selected the complete stable `v1.0.5` release before further Jack
-package development. Public distribution requires owner-provided Apple Developer
-ID/notarization, a dedicated Android release key, and the full User Lifetime
-journey on the exact signed Mac/Android artifacts. The existing `test2` bytes and
-bounded feature acceptance below are not stable-release signoff. Android public
-packaging selects the local release signing configuration and records the actual
-APK certificate; publication rejects debug or missing release-signing evidence.
-Keep the working debug-signed Android installation intact: changing to the
-release certificate requires an explicit clean-install/recovery choice.
-No trade, publication to an external social service, or VPS mutation is part of
-this release preparation. Resume Jack through the separate plugin repository
-after the release; do not add trading behavior to Capsule.
+The owner selected `v1.0.5-test2` as the next complete unsigned test release
+before further Jack package development. Apple Developer ID/notarization and a
+dedicated Android release key are not connected; this is explicitly a test
+channel, not stable/public distribution. Build and exercise exact guarded
+Mac/Android packages from the selected clean source with its matching canonical
+runner, then bind their digests to manual signoff. Bounded feature acceptance
+below does not replace that packaged release journey. The complete User Lifetime
+qualification may remain explicitly PENDING for the test channel. No trade,
+publication to an external social service, or VPS mutation is part of this
+release. Resume Jack through the separate plugin repository after the release;
+do not add trading behavior to Capsule.
 
 The completed bounded Core-only Capsule backup outcome below retains
 Ledger and Capsule type/network metadata only; operational pair attestations,

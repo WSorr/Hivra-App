@@ -10,10 +10,7 @@ Hivra.
 - `macos_release.sh`: creates a versioned macOS ZIP, checksums, and source
   metadata from a clean checkout.
 - `android_release.sh`: creates a versioned universal APK, checksums, and
-  source metadata from a clean checkout. Public builds use the owner's local
-  `key.properties` release configuration and reject Android Debug signatures;
-  test builds retain debug signing. The exact signing setup and first public
-  install limitation belong to `docs/checklists/release-android.md`.
+  source metadata from a clean checkout.
 - `workspace_runner.sh`: builds the standalone installed-WASM host candidate
   on Ubuntu 24.04 x86_64 with the pinned Dart/Rust toolchains. It includes the
   existing FFI library, one systemd unit, source metadata and archive digest.
