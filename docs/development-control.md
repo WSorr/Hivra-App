@@ -307,7 +307,25 @@ explicitly retired; no new full-state export path remains. No separate app
 archive, synchronization engine or new backup format is selected. Acceptance
 must prove size independence, unchanged source app data, authenticated recovery,
 restart and failure rollback, then exact packaged Mac/Android export/recovery.
-Native acceptance for this changed scope is pending.
+Source checks pass: 669 Flutter tests, 113 FFI tests, analyzer and review gates.
+Exact guarded artifacts from `a492319e3c7a91f756ddff264eb1a0b41fafb5ce`
+qualified native export and fresh-target recovery on Apple Silicon macOS and
+Android API 36 arm64 emulator. The same public fixture now exports as 9,254 bytes
+on both runtimes, compared with its previous 237,312,202-byte full-state archive.
+Authenticated native Core verification confirms empty files/packages and an
+unchanged signed Ledger. A new public fixture restores the same identity,
+six-event Ledger and five starters on both runtimes, including cold restart.
+Existing Mac Capsule and installed-package files matched their baseline hashes;
+only the shared index, new contact card and UI log changed during recovery.
+The writer, codec and atomic import owner each remain one; recursive app export
+and installed-ZIP snapshots each go from one to zero. New Core recovery no longer
+requires a healthy package registry. Production code delta is -59 lines.
+Digests and native observations are retained in
+`/Volumes/Dev/projects/hivra-artifacts/core-backup-20261102/acceptance.json`.
+Native fixtures have no relationships; live peer-attestation reacquisition,
+physical Android and Intel execution are not qualified by this acceptance.
+Old full-state v3 import compatibility remains read-only. No publication,
+trading, model request, VPS mutation or release was performed.
 
 The bounded owner-configurable lightweight Chat retention outcome was completed
 before the Core-only backup decision above; its native evidence is historical.
