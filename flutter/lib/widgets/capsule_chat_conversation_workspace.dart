@@ -148,10 +148,7 @@ class _LiveConversationTimelineState extends State<_LiveConversationTimeline> {
   @override
   void initState() {
     super.initState();
-    _projectedMessages = _mergeMessages(
-      const <CapsuleChatInboxMessage>[],
-      widget.messages,
-    );
+    _projectedMessages = widget.messages;
     if (widget.loadCachedMessages != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_projectCachedMessages());
@@ -166,7 +163,7 @@ class _LiveConversationTimelineState extends State<_LiveConversationTimeline> {
   @override
   void didUpdateWidget(_LiveConversationTimeline oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _projectedMessages = _mergeMessages(_projectedMessages, widget.messages);
+    _projectedMessages = widget.messages;
   }
 
   @override
@@ -182,12 +179,12 @@ class _LiveConversationTimelineState extends State<_LiveConversationTimeline> {
     try {
       final cachedMessages = await loadCachedMessages();
       if (!mounted) return;
-      final merged = _mergeMessages(_projectedMessages, cachedMessages);
-      if (_sameTimeline(_projectedMessages, merged)) return;
+      final retained = cachedMessages;
+      if (_sameTimeline(_projectedMessages, retained)) return;
       setState(() {
-        _projectedMessages = merged;
+        _projectedMessages = retained;
       });
-      widget.onMessagesProjected?.call(merged);
+      widget.onMessagesProjected?.call(retained);
     } catch (_) {
       return;
     } finally {
@@ -202,20 +199,6 @@ class _LiveConversationTimelineState extends State<_LiveConversationTimeline> {
       contactLabels: widget.contactLabels,
     );
   }
-}
-
-List<CapsuleChatInboxMessage> _mergeMessages(
-  List<CapsuleChatInboxMessage> current,
-  List<CapsuleChatInboxMessage> incoming,
-) {
-  final byId = <String, CapsuleChatInboxMessage>{
-    for (final message in current) message.id: message,
-    for (final message in incoming) message.id: message,
-  };
-  final merged =
-      byId.values.toList()
-        ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-  return List<CapsuleChatInboxMessage>.unmodifiable(merged);
 }
 
 bool _sameTimeline(

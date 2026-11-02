@@ -27,7 +27,8 @@ class CapsuleBackupCodec {
   static const int version = 1;
   static const int ledgerOnlyEncryptedVersion = 2;
   static const int encryptedVersion = 3;
-  static const int maxBackupBytes = 96 * 1024 * 1024;
+  // Base64 of bounded Capsule files plus installed packages and Ledger data.
+  static const int maxBackupBytes = 320 * 1024 * 1024;
   static const String encryptedSuite = 'hkdf-sha256+a256gcm';
   static const String _keyInfo = 'hivra.capsule_backup.v2';
   static const LedgerViewSupport _support = LedgerViewSupport();

@@ -138,6 +138,18 @@ class CapsuleChatDeliveryService {
     return _deliveryInboxStore.loadMessages(capsuleRootHex);
   }
 
+  Future<int> loadCacheBudgetBytes() {
+    final root = _localCapsuleRootHex();
+    if (root == null) throw StateError('Active Capsule is unavailable');
+    return _deliveryInboxStore.loadCacheBudgetBytes(root);
+  }
+
+  Future<void> setCacheBudgetBytes(int bytes) {
+    final root = _localCapsuleRootHex();
+    if (root == null) throw StateError('Active Capsule is unavailable');
+    return _deliveryInboxStore.setCacheBudgetBytes(root, bytes);
+  }
+
   Future<int> unreadCachedMessageCount() async {
     final root = _runtime.capsuleRootPublicKey();
     if (root == null || root.length != 32) return 0;

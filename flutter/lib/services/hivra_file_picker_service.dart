@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class HivraFilePickerService {
@@ -25,6 +26,7 @@ class HivraFilePickerService {
 
   static Future<XFile?> openJsonDocument() {
     return _openDocument(
+      mimeType: 'application/json',
       acceptedTypeGroups: const [
         XTypeGroup(label: 'JSON', extensions: ['json']),
       ],
@@ -33,6 +35,7 @@ class HivraFilePickerService {
 
   static Future<XFile?> openPluginPackage() {
     return _openDocument(
+      mimeType: 'application/zip',
       acceptedTypeGroups: const [
         XTypeGroup(label: 'WASM plugin packages', extensions: ['zip']),
       ],
@@ -55,8 +58,18 @@ class HivraFilePickerService {
   }
 
   static Future<XFile?> _openDocument({
+    required String mimeType,
     required List<XTypeGroup> acceptedTypeGroups,
-  }) {
+  }) async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      // The Android selector eagerly returns file bytes across the channel.
+      // Use the existing document bridge to stage the selected stream instead.
+      final path = await _documents.invokeMethod<String>('openDocument', {
+        'mimeType': mimeType,
+        'initialDirectory': androidDownloadsDocumentUri,
+      });
+      return path == null ? null : XFile(path);
+    }
     return openFile(
       acceptedTypeGroups: acceptedTypeGroups,
       initialDirectory: initialDirectoryFor(isAndroid: Platform.isAndroid),

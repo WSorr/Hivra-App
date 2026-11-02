@@ -11,37 +11,15 @@ import '../utils/peer_identity_format.dart';
 import '../widgets/capsule_chat_conversation_workspace.dart';
 
 @visibleForTesting
-List<CapsuleChatInboxMessage> mergeChatMessages(
-  Iterable<Iterable<CapsuleChatInboxMessage>> sources,
-) {
-  final byId = <String, CapsuleChatInboxMessage>{};
-  for (final source in sources) {
-    for (final message in source) {
-      byId[message.id] = message;
-    }
-  }
-  final merged =
-      byId.values.toList()
-        ..sort((left, right) => left.timestampMs.compareTo(right.timestampMs));
-  return List<CapsuleChatInboxMessage>.unmodifiable(merged);
-}
-
-@visibleForTesting
 Future<CapsuleChatDeliveryReceiveResult>
 projectCachedMessagesBeforeChatRefresh({
-  required List<CapsuleChatInboxMessage> currentMessages,
   required Future<List<CapsuleChatInboxMessage>> Function() loadCachedMessages,
   required Future<CapsuleChatDeliveryReceiveResult> Function() refresh,
   required void Function(List<CapsuleChatInboxMessage> messages)
   projectMessages,
 }) async {
   Future<void> projectCachedMessages() async {
-    projectMessages(
-      mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
-        currentMessages,
-        await loadCachedMessages(),
-      ]),
-    );
+    projectMessages(await loadCachedMessages());
   }
 
   await projectCachedMessages();
@@ -199,17 +177,13 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       final currentCapsule =
           _module.activeCapsuleRootHex()?.trim().toLowerCase();
       if (!mounted || currentCapsule != result.capsuleHex) return;
-      final merged = mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
-        _messages,
-        cachedMessages,
-        result.chat.messages,
-      ]);
+      final retained = cachedMessages;
       setState(() {
-        _messages = merged;
+        _messages = retained;
         _droppedByConsensus = result.chat.droppedByConsensus;
         _deferredByConsensus = result.chat.deferredByConsensus;
       });
-      unawaited(_markMessagesRead(_messagesForSelectedPeer(merged)));
+      unawaited(_markMessagesRead(_messagesForSelectedPeer(retained)));
       await _refreshContacts();
     } catch (_) {
       return;
@@ -441,7 +415,6 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
         return;
       }
       final result = await projectCachedMessagesBeforeChatRefresh(
-        currentMessages: _messages,
         loadCachedMessages: _module.chatDelivery.loadCachedMessagesDurably,
         refresh:
             () => _module.passiveReceive
@@ -476,15 +449,11 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       final cachedMessages =
           await _module.chatDelivery.loadCachedMessagesDurably();
       if (!mounted) return;
-      final merged = mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
-        _messages,
-        cachedMessages,
-        result.messages,
-      ]);
+      final retained = cachedMessages;
       setState(() {
         _droppedByConsensus = result.droppedByConsensus;
         _deferredByConsensus = result.deferredByConsensus;
-        _messages = List<CapsuleChatInboxMessage>.unmodifiable(merged);
+        _messages = List<CapsuleChatInboxMessage>.unmodifiable(retained);
         if (!silentWhenEmpty || result.messages.isNotEmpty) {
           _notice =
               result.messages.isEmpty
@@ -539,6 +508,97 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
     List<CapsuleChatInboxMessage> messages,
   ) => chatMessagesForPeer(messages, _peerController.text);
 
+  Future<void> _configureCache() async {
+    final capsule = _module.activeCapsuleRootHex();
+    try {
+      final bytes = await _module.chatDelivery.loadCacheBudgetBytes();
+      final retainedCount =
+          (await _module.chatDelivery.loadCachedMessagesDurably()).length;
+      if (!mounted || capsule != _module.activeCapsuleRootHex()) return;
+      var budgetText = (bytes / 1000000).toString().replaceFirst(
+        RegExp(r'\.0$'),
+        '',
+      );
+      final form = GlobalKey<FormState>();
+      final selected = await showDialog<int>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Local message cache'),
+              content: Form(
+                key: form,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Shared across conversations in this Capsule. Oldest completed '
+                      'messages leave this device when the budget is reached. '
+                      'Unresolved sends are kept separately until their outcome is known. '
+                      'Evicted messages may not be recoverable.',
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Retained messages: $retainedCount'),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      initialValue: budgetText,
+                      onChanged: (value) => budgetText = value,
+                      decoration: const InputDecoration(
+                        labelText: 'Cache budget (MB)',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      validator: (value) {
+                        final mb = double.tryParse(value?.trim() ?? '');
+                        return mb == null || !mb.isFinite || mb < 0.001
+                            ? 'Enter at least 0.001 MB (1 KB)'
+                            : null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (!form.currentState!.validate()) return;
+                    Navigator.pop(
+                      context,
+                      (double.parse(budgetText.trim()) * 1000000).round(),
+                    );
+                  },
+                  child: const Text('Apply budget'),
+                ),
+              ],
+            ),
+      );
+      if (selected == null ||
+          !mounted ||
+          capsule != _module.activeCapsuleRootHex()) {
+        return;
+      }
+      await _module.chatDelivery.setCacheBudgetBytes(selected);
+      final retained = await _module.chatDelivery.loadCachedMessagesDurably();
+      if (!mounted || capsule != _module.activeCapsuleRootHex()) return;
+      _projectMessages(retained);
+      setState(() {
+        _notice = 'Local message cache budget saved.';
+        _noticeIsError = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _notice = 'Could not apply the local message cache budget.';
+        _noticeIsError = true;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final workspace = CapsuleChatConversationWorkspace(
@@ -564,6 +624,13 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Capsule Chat'),
+        actions: [
+          IconButton(
+            onPressed: _sending ? null : _configureCache,
+            tooltip: 'Local message cache',
+            icon: const Icon(Icons.storage_outlined),
+          ),
+        ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(24),
           child: Padding(

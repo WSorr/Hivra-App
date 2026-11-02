@@ -55,38 +55,6 @@ void main() {
     });
 
     test(
-      'passive chat projection merges durable and drained messages once',
-      () {
-        const existing = CapsuleChatInboxMessage(
-          id: 'existing',
-          fromHex: peerHex,
-          toHex: capsuleHex,
-          messageText: 'existing',
-          createdAtUtc: '2026-08-13T08:00:00.000Z',
-          envelopeHashHex: '',
-          timestampMs: 1,
-        );
-        const passive = CapsuleChatInboxMessage(
-          id: 'passive',
-          fromHex: peerHex,
-          toHex: capsuleHex,
-          messageText: 'passive',
-          createdAtUtc: '2026-08-13T08:00:01.000Z',
-          envelopeHashHex: '',
-          timestampMs: 2,
-        );
-
-        final projected = mergeChatMessages(<Iterable<CapsuleChatInboxMessage>>[
-          const <CapsuleChatInboxMessage>[existing],
-          const <CapsuleChatInboxMessage>[existing, passive],
-          const <CapsuleChatInboxMessage>[passive],
-        ]);
-
-        expect(projected, <CapsuleChatInboxMessage>[existing, passive]);
-      },
-    );
-
-    test(
       'peer projection includes both directions without cross-peer leak',
       () {
         const otherPeerHex =
@@ -365,7 +333,7 @@ void main() {
       Future<Uint8List?> seedLoader(String _) async =>
           Uint8List.fromList(List<int>.filled(32, 14));
       final store = CapsuleDeliveryInboxStore(
-        maxRecordsPerCapsule: 2,
+        initialCacheBudgetBytes: 3500,
         fileStore: fileStore,
         loadTimelineSeed: seedLoader,
       );
@@ -374,7 +342,7 @@ void main() {
             id: id,
             fromHex: peerHex,
             toHex: capsuleHex,
-            messageText: id,
+            messageText: 'x' * 1024,
             createdAtUtc: '2026-08-13T08:00:0$timestampMs.000Z',
             envelopeHashHex: '',
             timestampMs: timestampMs,
@@ -389,7 +357,7 @@ void main() {
         ],
       );
       final restartedStore = CapsuleDeliveryInboxStore(
-        maxRecordsPerCapsule: 2,
+        initialCacheBudgetBytes: 3500,
         fileStore: fileStore,
         loadTimelineSeed: seedLoader,
       );
@@ -400,6 +368,200 @@ void main() {
         <String>['middle', 'new'],
       );
     });
+
+    test(
+      'byte budget spans peers and preserves unresolved sends after restart',
+      () async {
+        final home = await Directory.systemTemp.createTemp('hivra-retention-');
+        addTearDown(() => home.delete(recursive: true));
+        final files = CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+        );
+        Future<Uint8List?> seed(String _) async =>
+            Uint8List.fromList(List.filled(32, 31));
+        final store = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed: seed,
+        );
+        CapsuleChatInboxMessage message(
+          String id,
+          int time, {
+          bool outgoing = false,
+          CapsuleChatMessageDeliveryState state =
+              CapsuleChatMessageDeliveryState.received,
+          String peer = peerHex,
+        }) => CapsuleChatInboxMessage(
+          id: id,
+          fromHex: outgoing ? capsuleHex : peer,
+          toHex: outgoing ? peer : capsuleHex,
+          messageText: 'x' * 1024,
+          createdAtUtc: '2026-11-02T00:00:00Z',
+          envelopeHashHex: id,
+          timestampMs: time,
+          direction:
+              outgoing
+                  ? CapsuleChatMessageDirection.outgoing
+                  : CapsuleChatMessageDirection.incoming,
+          deliveryState: state,
+        );
+        await store.mergeDurably(
+          capsuleHex,
+          messages: [
+            message(
+              'pending',
+              0,
+              outgoing: true,
+              state: CapsuleChatMessageDeliveryState.pending,
+            ),
+            message(
+              'ambiguous',
+              1,
+              outgoing: true,
+              state: CapsuleChatMessageDeliveryState.ambiguous,
+            ),
+            message('old', 2),
+            message('middle', 3),
+            message('new', 4, peer: '3' * 64),
+          ],
+        );
+        expect(await store.loadCacheBudgetBytes(capsuleHex), 100000000);
+        await store.setCacheBudgetBytes(capsuleHex, 3500);
+        expect(store.loadMessages(capsuleHex).map((m) => m.id), [
+          'pending',
+          'ambiguous',
+          'middle',
+          'new',
+        ]);
+        // A replacement runtime uses the existing Capsule files, not old package state.
+        final replacement = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed: seed,
+        );
+        expect(await replacement.loadCacheBudgetBytes(capsuleHex), 3500);
+        expect(replacement.loadMessages(capsuleHex).map((m) => m.id), [
+          'pending',
+          'ambiguous',
+          'middle',
+          'new',
+        ]);
+        await replacement.upsertMessageDurably(
+          capsuleHex,
+          message(
+            'pending',
+            0,
+            outgoing: true,
+            state: CapsuleChatMessageDeliveryState.transportAccepted,
+          ),
+        );
+        expect(replacement.loadMessages(capsuleHex).map((m) => m.id), [
+          'ambiguous',
+          'middle',
+          'new',
+        ]);
+      },
+    );
+
+    test(
+      'default cache has no 256-message cap and accounts for UTF-8 bytes',
+      () async {
+        final home = await Directory.systemTemp.createTemp('hivra-retention-');
+        addTearDown(() => home.delete(recursive: true));
+        final files = CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+        );
+        final store = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed:
+              (_) async => Uint8List.fromList(List.filled(32, 32)),
+        );
+        CapsuleChatInboxMessage message(int n, String body) =>
+            CapsuleChatInboxMessage(
+              id: '$n',
+              fromHex: peerHex,
+              toHex: capsuleHex,
+              messageText: body,
+              createdAtUtc: '2026-11-02T00:00:00Z',
+              envelopeHashHex: '$n',
+              timestampMs: n,
+            );
+        await store.mergeDurably(
+          capsuleHex,
+          messages: List.generate(300, (n) => message(n, 'small')),
+        );
+        expect(store.loadMessages(capsuleHex), hasLength(300));
+        await store.markMessagesRead(
+          capsuleHex,
+          List.generate(300, (n) => '$n'),
+        );
+        final restarted = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed:
+              (_) async => Uint8List.fromList(List.filled(32, 32)),
+        );
+        expect(await restarted.hydrateCapsule(capsuleHex), isTrue);
+        expect(await restarted.unreadMessageCount(capsuleHex), 0);
+
+        await store.mergeDurably(
+          capsuleHex,
+          messages: [
+            message(300, 'a' * 400),
+            message(301, 'b' * 400),
+            message(302, '界' * 900),
+          ],
+        );
+        await store.setCacheBudgetBytes(capsuleHex, 3400);
+        expect(store.loadMessages(capsuleHex).map((m) => m.id), ['302']);
+      },
+    );
+
+    test(
+      'failed budget commit preserves the old window and preference',
+      () async {
+        final home = await Directory.systemTemp.createTemp('hivra-retention-');
+        addTearDown(() => home.delete(recursive: true));
+        final files = _FailingChatFileStore(
+          UserVisibleDataDirectoryService(homeOverride: home.path),
+        );
+        Future<Uint8List?> seed(String _) async =>
+            Uint8List.fromList(List.filled(32, 33));
+        final store = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed: seed,
+        );
+        final messages = List.generate(
+          2,
+          (n) => CapsuleChatInboxMessage(
+            id: '$n',
+            fromHex: peerHex,
+            toHex: capsuleHex,
+            messageText: 'a' * 1024,
+            createdAtUtc: '2026-11-02T00:00:00Z',
+            envelopeHashHex: '$n',
+            timestampMs: n,
+          ),
+        );
+        await store.mergeDurably(capsuleHex, messages: messages);
+        final dir = await files.capsuleDirForHex(capsuleHex);
+        final before = await files.readChatTimeline(dir);
+        files.failWrites = true;
+        await expectLater(
+          store.setCacheBudgetBytes(capsuleHex, 2000),
+          throwsStateError,
+        );
+        expect(await store.loadCacheBudgetBytes(capsuleHex), 100000000);
+        expect(store.loadMessages(capsuleHex), hasLength(2));
+        expect(await files.readChatTimeline(dir), before);
+        files.failWrites = false;
+        final restarted = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed: seed,
+        );
+        expect(await restarted.loadCacheBudgetBytes(capsuleHex), 100000000);
+        expect(restarted.loadMessages(capsuleHex), hasLength(2));
+        await restarted.setCacheBudgetBytes(capsuleHex, 2000);
+        expect(restarted.loadMessages(capsuleHex).single.id, '1');
+      },
+    );
 
     test('wrong-capsule or corrupt timeline fails closed', () async {
       final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
@@ -769,7 +931,6 @@ void main() {
 
       final received = await passiveService.drainAndFilter();
       final result = await projectCachedMessagesBeforeChatRefresh(
-        currentMessages: const <CapsuleChatInboxMessage>[],
         loadCachedMessages: workspaceService.loadCachedMessagesDurably,
         refresh:
             () async => const CapsuleChatDeliveryReceiveResult(
@@ -824,7 +985,7 @@ void main() {
   test('delivery inbox bounds records and capsule scopes', () {
     final store = CapsuleDeliveryInboxStore(
       maxCapsules: 2,
-      maxRecordsPerCapsule: 2,
+      initialCacheBudgetBytes: 3500,
     );
     const firstCapsule =
         '1111111111111111111111111111111111111111111111111111111111111111';
@@ -837,7 +998,7 @@ void main() {
         CapsuleChatInboxMessage(
           id: id,
           fromHex: secondCapsule,
-          messageText: id,
+          messageText: 'x' * 1024,
           createdAtUtc: '2026-08-09T08:00:00.000Z',
           envelopeHashHex: '',
           timestampMs: timestampMs,
@@ -1038,7 +1199,7 @@ void main() {
       if (await tempHome.exists()) await tempHome.delete(recursive: true);
     });
     final store = CapsuleDeliveryInboxStore(
-      maxRecordsPerCapsule: 1,
+      initialCacheBudgetBytes: 2000,
       fileStore: CapsuleFileStore(
         dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
       ),
@@ -1047,7 +1208,7 @@ void main() {
         CapsuleChatInboxMessage(
           id: id,
           fromHex: capsuleHex,
-          messageText: id,
+          messageText: 'x' * 1024,
           createdAtUtc: '2026-08-13T08:00:00.000Z',
           envelopeHashHex: '',
           timestampMs: timestampMs,
@@ -2162,4 +2323,15 @@ String _bytesToHex(Uint8List bytes) {
     buffer.write(byte.toRadixString(16).padLeft(2, '0'));
   }
   return buffer.toString();
+}
+
+class _FailingChatFileStore extends CapsuleFileStore {
+  bool failWrites = false;
+  _FailingChatFileStore(UserVisibleDataDirectoryService dirs)
+    : super(dirs: dirs);
+  @override
+  Future<void> writeChatTimeline(Directory dir, String contents) {
+    if (failWrites) throw StateError('synthetic timeline write failure');
+    return super.writeChatTimeline(dir, contents);
+  }
 }

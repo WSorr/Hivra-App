@@ -390,6 +390,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 ### Oversized Candidate Surfaces
 
 Exact line counts are evaluated live by the ownership gate and are not persisted in this baseline.
+- `flutter/lib/screens/capsule_chat_plugin_screen.dart`
 - `flutter/lib/screens/invitations_screen.dart`
 - `flutter/lib/screens/ledger_inspector_screen.dart`
 - `flutter/lib/screens/main_screen.dart`

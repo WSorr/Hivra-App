@@ -6,6 +6,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/hivra_bindings.dart';
 import 'package:hivra_app/services/capsule_backup_codec.dart';
+import 'package:hivra_app/services/capsule_delivery_inbox_store.dart';
+import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/capsule_index_store.dart';
 import 'package:hivra_app/services/capsule_persistence_service.dart';
@@ -173,6 +175,54 @@ void main() {
     bindings = _Bindings();
   });
   tearDown(() async => stand.delete(recursive: true));
+  test(
+    'default-size Chat window survives complete backup and recovery',
+    () async {
+      final cache = CapsuleDeliveryInboxStore(
+        fileStore: src,
+        loadTimelineSeed: (_) async => seed,
+      );
+      final body = 'x' * 3500;
+      await cache.mergeDurably(
+        owner,
+        messages: List.generate(
+          28000,
+          (n) => CapsuleChatInboxMessage(
+            id: '$n'.padLeft(64, '0'),
+            fromHex: '22' * 32,
+            toHex: owner,
+            messageText: body,
+            createdAtUtc: '2026-11-02T00:00:00Z',
+            envelopeHashHex: '$n'.padLeft(64, '0'),
+            timestampMs: n,
+          ),
+        ),
+      );
+      final retained = cache.loadMessages(owner);
+      expect(retained.length, greaterThan(20000));
+      expect(retained.length, lessThan(28000));
+      final dir = await src.capsuleDirForHex(owner);
+      expect(
+        await src.chatTimelineFile(dir).length(),
+        greaterThan(64 * 1024 * 1024),
+      );
+      final files = await src.snapshotForBackup(dir);
+      final raw = await backup(files: files);
+      expect(await restore(raw), owner);
+      final recovered = CapsuleDeliveryInboxStore(
+        fileStore: dst,
+        loadTimelineSeed: (_) async => seed,
+      );
+      expect(await recovered.loadCacheBudgetBytes(owner), 100000000);
+      final window = recovered.loadMessages(owner);
+      expect(window.length, retained.length);
+      expect(window.first.id, retained.first.id);
+      expect(window.last.id, retained.last.id);
+      expect(window.last.messageText, body);
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+
   test('recovering a new Capsule never unlocks unrelated seeds', () async {
     final index = CapsuleIndexStore(dirs: dstDirs);
     for (final byte in [0xbb, 0xcc, 0xdd]) {

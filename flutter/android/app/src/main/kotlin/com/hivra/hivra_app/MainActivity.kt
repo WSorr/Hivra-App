@@ -3,7 +3,9 @@ package com.hivra.hivra_app
 import android.os.Bundle
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -12,37 +14,50 @@ import java.io.File
 import kotlin.concurrent.thread
 
 class MainActivity : FlutterActivity() {
-    private data class BackupSave(val source: File, val result: MethodChannel.Result)
-    private var backupSave: BackupSave? = null
+    private sealed class DocumentRequest(val result: MethodChannel.Result) {
+        class Save(val source: File, result: MethodChannel.Result) : DocumentRequest(result)
+        class Open(result: MethodChannel.Result) : DocumentRequest(result)
+    }
+    private var documentRequest: DocumentRequest? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "hivra/file_documents")
             .setMethodCallHandler { call, result ->
-                if (call.method != "saveJsonDocument") {
+                if (call.method != "saveJsonDocument" && call.method != "openDocument") {
                     result.notImplemented()
-                } else if (backupSave != null) {
-                    result.error("save_in_progress", "A backup save is already open", null)
+                } else if (documentRequest != null) {
+                    result.error("document_in_progress", "A document dialog is already open", null)
                 } else {
                     try {
-                        val source = File(requireNotNull(call.argument<String>("sourcePath"))).canonicalFile
-                        // Match the cache-dir-path used by Dart Directory.systemTemp.
-                        val cache = File(PathUtils.getCacheDirectory(this)).canonicalFile
-                        require(source.isFile && source.path.startsWith(cache.path + File.separator))
-                        val name = requireNotNull(call.argument<String>("suggestedName"))
-                        require(name.endsWith(".json") && !name.contains('/') && !name.contains('\\'))
-                        backupSave = BackupSave(source, result)
-                        startActivityForResult(
+                        val intent = if (call.method == "saveJsonDocument") {
+                            val source = File(requireNotNull(call.argument<String>("sourcePath"))).canonicalFile
+                            // Match the cache-dir-path used by Dart Directory.systemTemp.
+                            val cache = File(PathUtils.getCacheDirectory(this)).canonicalFile
+                            require(source.isFile && source.path.startsWith(cache.path + File.separator))
+                            val name = requireNotNull(call.argument<String>("suggestedName"))
+                            require(name.endsWith(".json") && !name.contains('/') && !name.contains('\\'))
+                            documentRequest = DocumentRequest.Save(source, result)
                             Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                                addCategory(Intent.CATEGORY_OPENABLE)
                                 type = "application/json"
                                 putExtra(Intent.EXTRA_TITLE, name)
-                            },
-                            BACKUP_SAVE_REQUEST,
-                        )
+                            }
+                        } else {
+                            documentRequest = DocumentRequest.Open(result)
+                            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                type = requireNotNull(call.argument<String>("mimeType"))
+                                call.argument<String>("initialDirectory")?.let {
+                                    if (android.os.Build.VERSION.SDK_INT >= 26) {
+                                        putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse(it))
+                                    }
+                                }
+                            }
+                        }
+                        intent.addCategory(Intent.CATEGORY_OPENABLE)
+                        startActivityForResult(intent, DOCUMENT_REQUEST)
                     } catch (_: Exception) {
-                        backupSave = null
-                        result.error("save_unavailable", "Cannot open the backup save dialog", null)
+                        documentRequest = null
+                        result.error("document_unavailable", "Cannot open the document dialog", null)
                     }
                 }
             }
@@ -50,45 +65,73 @@ class MainActivity : FlutterActivity() {
 
     @Deprecated("Activity result callback is required by FlutterActivity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != BACKUP_SAVE_REQUEST) {
+        if (requestCode != DOCUMENT_REQUEST) {
             super.onActivityResult(requestCode, resultCode, data)
             return
         }
-        val save = backupSave ?: return
+        val request = documentRequest ?: return
         if (resultCode != Activity.RESULT_OK) {
-            backupSave = null
-            save.result.success(null)
+            documentRequest = null
+            request.result.success(null)
             return
         }
         val uri = data?.data
         if (uri == null || uri.scheme != "content") {
-            backupSave = null
-            save.result.error("invalid_destination", "No backup document was selected", null)
+            documentRequest = null
+            request.result.error("invalid_document", "No document was selected", null)
             return
         }
-        thread(name = "hivra-backup-save") {
-            val written = runCatching {
-                requireNotNull(contentResolver.openOutputStream(uri, "wt")).use { output ->
-                    save.source.inputStream().use { input -> input.copyTo(output) }
-                    output.flush()
+        thread(name = "hivra-document-copy") {
+            var staged: File? = null
+            val copied = runCatching {
+                when (request) {
+                    is DocumentRequest.Save -> {
+                        requireNotNull(contentResolver.openOutputStream(uri, "wt")).use { output ->
+                            request.source.inputStream().use { input -> input.copyTo(output) }
+                            output.flush()
+                        }
+                        uri.toString()
+                    }
+                    is DocumentRequest.Open -> {
+                        val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0) else null
+                        } ?: "Selected document"
+                        val directory = File.createTempFile("hivra-document-", "", File(PathUtils.getCacheDirectory(this)))
+                        staged = directory
+                        check(directory.delete() && directory.mkdir())
+                        val file = File(directory, File(name).name)
+                        // Provider display names cannot escape this private staging directory.
+                        require(file.canonicalFile.parentFile == directory.canonicalFile)
+                        requireNotNull(contentResolver.openInputStream(uri)).use { input ->
+                            file.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        file.path
+                    }
                 }
-            }.isSuccess
-            if (!written) {
-                runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
+            }
+            if (copied.isFailure) {
+                staged?.deleteRecursively()
+                if (request is DocumentRequest.Save) {
+                    runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
+                }
             }
             runOnUiThread {
-                if (backupSave === save) {
-                    backupSave = null
-                    if (written) save.result.success(uri.toString())
-                    else save.result.error("write_failed", "The backup document could not be saved", null)
+                if (documentRequest === request) {
+                    documentRequest = null
+                    copied.fold(
+                        onSuccess = { request.result.success(it) },
+                        onFailure = { request.result.error("document_copy_failed", "The selected document could not be copied", null) },
+                    )
+                } else {
+                    staged?.deleteRecursively()
                 }
             }
         }
     }
 
     override fun onDestroy() {
-        backupSave?.result?.error("activity_closed", "The backup save was interrupted", null)
-        backupSave = null
+        documentRequest?.result?.error("activity_closed", "The document operation was interrupted", null)
+        documentRequest = null
         super.onDestroy()
     }
 
@@ -98,6 +141,6 @@ class MainActivity : FlutterActivity() {
     }
 
     companion object {
-        private const val BACKUP_SAVE_REQUEST = 0x4842
+        private const val DOCUMENT_REQUEST = 0x4842
     }
 }
