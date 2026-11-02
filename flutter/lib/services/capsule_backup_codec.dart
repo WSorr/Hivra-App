@@ -27,7 +27,7 @@ class CapsuleBackupCodec {
   static const int version = 1;
   static const int ledgerOnlyEncryptedVersion = 2;
   static const int encryptedVersion = 3;
-  // New exports carry Core history and relationship evidence, not app archives.
+  // New exports carry Ledger and Capsule metadata, not operational/app archives.
   static const int maxBackupBytes = 96 * 1024 * 1024;
   // Existing full-state v3 exports remain readable without emitting them again.
   static const int maxLegacyBackupBytes = 320 * 1024 * 1024;

@@ -318,7 +318,7 @@ class CapsuleFileStore {
   }
 
   /// Read-only paths accepted from existing full-state v3 exports. New exports
-  /// snapshot only relationship consensus evidence; they never walk this list.
+  /// contain no files or packages; they never walk this list.
   static bool isBackupPath(String path) {
     if (<String>{
       deliveryOutboxFileName,
@@ -341,33 +341,6 @@ class CapsuleFileStore {
         RegExp(
           r'^transport_quarantine/[0-9]+/[a-z0-9_-]+/nostr/inbound_quarantine\.v1\.bin$',
         ).hasMatch(path);
-  }
-
-  Future<Map<String, String>> snapshotForBackup(Directory capsuleDir) async {
-    final snapshot = <String, String>{};
-    final kind = await FileSystemEntity.type(
-      capsuleDir.path,
-      followLinks: false,
-    );
-    if (kind == FileSystemEntityType.notFound) return snapshot;
-    if (kind != FileSystemEntityType.directory) {
-      throw StateError('Backup Capsule must be a regular directory');
-    }
-    // Relationship consensus is Core evidence. Application trees, package
-    // state, delivery caches and installed ZIPs are not Capsule recovery data.
-    final file = pairConsensusAttestationsFile(capsuleDir);
-    final fileKind = await FileSystemEntity.type(file.path, followLinks: false);
-    if (fileKind == FileSystemEntityType.notFound) return snapshot;
-    if (fileKind != FileSystemEntityType.file) {
-      throw StateError('Relationship evidence must be a regular file');
-    }
-    if (await file.length() > maxBackupStateBytes) {
-      throw StateError('Relationship evidence exceeds the backup limit');
-    }
-    snapshot[pairConsensusAttestationsFileName] = base64Encode(
-      await file.readAsBytes(),
-    );
-    return snapshot;
   }
 
   /// Validate before staging. In particular, an authenticated backup is not

@@ -388,18 +388,15 @@ class CapsulePersistenceService {
     Future<bool> Function()? stillCurrent,
   }) async {
     final directory = await _capsuleDirForHex(owner);
-    final files = await _fileStore.snapshotForBackup(directory);
     final state = await _fileStore.readState(directory);
-    final after = await _fileStore.snapshotForBackup(directory);
-    if (!mapEquals(files, after) ||
-        (stillCurrent != null && !await stillCurrent())) {
+    if (stillCurrent != null && !await stillCurrent()) {
       throw StateError('Capsule changed during backup; retry when idle');
     }
     final ledgerRoot = _support.exportLedgerRoot(ledger);
     final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
       ledgerJson: ledger,
       seed: seed,
-      files: files,
+      files: const {},
       isGenesis:
           _support.inferGenesisFromLedgerRoot(ledgerRoot) ??
           (state?['isGenesis'] == true),

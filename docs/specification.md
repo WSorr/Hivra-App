@@ -540,10 +540,11 @@ Storage:
   domain-separated export key from the Capsule seed with HKDF-SHA256 and a
   fresh 32-byte salt, then encrypts with AES-256-GCM and a fresh 12-byte nonce.
   Schema, version and suite are authenticated associated data. New payloads
-  contain Ledger, Capsule type/network metadata and relationship consensus
-  attestations only. The existing `files` map carries that Core evidence;
-  `packages` is empty. No recursive application-tree or package snapshot is
-  permitted. Chat history, delivery queues, contact labels, plugin state, ZIPs,
+  contain Ledger and Capsule type/network metadata only. The existing `files`
+  and `packages` maps are empty. Operational pair attestations are not Core
+  facts and are reacquired through the existing peer exchange after recovery.
+  No recursive application-tree or package snapshot is permitted. Pair
+  attestations, Chat history, delivery queues, contact labels, plugin state, ZIPs,
   platform secrets, process grants and derived projections MUST NOT be exported.
   Backup creation MUST NOT prune or rewrite those local sources. A new backup
   restores Core continuity, not application content or autonomous workflows.

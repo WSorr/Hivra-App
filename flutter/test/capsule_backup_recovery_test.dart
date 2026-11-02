@@ -222,9 +222,7 @@ void main() {
       expect(raw.length, (await File(baseline).readAsString()).length);
       expect(raw.length, lessThan(4096));
       final opened = (await CapsuleBackupCodec.tryDecodeBackup(raw, seed))!;
-      expect(opened.files!.keys, [
-        CapsuleFileStore.pairConsensusAttestationsFileName,
-      ]);
+      expect(opened.files, isEmpty);
       expect(opened.packages, isEmpty);
       expect(await chat.length(), 256 * 1024 * 1024);
       expect(
@@ -249,7 +247,8 @@ void main() {
       final restarted = CapsuleFileStore(dirs: dstDirs);
       final restored = await restarted.capsuleDirForHex(owner);
       expect(await restarted.readLedger(restored), ledger);
-      expect(await restarted.readPairConsensusAttestations(restored), proof);
+      expect(await restarted.readPairConsensusAttestations(restored), isNull);
+      expect(await src.readPairConsensusAttestations(dir), proof);
       expect((await restarted.readState(restored))!['isNeste'], false);
       expect(await restarted.readChatTimeline(restored), isNull);
       expect(await restarted.readDeliveryOutbox(restored), isNull);
@@ -583,22 +582,29 @@ void main() {
       expect(await restore(raw), owner);
     },
   );
-  test('unrelated app symlinks are not traversed for Core export', () async {
-    final dir = await src.capsuleDirForHex(owner, create: true);
-    await Directory('${dir.path}/plugin_state').create();
-    final outside = Directory('${stand.path}/outside')..createSync();
-    await Link('${dir.path}/plugin_state/$plugin').create(outside.path);
-    expect(await src.snapshotForBackup(dir), isEmpty);
-  });
-  test('Core relationship evidence cannot follow a symlink', () async {
-    final dir = await src.capsuleDirForHex(owner, create: true);
-    final outside = File('${stand.path}/outside-proof')
-      ..writeAsStringSync('outside');
-    await Link(
-      src.pairConsensusAttestationsFile(dir).path,
-    ).create(outside.path);
-    await expectLater(src.snapshotForBackup(dir), throwsStateError);
-  });
+  test(
+    'Core export does not traverse operational relationship evidence',
+    () async {
+      final dir = await src.capsuleDirForHex(owner, create: true);
+      await src.writeLedger(dir, ledger);
+      await seeds(srcDirs, srcSecure).storeSeed(owner, seed);
+      final outside = File('${stand.path}/outside-proof')
+        ..writeAsStringSync('unrelated evidence');
+      final link = Link(src.pairConsensusAttestationsFile(dir).path);
+      await link.create(outside.path);
+      final path = '${stand.path}/core-without-evidence.json';
+      await exporter.exportCapsuleBackupToPath(owner, path);
+      final opened =
+          (await CapsuleBackupCodec.tryDecodeBackup(
+            await File(path).readAsString(),
+            seed,
+          ))!;
+      expect(opened.files, isEmpty);
+      expect(opened.packages, isEmpty);
+      expect(await link.target(), outside.path);
+      expect(await outside.readAsString(), 'unrelated evidence');
+    },
+  );
 
   test(
     'restart retries one interrupted staged import without stale data',

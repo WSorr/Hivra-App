@@ -51,10 +51,10 @@ State verifiably available from a provider may be reacquired after reconnection.
 Preserve only the local intent/evidence still needed for unresolved delivery or
 effects and any non-reconstructible data covered by the chosen retention policy.
 A missing remote result is not proof that an earlier request was never accepted.
-Capsule backup prioritizes Core continuity: identity, authenticated Ledger and
-relationship evidence. Application content, caches, opaque plugin state and
-installable packages are not part of a new Capsule backup. Their local size and
-lifecycle must not determine whether Core can be backed up. Local restart
+Capsule backup prioritizes Core continuity: seed-derived identity and the
+authenticated Ledger. The seed is retained separately. Operational pair
+attestations, application content, caches, opaque plugin state and installable
+packages are not part of a new Capsule backup. Their local size and lifecycle must not determine whether Core can be backed up. Local restart
 retention and cross-device recovery are separate choices; restoring Core does
 not resume an application's delegated effects.
 

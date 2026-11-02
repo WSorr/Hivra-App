@@ -290,13 +290,16 @@ compatibility, isolation or product acceptance.
 ## Selected Product Outcome
 
 The selected bounded outcome is a Core-only Capsule backup. New exports retain
-Ledger, Capsule type/network metadata and relationship consensus evidence;
+Ledger and Capsule type/network metadata only; operational pair attestations,
 Chat content, local delivery queues, contact labels, opaque plugin state and
 installed ZIPs are excluded. The owner accepts loss of application content when
 recovering from a new backup. This does not prune local app state or unresolved
 effect evidence, revoke an existing remote grant, or resume a recovered app.
-Restore identity/history/relationships through the existing authenticated v3
-codec and atomic import owner; use normal installation/reconnection afterward.
+Restore identity/history/relationships from Ledger through the existing
+authenticated v3 codec and atomic import owner. Operational pair attestations
+are reacquired through the existing peer exchange; unavailable peers may leave
+pair actions blocked without erasing relationship truth. Use normal application
+installation/reconnection afterward.
 Application volume, corruption or package removal must not block Core export
 or new Core-only recovery.
 Keep existing full-state v3 imports read-only until that supported format is
