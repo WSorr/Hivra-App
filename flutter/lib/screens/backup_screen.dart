@@ -196,9 +196,10 @@ class _BackupScreenState extends State<BackupScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Save an encrypted backup of your Capsule, Chat and plugin state. '
+              'Save an encrypted backup of your Capsule identity, Ledger and relationships. '
               'Keep the seed phrase separately. API tokens and VPS keys stay in '
-              'secure storage; reconnect accounts after recovery.',
+              'secure storage. App history, plugin state and installed packages are not included; '
+              'reinstall apps and reconnect accounts after recovery.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey),
             ),

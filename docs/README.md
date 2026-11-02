@@ -23,7 +23,7 @@ note, or the V2 blueprint when changing maintained 1.x behavior.
 | Current state, accepted debt boundaries and next decision | `development-control.md` |
 | Model-first development, upstream comparison, required runtime matrix and change workflow | `development-control.md` |
 | Person-First ownership, participation, replaceability and the three laws | `product-axis.md` |
-| Maintained 1.x protocol, authenticated Capsule/package backup and recovery | `specification.md` |
+| Maintained 1.x protocol, Core-only Capsule backup and legacy recovery | `specification.md` |
 | Design-only V2 contracts and migration | `architecture-v2-blueprint.md` |
 | Product terminology | `hivra-conceptual-model.md` |
 | Milestone index and retained debt | `roadmap.md` |

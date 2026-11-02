@@ -6,8 +6,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/hivra_bindings.dart';
 import 'package:hivra_app/services/capsule_backup_codec.dart';
-import 'package:hivra_app/services/capsule_delivery_inbox_store.dart';
-import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/capsule_index_store.dart';
 import 'package:hivra_app/services/capsule_persistence_service.dart';
@@ -73,6 +71,7 @@ class _Bindings implements HivraBindings {
   bool valid = true;
   int validations = 0;
   Uint8List? nostrKey;
+  String? ledger;
   @override
   Uint8List? capsuleRuntimeOwnerPublicKey() =>
       Uint8List.fromList(List.filled(32, 0xaa));
@@ -81,7 +80,7 @@ class _Bindings implements HivraBindings {
   @override
   bool setApplicationStorageRoot(String path) => true;
   @override
-  String? exportLedger() => null;
+  String? exportLedger() => ledger;
   @override
   Uint8List? seedRootPublicKey(Uint8List seed) => seed;
   @override
@@ -139,6 +138,11 @@ void main() {
       ..writeAsBytesSync(ZipEncoder().encode(zip)!);
   }
 
+  // Existing full-state v3 archive compatibility, not the new export writer.
+  Future<Map<String, String>> legacyPackages() async => {
+    plugin: base64Encode(await (await package('1.0.0')).readAsBytes()),
+  };
+
   Future<String> backup({
     Map<String, String>? files,
     Map<String, String>? packages,
@@ -176,52 +180,100 @@ void main() {
   });
   tearDown(() async => stand.delete(recursive: true));
   test(
-    'default-size Chat window survives complete backup and recovery',
+    'app size and package lifecycle cannot enlarge or block Core backup',
     () async {
-      final cache = CapsuleDeliveryInboxStore(
-        fileStore: src,
-        loadTimelineSeed: (_) async => seed,
+      final dir = await src.capsuleDirForHex(owner, create: true);
+      await src.writeLedger(dir, ledger);
+      await src.writeState(dir, {'isGenesis': true, 'isNeste': false});
+      await seeds(srcDirs, srcSecure).storeSeed(owner, seed);
+      const proof = '{"version":1,"attestations":[]}';
+      await src.writePairConsensusAttestations(dir, proof);
+      final baseline = '${stand.path}/baseline.json';
+      await exporter.exportCapsuleBackupToPath(owner, baseline);
+
+      // Sparse files exceed even the former archive bounds. They are never read.
+      final chat = src.chatTimelineFile(dir);
+      final handle = await chat.open(mode: FileMode.write);
+      await handle.truncate(256 * 1024 * 1024);
+      await handle.close();
+      await src.writePluginState(
+        dir,
+        plugin,
+        'workspace.v1.json',
+        'private drone state',
       );
-      final body = 'x' * 3500;
-      await cache.mergeDurably(
-        owner,
-        messages: List.generate(
-          28000,
-          (n) => CapsuleChatInboxMessage(
-            id: '$n'.padLeft(64, '0'),
-            fromHex: '22' * 32,
-            toHex: owner,
-            messageText: body,
-            createdAtUtc: '2026-11-02T00:00:00Z',
-            envelopeHashHex: '$n'.padLeft(64, '0'),
-            timestampMs: n,
-          ),
+      await src.writeDeliveryOutbox(dir, 'unresolved local delivery');
+      await src.writeContactLabels(dir, '{"peer":"local label"}');
+      final installed = await srcPackages.installPluginFromFile(
+        await package('1.0.0'),
+      );
+      await expectLater(
+        srcPackages.removePlugin(
+          installed.id,
+          cleanup: () async {
+            throw StateError('removal is still draining');
+          },
         ),
+        throwsStateError,
       );
-      final retained = cache.loadMessages(owner);
-      expect(retained.length, greaterThan(20000));
-      expect(retained.length, lessThan(28000));
-      final dir = await src.capsuleDirForHex(owner);
+      final path = '${stand.path}/core.json';
+      await exporter.exportCapsuleBackupToPath(owner, path);
+      final raw = await File(path).readAsString();
+      expect(raw.length, (await File(baseline).readAsString()).length);
+      expect(raw.length, lessThan(4096));
+      final opened = (await CapsuleBackupCodec.tryDecodeBackup(raw, seed))!;
+      expect(opened.files, isEmpty);
+      expect(opened.packages, isEmpty);
+      expect(await chat.length(), 256 * 1024 * 1024);
       expect(
-        await src.chatTimelineFile(dir).length(),
-        greaterThan(64 * 1024 * 1024),
+        await src.readPluginState(dir, plugin, 'workspace.v1.json'),
+        'private drone state',
       );
-      final files = await src.snapshotForBackup(dir);
-      final raw = await backup(files: files);
+      expect(await src.readDeliveryOutbox(dir), 'unresolved local delivery');
+
+      // The active-Capsule and selector export entry points share this boundary.
+      bindings.ledger = ledger;
+      final activePath = '${stand.path}/active.json';
+      await exporter.exportBackupEnvelopeToPath(bindings, activePath, seed);
+      final active =
+          (await CapsuleBackupCodec.tryDecodeBackup(
+            await File(activePath).readAsString(),
+            seed,
+          ))!;
+      expect(active.files, opened.files);
+      expect(active.packages, isEmpty);
+
       expect(await restore(raw), owner);
-      final recovered = CapsuleDeliveryInboxStore(
-        fileStore: dst,
-        loadTimelineSeed: (_) async => seed,
+      final restarted = CapsuleFileStore(dirs: dstDirs);
+      final restored = await restarted.capsuleDirForHex(owner);
+      expect(await restarted.readLedger(restored), ledger);
+      expect(await restarted.readPairConsensusAttestations(restored), isNull);
+      expect(await src.readPairConsensusAttestations(dir), proof);
+      expect((await restarted.readState(restored))!['isNeste'], false);
+      expect(await restarted.readChatTimeline(restored), isNull);
+      expect(await restarted.readDeliveryOutbox(restored), isNull);
+      expect(
+        await restarted.readPluginState(restored, plugin, 'workspace.v1.json'),
+        isNull,
       );
-      expect(await recovered.loadCacheBudgetBytes(owner), 100000000);
-      final window = recovered.loadMessages(owner);
-      expect(window.length, retained.length);
-      expect(window.first.id, retained.first.id);
-      expect(window.last.id, retained.last.id);
-      expect(window.last.messageText, body);
+      expect(await dstPackages.loadPlugins(), isEmpty);
+      expect(await seeds(dstDirs, dstSecure).loadSeed(owner), seed);
+      expect(
+        (await CapsuleIndexStore(dirs: dstDirs).read()).activePubKeyHex,
+        owner,
+      );
     },
-    timeout: const Timeout(Duration(minutes: 3)),
   );
+
+  test('Core recovery is independent of a broken package registry', () async {
+    final plugins = await dstPackages.pluginsDirectory();
+    await plugins.create(recursive: true);
+    final registry = File('${plugins.path}/registry.json');
+    await registry.writeAsString('{broken application registry');
+    expect(await restore(await backup()), owner);
+    expect(await dst.readLedger(await dst.capsuleDirForHex(owner)), ledger);
+    expect(await registry.readAsString(), '{broken application registry');
+  });
 
   test('recovering a new Capsule never unlocks unrelated seeds', () async {
     final index = CapsuleIndexStore(dirs: dstDirs);
@@ -280,7 +332,7 @@ void main() {
     },
   );
   test(
-    'full encrypted recovery retains Capsule, opaque package state and packages across restart/replacement',
+    'read-only legacy v3 recovery retains archived app state and packages',
     () async {
       final dir = await src.capsuleDirForHex(owner, create: true);
       await src.writeLedger(dir, ledger);
@@ -310,9 +362,23 @@ void main() {
       await src.writeChatTimeline(dir, 'already encrypted timeline');
       await src.writeContactLabels(dir, '{"peer":"Test peer"}');
       await srcPackages.installPluginFromFile(await package('1.0.0'));
-      final path = '${stand.path}/export.json';
-      await exporter.exportCapsuleBackupToPath(owner, path);
-      final raw = await File(path).readAsString();
+      final raw = await backup(
+        files: {
+          'plugin_state/$plugin/workspace.v1.json': base64Encode(
+            utf8.encode(opaque),
+          ),
+          'plugin_state/$plugin/custom.snapshot': base64Encode(
+            utf8.encode('opaque package format'),
+          ),
+          CapsuleFileStore.chatTimelineFileName: base64Encode(
+            utf8.encode('already encrypted timeline'),
+          ),
+          CapsuleFileStore.contactLabelsFileName: base64Encode(
+            utf8.encode('{"peer":"Test peer"}'),
+          ),
+        },
+        packages: await legacyPackages(),
+      );
       expect(jsonDecode(raw)['version'], 3);
       for (final secret in ['DO-NOT-EXPORT', opaque, owner]) {
         expect(raw.contains(secret), false);
@@ -488,7 +554,7 @@ void main() {
       final other = await dst.capsuleDirForHex('bb' * 32, create: true);
       await dst.writeLedger(other, 'unrelated Ledger');
       await expectLater(
-        restore(await backup(packages: await srcPackages.snapshotForBackup())),
+        restore(await backup(packages: await legacyPackages())),
         throwsStateError,
       );
       expect((await dstPackages.loadPlugins()).single.pluginVersion, '2.0.0');
@@ -500,7 +566,7 @@ void main() {
     'secure storage failure rolls back Capsule/packages/index/stage and allows retry',
     () async {
       await srcPackages.installPluginFromFile(await package('1.0.0'));
-      final raw = await backup(packages: await srcPackages.snapshotForBackup());
+      final raw = await backup(packages: await legacyPackages());
       dstSecure.failWrite = true;
       await expectLater(restore(raw), throwsStateError);
       expect(await dstPackages.loadPlugins(), isEmpty);
@@ -517,15 +583,29 @@ void main() {
     },
   );
   test(
-    'symlinked package state fails instead of omission or traversal',
+    'Core export does not traverse operational relationship evidence',
     () async {
       final dir = await src.capsuleDirForHex(owner, create: true);
-      await Directory('${dir.path}/plugin_state').create();
-      final outside = Directory('${stand.path}/outside')..createSync();
-      await Link('${dir.path}/plugin_state/$plugin').create(outside.path);
-      await expectLater(src.snapshotForBackup(dir), throwsStateError);
+      await src.writeLedger(dir, ledger);
+      await seeds(srcDirs, srcSecure).storeSeed(owner, seed);
+      final outside = File('${stand.path}/outside-proof')
+        ..writeAsStringSync('unrelated evidence');
+      final link = Link(src.pairConsensusAttestationsFile(dir).path);
+      await link.create(outside.path);
+      final path = '${stand.path}/core-without-evidence.json';
+      await exporter.exportCapsuleBackupToPath(owner, path);
+      final opened =
+          (await CapsuleBackupCodec.tryDecodeBackup(
+            await File(path).readAsString(),
+            seed,
+          ))!;
+      expect(opened.files, isEmpty);
+      expect(opened.packages, isEmpty);
+      expect(await link.target(), outside.path);
+      expect(await outside.readAsString(), 'unrelated evidence');
     },
   );
+
   test(
     'restart retries one interrupted staged import without stale data',
     () async {
@@ -559,7 +639,7 @@ void main() {
     await srcPackages.installPluginFromFile(await package('1.0.0'));
     await dstPackages.installPluginFromFile(await package('2.0.0'));
     await expectLater(
-      restore(await backup(packages: await srcPackages.snapshotForBackup())),
+      restore(await backup(packages: await legacyPackages())),
       throwsStateError,
     );
     expect(dstSecure.values, before);

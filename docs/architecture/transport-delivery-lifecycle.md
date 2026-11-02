@@ -238,13 +238,12 @@ timeline updates converge on the same queued atomic encrypted write. Publish the
 new in-memory window only after that write succeeds. A failed replacement keeps
 the old saved window and budget. Read/unread markers retain their existing file
 and follow the retained incoming ids. UI views project the canonical window and
-must not union it with earlier content or raw receive batches. Restart, Capsule
-backup/recovery and package replacement retain the remaining window and budget;
-each device may have a different window without mandatory synchronization.
-The existing backup limits allow 192 MiB of Capsule files and 320 MiB of
-clear backup payload, accommodating the default window's encrypted/base64 file
-alongside the former 64 MiB state allowance. Larger owner-selected windows may
-still exceed these explicit backup bounds; backup failure must not prune them.
+must not union it with earlier content or raw receive batches. Restart and
+package replacement retain the remaining local window and budget; each device
+may have a different window without mandatory synchronization. New Capsule
+backups exclude this application cache and local delivery queues. Their Core
+recovery scope and read-only legacy archive compatibility belong to
+`../specification.md`; local cache size must not expand the Capsule export.
 Android document import stages the owner-selected stream in private temporary
 storage through the existing file-document bridge. JSON and package selection
 use this same path; no full document byte array crosses the Java/Flutter channel.

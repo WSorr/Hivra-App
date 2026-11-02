@@ -289,7 +289,46 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
-The bounded owner-configurable lightweight Chat retention outcome is complete.
+The selected bounded outcome is a Core-only Capsule backup. New exports retain
+Ledger and Capsule type/network metadata only; operational pair attestations,
+Chat content, local delivery queues, contact labels, opaque plugin state and
+installed ZIPs are excluded. The owner accepts loss of application content when
+recovering from a new backup. This does not prune local app state or unresolved
+effect evidence, revoke an existing remote grant, or resume a recovered app.
+Restore identity/history/relationships from Ledger through the existing
+authenticated v3 codec and atomic import owner. Operational pair attestations
+are reacquired through the existing peer exchange; unavailable peers may leave
+pair actions blocked without erasing relationship truth. Use normal application
+installation/reconnection afterward.
+Application volume, corruption or package removal must not block Core export
+or new Core-only recovery.
+Keep existing full-state v3 imports read-only until that supported format is
+explicitly retired; no new full-state export path remains. No separate app
+archive, synchronization engine or new backup format is selected. Acceptance
+must prove size independence, unchanged source app data, authenticated recovery,
+restart and failure rollback, then exact packaged Mac/Android export/recovery.
+Source checks pass: 669 Flutter tests, 113 FFI tests, analyzer and review gates.
+Exact guarded artifacts from `a492319e3c7a91f756ddff264eb1a0b41fafb5ce`
+qualified native export and fresh-target recovery on Apple Silicon macOS and
+Android API 36 arm64 emulator. The same public fixture now exports as 9,254 bytes
+on both runtimes, compared with its previous 237,312,202-byte full-state archive.
+Authenticated native Core verification confirms empty files/packages and an
+unchanged signed Ledger. A new public fixture restores the same identity,
+six-event Ledger and five starters on both runtimes, including cold restart.
+Existing Mac Capsule and installed-package files matched their baseline hashes;
+only the shared index, new contact card and UI log changed during recovery.
+The writer, codec and atomic import owner each remain one; recursive app export
+and installed-ZIP snapshots each go from one to zero. New Core recovery no longer
+requires a healthy package registry. Production code delta is -59 lines.
+Digests and native observations are retained in
+`/Volumes/Dev/projects/hivra-artifacts/core-backup-20261102/acceptance.json`.
+Native fixtures have no relationships; live peer-attestation reacquisition,
+physical Android and Intel execution are not qualified by this acceptance.
+Old full-state v3 import compatibility remains read-only. No publication,
+trading, model request, VPS mutation or release was performed.
+
+The bounded owner-configurable lightweight Chat retention outcome was completed
+before the Core-only backup decision above; its native evidence is historical.
 The existing encrypted Capsule timeline remains the only retained message
 window across conversations, restart and package replacement. A default 100 MB
 budget for UTF-8 serialized completed message records replaces the 256-record
@@ -302,7 +341,7 @@ The existing timeline/read-state owner and files remain; no service archive,
 mandatory history synchronization, new storage engine or recovery of evicted
 messages is part of this outcome. Acceptance covers cross-conversation eviction,
 unresolved-delivery preservation and write failure in focused tests, retained
-window recovery/replacement, and budget/edit/eviction/restart on exact packaged
+then-accepted full-window recovery/replacement, and budget/edit/eviction/restart on exact packaged
 Mac/Android artifacts. Source checks pass: 668 Flutter tests, 113 FFI tests,
 analyzer and review gates. Exact artifacts from
 `f9024298ee0d9559856928a728a346ff6975d72e` passed budget reduction from 100 MB
@@ -437,8 +476,8 @@ existing contract, tests and acceptance; do not expand them implicitly.
   recovery of evicted messages from Nostr and a full messaging-service archive
   are non-goals. This bounded debt is closed by the existing encrypted timeline
   and owner budget control; packaged acceptance and its limits are recorded
-  under Selected Product Outcome. Broader host/package convergence remains
-  separate.
+  under Selected Product Outcome. Local restart/package replacement retain the window; new Core-only backups
+  do not transfer it. Broader host/package convergence remains separate.
 - Replaceable inference connections: an owner must be able to use updated or
   new models and add providers speaking an already supported inference
   protocol without rebuilding Capsule. Provider name, protocol, endpoint and

@@ -265,30 +265,8 @@ class WasmPluginRegistryService {
     await _serialized(() => _removePluginUnlocked(id));
   }
 
-  Future<Map<String, String>> snapshotForBackup() => _serialized(() async {
-    final records = await _loadPluginsUnlocked(failClosed: true);
-    final dir = await pluginsDirectory();
-    final packages = <String, String>{};
-    var size = 0;
-    for (final record in records) {
-      if (record.removalPending) {
-        throw StateError('Finish removing plugins before creating a backup');
-      }
-      if (record.packageKind != 'zip' || record.pluginId == null) {
-        throw StateError('Remove unsupported legacy packages before backup');
-      }
-      final file = _storedFile(dir, record);
-      final bytes = await file.readAsBytes();
-      size += bytes.length;
-      if (size > 32 * 1024 * 1024 || packages.length >= 64) {
-        throw StateError('Installed packages exceed the backup limit');
-      }
-      packages[record.pluginId!] = base64Encode(bytes);
-    }
-    return packages;
-  });
-
-  /// Reuse normal package admission. Recovery may add missing packages but
+  /// Read-only compatibility for existing full-state v3 exports. New backups
+  /// never contain packages. Recovery may add missing packages but
   /// never replaces a package used by another Capsule with an older snapshot.
   Future<T> withBackupPackages<T>(
     Map<String, String> packages,
