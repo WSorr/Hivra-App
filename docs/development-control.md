@@ -297,7 +297,8 @@ recovering from a new backup. This does not prune local app state or unresolved
 effect evidence, revoke an existing remote grant, or resume a recovered app.
 Restore identity/history/relationships through the existing authenticated v3
 codec and atomic import owner; use normal installation/reconnection afterward.
-Application volume, corruption or package removal must not block Core export.
+Application volume, corruption or package removal must not block Core export
+or new Core-only recovery.
 Keep existing full-state v3 imports read-only until that supported format is
 explicitly retired; no new full-state export path remains. No separate app
 archive, synchronization engine or new backup format is selected. Acceptance

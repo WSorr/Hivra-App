@@ -266,6 +266,16 @@ void main() {
     },
   );
 
+  test('Core recovery is independent of a broken package registry', () async {
+    final plugins = await dstPackages.pluginsDirectory();
+    await plugins.create(recursive: true);
+    final registry = File('${plugins.path}/registry.json');
+    await registry.writeAsString('{broken application registry');
+    expect(await restore(await backup()), owner);
+    expect(await dst.readLedger(await dst.capsuleDirForHex(owner)), ledger);
+    expect(await registry.readAsString(), '{broken application registry');
+  });
+
   test('recovering a new Capsule never unlocks unrelated seeds', () async {
     final index = CapsuleIndexStore(dirs: dstDirs);
     for (final byte in [0xbb, 0xcc, 0xdd]) {

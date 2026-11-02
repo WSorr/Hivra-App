@@ -1194,68 +1194,74 @@ class CapsulePersistenceService {
     var published = false;
     var seedStored = false;
     try {
-      return await _pluginRegistry.withBackupPackages(
-        contents.packages!,
-        () async {
-          for (final entry in files.entries) {
-            var bytes = entry.value;
-            // This is host authorization, not package-private state. Preserve VPS
-            // custody/effect evidence, but never revive an old execution lease.
-            if (entry.key.endsWith('/workspace-execution.v1.json')) {
-              final grant = jsonDecode(utf8.decode(bytes));
-              if (grant is! Map) {
-                throw const FormatException('Invalid execution authority');
-              }
-              bytes = utf8.encode(
-                jsonEncode(
-                  sealWorkspaceExecutionForRecovery(
-                    Map<String, dynamic>.from(grant),
-                    owner,
-                    entry.key.split('/')[1],
-                  ),
-                ),
-              );
+      Future<String> restoreCore() async {
+        for (final entry in files.entries) {
+          var bytes = entry.value;
+          // This is host authorization, not package-private state. Preserve VPS
+          // custody/effect evidence, but never revive an old execution lease.
+          if (entry.key.endsWith('/workspace-execution.v1.json')) {
+            final grant = jsonDecode(utf8.decode(bytes));
+            if (grant is! Map) {
+              throw const FormatException('Invalid execution authority');
             }
-            await _atomicWrites.writeBytes(
-              File('${stage.path}/${entry.key}'),
-              bytes,
+            bytes = utf8.encode(
+              jsonEncode(
+                sealWorkspaceExecutionForRecovery(
+                  Map<String, dynamic>.from(grant),
+                  owner,
+                  entry.key.split('/')[1],
+                ),
+              ),
             );
           }
-          final localBackup = CapsuleBackupCodec.encodeBackupEnvelope(
-            ledgerJson: contents.ledgerJson,
-            isGenesis: contents.isGenesis,
-            isNeste: contents.isNeste,
+          await _atomicWrites.writeBytes(
+            File('${stage.path}/${entry.key}'),
+            bytes,
           );
-          await _fileStore.writeState(stage, {
-            'isGenesis': contents.isGenesis ?? false,
-            'isNeste': contents.isNeste ?? true,
-            'createdAt': DateTime.now().toUtc().toIso8601String(),
-            'seedLength': seed.length,
-          });
-          await _fileStore.writeLedgerSnapshot(
-            stage,
-            ledgerJson: contents.ledgerJson,
-            backupJson: localBackup,
+        }
+        final localBackup = CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: contents.ledgerJson,
+          isGenesis: contents.isGenesis,
+          isNeste: contents.isNeste,
+        );
+        await _fileStore.writeState(stage, {
+          'isGenesis': contents.isGenesis ?? false,
+          'isNeste': contents.isNeste ?? true,
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
+          'seedLength': seed.length,
+        });
+        await _fileStore.writeLedgerSnapshot(
+          stage,
+          ledgerJson: contents.ledgerJson,
+          backupJson: localBackup,
+        );
+        seedStored = existingSeed == null;
+        await _storeSeedForCapsule(owner, seed);
+        await target.parent.create(recursive: true);
+        if (await FileSystemEntity.type(target.path, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+          throw StateError('Capsule appeared during import');
+        }
+        await stage.rename(target.path);
+        published = true;
+        await _upsertCapsuleIndex(
+          owner,
+          isGenesis: contents.isGenesis,
+          isNeste: contents.isNeste,
+          identityMode: identityMode,
+        );
+        await _setActiveCapsule(owner);
+        return owner;
+      }
+
+      // New Core backups do not depend on application installation health.
+      // Only existing archives with ZIPs enter package admission/rollback.
+      return contents.packages!.isEmpty
+          ? await restoreCore()
+          : await _pluginRegistry.withBackupPackages(
+            contents.packages!,
+            restoreCore,
           );
-          seedStored = existingSeed == null;
-          await _storeSeedForCapsule(owner, seed);
-          await target.parent.create(recursive: true);
-          if (await FileSystemEntity.type(target.path, followLinks: false) !=
-              FileSystemEntityType.notFound) {
-            throw StateError('Capsule appeared during import');
-          }
-          await stage.rename(target.path);
-          published = true;
-          await _upsertCapsuleIndex(
-            owner,
-            isGenesis: contents.isGenesis,
-            isNeste: contents.isNeste,
-            identityMode: identityMode,
-          );
-          await _setActiveCapsule(owner);
-          return owner;
-        },
-      );
     } catch (_) {
       if (published) await target.delete(recursive: true);
       if (seedStored) await _seedStore.deleteSeed(owner);
