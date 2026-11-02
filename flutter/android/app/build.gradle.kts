@@ -1,8 +1,23 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val publicRelease = System.getenv("HIVRA_RELEASE_CHANNEL") == "public"
+val releaseKey = Properties()
+if (publicRelease) {
+    val keyFile = rootProject.file("key.properties")
+    check(keyFile.isFile) { "Public release requires local android/key.properties" }
+    keyFile.inputStream().use { releaseKey.load(it) }
+    for (name in listOf("storeFile", "storePassword", "keyAlias", "keyPassword")) {
+        check(!releaseKey.getProperty(name).isNullOrBlank()) {
+            "Public release signing is missing $name"
+        }
+    }
 }
 
 val buildRustFfi by tasks.registering(Exec::class) {
@@ -43,11 +58,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (publicRelease) {
+            create("release") {
+                storeFile = rootProject.file(releaseKey.getProperty("storeFile"))
+                storePassword = releaseKey.getProperty("storePassword")
+                keyAlias = releaseKey.getProperty("keyAlias")
+                keyPassword = releaseKey.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (publicRelease) "release" else "debug")
         }
     }
 }

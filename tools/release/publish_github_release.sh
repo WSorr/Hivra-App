@@ -102,7 +102,7 @@ require_signoff_artifact_sha() {
 
 self_test() {
   local test_dir artifact artifact_copy artifact_sha metadata source_commit platform
-  local metadata_channel prerelease signed notarized expected actual
+  local metadata_channel prerelease signed notarized signing signer_sha expected actual
   test_dir="$(mktemp -d)"
   artifact="$test_dir/hivra_app-v-selftest-macos-universal.zip"
   artifact_copy="$test_dir/hivra_app-v-selftest-macos-other.zip"
@@ -134,8 +134,8 @@ self_test() {
   source_commit="$(git -C "$ROOT" rev-parse HEAD)"
   cd "$ROOT"
   # Exercise the publication validator, including unsigned test artifacts and
-  # Android metadata without macOS-specific signing evidence.
-  while read -r platform CHANNEL metadata_channel prerelease signed notarized expected; do
+  # Android release signing is independent of macOS notarization.
+  while read -r platform CHANNEL metadata_channel prerelease signed notarized signing signer_sha expected; do
     cat > "$metadata" <<EOF
 version=$VERSION
 source_commit=$source_commit
@@ -149,38 +149,45 @@ EOF
     fi
     if [ "$platform" = macOS ]; then
       printf 'signed=%s\nnotarized=%s\n' "$signed" "$notarized" >> "$metadata"
+    elif [ "$signing" != - ]; then
+      printf 'signing=%s\nsigner_cert_sha256=%s\n' "$signing" "$signer_sha" >> "$metadata"
     fi
     actual=reject
     if (verify_release_metadata "$metadata" "$platform" >/dev/null 2>&1); then
       actual=accept
     fi
     [ "$actual" = "$expected" ] ||
-      die "metadata case $platform/$CHANNEL/$metadata_channel/$prerelease/$signed/$notarized: expected $expected, got $actual"
+      die "metadata case $platform/$CHANNEL/$metadata_channel/$prerelease/$signed/$notarized/$signing/$signer_sha: expected $expected, got $actual"
   done <<'EOF'
-macOS test test yes no no accept
-macOS test test yes yes no accept
-macOS test test yes yes yes accept
-macOS public public no yes yes accept
-Android test test yes - - accept
-Android public public no - - accept
-macOS test public yes no no reject
-macOS public test no yes yes reject
-Android test public yes - - reject
-Android public test no - - reject
-macOS test wrong yes no no reject
-Android public wrong no - - reject
-macOS test - yes no no reject
-Android public - no - - reject
-macOS test test no no no reject
-macOS public public yes yes yes reject
-Android test test no - - reject
-Android public public yes - - reject
-macOS test test - no no reject
-Android public public - - - reject
-macOS public public no no yes reject
-macOS public public no yes no reject
-macOS public public no - yes reject
-macOS public public no yes - reject
+macOS test test yes no no - - accept
+macOS test test yes yes no - - accept
+macOS test test yes yes yes - - accept
+macOS public public no yes yes - - accept
+Android test test yes - - - - accept
+Android test test yes - - debug - accept
+Android public public no - - release 1111111111111111111111111111111111111111111111111111111111111111 accept
+Android public public no - - - - reject
+Android public public no - - debug 1111111111111111111111111111111111111111111111111111111111111111 reject
+Android public public no - - release - reject
+Android public public no - - release invalid reject
+macOS test public yes no no - - reject
+macOS public test no yes yes - - reject
+Android test public yes - - - - reject
+Android public test no - - - - reject
+macOS test wrong yes no no - - reject
+Android public wrong no - - - - reject
+macOS test - yes no no - - reject
+Android public - no - - - - reject
+macOS test test no no no - - reject
+macOS public public yes yes yes - - reject
+Android test test no - - - - reject
+Android public public yes - - - - reject
+macOS test test - no no - - reject
+Android public public - - - - - reject
+macOS public public no no yes - - reject
+macOS public public no yes no - - reject
+macOS public public no - yes - - reject
+macOS public public no yes - - - reject
 EOF
 
   rm -f "$artifact" "$artifact_copy" "$MANUAL_SIGNOFF_LOG" "$metadata"
@@ -251,6 +258,12 @@ verify_release_metadata() {
       die "public macOS metadata must record signed=yes"
     [ "$(metadata_value "$file" notarized)" = yes ] ||
       die "public macOS metadata must record notarized=yes"
+  fi
+  if [ "$platform" = Android ] && [ "$CHANNEL" = public ]; then
+    [ "$(metadata_value "$file" signing)" = release ] ||
+      die "public Android metadata must record release signing"
+    [[ "$(metadata_value "$file" signer_cert_sha256)" =~ ^[0-9a-f]{64}$ ]] ||
+      die "public Android metadata must record its signer certificate SHA-256"
   fi
   require_release_only_changes_after_build "$source_commit"
 }
