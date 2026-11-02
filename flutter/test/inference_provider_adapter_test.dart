@@ -15,7 +15,7 @@ void main() {
           label: 'Unlisted owner service',
           defaultModel: 'model-v2',
           protocol: protocol,
-          baseUrl: 'https://owner.example/protocol',
+          baseUrl: 'https://owner.example/protocol?api-version=2026-01-01',
         );
         final body = switch (protocol) {
           InferenceProtocol.responses => '{"output_text":"answer"}',
@@ -44,7 +44,7 @@ void main() {
         };
         expect(
           client.endpoint.toString(),
-          'https://owner.example/protocol/$suffix',
+          'https://owner.example/protocol/$suffix?api-version=2026-01-01',
         );
         expect(client.request.followRedirects, isFalse);
         expect(

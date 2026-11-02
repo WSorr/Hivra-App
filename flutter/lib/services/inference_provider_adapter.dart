@@ -85,10 +85,9 @@ class InferenceConnection {
         !['https', 'http'].contains(uri.scheme) ||
         uri.host.isEmpty ||
         uri.userInfo.isNotEmpty ||
-        uri.hasQuery ||
         uri.hasFragment) {
       throw ArgumentError(
-        'Endpoint must be an HTTP(S) URL without credentials, query or fragment',
+        'Endpoint must be an HTTP(S) URL without user credentials or fragment',
       );
     }
     return uri;
@@ -96,16 +95,16 @@ class InferenceConnection {
 
   Uri endpointFor(String model) {
     final base = validateBaseUrl(baseUrl!);
-    final path = base.path.replaceFirst(RegExp(r'/+$'), '');
-    return switch (protocol) {
-      InferenceProtocol.responses => base.replace(path: '$path/responses'),
-      InferenceProtocol.chatCompletions => base.replace(
-        path: '$path/chat/completions',
-      ),
-      InferenceProtocol.generateContent => Uri.parse(
-        '${base.toString().replaceFirst(RegExp(r'/+$'), '')}/${Uri.encodeComponent(model)}:generateContent',
-      ),
+    final segments = base.pathSegments.toList();
+    while (segments.isNotEmpty && segments.last.isEmpty) {
+      segments.removeLast();
+    }
+    final route = switch (protocol) {
+      InferenceProtocol.responses => ['responses'],
+      InferenceProtocol.chatCompletions => ['chat', 'completions'],
+      InferenceProtocol.generateContent => ['$model:generateContent'],
     };
+    return base.replace(pathSegments: [...segments, ...route]);
   }
 }
 

@@ -212,7 +212,7 @@ void main() {
         for (final url in [
           'https://key:secret@example.com/v1',
           'file:///tmp/model',
-          'https://example.com/v1?token=secret',
+          'https://example.com/v1#fragment',
         ]) {
           await expectLater(
             store.addConnection(

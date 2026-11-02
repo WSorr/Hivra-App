@@ -142,7 +142,9 @@ Removal clears only that connection's key, model preference and process lease.
 It cannot undo an already accepted inference request. Presets retain existing
 credential keys and endpoints; the Cloudflare preset retains its official
 HTTPS account destination and capacity option. Generic connections use the
-owner-selected HTTP(S) destination without credentials in the URL or redirects.
+owner-selected HTTP(S) destination without user credentials in the URL or
+redirects. Protocol base URLs retain non-secret query parameters such as API
+versions when the runtime appends the route.
 
 Authorized packages reuse this computation through common `ai.infer`. Packages
 own prompts, context and proposal meaning; no connection or model selection
