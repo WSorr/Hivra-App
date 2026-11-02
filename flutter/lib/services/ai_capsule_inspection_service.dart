@@ -130,7 +130,8 @@ class AiCapsuleInspectionService {
     final invitations = _ledgerView.loadInvitations();
     final relationshipGroups = _ledgerView.loadRelationshipGroups();
     final consensusChecks = _consensus.preview();
-    final diagnosticsReport = await _tryDiagnosticsReport();
+    final diagnosticsReport =
+        await _diagnostics?.inspect() ?? const CapsuleDiagnosticsReport();
     final bootstrapReport = diagnosticsReport.bootstrap;
     final traceReport = diagnosticsReport.trace;
     final outboxItems =
@@ -176,8 +177,14 @@ class AiCapsuleInspectionService {
     };
     final transportSummary = _transportSummary(outboxItems);
     final consensusSummary = _consensusSummary(consensusChecks);
-    final bootstrapSummary = _bootstrapSummary(bootstrapReport);
-    final traceSummary = _traceSummary(traceReport);
+    final bootstrapSummary = _bootstrapSummary(
+      bootstrapReport,
+      diagnosticsReport.bootstrapError,
+    );
+    final traceSummary = _traceSummary(
+      traceReport,
+      diagnosticsReport.traceError,
+    );
     final pluginSummary = <String, dynamic>{
       'installed_count': plugins.length,
       'plugin_ids':
@@ -239,70 +246,7 @@ class AiCapsuleInspectionService {
         pendingOutbox: transportSummary['pending_count'] as int,
         blockedConsensus: consensusSummary['blocked_count'] as int,
         pluginCount: pluginSummary['installed_count'] as int,
-        bootstrapIssue: bootstrapSummary['issue'] as String?,
-        traceIssueCount: traceSummary['issue_count'] as int,
       ),
-    );
-  }
-
-  Future<CapsuleDiagnosticsReport> _tryDiagnosticsReport() async {
-    final diagnostics = _diagnostics;
-    if (diagnostics == null) {
-      return CapsuleDiagnosticsReport(
-        bootstrap: _fallbackBootstrapReport('diagnostics unavailable'),
-        trace: _fallbackTraceReport(),
-      );
-    }
-    try {
-      return await diagnostics.inspect();
-    } catch (error) {
-      return CapsuleDiagnosticsReport(
-        bootstrap: _fallbackBootstrapReport('diagnostic_error: $error'),
-        trace: _fallbackTraceReport(),
-      );
-    }
-  }
-
-  CapsuleBootstrapReport _fallbackBootstrapReport(String issue) {
-    return CapsuleBootstrapReport(
-      activePubKeyHex: null,
-      runtimePubKeyHex: null,
-      rootPubKeyHex: null,
-      nostrPubKeyHex: null,
-      identityMode: 'unknown',
-      bootstrapSource: 'error',
-      seedAvailable: false,
-      seedMatchesActiveCapsule: false,
-      rootMatchesActiveCapsule: false,
-      nostrMatchesActiveCapsule: false,
-      runtimeMatchesRoot: false,
-      runtimeMatchesNostr: false,
-      stateFileExists: false,
-      ledgerFileExists: false,
-      backupFileExists: false,
-      workerBootstrapAvailable: false,
-      ledgerImportable: false,
-      issue: issue,
-    );
-  }
-
-  CapsuleTraceReport _fallbackTraceReport() {
-    return CapsuleTraceReport(
-      activePubKeyHex: null,
-      runtimePubKeyHex: null,
-      runtimeSeedExists: false,
-      indexHasEntry: false,
-      secureSeedExists: false,
-      fallbackSeedExists: false,
-      capsuleDirPath: '',
-      capsuleDirExists: false,
-      ledgerFileExists: false,
-      stateFileExists: false,
-      backupFileExists: false,
-      legacyDocsPath: '',
-      legacyLedgerExists: false,
-      legacyStateExists: false,
-      legacyBackupExists: false,
     );
   }
 
@@ -365,9 +309,15 @@ class AiCapsuleInspectionService {
     };
   }
 
-  Map<String, dynamic> _bootstrapSummary(CapsuleBootstrapReport? report) {
+  Map<String, dynamic> _bootstrapSummary(
+    CapsuleBootstrapReport? report,
+    String? error,
+  ) {
     if (report == null) {
-      return <String, dynamic>{'available': false, 'issue': null};
+      return <String, dynamic>{
+        'available': false,
+        'issue': error ?? 'diagnostics unavailable',
+      };
     }
     return <String, dynamic>{
       'available': true,
@@ -392,9 +342,15 @@ class AiCapsuleInspectionService {
     };
   }
 
-  Map<String, dynamic> _traceSummary(CapsuleTraceReport? report) {
+  Map<String, dynamic> _traceSummary(
+    CapsuleTraceReport? report,
+    String? error,
+  ) {
     if (report == null) {
-      return <String, dynamic>{'available': false, 'issue_count': 0};
+      return <String, dynamic>{
+        'available': false,
+        'issue': error ?? 'diagnostics unavailable',
+      };
     }
     final issueCount =
         <bool>[
@@ -461,10 +417,34 @@ class AiCapsuleInspectionService {
     required int pendingOutbox,
     required int blockedConsensus,
     required int pluginCount,
-    required String? bootstrapIssue,
-    required int traceIssueCount,
   }) {
     final findings = <AiCapsuleInspectionFinding>[];
+    for (final section in ['bootstrap', 'trace']) {
+      final summary =
+          section == 'bootstrap'
+              ? snapshot.bootstrapSummary
+              : snapshot.traceSummary;
+      if (summary['available'] != true) {
+        findings.add(
+          AiCapsuleInspectionFinding(
+            severity: 'warning',
+            area: section,
+            title:
+                '${section == 'bootstrap' ? 'Bootstrap' : 'Filesystem trace'} diagnostics unavailable',
+            detail:
+                'This section could not be observed. Its checks are unknown.',
+            recommendedAction:
+                'Refresh local diagnostics to retry. Unavailable evidence does not establish missing or damaged data.',
+          ),
+        );
+      }
+    }
+    final bootstrapIssue =
+        snapshot.bootstrapSummary['available'] == true
+            ? snapshot.bootstrapSummary['issue'] as String?
+            : null;
+    final traceIssueCount = snapshot.traceSummary['issue_count'] as int? ?? 0;
+
     if (snapshot.ledgerSummary['has_history'] != true) {
       findings.add(
         const AiCapsuleInspectionFinding(

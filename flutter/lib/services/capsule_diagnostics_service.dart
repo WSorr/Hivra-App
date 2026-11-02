@@ -1,12 +1,16 @@
 import 'capsule_persistence_models.dart';
 
 class CapsuleDiagnosticsReport {
-  final CapsuleBootstrapReport bootstrap;
-  final CapsuleTraceReport trace;
+  final CapsuleBootstrapReport? bootstrap;
+  final CapsuleTraceReport? trace;
+  final String? bootstrapError;
+  final String? traceError;
 
   const CapsuleDiagnosticsReport({
-    required this.bootstrap,
-    required this.trace,
+    this.bootstrap,
+    this.trace,
+    this.bootstrapError,
+    this.traceError,
   });
 }
 
@@ -17,15 +21,29 @@ class CapsuleDiagnosticsService {
   const CapsuleDiagnosticsService({
     required Future<CapsuleBootstrapReport> Function() diagnoseBootstrap,
     required Future<CapsuleTraceReport> Function() diagnoseTrace,
-  })  : _diagnoseBootstrap = diagnoseBootstrap,
-        _diagnoseTrace = diagnoseTrace;
+  }) : _diagnoseBootstrap = diagnoseBootstrap,
+       _diagnoseTrace = diagnoseTrace;
 
   Future<CapsuleDiagnosticsReport> inspect() async {
-    final bootstrap = await _diagnoseBootstrap();
-    final trace = await _diagnoseTrace();
+    CapsuleBootstrapReport? bootstrap;
+    CapsuleTraceReport? trace;
+    String? bootstrapError;
+    String? traceError;
+    try {
+      bootstrap = await _diagnoseBootstrap();
+    } catch (error) {
+      bootstrapError = error.toString();
+    }
+    try {
+      trace = await _diagnoseTrace();
+    } catch (error) {
+      traceError = error.toString();
+    }
     return CapsuleDiagnosticsReport(
       bootstrap: bootstrap,
       trace: trace,
+      bootstrapError: bootstrapError,
+      traceError: traceError,
     );
   }
 }

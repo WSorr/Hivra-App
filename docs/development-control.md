@@ -289,6 +289,20 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
+The selected bounded outcome is truthful Analyst evidence before disclosure.
+The owner opens local diagnostics, sees which checks were actually observed,
+and expands the exact technical payload and instructions before any model call.
+An unavailable or failed bootstrap/trace check must not invent negative file or
+seed observations, erase the other check's successful result, or appear healthy.
+The existing diagnostic collector owns availability; the existing prompt owner
+projects public technical evidence and excludes secrets, personal content,
+addresses, paths and raw exceptions. Preview is local and requires no provider
+key. Query edits and refreshed snapshots invalidate stale previews/answers.
+Acceptance covers partial failure and privacy in source checks, and local
+preview/refresh/restart on exact packaged Mac/Android artifacts. Native
+qualification is pending. No provider request, publication, trading or VPS
+mutation is required or authorized by this outcome.
+
 The bounded replaceable inference connections outcome is complete: the owner
 adds an already-supported protocol endpoint, selects a model, connects its key
 and uses the same AI Runtime from Analyst and authorized packages without

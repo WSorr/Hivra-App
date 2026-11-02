@@ -33,6 +33,14 @@ class AiOutboundPreviewPanel extends StatelessWidget {
           Text('Payload: ${preview.payloadBytes} bytes'),
           Text('Query: ${preview.userQueryBytes} bytes'),
           Text('Secrets redacted: ${preview.secretsRedacted}'),
+          ExpansionTile(
+            title: const Text('Exact outbound data'),
+            children: [SelectableText(preview.inputJson)],
+          ),
+          ExpansionTile(
+            title: const Text('Analyst instructions'),
+            children: [SelectableText(preview.instructions)],
+          ),
         ],
       ),
     );
@@ -136,6 +144,16 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
   void initState() {
     super.initState();
     unawaited(_loadPreferredProvider());
+  }
+
+  @override
+  void didUpdateWidget(covariant AiDoctorChatCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.snapshot, oldWidget.snapshot)) {
+      _preview = null;
+      _answer = null;
+      _error = null;
+    }
   }
 
   @override
@@ -432,12 +450,15 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       });
     } catch (error) {
       setState(() {
+        _preview = null;
         _error = _doctorErrorMessage(error);
       });
     }
   }
 
   Future<void> _askAnalyst() async {
+    final snapshot = widget.snapshot;
+    final query = _queryController.text;
     await _run(() async {
       final model = _modelController.text.trim();
       await widget.uiLog.log(
@@ -446,8 +467,8 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             'context=technical_modules',
       );
       final result = await widget.chatService.ask(
-        snapshot: widget.snapshot,
-        userQuery: _queryController.text,
+        snapshot: snapshot,
+        userQuery: query,
         model: model,
         providerId: _provider.id,
       );
@@ -458,7 +479,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             'payloadBytes=${result.preview.payloadBytes} '
             'answerChars=${result.text.length}',
       );
-      if (!mounted) return;
+      if (!mounted ||
+          !identical(widget.snapshot, snapshot) ||
+          _queryController.text != query) {
+        return;
+      }
       setState(() {
         _preview = result.preview;
         _answer = result;
@@ -707,6 +732,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             const SizedBox(height: 12),
             TextField(
               controller: _queryController,
+              onChanged:
+                  (_) => setState(() {
+                    _preview = null;
+                    _answer = null;
+                  }),
               minLines: 2,
               maxLines: 5,
               decoration: const InputDecoration(

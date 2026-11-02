@@ -29,6 +29,8 @@ class AiDoctorOutboundPreview {
   final int payloadBytes;
   final int userQueryBytes;
   final bool secretsRedacted;
+  final String instructions;
+  final String inputJson;
 
   const AiDoctorOutboundPreview({
     required this.snapshotHashHex,
@@ -36,6 +38,8 @@ class AiDoctorOutboundPreview {
     required this.payloadBytes,
     required this.userQueryBytes,
     required this.secretsRedacted,
+    required this.instructions,
+    required this.inputJson,
   });
 
   String get sectionsLabel =>
@@ -110,7 +114,7 @@ class AiDoctorPromptService {
     }
 
     return AiDoctorPrompt(
-      instructions: _instructions,
+      instructions: _instructions.trim(),
       payload: payload,
       inputJson: inputJson,
       preview: AiDoctorOutboundPreview(
@@ -119,6 +123,8 @@ class AiDoctorPromptService {
         payloadBytes: payloadBytes,
         userQueryBytes: utf8.encode(normalizedQuery).length,
         secretsRedacted: true,
+        instructions: _instructions.trim(),
+        inputJson: inputJson,
       ),
     );
   }
@@ -210,6 +216,7 @@ class AiDoctorPromptService {
         if (const [
           'root_owner',
           'legacy_nostr_owner',
+          'mixed_or_unknown',
           'unknown',
         ].contains(s.bootstrapSummary['identity_mode']))
           'identity_mode': s.bootstrapSummary['identity_mode'],
@@ -222,21 +229,24 @@ class AiDoctorPromptService {
           'bootstrap_source': s.bootstrapSummary['bootstrap_source'],
         'error_codes': _errorCodes([s.bootstrapSummary['issue']]),
       },
-      'trace_summary': _technicalFields(s.traceSummary, [
-        'available',
-        'runtime_seed_exists',
-        'index_has_entry',
-        'secure_seed_exists',
-        'fallback_seed_exists',
-        'capsule_dir_exists',
-        'ledger_file_exists',
-        'state_file_exists',
-        'backup_file_exists',
-        'legacy_ledger_exists',
-        'legacy_state_exists',
-        'legacy_backup_exists',
-        'issue_count',
-      ]),
+      'trace_summary': {
+        ..._technicalFields(s.traceSummary, [
+          'available',
+          'runtime_seed_exists',
+          'index_has_entry',
+          'secure_seed_exists',
+          'fallback_seed_exists',
+          'capsule_dir_exists',
+          'ledger_file_exists',
+          'state_file_exists',
+          'backup_file_exists',
+          'legacy_ledger_exists',
+          'legacy_state_exists',
+          'legacy_backup_exists',
+          'issue_count',
+        ]),
+        'error_codes': _errorCodes([s.traceSummary['issue']]),
+      },
     };
   }
 
@@ -303,6 +313,9 @@ You are Hivra Capsule Analyst.
 Analyze the technical summaries of all modules in the provided capsule snapshot.
 Personal content, owner and peer addresses, filesystem paths and raw errors are omitted.
 Error codes are diagnostic categories, not full original error messages.
+Unavailable diagnostic sections contain no measured checks; do not interpret missing evidence as false, healthy or damaged.
+In root_owner mode, the Capsule uses its root identity; false legacy Nostr identity comparisons are expected and do not alone indicate a fault.
+Zero peers or relationships can be normal for an unused Capsule; they do not establish a network failure.
 Do not ask for seeds, private keys, exchange credentials, filesystem dumps, or repository access.
 Treat the local capsule ledger projection as the source of truth.
 Your answer is advisory only: do not claim that you changed capsule state.

@@ -38,6 +38,47 @@ void main() {
   }
 
   testWidgets(
+    'owner can inspect exact outbound data locally and edits invalidate the preview',
+    (tester) async {
+      final runtime = _RecordingRuntime();
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Preview outbound context'));
+      await tester.tap(find.text('Preview outbound context'));
+      await tester.pumpAndSettle();
+      final panel = tester.widget<AiOutboundPreviewPanel>(
+        find.byType(AiOutboundPreviewPanel),
+      );
+      expect(runtime.operations, isEmpty);
+      await tester.ensureVisible(find.text('Exact outbound data'));
+      await tester.tap(find.text('Exact outbound data'));
+      await tester.pumpAndSettle();
+      expect(find.text(panel.preview.inputJson), findsOneWidget);
+      expect(panel.preview.inputJson, contains('transport_summary'));
+      await tester.ensureVisible(find.widgetWithText(TextField, 'Question'));
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Question'),
+        'new question',
+      );
+      await tester.pump();
+      expect(find.byType(AiOutboundPreviewPanel), findsNothing);
+      await tester.tap(find.text('Preview outbound context'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AiOutboundPreviewPanel>(find.byType(AiOutboundPreviewPanel))
+            .preview
+            .inputJson,
+        contains('new question'),
+      );
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      expect(find.byType(AiOutboundPreviewPanel), findsNothing);
+      expect(runtime.operations, isEmpty);
+    },
+  );
+
+  testWidgets(
     'owner adds an unlisted connection, reopens it, asks and removes it',
     (tester) async {
       final runtime = _RecordingRuntime(preferredProviderId: 'gemini');
@@ -360,6 +401,8 @@ void main() {
       expect(request.inputJson, contains('ledger_summary'));
       expect(request.inputJson, isNot(contains('seed phrase')));
       expect(result.preview.payloadBytes, request.disclosureByteCount);
+      expect(result.preview.inputJson, request.inputJson);
+      expect(result.preview.instructions, request.instructions);
       expect(result.preview.secretsRedacted, isTrue);
     });
 
@@ -577,7 +620,7 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
 }
 
 AiCapsuleInspectionSnapshot _snapshot() {
-  return const AiCapsuleInspectionSnapshot(
+  return AiCapsuleInspectionSnapshot(
     schemaVersion: 1,
     mode: 'capsule_diagnostics_local',
     capsule: <String, dynamic>{'root_preview': 'h1abc...xyz'},

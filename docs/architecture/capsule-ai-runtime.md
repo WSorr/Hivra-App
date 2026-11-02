@@ -353,9 +353,15 @@ fingerprints only that outbound context. Errors are represented by diagnostic ca
 is not read or interpreted. This is a technical snapshot, not an AI filesystem
 or module-reading tool. Capsule Analyst retains redaction, outbound preview,
 payload limits, and advisory proposal semantics.
-This describes the pending source projection, not proof of complete technical
-coverage or exact packaged acceptance; that outcome remains under review in
-`development-control.md`.
+Bootstrap and trace observation failures remain independent and explicitly
+unavailable, with no fabricated measurements. The existing diagnostic collector
+owns those outcomes; the inspection layer projects them into local findings and
+the prompt layer discloses only technical fields and error categories.
+The local outbound preview expands the exact canonical input and normalized
+instructions used by the request. It needs no provider credential or network
+call, and is invalidated by a changed query or refreshed snapshot. This does not
+claim complete technical coverage; exact packaged acceptance for the bounded
+evidence journey belongs to `development-control.md`.
 The runtime now owns provider preference, credential and base-URL
 configuration, explicit session unlock, canonical request identity, and exact
 provider/model response binding.
