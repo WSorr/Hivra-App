@@ -87,6 +87,47 @@ void main() {
   );
 
   testWidgets(
+    'answers identify their connection and cannot survive another selection or failure',
+    (tester) async {
+      final runtime = _RecordingRuntime(preferredProviderId: 'gemini');
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      Future<void> ask() async {
+        await tester.ensureVisible(find.text('Ask AI Analyst'));
+        await tester.tap(find.text('Ask AI Analyst'));
+        await tester.pumpAndSettle();
+      }
+
+      await ask();
+      expect(find.text('Gemini · gemini-3.8-flash'), findsOneWidget);
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byType(DropdownButtonFormField<InferenceConnection>),
+      );
+      await selectProvider(tester, 'OpenAI');
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsNothing,
+      );
+      await ask();
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsOneWidget,
+      );
+      runtime.error = StateError('Incompatible protocol');
+      await ask();
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsNothing,
+      );
+      expect(find.text('Incompatible protocol'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'Analyst accepts delayed storage status without an invented timeout',
     (tester) async {
       final pending = Completer<bool>();
@@ -429,7 +470,7 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
 
   String? preferredProviderId;
   final Map<String, String> models = {};
-  final Object? error;
+  Object? error;
   Future<bool> Function(String)? readPresence;
   Future<String?> Function()? readPreferred;
   final presenceCalls = <String>[];

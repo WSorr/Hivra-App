@@ -128,7 +128,9 @@ Local weights remain with the local executor, outside Capsule.
 One transport owns HTTP, timeout, redirect refusal and errors; three encodings
 reuse the existing protocol parsers. No automatic provider/model fallback is
 permitted. Errors show status or protocol incompatibility without echoing the
-service response body. These wire formats follow the
+service response body. Analyst labels each answer with its connection and
+model, and clears the preceding answer on a new request or changed selection;
+a previous success cannot stand in for a failed request. These wire formats follow the
 [Generate Content contract](https://ai.google.dev/api/generate-content) and
 [Chat Completions compatibility contract](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/).
 

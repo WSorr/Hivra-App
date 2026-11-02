@@ -123,7 +123,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
   List<InferenceConnection> _connections = InferenceConnection.values;
 
   AiDoctorOutboundPreview? _preview;
-  String? _answer;
+  AiDoctorChatResult? _answer;
   String? _error;
   String? _apiKeyStatusError;
   bool _apiKeyConfigured = false;
@@ -166,6 +166,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       setState(() {
         _connections = connections;
         _provider = provider;
+        _answer = null;
         _modelController.text = provider.defaultModel;
         _baseUrlController.clear();
       });
@@ -403,6 +404,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
     setState(() {
       _connections = connections;
       _provider = added;
+      _answer = null;
       _apiKeyController.clear();
       _baseUrlController.clear();
       _error = null;
@@ -459,7 +461,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       if (!mounted) return;
       setState(() {
         _preview = result.preview;
-        _answer = result.text;
+        _answer = result;
       });
     });
   }
@@ -469,6 +471,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
     setState(() {
       _busy = true;
       _error = null;
+      _answer = null;
     });
     try {
       await action();
@@ -552,6 +555,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                         if (provider == null) return;
                         setState(() {
                           _provider = provider;
+                          _answer = null;
                           _modelController.text = provider.defaultModel;
                           _baseUrlController.clear();
                           _apiKeyController.clear();
@@ -664,6 +668,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             const SizedBox(height: 8),
             TextField(
               controller: _modelController,
+              onChanged: (_) => setState(() => _answer = null),
               enabled: !_busy && !_checkingApiKey,
               decoration: const InputDecoration(
                 labelText: 'Model',
@@ -736,7 +741,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             ],
             if (_answer != null) ...[
               const SizedBox(height: 12),
-              SelectableText(_answer!, style: theme.textTheme.bodyMedium),
+              Text(
+                '${_answer!.providerLabel} · ${_answer!.model}',
+                style: theme.textTheme.labelLarge,
+              ),
+              SelectableText(_answer!.text, style: theme.textTheme.bodyMedium),
             ],
           ],
         ),
