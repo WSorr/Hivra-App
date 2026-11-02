@@ -299,8 +299,14 @@ projects public technical evidence and excludes secrets, personal content,
 addresses, paths and raw exceptions. Preview is local and requires no provider
 key. Query edits and refreshed snapshots invalidate stale previews/answers.
 Acceptance covers partial failure and privacy in source checks, and local
-preview/refresh/restart on exact packaged Mac/Android artifacts. Native
-qualification is pending. No provider request, publication, trading or VPS
+preview/refresh/restart on exact packaged Mac/Android artifacts. Source checks
+pass (662 Flutter tests, 113 FFI tests, analyzer and review gates), as does the
+exact packaged Mac journey, including cold restart without a password or model
+request. The exact Android APK is installed and its digest verified, but native
+qualification remains open: the computer-use surface cannot interact with the
+Android Studio emulator window. Keep this outcome and its PR open until the
+Android journey is observed; do not substitute source tests for that acceptance.
+No provider request, publication, trading or VPS
 mutation is required or authorized by this outcome.
 
 The bounded replaceable inference connections outcome is complete: the owner
