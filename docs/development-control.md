@@ -289,21 +289,40 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
-The selected bounded outcome is owner-configurable lightweight Chat retention.
+The bounded owner-configurable lightweight Chat retention outcome is complete.
 The existing encrypted Capsule timeline remains the only retained message
-window across conversations, restart and package replacement. Replace the
-256-record limit with a default 100 MB budget for UTF-8 serialized completed
-message records. Evict oldest completed records first; pending and ambiguous
-outgoing sends remain outside that budget until their outcome is known. Keep
-the existing delivery queues, identity, relationships and Core Ledger unchanged.
-The owner can change the local budget in Chat. UI projections must follow the
-retained window rather than resurrect evicted content from earlier views.
-Use the existing timeline/read-state owner and files; no service archive,
+window across conversations, restart and package replacement. A default 100 MB
+budget for UTF-8 serialized completed message records replaces the 256-record
+limit. Oldest completed records leave first; pending and ambiguous outgoing
+sends remain outside that budget until their outcome is known. Existing
+delivery queues, identity, relationships and Core Ledger remain unchanged.
+The owner can change the local budget in Chat. UI projections follow the
+retained window without resurrecting evicted content from earlier views.
+The existing timeline/read-state owner and files remain; no service archive,
 mandatory history synchronization, new storage engine or recovery of evicted
 messages is part of this outcome. Acceptance covers cross-conversation eviction,
 unresolved-delivery preservation and write failure in focused tests, retained
 window recovery/replacement, and budget/edit/eviction/restart on exact packaged
-Mac/Android artifacts. No trading, publication or VPS mutation is authorized.
+Mac/Android artifacts. Source checks pass: 668 Flutter tests, 113 FFI tests,
+analyzer and review gates. Exact artifacts from
+`f9024298ee0d9559856928a728a346ff6975d72e` passed budget reduction from 100 MB
+and 24,229 synthetic records to 0.001 MB and three records, then cold restart
+with unchanged identity/Ledger on arm64 Mac and Android API 36 arm64 emulator.
+Android also passed full recovery of the 237,312,202-byte synthetic backup and
+Chat removal/reinstallation with the reduced window and budget retained.
+Mac full-size restore passed on the preceding `4b70b5c` candidate; the final
+Mac artifact qualified the recovered window, budget change and cold restart.
+Native acceptance found and repaired Android selector heap exhaustion: JSON
+and ZIP selection now stream through the existing native document owner.
+The encrypted timeline and delivery executor each remain one; independent UI
+history mergers went from two to zero. Production delta is +186 lines, not a
+host-size reduction. Existing Chat compatibility ownership remains. Larger
+owner windows can exceed explicit backup bounds; evicted history is not
+guaranteed recoverable. Artifact digests, observations and the working-context
+activation incident are retained in
+`/Volumes/Dev/projects/hivra-artifacts/chat-retention-20261102/acceptance.json`.
+No live delivery, physical-device or Intel execution is claimed. No trading,
+publication or VPS mutation is authorized.
 
 The bounded truthful Analyst evidence-before-disclosure outcome is complete.
 The owner opens local diagnostics, sees which checks were actually observed,
@@ -416,8 +435,10 @@ existing contract, tests and acceptance; do not expand them implicitly.
   Acceptance covers budget eviction, retained-window recovery/restart and
   unresolved-delivery preservation. Infinite message retention, guaranteed
   recovery of evicted messages from Nostr and a full messaging-service archive
-  are non-goals. This is the selected design direction, not the current 1.x
-  storage limit or permission to prune existing data now.
+  are non-goals. This bounded debt is closed by the existing encrypted timeline
+  and owner budget control; packaged acceptance and its limits are recorded
+  under Selected Product Outcome. Broader host/package convergence remains
+  separate.
 - Replaceable inference connections: an owner must be able to use updated or
   new models and add providers speaking an already supported inference
   protocol without rebuilding Capsule. Provider name, protocol, endpoint and
