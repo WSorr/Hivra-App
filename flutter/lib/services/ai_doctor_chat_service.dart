@@ -32,6 +32,23 @@ class AiDoctorChatService {
   }) : _runtime = runtime,
        _promptService = promptService;
 
+  Future<List<InferenceConnection>> loadConnections() =>
+      _runtime.loadConnections();
+  Future<InferenceConnection> addConnection({
+    required String name,
+    required InferenceProtocol protocol,
+    required String baseUrl,
+    required String model,
+    required bool requiresApiKey,
+  }) => _runtime.addConnection(
+    name: name,
+    protocol: protocol,
+    baseUrl: baseUrl,
+    model: model,
+    requiresApiKey: requiresApiKey,
+  );
+  Future<void> removeConnection(String id) => _runtime.removeConnection(id);
+
   Future<void> saveProviderApiKey(String providerId, String apiKey) {
     return _runtime.saveProviderApiKey(providerId, apiKey);
   }

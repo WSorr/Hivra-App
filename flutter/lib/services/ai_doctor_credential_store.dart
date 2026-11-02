@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -29,14 +30,15 @@ class AiDoctorCredentialStore {
   final FlutterSecureStorage _secureStorage;
   final UserVisibleDataDirectoryService _directories;
   final AtomicFileWriteService _atomicWrites;
-  final Map<InferenceProviderKind, String> _sessionApiKeys =
-      <InferenceProviderKind, String>{};
-  final Map<InferenceProviderKind, String> _sessionBaseUrls =
-      <InferenceProviderKind, String>{};
-  final Map<InferenceProviderKind, Future<bool>> _presenceChecks = {};
-  InferenceProviderKind? _cachedPreferredProvider;
-  InferenceProviderKind? _sessionPreferredProvider;
-  final Map<InferenceProviderKind, String> _preferredModels = {};
+  final Map<InferenceConnection, String> _sessionApiKeys =
+      <InferenceConnection, String>{};
+  final Map<InferenceConnection, String> _sessionBaseUrls =
+      <InferenceConnection, String>{};
+  final Map<InferenceConnection, Future<bool>> _presenceChecks = {};
+  InferenceConnection? _cachedPreferredProvider;
+  InferenceConnection? _sessionPreferredProvider;
+  final Map<InferenceConnection, String> _preferredModels = {};
+  final Map<String, InferenceConnection> _connections = {};
   bool _preferencesLoaded = false;
   Future<void> _preferenceWrites = Future<void>.value();
 
@@ -51,7 +53,80 @@ class AiDoctorCredentialStore {
        _directories = directories,
        _atomicWrites = atomicWrites;
 
-  Future<void> saveApiKey(InferenceProviderKind provider, String apiKey) async {
+  List<InferenceConnection> get connections => [
+    ...InferenceConnection.values,
+    ..._connections.values,
+  ];
+
+  Future<List<InferenceConnection>> loadConnections() async {
+    await loadPreferredProvider();
+    return connections;
+  }
+
+  Future<InferenceConnection> addConnection({
+    required String name,
+    required InferenceProtocol protocol,
+    required String baseUrl,
+    required String model,
+    required bool requiresApiKey,
+  }) async {
+    final label = name.trim();
+    if (label.isEmpty ||
+        label.length > 80 ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(label)) {
+      throw ArgumentError('Connection name must contain 1..80 characters');
+    }
+    final endpoint = InferenceConnection.validateBaseUrl(baseUrl).toString();
+    final normalizedModel = _validateModel(model);
+    final random = Random.secure();
+    final suffix =
+        List.generate(
+          16,
+          (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+        ).join();
+    final id = 'connection_$suffix';
+    final connection = InferenceConnection(
+      id: id,
+      label: label,
+      protocol: protocol,
+      baseUrl: endpoint,
+      defaultModel: normalizedModel,
+      requiresApiKey: requiresApiKey,
+    );
+    await _serializePreferences(() async {
+      await _loadPreferences();
+      _connections[id] = connection;
+      try {
+        await _writePreferences(connection, _preferredModels);
+      } catch (_) {
+        _connections.remove(id);
+        rethrow;
+      }
+    });
+    return connection;
+  }
+
+  Future<void> removeConnection(String id) async {
+    await loadPreferredProvider();
+    final connection = _connections[id];
+    if (connection == null) {
+      throw ArgumentError('Custom AI connection is not saved');
+    }
+    // Invalidate a queued/unlocked lease before any awaited storage operation.
+    if (_sessionPreferredProvider == connection) lockSession();
+    await clearApiKey(connection);
+    await _serializePreferences(() async {
+      _connections.remove(id);
+      try {
+        await _writePreferences(_cachedPreferredProvider, _preferredModels);
+      } catch (_) {
+        _connections[id] = connection;
+        rethrow;
+      }
+    });
+  }
+
+  Future<void> saveApiKey(InferenceConnection provider, String apiKey) async {
     final normalized = apiKey.trim();
     if (normalized.isEmpty) {
       throw ArgumentError('${provider.label} API key is empty');
@@ -76,7 +151,7 @@ class AiDoctorCredentialStore {
     }
   }
 
-  Future<String?> loadApiKey(InferenceProviderKind provider) async {
+  Future<String?> loadApiKey(InferenceConnection provider) async {
     final cached = _sessionApiKeys[provider];
     if (cached != null && cached.isNotEmpty) {
       return cached;
@@ -95,7 +170,7 @@ class AiDoctorCredentialStore {
     }
   }
 
-  Future<bool> hasApiKey(InferenceProviderKind provider) {
+  Future<bool> hasApiKey(InferenceConnection provider) {
     final cached = _sessionApiKeys[provider];
     if (cached != null && cached.isNotEmpty) return Future.value(true);
     return _presenceChecks.putIfAbsent(provider, () async {
@@ -111,7 +186,7 @@ class AiDoctorCredentialStore {
     });
   }
 
-  Future<void> clearApiKey(InferenceProviderKind provider) async {
+  Future<void> clearApiKey(InferenceConnection provider) async {
     _sessionApiKeys.remove(provider);
     final key = _keyForProvider(provider);
     try {
@@ -122,10 +197,7 @@ class AiDoctorCredentialStore {
     }
   }
 
-  Future<void> saveBaseUrl(
-    InferenceProviderKind provider,
-    String baseUrl,
-  ) async {
+  Future<void> saveBaseUrl(InferenceConnection provider, String baseUrl) async {
     final normalized = baseUrl.trim();
     if (normalized.isEmpty) {
       throw ArgumentError('${provider.label} base URL is empty');
@@ -134,11 +206,8 @@ class AiDoctorCredentialStore {
     if (key == null) {
       throw ArgumentError('${provider.label} does not support base URL');
     }
-    if (provider == InferenceProviderKind.cloudflareWorkersAi) {
-      OpenAiChatCompletionsInferenceProviderAdapter.chatCompletionsEndpoint(
-        provider,
-        normalized,
-      );
+    if (provider == InferenceConnection.cloudflareWorkersAi) {
+      InferenceProtocolAdapter.chatCompletionsEndpoint(provider, normalized);
     }
     try {
       await _secureStorage.write(key: key, value: normalized);
@@ -154,36 +223,36 @@ class AiDoctorCredentialStore {
   }
 
   Future<void> savePreferredProvider(
-    InferenceProviderKind provider, {
+    InferenceConnection provider, {
     String? model,
   }) {
     final normalizedModel = model == null ? null : _validateModel(model);
     return _serializePreferences(() async {
       await _loadPreferences();
-      final models = Map<InferenceProviderKind, String>.of(_preferredModels);
+      final models = Map<InferenceConnection, String>.of(_preferredModels);
       if (normalizedModel != null) models[provider] = normalizedModel;
       await _writePreferences(provider, models);
       _sessionPreferredProvider = provider;
     });
   }
 
-  Future<InferenceProviderKind?> loadPreferredProvider() async {
-    InferenceProviderKind? provider;
+  Future<InferenceConnection?> loadPreferredProvider() async {
+    InferenceConnection? provider;
     await _serializePreferences(() async {
       provider = await _loadPreferences();
     });
     return provider;
   }
 
-  Future<String> loadPreferredModel(InferenceProviderKind provider) async {
+  Future<String> loadPreferredModel(InferenceConnection provider) async {
     await loadPreferredProvider();
     return preferredModel(provider);
   }
 
-  String preferredModel(InferenceProviderKind provider) =>
+  String preferredModel(InferenceConnection provider) =>
       _preferredModels[provider] ?? provider.defaultModel;
 
-  Future<InferenceProviderKind?> _loadPreferences() async {
+  Future<InferenceConnection?> _loadPreferences() async {
     if (_preferencesLoaded) return _cachedPreferredProvider;
     try {
       final file = await _preferredProviderFile();
@@ -192,6 +261,47 @@ class AiDoctorCredentialStore {
         if (decoded is! Map || decoded['schema_version'] != 1) {
           throw const FormatException('Invalid AI provider preference');
         }
+        final rawConnections = decoded['connections'] ?? const [];
+        if (rawConnections is! List) {
+          throw const FormatException('Invalid AI connections');
+        }
+        final loaded = <String, InferenceConnection>{};
+        for (final raw in rawConnections) {
+          if (raw is! Map ||
+              raw['id'] is! String ||
+              !RegExp(
+                r'^connection_[0-9a-f]{32}$',
+              ).hasMatch(raw['id'] as String) ||
+              raw['name'] is! String ||
+              (raw['name'] as String).trim().isEmpty ||
+              (raw['name'] as String).length > 80 ||
+              raw['base_url'] is! String ||
+              raw['model'] is! String ||
+              raw['requires_api_key'] is! bool ||
+              loaded.containsKey(raw['id'])) {
+            throw const FormatException('Invalid AI connection');
+          }
+          final protocol =
+              InferenceProtocol.values
+                  .where((p) => p.name == raw['protocol'])
+                  .firstOrNull;
+          if (protocol == null) {
+            throw const FormatException('Unsupported inference protocol');
+          }
+          final connection = InferenceConnection(
+            id: raw['id'] as String,
+            label: raw['name'] as String,
+            protocol: protocol,
+            baseUrl:
+                InferenceConnection.validateBaseUrl(
+                  raw['base_url'] as String,
+                ).toString(),
+            defaultModel: _validateModel(raw['model'] as String),
+            requiresApiKey: raw['requires_api_key'] as bool,
+          );
+          loaded[connection.id] = connection;
+        }
+        _connections.addAll(loaded);
         final provider = _providerForId(decoded['provider_id']);
         if (decoded['provider_id'] != null && provider == null) {
           throw const FormatException('Unknown AI provider preference');
@@ -203,7 +313,7 @@ class AiDoctorCredentialStore {
         if (rawModels is! Map) {
           throw const FormatException('Invalid AI model preferences');
         }
-        final models = <InferenceProviderKind, String>{};
+        final models = <InferenceConnection, String>{};
         for (final entry in rawModels.entries) {
           final modelProvider = _providerForId(entry.key);
           if (modelProvider == null || entry.value is! String) {
@@ -220,11 +330,15 @@ class AiDoctorCredentialStore {
       _preferencesLoaded = true;
       return provider;
     } catch (error) {
+      _connections.clear();
+      _preferredModels.clear();
+      _cachedPreferredProvider = null;
       throw StateError('AI provider preference load failed: $error');
     }
   }
 
-  Future<String?> loadBaseUrl(InferenceProviderKind provider) async {
+  Future<String?> loadBaseUrl(InferenceConnection provider) async {
+    if (provider.isCustom) return provider.baseUrl;
     final cached = _sessionBaseUrls[provider];
     if (cached != null && cached.isNotEmpty) return cached;
     final key = _baseUrlKeyForProvider(provider);
@@ -242,7 +356,7 @@ class AiDoctorCredentialStore {
     }
   }
 
-  Future<void> clearBaseUrl(InferenceProviderKind provider) async {
+  Future<void> clearBaseUrl(InferenceConnection provider) async {
     _sessionBaseUrls.remove(provider);
     final key = _baseUrlKeyForProvider(provider);
     if (key == null) return;
@@ -254,10 +368,10 @@ class AiDoctorCredentialStore {
     }
   }
 
-  Future<void> _clearProviderPreferences(InferenceProviderKind provider) async {
+  Future<void> _clearProviderPreferences(InferenceConnection provider) async {
     await _serializePreferences(() async {
       final preferred = await _loadPreferences();
-      final models = Map<InferenceProviderKind, String>.of(_preferredModels)
+      final models = Map<InferenceConnection, String>.of(_preferredModels)
         ..remove(provider);
       await _writePreferences(preferred == provider ? null : preferred, models);
       await _secureStorage.delete(key: _preferredProviderKey);
@@ -267,14 +381,14 @@ class AiDoctorCredentialStore {
     });
   }
 
-  InferenceProviderKind? get sessionPreferredProvider =>
+  InferenceConnection? get sessionPreferredProvider =>
       _sessionPreferredProvider;
 
-  String? sessionApiKey(InferenceProviderKind provider) =>
+  String? sessionApiKey(InferenceConnection provider) =>
       _sessionApiKeys[provider];
 
-  String? sessionBaseUrl(InferenceProviderKind provider) =>
-      _sessionBaseUrls[provider];
+  String? sessionBaseUrl(InferenceConnection provider) =>
+      provider.baseUrl ?? _sessionBaseUrls[provider];
 
   bool get isPreferredProviderUnlocked {
     final provider = _sessionPreferredProvider;
@@ -284,20 +398,20 @@ class AiDoctorCredentialStore {
       return false;
     }
     if (provider.requiresBaseUrl &&
-        (_sessionBaseUrls[provider]?.isNotEmpty != true)) {
+        (sessionBaseUrl(provider)?.isNotEmpty != true)) {
       return false;
     }
     return true;
   }
 
-  Future<InferenceProviderKind> unlockPreferredProviderSession() async {
+  Future<InferenceConnection> unlockPreferredProviderSession() async {
     final provider =
-        await loadPreferredProvider() ?? InferenceProviderKind.gemini;
+        await loadPreferredProvider() ?? InferenceConnection.gemini;
     return unlockProviderSession(provider);
   }
 
-  Future<InferenceProviderKind> unlockProviderSession(
-    InferenceProviderKind provider,
+  Future<InferenceConnection> unlockProviderSession(
+    InferenceConnection provider,
   ) async {
     await loadPreferredProvider();
     final apiKey = await loadApiKey(provider);
@@ -322,7 +436,7 @@ class AiDoctorCredentialStore {
     _sessionPreferredProvider = null;
   }
 
-  Future<InferenceProviderKind?> _migrateLegacyPreferredProvider() async {
+  Future<InferenceConnection?> _migrateLegacyPreferredProvider() async {
     final legacy = await _secureStorage.read(key: _preferredProviderKey);
     final provider = _providerForId(legacy);
     if (provider == null) return null;
@@ -338,11 +452,12 @@ class AiDoctorCredentialStore {
   }
 
   Future<void> _writePreferences(
-    InferenceProviderKind? provider,
-    Map<InferenceProviderKind, String> models,
+    InferenceConnection? provider,
+    Map<InferenceConnection, String> models,
   ) async {
+    final savedModels = Map<InferenceConnection, String>.of(models);
     final file = await _preferredProviderFile(createRoot: true);
-    if (provider == null && models.isEmpty) {
+    if (provider == null && models.isEmpty && _connections.isEmpty) {
       if (await file.exists()) await file.delete();
     } else {
       await _atomicWrites.writeString(
@@ -350,6 +465,18 @@ class AiDoctorCredentialStore {
         jsonEncode(<String, Object?>{
           'schema_version': 1,
           'provider_id': provider?.id,
+          if (_connections.isNotEmpty)
+            'connections': [
+              for (final c in _connections.values)
+                {
+                  'id': c.id,
+                  'name': c.label,
+                  'protocol': c.protocol.name,
+                  'base_url': c.baseUrl,
+                  'model': c.defaultModel,
+                  'requires_api_key': c.requiresApiKey,
+                },
+            ],
           if (models.isNotEmpty)
             'models': {
               for (final entry in models.entries) entry.key.id: entry.value,
@@ -360,7 +487,7 @@ class AiDoctorCredentialStore {
     _cachedPreferredProvider = provider;
     _preferredModels
       ..clear()
-      ..addAll(models);
+      ..addAll(savedModels);
     _preferencesLoaded = true;
   }
 
@@ -376,9 +503,9 @@ class AiDoctorCredentialStore {
     return normalized;
   }
 
-  static InferenceProviderKind? _providerForId(Object? providerId) {
+  InferenceConnection? _providerForId(Object? providerId) {
     final normalized = providerId is String ? providerId.trim() : '';
-    for (final provider in InferenceProviderKind.values) {
+    for (final provider in connections) {
       if (provider.id == normalized) return provider;
     }
     return null;
@@ -389,24 +516,13 @@ class AiDoctorCredentialStore {
     return File('${root.path}/$_preferredProviderFileName');
   }
 
-  Future<void> saveOpenAiApiKey(String apiKey) {
-    return saveApiKey(InferenceProviderKind.openAi, apiKey);
-  }
-
-  Future<String?> loadOpenAiApiKey() {
-    return loadApiKey(InferenceProviderKind.openAi);
-  }
-
-  Future<void> clearOpenAiApiKey() {
-    return clearApiKey(InferenceProviderKind.openAi);
-  }
-
-  static String _keyForProvider(InferenceProviderKind provider) {
+  static String _keyForProvider(InferenceConnection provider) {
     return switch (provider) {
-      InferenceProviderKind.openAi => _openAiApiKeyKey,
-      InferenceProviderKind.gemini => _geminiApiKeyKey,
-      InferenceProviderKind.cloudflareWorkersAi => _cloudflareApiKeyKey,
-      InferenceProviderKind.localOpenAiCompatible => _localOpenAiApiKeyKey,
+      InferenceConnection.openAi => _openAiApiKeyKey,
+      InferenceConnection.gemini => _geminiApiKeyKey,
+      InferenceConnection.cloudflareWorkersAi => _cloudflareApiKeyKey,
+      InferenceConnection.localOpenAiCompatible => _localOpenAiApiKeyKey,
+      _ => 'hivra.ai.connection.${provider.id}.api_key.v1',
     };
   }
 
@@ -424,12 +540,13 @@ class AiDoctorCredentialStore {
     return StateError('Secure AI credential storage is unavailable: $error');
   }
 
-  static String? _baseUrlKeyForProvider(InferenceProviderKind provider) {
+  static String? _baseUrlKeyForProvider(InferenceConnection provider) {
     return switch (provider) {
-      InferenceProviderKind.openAi => null,
-      InferenceProviderKind.gemini => null,
-      InferenceProviderKind.cloudflareWorkersAi => _cloudflareBaseUrlKey,
-      InferenceProviderKind.localOpenAiCompatible => _localOpenAiBaseUrlKey,
+      InferenceConnection.openAi => null,
+      InferenceConnection.gemini => null,
+      InferenceConnection.cloudflareWorkersAi => _cloudflareBaseUrlKey,
+      InferenceConnection.localOpenAiCompatible => _localOpenAiBaseUrlKey,
+      _ => null,
     };
   }
 }

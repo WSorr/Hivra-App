@@ -125,14 +125,130 @@ void main() {
       );
     }
 
+    test(
+      'custom destination and model survive restart with independent secure keys',
+      () async {
+        final storage = _FakeSecureStorage();
+        final store = buildStore(storage);
+        await store.saveApiKey(InferenceConnection.gemini, 'existing-key');
+        await store.savePreferredProvider(
+          InferenceConnection.gemini,
+          model: 'owner-existing-model',
+        );
+        final first = await store.addConnection(
+          name: 'Owner endpoint',
+          protocol: InferenceProtocol.chatCompletions,
+          baseUrl: 'https://one.example/v1',
+          model: 'owner-model',
+          requiresApiKey: true,
+        );
+        final second = await store.addConnection(
+          name: 'Owner endpoint',
+          protocol: InferenceProtocol.responses,
+          baseUrl: 'https://two.example/v1',
+          model: 'next-model',
+          requiresApiKey: true,
+        );
+        expect(first.id, isNot(second.id));
+        expect(await store.hasApiKey(second), isFalse);
+        await store.saveApiKey(first, 'first-key');
+        await store.saveApiKey(second, 'second-key');
+        await store.savePreferredProvider(first, model: 'updated-model');
+        final restarted = buildStore(storage);
+        storage.readCounts.clear();
+        final saved = await restarted.loadConnections();
+        final restored = saved.firstWhere((c) => c.id == first.id);
+        expect(restored.protocol, InferenceProtocol.chatCompletions);
+        expect(restored.baseUrl, 'https://one.example/v1');
+        expect(await restarted.loadPreferredProvider(), restored);
+        expect(await restarted.loadPreferredModel(restored), 'updated-model');
+        expect(
+          await restarted.loadPreferredModel(InferenceConnection.gemini),
+          'owner-existing-model',
+        );
+        expect(
+          storage.readCounts,
+          isEmpty,
+        ); // Configuration reads do not unlock keys.
+        expect(restarted.isPreferredProviderUnlocked, isFalse);
+        await restarted.unlockPreferredProviderSession();
+        expect(restarted.sessionApiKey(restored), 'first-key');
+        final root = await directories.rootDirectory();
+        final json =
+            await File(
+              '${root.path}/ai_provider_preference.v1.json',
+            ).readAsString();
+        expect(json, contains('https://one.example/v1'));
+        expect(json, isNot(contains('first-key')));
+        await restarted.removeConnection(first.id);
+        expect(restarted.isPreferredProviderUnlocked, isFalse);
+        final finalStore = buildStore(storage);
+        expect(
+          (await finalStore.loadConnections()).any((c) => c.id == first.id),
+          isFalse,
+        );
+        final other = finalStore.connections.firstWhere(
+          (c) => c.id == second.id,
+        );
+        expect(await finalStore.loadApiKey(other), 'second-key');
+        expect(
+          await finalStore.loadApiKey(InferenceConnection.gemini),
+          'existing-key',
+        );
+        expect(storage.values.values, isNot(contains('first-key')));
+      },
+    );
+
+    test(
+      'invalid custom configuration or failed write never installs a connection',
+      () async {
+        final storage = _FakeSecureStorage();
+        final writes = _ControlledPreferenceWrites();
+        final store = AiDoctorCredentialStore(
+          secureStorage: storage,
+          directories: directories,
+          atomicWrites: writes,
+        );
+        for (final url in [
+          'https://key:secret@example.com/v1',
+          'file:///tmp/model',
+          'https://example.com/v1#fragment',
+        ]) {
+          await expectLater(
+            store.addConnection(
+              name: 'Bad',
+              protocol: InferenceProtocol.responses,
+              baseUrl: url,
+              model: 'model',
+              requiresApiKey: true,
+            ),
+            throwsArgumentError,
+          );
+        }
+        writes.fail = true;
+        await expectLater(
+          store.addConnection(
+            name: 'Failing',
+            protocol: InferenceProtocol.responses,
+            baseUrl: 'https://example.com/v1',
+            model: 'model',
+            requiresApiKey: true,
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(store.connections, InferenceConnection.values);
+        expect(storage.values, isEmpty);
+      },
+    );
+
     test('stores OpenAI key only in secure storage', () async {
       final secureStorage = _FakeSecureStorage();
       final store = buildStore(secureStorage);
 
-      await store.saveOpenAiApiKey(' sk-test ');
+      await store.saveApiKey(InferenceConnection.openAi, ' sk-test ');
 
-      expect(await store.loadOpenAiApiKey(), 'sk-test');
-      expect(await store.loadPreferredProvider(), InferenceProviderKind.openAi);
+      expect(await store.loadApiKey(InferenceConnection.openAi), 'sk-test');
+      expect(await store.loadPreferredProvider(), InferenceConnection.openAi);
       expect(secureStorage.values, hasLength(1));
       expect(secureStorage.values.values.single, 'sk-test');
     });
@@ -140,11 +256,11 @@ void main() {
     test('clears OpenAI key', () async {
       final secureStorage = _FakeSecureStorage();
       final store = buildStore(secureStorage);
-      await store.saveOpenAiApiKey('sk-test');
+      await store.saveApiKey(InferenceConnection.openAi, 'sk-test');
 
-      await store.clearOpenAiApiKey();
+      await store.clearApiKey(InferenceConnection.openAi);
 
-      expect(await store.loadOpenAiApiKey(), isNull);
+      expect(await store.loadApiKey(InferenceConnection.openAi), isNull);
       expect(await store.loadPreferredProvider(), isNull);
       expect(secureStorage.values, isEmpty);
     });
@@ -153,25 +269,22 @@ void main() {
       final secureStorage = _FakeSecureStorage();
       final store = buildStore(secureStorage);
 
-      await store.saveApiKey(InferenceProviderKind.openAi, 'sk-openai');
-      await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+      await store.saveApiKey(InferenceConnection.openAi, 'sk-openai');
+      await store.saveApiKey(InferenceConnection.gemini, 'gemini-key');
       await store.saveBaseUrl(
-        InferenceProviderKind.localOpenAiCompatible,
+        InferenceConnection.localOpenAiCompatible,
         ' http://127.0.0.1:11434 ',
       );
 
-      expect(await store.loadApiKey(InferenceProviderKind.openAi), 'sk-openai');
+      expect(await store.loadApiKey(InferenceConnection.openAi), 'sk-openai');
+      expect(await store.loadApiKey(InferenceConnection.gemini), 'gemini-key');
       expect(
-        await store.loadApiKey(InferenceProviderKind.gemini),
-        'gemini-key',
-      );
-      expect(
-        await store.loadBaseUrl(InferenceProviderKind.localOpenAiCompatible),
+        await store.loadBaseUrl(InferenceConnection.localOpenAiCompatible),
         'http://127.0.0.1:11434',
       );
       expect(
         await store.loadPreferredProvider(),
-        InferenceProviderKind.localOpenAiCompatible,
+        InferenceConnection.localOpenAiCompatible,
       );
       expect(secureStorage.values.length, 3);
     });
@@ -180,9 +293,9 @@ void main() {
       final secureStorage = _FakeSecureStorage();
       final store = buildStore(secureStorage);
 
-      await store.savePreferredProvider(InferenceProviderKind.gemini);
+      await store.savePreferredProvider(InferenceConnection.gemini);
 
-      expect(await store.loadPreferredProvider(), InferenceProviderKind.gemini);
+      expect(await store.loadPreferredProvider(), InferenceConnection.gemini);
       expect(secureStorage.values, isEmpty);
     });
 
@@ -197,41 +310,38 @@ void main() {
           atomicWrites: writes,
         );
         await store.savePreferredProvider(
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
           model: 'model-before',
         );
         writes.fail = true;
         await expectLater(
           store.savePreferredProvider(
-            InferenceProviderKind.openAi,
+            InferenceConnection.openAi,
             model: 'model-after',
           ),
           throwsA(isA<FileSystemException>()),
         );
+        expect(await store.loadPreferredProvider(), InferenceConnection.gemini);
         expect(
-          await store.loadPreferredProvider(),
-          InferenceProviderKind.gemini,
-        );
-        expect(
-          await store.loadPreferredModel(InferenceProviderKind.gemini),
+          await store.loadPreferredModel(InferenceConnection.gemini),
           'model-before',
         );
         final restarted = buildStore(secrets);
         expect(
           await restarted.loadPreferredProvider(),
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
         );
         expect(
-          await restarted.loadPreferredModel(InferenceProviderKind.gemini),
+          await restarted.loadPreferredModel(InferenceConnection.gemini),
           'model-before',
         );
         writes.fail = false;
         await store.savePreferredProvider(
-          InferenceProviderKind.openAi,
+          InferenceConnection.openAi,
           model: 'model-after',
         );
         expect(
-          await store.loadPreferredModel(InferenceProviderKind.openAi),
+          await store.loadPreferredModel(InferenceConnection.openAi),
           'model-after',
         );
       },
@@ -242,24 +352,21 @@ void main() {
       () async {
         final store = buildStore(_FakeSecureStorage());
         await store.savePreferredProvider(
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
           model: 'retained-model',
         );
         for (final invalid in ['', 'a' * 257, 'bad\nmodel']) {
           expect(
             () => store.savePreferredProvider(
-              InferenceProviderKind.openAi,
+              InferenceConnection.openAi,
               model: invalid,
             ),
             throwsFormatException,
           );
         }
+        expect(await store.loadPreferredProvider(), InferenceConnection.gemini);
         expect(
-          await store.loadPreferredProvider(),
-          InferenceProviderKind.gemini,
-        );
-        expect(
-          await store.loadPreferredModel(InferenceProviderKind.gemini),
+          await store.loadPreferredModel(InferenceConnection.gemini),
           'retained-model',
         );
       },
@@ -270,30 +377,27 @@ void main() {
       () async {
         final secrets = _FakeSecureStorage();
         final store = buildStore(secrets);
-        await store.saveApiKey(InferenceProviderKind.gemini, 'private-token');
+        await store.saveApiKey(InferenceConnection.gemini, 'private-token');
         await store.savePreferredProvider(
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
           model: ' gemini-chosen ',
         );
         await store.savePreferredProvider(
-          InferenceProviderKind.openAi,
+          InferenceConnection.openAi,
           model: 'openai-chosen',
         );
-        await store.saveApiKey(
-          InferenceProviderKind.gemini,
-          'replacement-token',
-        );
+        await store.saveApiKey(InferenceConnection.gemini, 'replacement-token');
         final restarted = buildStore(secrets);
         expect(
           await restarted.loadPreferredProvider(),
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
         );
         expect(
-          await restarted.loadPreferredModel(InferenceProviderKind.gemini),
+          await restarted.loadPreferredModel(InferenceConnection.gemini),
           'gemini-chosen',
         );
         expect(
-          await restarted.loadPreferredModel(InferenceProviderKind.openAi),
+          await restarted.loadPreferredModel(InferenceConnection.openAi),
           'openai-chosen',
         );
         expect(restarted.isPreferredProviderUnlocked, false);
@@ -305,16 +409,16 @@ void main() {
         expect(content, isNot(contains('private-token')));
         expect(content, isNot(contains('replacement-token')));
         expect(secrets.values.keys.any((key) => key.contains('model')), false);
-        await restarted.clearApiKey(InferenceProviderKind.gemini);
+        await restarted.clearApiKey(InferenceConnection.gemini);
         final afterClear = buildStore(secrets);
         expect(await afterClear.loadPreferredProvider(), isNull);
         expect(
-          await afterClear.loadPreferredModel(InferenceProviderKind.openAi),
+          await afterClear.loadPreferredModel(InferenceConnection.openAi),
           'openai-chosen',
         );
         expect(
-          await afterClear.loadPreferredModel(InferenceProviderKind.gemini),
-          InferenceProviderKind.gemini.defaultModel,
+          await afterClear.loadPreferredModel(InferenceConnection.gemini),
+          InferenceConnection.gemini.defaultModel,
         );
       },
     );
@@ -323,25 +427,25 @@ void main() {
       final store = buildStore(_FakeSecureStorage());
       await Future.wait([
         store.savePreferredProvider(
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
           model: 'model-a',
         ),
         store.savePreferredProvider(
-          InferenceProviderKind.openAi,
+          InferenceConnection.openAi,
           model: 'model-b',
         ),
       ]);
       final restarted = buildStore(_FakeSecureStorage());
       expect(
         await restarted.loadPreferredProvider(),
-        InferenceProviderKind.openAi,
+        InferenceConnection.openAi,
       );
       expect(
-        await restarted.loadPreferredModel(InferenceProviderKind.gemini),
+        await restarted.loadPreferredModel(InferenceConnection.gemini),
         'model-a',
       );
       expect(
-        await restarted.loadPreferredModel(InferenceProviderKind.openAi),
+        await restarted.loadPreferredModel(InferenceConnection.openAi),
         'model-b',
       );
     });
@@ -356,8 +460,8 @@ void main() {
         final secrets = _FakeSecureStorage();
         final store = buildStore(secrets);
         expect(
-          await store.loadPreferredModel(InferenceProviderKind.gemini),
-          InferenceProviderKind.gemini.defaultModel,
+          await store.loadPreferredModel(InferenceConnection.gemini),
+          InferenceConnection.gemini.defaultModel,
         );
         expect(await file.readAsString(), original);
         expect(secrets.readCounts, isEmpty);
@@ -385,12 +489,12 @@ void main() {
     test(
       'Cloudflare account and token survive restart independently of Gemini',
       () async {
-        const provider = InferenceProviderKind.cloudflareWorkersAi;
+        const provider = InferenceConnection.cloudflareWorkersAi;
         const url =
             'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai';
         final secureStorage = _FakeSecureStorage();
         final writer = buildStore(secureStorage);
-        await writer.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+        await writer.saveApiKey(InferenceConnection.gemini, 'gemini-key');
         await writer.saveApiKey(provider, 'cloudflare-test-token');
         expect(writer.isPreferredProviderUnlocked, isFalse);
         await expectLater(
@@ -424,7 +528,7 @@ void main() {
         expect(await restarted.loadApiKey(provider), isNull);
         expect(await restarted.loadBaseUrl(provider), isNull);
         expect(
-          await restarted.loadApiKey(InferenceProviderKind.gemini),
+          await restarted.loadApiKey(InferenceConnection.gemini),
           'gemini-key',
         );
         final root = await directories.rootDirectory();
@@ -441,14 +545,14 @@ void main() {
         final store = buildStore(secureStorage);
         await expectLater(
           store.saveBaseUrl(
-            InferenceProviderKind.cloudflareWorkersAi,
+            InferenceConnection.cloudflareWorkersAi,
             'https://example.com',
           ),
           throwsArgumentError,
         );
         expect(secureStorage.values, isEmpty);
         expect(
-          store.sessionBaseUrl(InferenceProviderKind.cloudflareWorkersAi),
+          store.sessionBaseUrl(InferenceConnection.cloudflareWorkersAi),
           isNull,
         );
       },
@@ -457,15 +561,15 @@ void main() {
     test('unlocks provider once and reuses the in-memory session', () async {
       final secureStorage = _FakeSecureStorage();
       final writer = buildStore(secureStorage);
-      await writer.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+      await writer.saveApiKey(InferenceConnection.gemini, 'gemini-key');
       final restartedProcess = buildStore(secureStorage);
       secureStorage.readCounts.clear();
 
       final provider = await restartedProcess.unlockPreferredProviderSession();
-      expect(provider, InferenceProviderKind.gemini);
+      expect(provider, InferenceConnection.gemini);
       expect(restartedProcess.isPreferredProviderUnlocked, isTrue);
       expect(
-        restartedProcess.sessionApiKey(InferenceProviderKind.gemini),
+        restartedProcess.sessionApiKey(InferenceConnection.gemini),
         'gemini-key',
       );
       expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
@@ -479,17 +583,17 @@ void main() {
       () async {
         final secureStorage = _FakeSecureStorage();
         final writer = buildStore(secureStorage);
-        await writer.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+        await writer.saveApiKey(InferenceConnection.gemini, 'gemini-key');
         final restartedProcess = buildStore(secureStorage);
         secureStorage.readCounts.clear();
 
         expect(
-          await restartedProcess.hasApiKey(InferenceProviderKind.gemini),
+          await restartedProcess.hasApiKey(InferenceConnection.gemini),
           isTrue,
         );
         expect(restartedProcess.isPreferredProviderUnlocked, isFalse);
         expect(
-          restartedProcess.sessionApiKey(InferenceProviderKind.gemini),
+          restartedProcess.sessionApiKey(InferenceConnection.gemini),
           isNull,
         );
         expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 0);
@@ -504,17 +608,17 @@ void main() {
         final store = buildStore(storage);
         final pending = Completer<bool>();
         storage.checkPresence = (_) => pending.future;
-        final first = store.hasApiKey(InferenceProviderKind.gemini);
-        final second = store.hasApiKey(InferenceProviderKind.gemini);
+        final first = store.hasApiKey(InferenceConnection.gemini);
+        final second = store.hasApiKey(InferenceConnection.gemini);
         expect(storage.presenceChecks, 1);
         expect(storage.readCounts, isEmpty);
         pending.complete(true);
         expect(await first, true);
         expect(await second, true);
         expect(store.isPreferredProviderUnlocked, false);
-        expect(store.sessionApiKey(InferenceProviderKind.gemini), isNull);
+        expect(store.sessionApiKey(InferenceConnection.gemini), isNull);
         storage.checkPresence = (_) async => false;
-        expect(await store.hasApiKey(InferenceProviderKind.gemini), false);
+        expect(await store.hasApiKey(InferenceConnection.gemini), false);
         expect(storage.presenceChecks, 2);
         expect(storage.readCounts, isEmpty);
       },
@@ -527,11 +631,11 @@ void main() {
         final store = buildStore(storage);
         storage.checkPresence = (_) async => throw StateError('denied');
         await expectLater(
-          store.hasApiKey(InferenceProviderKind.gemini),
+          store.hasApiKey(InferenceConnection.gemini),
           throwsStateError,
         );
         storage.checkPresence = (_) async => true;
-        expect(await store.hasApiKey(InferenceProviderKind.gemini), true);
+        expect(await store.hasApiKey(InferenceConnection.gemini), true);
         expect(storage.presenceChecks, 2);
         expect(storage.readCounts, isEmpty);
         expect(store.isPreferredProviderUnlocked, false);
@@ -543,17 +647,14 @@ void main() {
       () async {
         final secureStorage = _FakeSecureStorage();
         final store = buildStore(secureStorage);
-        await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
-        await store.saveApiKey(InferenceProviderKind.openAi, 'openai-key');
-        await store.savePreferredProvider(InferenceProviderKind.gemini);
+        await store.saveApiKey(InferenceConnection.gemini, 'gemini-key');
+        await store.saveApiKey(InferenceConnection.openAi, 'openai-key');
+        await store.savePreferredProvider(InferenceConnection.gemini);
 
-        await store.unlockProviderSession(InferenceProviderKind.openAi);
+        await store.unlockProviderSession(InferenceConnection.openAi);
 
-        expect(store.sessionPreferredProvider, InferenceProviderKind.openAi);
-        expect(
-          await store.loadPreferredProvider(),
-          InferenceProviderKind.gemini,
-        );
+        expect(store.sessionPreferredProvider, InferenceConnection.openAi);
+        expect(await store.loadPreferredProvider(), InferenceConnection.gemini);
         expect(secureStorage.values.values, contains('gemini-key'));
         expect(secureStorage.values.values, isNot(contains('gemini')));
       },
@@ -562,7 +663,7 @@ void main() {
     test('locking clears only the process session', () async {
       final secureStorage = _FakeSecureStorage();
       final store = buildStore(secureStorage);
-      await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+      await store.saveApiKey(InferenceConnection.gemini, 'gemini-key');
 
       store.lockSession();
 
@@ -571,7 +672,7 @@ void main() {
       expect(secureStorage.values.values, contains('gemini-key'));
       expect(
         await store.unlockPreferredProviderSession(),
-        InferenceProviderKind.gemini,
+        InferenceConnection.gemini,
       );
     });
 
@@ -580,10 +681,7 @@ void main() {
       () async {
         final secureStorage = _FakeSecureStorage();
         final firstProcess = buildStore(secureStorage);
-        await firstProcess.saveApiKey(
-          InferenceProviderKind.gemini,
-          'gemini-key',
-        );
+        await firstProcess.saveApiKey(InferenceConnection.gemini, 'gemini-key');
 
         final restartedProcess = buildStore(secureStorage);
 
@@ -591,17 +689,17 @@ void main() {
         expect(restartedProcess.sessionPreferredProvider, isNull);
         expect(
           await restartedProcess.loadPreferredProvider(),
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
         );
         expect(restartedProcess.isPreferredProviderUnlocked, isFalse);
 
         expect(
           await restartedProcess.unlockPreferredProviderSession(),
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
         );
         expect(restartedProcess.isPreferredProviderUnlocked, isTrue);
         expect(
-          restartedProcess.sessionApiKey(InferenceProviderKind.gemini),
+          restartedProcess.sessionApiKey(InferenceConnection.gemini),
           'gemini-key',
         );
       },
@@ -619,7 +717,7 @@ void main() {
         final migratingProcess = buildStore(secureStorage);
         expect(
           await migratingProcess.unlockPreferredProviderSession(),
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
         );
         expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 2);
         expect(
@@ -635,7 +733,7 @@ void main() {
         secureStorage.readCounts.clear();
         expect(
           await restartedProcess.unlockPreferredProviderSession(),
-          InferenceProviderKind.gemini,
+          InferenceConnection.gemini,
         );
         expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
       },
@@ -660,7 +758,7 @@ void main() {
       final store = buildStore(_ThrowingSecureStorage());
 
       await expectLater(
-        store.saveOpenAiApiKey('sk-test'),
+        store.saveApiKey(InferenceConnection.openAi, 'sk-test'),
         throwsA(isA<StateError>()),
       );
     });
