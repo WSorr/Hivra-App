@@ -220,6 +220,32 @@ transport endpoint, authentication failure, or write failure returns `retry`
 and cannot advance acknowledgement. Chat content and read/unread state remain
 operational capability data outside Core and Ledger.
 
+The existing encrypted Capsule Chat timeline owns the retained local window
+across all conversations. Its default completed-message budget is 100 MB
+(100,000,000 bytes), configurable by the owner in Chat. The budget counts UTF-8
+serialized message records, including their message metadata; encryption/file
+overhead, read markers and unresolved delivery storage are outside this content
+budget. Oldest completed records are evicted first, ordered by timestamp and
+stable message id. Incoming received records and outgoing locally accepted or
+failed records are eligible. Pending and ambiguous outgoing records remain until
+their outcome is known; local transport acceptance is not a peer read receipt.
+The delivery queues and their identities are not pruned or replayed by cache
+eviction. No complete service archive or recovery of evicted content is promised.
+
+The budget is optional metadata in the existing authenticated timeline payload;
+older payloads use the default. Budget changes, eviction and incoming/outgoing
+timeline updates converge on the same queued atomic encrypted write. Publish the
+new in-memory window only after that write succeeds. A failed replacement keeps
+the old saved window and budget. Read/unread markers retain their existing file
+and follow the retained incoming ids. UI views project the canonical window and
+must not union it with earlier content or raw receive batches. Restart, Capsule
+backup/recovery and package replacement retain the remaining window and budget;
+each device may have a different window without mandatory synchronization.
+The existing backup limits allow 192 MiB of Capsule files and 320 MiB of
+clear backup payload, accommodating the default window's encrypted/base64 file
+alongside the former 64 MiB state allowance. Larger owner-selected windows may
+still exceed these explicit backup bounds; backup failure must not prune them.
+
 Quarantine recovery MUST re-enter the same canonical FFI ingress router with
 the original adapter event id and envelope. It cannot invoke a capability
 handler directly, append Core facts itself, or become a second receive route.

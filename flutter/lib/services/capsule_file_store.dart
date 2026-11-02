@@ -18,6 +18,9 @@ class CapsuleFileStore {
       'pair_consensus_attestations.json';
   static const String contactLabelsFileName = 'contact_labels.json';
   static const String capsulesDirName = 'capsules';
+  // The default 100 MB Chat window is encrypted/base64 on disk. Preserve room
+  // for that window alongside the previously supported 64 MiB of Capsule state.
+  static const int maxBackupStateBytes = 192 * 1024 * 1024;
 
   final UserVisibleDataDirectoryService _dirs;
   final AtomicFileWriteService _atomicWrites;
@@ -372,7 +375,7 @@ class CapsuleFileStore {
       }
       final length = await entry.length();
       bytes += length;
-      if (bytes > 64 * 1024 * 1024 || snapshot.length >= 1024) {
+      if (bytes > maxBackupStateBytes || snapshot.length >= 1024) {
         throw StateError('Capsule state exceeds the backup limit');
       }
       snapshot[path] = base64Encode(await entry.readAsBytes());
@@ -394,7 +397,7 @@ class CapsuleFileStore {
       }
       final bytes = base64Decode(entry.value);
       total += bytes.length;
-      if (total > 64 * 1024 * 1024) {
+      if (total > maxBackupStateBytes) {
         throw const FormatException('Backup state is too large');
       }
       decoded[entry.key] = bytes;

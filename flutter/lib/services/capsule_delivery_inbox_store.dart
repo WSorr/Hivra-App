@@ -15,14 +15,14 @@ class CapsuleDeliveryInboxStore {
   static final CapsuleDeliveryInboxStore shared = CapsuleDeliveryInboxStore();
 
   static const int defaultMaxCapsules = 8;
-  static const int defaultMaxRecordsPerCapsule = 256;
+  static const int defaultCacheBudgetBytes = 100 * 1000 * 1000;
   static const String _timelineSchema = 'hivra.chat_timeline';
   static const int _timelineVersion = 1;
   static const String _timelineSuite = 'hkdf-sha256+a256gcm';
   static const String _timelineKeyInfo = 'hivra.chat_timeline.v1';
 
   final int maxCapsules;
-  final int maxRecordsPerCapsule;
+  final int initialCacheBudgetBytes;
   final CapsuleFileStore _fileStore;
   final ChatTimelineSeedLoader _loadTimelineSeed;
 
@@ -31,6 +31,7 @@ class CapsuleDeliveryInboxStore {
 
   final List<String> _capsuleOrder = <String>[];
   final Set<String> _hydratedCapsules = <String>{};
+  final Map<String, int> _cacheBudgets = <String, int>{};
   final Map<String, Future<void>> _timelineWriteTails =
       <String, Future<void>>{};
   final Map<String, Future<void>> _readStateWriteTails =
@@ -38,11 +39,11 @@ class CapsuleDeliveryInboxStore {
 
   CapsuleDeliveryInboxStore({
     this.maxCapsules = defaultMaxCapsules,
-    this.maxRecordsPerCapsule = defaultMaxRecordsPerCapsule,
+    this.initialCacheBudgetBytes = defaultCacheBudgetBytes,
     CapsuleFileStore fileStore = const CapsuleFileStore(),
     ChatTimelineSeedLoader? loadTimelineSeed,
   }) : assert(maxCapsules > 0),
-       assert(maxRecordsPerCapsule > 0),
+       assert(initialCacheBudgetBytes > 0),
        _fileStore = fileStore,
        _loadTimelineSeed = loadTimelineSeed ?? CapsuleSeedStore().loadSeed;
 
@@ -63,6 +64,7 @@ class CapsuleDeliveryInboxStore {
       final capsuleDir = await _fileStore.capsuleDirForHex(normalized);
       final raw = await _fileStore.readChatTimeline(capsuleDir);
       if (raw == null) {
+        _cacheBudgets[normalized] = initialCacheBudgetBytes;
         _hydratedCapsules.add(normalized);
         return true;
       }
@@ -75,6 +77,9 @@ class CapsuleDeliveryInboxStore {
           decoded['messages'] is! List) {
         return false;
       }
+      final budget = decoded['cache_budget_bytes'];
+      if (budget != null && (budget is! int || budget <= 0)) return false;
+      _cacheBudgets[normalized] = budget as int? ?? initialCacheBudgetBytes;
       final loaded = <String, CapsuleChatInboxMessage>{};
       for (final item in decoded['messages'] as List) {
         final message = _decodeTimelineMessage(item, normalized);
@@ -87,10 +92,11 @@ class CapsuleDeliveryInboxStore {
       if (loaded.isNotEmpty) _messagesByCapsule[normalized] = loaded;
       if (loaded.isEmpty) return true;
       _touchCapsule(normalized);
-      _retainNewestMessages(loaded);
+      await _persistTimeline(normalized);
       _retainNewestCapsules();
       return true;
     } catch (_) {
+      _hydratedCapsules.remove(normalized);
       return false;
     }
   }
@@ -106,22 +112,13 @@ class CapsuleDeliveryInboxStore {
     if (!await hydrateCapsule(normalized)) {
       throw StateError('Existing Chat timeline is unavailable or invalid');
     }
-    merge(normalized, messages: incomingMessages);
-    await _persistTimeline(normalized);
+    await _persistTimeline(normalized, incoming: incomingMessages);
   }
 
   Future<void> upsertMessageDurably(
     String capsuleRootHex,
     CapsuleChatInboxMessage message,
-  ) async {
-    final normalized = capsuleRootHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return;
-    if (!await hydrateCapsule(normalized)) {
-      throw StateError('Existing Chat timeline is unavailable or invalid');
-    }
-    merge(normalized, messages: <CapsuleChatInboxMessage>[message]);
-    await _persistTimeline(normalized);
-  }
+  ) => mergeDurably(capsuleRootHex, messages: [message]);
 
   void merge(
     String capsuleRootHex, {
@@ -138,15 +135,22 @@ class CapsuleDeliveryInboxStore {
         normalized,
         () => <String, CapsuleChatInboxMessage>{},
       );
-      for (final message in incomingMessages) {
-        final existing = messagesById[message.id];
-        if (existing == null || _sameMessageSemantics(existing, message)) {
-          messagesById[message.id] = message;
-        }
-      }
-      _retainNewestMessages(messagesById);
+      _mergeMessagesInto(messagesById, incomingMessages);
+      _retainMessages(normalized, messagesById);
     }
     _retainNewestCapsules();
+  }
+
+  void _mergeMessagesInto(
+    Map<String, CapsuleChatInboxMessage> messagesById,
+    Iterable<CapsuleChatInboxMessage> incomingMessages,
+  ) {
+    for (final message in incomingMessages) {
+      final existing = messagesById[message.id];
+      if (existing == null || _sameMessageSemantics(existing, message)) {
+        messagesById[message.id] = message;
+      }
+    }
   }
 
   void clearCapsule(String capsuleRootHex) {
@@ -154,6 +158,7 @@ class CapsuleDeliveryInboxStore {
     _messagesByCapsule.remove(normalized);
     _capsuleOrder.remove(normalized);
     _hydratedCapsules.remove(normalized);
+    _cacheBudgets.remove(normalized);
     _timelineWriteTails.remove(normalized);
     _readStateWriteTails.remove(normalized);
   }
@@ -181,6 +186,21 @@ class CapsuleDeliveryInboxStore {
       counts.update(peerHex, (count) => count + 1, ifAbsent: () => 1);
     }
     return Map<String, int>.unmodifiable(counts);
+  }
+
+  Future<int> loadCacheBudgetBytes(String capsuleRootHex) async {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    if (!await hydrateCapsule(normalized)) {
+      throw StateError('Chat history or cache settings are unavailable');
+    }
+    return _cacheBudgets[normalized] ?? initialCacheBudgetBytes;
+  }
+
+  Future<void> setCacheBudgetBytes(String capsuleRootHex, int bytes) async {
+    if (bytes <= 0) throw ArgumentError.value(bytes, 'bytes');
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    await loadCacheBudgetBytes(normalized);
+    await _persistTimeline(normalized, cacheBudgetBytes: bytes);
   }
 
   Future<void> markMessagesRead(
@@ -222,9 +242,6 @@ class CapsuleDeliveryInboxStore {
     );
     nextReadIds.removeWhere((id) => !retainedSet.contains(id));
     final bounded = nextReadIds.toList()..sort();
-    if (bounded.length > maxRecordsPerCapsule) {
-      bounded.removeRange(0, bounded.length - maxRecordsPerCapsule);
-    }
     final capsuleDir = await _fileStore.capsuleDirForHex(
       capsuleRootHex,
       create: true,
@@ -261,12 +278,19 @@ class CapsuleDeliveryInboxStore {
     }
   }
 
-  Future<void> _persistTimeline(String capsuleRootHex) async {
+  Future<void> _persistTimeline(
+    String capsuleRootHex, {
+    List<CapsuleChatInboxMessage> incoming = const [],
+    int? cacheBudgetBytes,
+  }) async {
     final previous =
         _timelineWriteTails[capsuleRootHex] ?? Future<void>.value();
     final next = previous
         .catchError((Object _) {})
-        .then((_) => _persistTimelineNow(capsuleRootHex));
+        .then(
+          (_) =>
+              _persistTimelineNow(capsuleRootHex, incoming, cacheBudgetBytes),
+        );
     _timelineWriteTails[capsuleRootHex] = next;
     try {
       await next;
@@ -277,8 +301,28 @@ class CapsuleDeliveryInboxStore {
     }
   }
 
-  Future<void> _persistTimelineNow(String capsuleRootHex) async {
-    final messages = loadMessages(capsuleRootHex);
+  Future<void> _persistTimelineNow(
+    String capsuleRootHex,
+    List<CapsuleChatInboxMessage> incoming,
+    int? cacheBudgetBytes,
+  ) async {
+    final staged = Map<String, CapsuleChatInboxMessage>.of(
+      _messagesByCapsule[capsuleRootHex] ?? const {},
+    );
+    _mergeMessagesInto(staged, incoming);
+    final budget =
+        cacheBudgetBytes ??
+        _cacheBudgets[capsuleRootHex] ??
+        initialCacheBudgetBytes;
+    final evicted = _retainMessages(
+      capsuleRootHex,
+      staged,
+      budgetBytes: budget,
+    );
+    if (incoming.isEmpty && cacheBudgetBytes == null && !evicted) return;
+    final messages =
+        staged.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     final capsuleDir = await _fileStore.capsuleDirForHex(
       capsuleRootHex,
       create: true,
@@ -286,27 +330,32 @@ class CapsuleDeliveryInboxStore {
     final cleartext = jsonEncode(<String, Object?>{
       'version': 1,
       'capsule_root_hex': capsuleRootHex,
-      'messages': messages
-          .map(
-            (message) => <String, Object?>{
-              'id': message.id,
-              'from_hex': message.fromHex,
-              if (message.toHex != null) 'to_hex': message.toHex,
-              'message_text': message.messageText,
-              'created_at_utc': message.createdAtUtc,
-              'envelope_hash_hex': message.envelopeHashHex,
-              'timestamp_ms': message.timestampMs,
-              'direction': message.direction.name,
-              'delivery_state': message.deliveryState.name,
-            },
-          )
-          .toList(growable: false),
+      'cache_budget_bytes': budget,
+      'messages': messages.map(_encodeTimelineMessage).toList(growable: false),
     });
     await _fileStore.writeChatTimeline(
       capsuleDir,
       await _sealTimeline(capsuleRootHex, cleartext),
     );
+    _messagesByCapsule[capsuleRootHex] = staged;
+    _cacheBudgets[capsuleRootHex] = budget;
+    _touchCapsule(capsuleRootHex);
+    _retainNewestCapsules();
   }
+
+  Map<String, Object?> _encodeTimelineMessage(
+    CapsuleChatInboxMessage message,
+  ) => {
+    'id': message.id,
+    'from_hex': message.fromHex,
+    if (message.toHex != null) 'to_hex': message.toHex,
+    'message_text': message.messageText,
+    'created_at_utc': message.createdAtUtc,
+    'envelope_hash_hex': message.envelopeHashHex,
+    'timestamp_ms': message.timestampMs,
+    'direction': message.direction.name,
+    'delivery_state': message.deliveryState.name,
+  };
 
   Future<String> _sealTimeline(String capsuleRootHex, String cleartext) async {
     final seed = await _loadTimelineSeed(capsuleRootHex);
@@ -459,20 +508,35 @@ class CapsuleDeliveryInboxStore {
     }
   }
 
-  void _retainNewestMessages(
-    Map<String, CapsuleChatInboxMessage> messagesById,
-  ) {
-    if (messagesById.length <= maxRecordsPerCapsule) return;
+  bool _retainMessages(
+    String capsuleRootHex,
+    Map<String, CapsuleChatInboxMessage> messagesById, {
+    int? budgetBytes,
+  }) {
+    bool completed(CapsuleChatInboxMessage message) =>
+        message.direction == CapsuleChatMessageDirection.incoming ||
+        (message.deliveryState != CapsuleChatMessageDeliveryState.pending &&
+            message.deliveryState != CapsuleChatMessageDeliveryState.ambiguous);
+    final sizes = {
+      for (final message in messagesById.values.where(completed))
+        message.id:
+            utf8.encode(jsonEncode(_encodeTimelineMessage(message))).length,
+    };
+    var bytes = sizes.values.fold<int>(0, (a, b) => a + b);
+    final budget =
+        budgetBytes ?? _cacheBudgets[capsuleRootHex] ?? initialCacheBudgetBytes;
+    if (bytes <= budget) return false;
     final oldestFirst =
-        messagesById.values.toList()..sort((a, b) {
+        messagesById.values.where(completed).toList()..sort((a, b) {
           final timestampOrder = a.timestampMs.compareTo(b.timestampMs);
           return timestampOrder != 0 ? timestampOrder : a.id.compareTo(b.id);
         });
-    for (final message in oldestFirst.take(
-      messagesById.length - maxRecordsPerCapsule,
-    )) {
+    for (final message in oldestFirst) {
+      if (bytes <= budget) break;
       messagesById.remove(message.id);
+      bytes -= sizes[message.id]!;
     }
+    return true;
   }
 
   bool _sameMessageSemantics(

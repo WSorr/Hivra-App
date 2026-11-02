@@ -336,6 +336,43 @@ void main() {
     },
   );
 
+  testWidgets(
+    'open conversation follows cache eviction without resurrecting old bubbles',
+    (tester) async {
+      final peerController = TextEditingController(text: peerHex);
+      final messageController = TextEditingController();
+      addTearDown(peerController.dispose);
+      addTearDown(messageController.dispose);
+      const old = CapsuleChatInboxMessage(
+        id: 'old',
+        fromHex: peerHex,
+        messageText: 'evicted body',
+        createdAtUtc: '2026-11-02T00:00:00Z',
+        envelopeHashHex: 'old',
+        timestampMs: 1,
+      );
+      var retained = <CapsuleChatInboxMessage>[old];
+      await tester.pumpWidget(
+        _testApp(
+          peerController: peerController,
+          messageController: messageController,
+          messages: [old],
+          loadCachedMessages: () async => retained,
+          cacheProjectionInterval: const Duration(milliseconds: 50),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('evicted body'), findsOneWidget);
+      retained = [];
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump();
+      expect(find.text('evicted body'), findsNothing);
+      // A subsequent refresh still projects the same canonical empty window.
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.text('evicted body'), findsNothing);
+    },
+  );
+
   test('send notices preserve product truth and the draft contract', () {
     expect(
       chatWorkspaceNoticeForSendResult(

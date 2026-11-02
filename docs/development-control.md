@@ -289,6 +289,22 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
+The selected bounded outcome is owner-configurable lightweight Chat retention.
+The existing encrypted Capsule timeline remains the only retained message
+window across conversations, restart and package replacement. Replace the
+256-record limit with a default 100 MB budget for UTF-8 serialized completed
+message records. Evict oldest completed records first; pending and ambiguous
+outgoing sends remain outside that budget until their outcome is known. Keep
+the existing delivery queues, identity, relationships and Core Ledger unchanged.
+The owner can change the local budget in Chat. UI projections must follow the
+retained window rather than resurrect evicted content from earlier views.
+Use the existing timeline/read-state owner and files; no service archive,
+mandatory history synchronization, new storage engine or recovery of evicted
+messages is part of this outcome. Acceptance covers cross-conversation eviction,
+unresolved-delivery preservation and write failure in focused tests, retained
+window recovery/replacement, and budget/edit/eviction/restart on exact packaged
+Mac/Android artifacts. No trading, publication or VPS mutation is authorized.
+
 The bounded truthful Analyst evidence-before-disclosure outcome is complete.
 The owner opens local diagnostics, sees which checks were actually observed,
 and expands the exact technical payload and instructions before any model call.
