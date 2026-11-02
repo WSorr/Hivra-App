@@ -289,6 +289,29 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
+The bounded truthful Analyst evidence-before-disclosure outcome is complete.
+The owner opens local diagnostics, sees which checks were actually observed,
+and expands the exact technical payload and instructions before any model call.
+An unavailable or failed bootstrap/trace check must not invent negative file or
+seed observations, erase the other check's successful result, or appear healthy.
+The existing diagnostic collector owns availability; the existing prompt owner
+projects public technical evidence and excludes secrets, personal content,
+addresses, paths and raw exceptions. Preview is local and requires no provider
+key. Query edits and refreshed snapshots invalidate stale previews/answers.
+Acceptance covers partial failure and privacy in source checks, and local
+preview/refresh/restart on exact packaged Mac/Android artifacts from
+`363a23cd0c3527d4099b87d696caffb1f0b04179`. Source checks pass (662 Flutter tests,
+113 FFI tests, analyzer and review gates). Both native journeys passed exact
+data/instructions disclosure, query edit and refresh invalidation, and cold
+restart with unchanged Capsule identity and Ledger. No password or model request
+was needed. Artifact digests and observations are retained in
+`/Volumes/Dev/projects/hivra-artifacts/analyst-evidence-20261102/acceptance.json`.
+The collector, prompt and execution owners each remain one; overlapping failure
+handlers went from two to one and fabricated report builders from two to zero.
+This closes truthful availability and local disclosure, not full technical
+diagnostic coverage or model answer quality. No publication, trading, VPS
+mutation or release is authorized by this outcome.
+
 The bounded replaceable inference connections outcome is complete: the owner
 adds an already-supported protocol endpoint, selects a model, connects its key
 and uses the same AI Runtime from Analyst and authorized packages without
