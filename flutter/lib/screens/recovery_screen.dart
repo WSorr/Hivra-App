@@ -147,7 +147,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'A backup file can be added to restore your history after the seed phrase is validated.',
+              'Add a Capsule backup to restore Ledger history and relationships. '
+              'New backups exclude app history and plugin state.',
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 8),

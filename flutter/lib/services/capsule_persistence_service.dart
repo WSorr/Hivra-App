@@ -371,7 +371,7 @@ class CapsulePersistenceService {
       throw StateError('Backup seed does not match the active Capsule');
     }
 
-    return _exportCompleteBackup(
+    return _exportCoreBackup(
       ownerHex,
       targetPath,
       seed,
@@ -380,7 +380,7 @@ class CapsulePersistenceService {
     );
   }
 
-  Future<String> _exportCompleteBackup(
+  Future<String> _exportCoreBackup(
     String owner,
     String targetPath,
     Uint8List seed,
@@ -389,12 +389,9 @@ class CapsulePersistenceService {
   }) async {
     final directory = await _capsuleDirForHex(owner);
     final files = await _fileStore.snapshotForBackup(directory);
-    final packages = await _pluginRegistry.snapshotForBackup();
     final state = await _fileStore.readState(directory);
     final after = await _fileStore.snapshotForBackup(directory);
-    final packagesAfter = await _pluginRegistry.snapshotForBackup();
     if (!mapEquals(files, after) ||
-        !mapEquals(packages, packagesAfter) ||
         (stillCurrent != null && !await stillCurrent())) {
       throw StateError('Capsule changed during backup; retry when idle');
     }
@@ -403,7 +400,6 @@ class CapsulePersistenceService {
       ledgerJson: ledger,
       seed: seed,
       files: files,
-      packages: packages,
       isGenesis:
           _support.inferGenesisFromLedgerRoot(ledgerRoot) ??
           (state?['isGenesis'] == true),
@@ -1059,7 +1055,7 @@ class CapsulePersistenceService {
     if (_extractOwnerHex(ledgerJson) != pubKeyHex) {
       throw StateError('Backup owner does not match the selected Capsule');
     }
-    return _exportCompleteBackup(
+    return _exportCoreBackup(
       pubKeyHex,
       targetPath,
       seed,

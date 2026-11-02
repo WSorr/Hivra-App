@@ -248,7 +248,6 @@ void main() {
       restarted.installPluginFromFile(source),
       throwsStateError,
     );
-    await expectLater(restarted.snapshotForBackup(), throwsStateError);
     var restored = false;
     await expectLater(
       restarted.withBackupPackages(

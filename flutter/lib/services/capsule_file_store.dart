@@ -18,8 +18,7 @@ class CapsuleFileStore {
       'pair_consensus_attestations.json';
   static const String contactLabelsFileName = 'contact_labels.json';
   static const String capsulesDirName = 'capsules';
-  // The default 100 MB Chat window is encrypted/base64 on disk. Preserve room
-  // for that window alongside the previously supported 64 MiB of Capsule state.
+  // Read-only compatibility bound for files in existing full-state v3 exports.
   static const int maxBackupStateBytes = 192 * 1024 * 1024;
 
   final UserVisibleDataDirectoryService _dirs;
@@ -318,8 +317,8 @@ class CapsuleFileStore {
     if (await file.exists()) await file.delete();
   }
 
-  /// Host persistence paths only. Package payloads remain opaque; vaults,
-  /// seeds, locks, projections and caches are never traversed for export.
+  /// Read-only paths accepted from existing full-state v3 exports. New exports
+  /// snapshot only relationship consensus evidence; they never walk this list.
   static bool isBackupPath(String path) {
     if (<String>{
       deliveryOutboxFileName,
@@ -354,32 +353,20 @@ class CapsuleFileStore {
     if (kind != FileSystemEntityType.directory) {
       throw StateError('Backup Capsule must be a regular directory');
     }
-    var bytes = 0;
-    await for (final entry in capsuleDir.list(
-      recursive: true,
-      followLinks: false,
-    )) {
-      final path = entry.path.substring(capsuleDir.path.length + 1);
-      if (entry is Link &&
-          (isBackupPath(path) ||
-              {
-                'plugin_state',
-                'capability_state',
-                'transport_quarantine',
-              }.contains(path.split('/').first))) {
-        throw StateError('Backup cannot follow symbolic links');
-      }
-      if (!isBackupPath(path)) continue;
-      if (entry is! File) {
-        throw StateError('Backup source is not a regular file');
-      }
-      final length = await entry.length();
-      bytes += length;
-      if (bytes > maxBackupStateBytes || snapshot.length >= 1024) {
-        throw StateError('Capsule state exceeds the backup limit');
-      }
-      snapshot[path] = base64Encode(await entry.readAsBytes());
+    // Relationship consensus is Core evidence. Application trees, package
+    // state, delivery caches and installed ZIPs are not Capsule recovery data.
+    final file = pairConsensusAttestationsFile(capsuleDir);
+    final fileKind = await FileSystemEntity.type(file.path, followLinks: false);
+    if (fileKind == FileSystemEntityType.notFound) return snapshot;
+    if (fileKind != FileSystemEntityType.file) {
+      throw StateError('Relationship evidence must be a regular file');
     }
+    if (await file.length() > maxBackupStateBytes) {
+      throw StateError('Relationship evidence exceeds the backup limit');
+    }
+    snapshot[pairConsensusAttestationsFileName] = base64Encode(
+      await file.readAsBytes(),
+    );
     return snapshot;
   }
 

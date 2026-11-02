@@ -538,15 +538,21 @@ Storage:
 - User-visible Capsule backup exports MUST use the versioned authenticated
   `hivra.capsule_backup` v3 envelope. The maintained 1.x suite derives a
   domain-separated export key from the Capsule seed with HKDF-SHA256 and a
-  fresh 32-byte salt, then encrypts the complete v3 recovery payload with
-  AES-256-GCM and a fresh 12-byte nonce. The schema, version, and suite id are
-  authenticated associated data; Ledger bytes and Capsule metadata remain
-  inside the ciphertext. v2 remains read-only Ledger recovery compatibility for existing 1.x exports;
-  removing it requires explicit retirement of that supported import format;
-  v3 adds Capsule-scoped durable host files, opaque package state and installed
-  ZIP packages. Seed, platform vaults, API tokens, private keys, process grants,
-  caches, locks and derived projections MUST NOT be exported. Opaque package
-  bytes MUST NOT be interpreted to reconstruct private state.
+  fresh 32-byte salt, then encrypts with AES-256-GCM and a fresh 12-byte nonce.
+  Schema, version and suite are authenticated associated data. New payloads
+  contain Ledger, Capsule type/network metadata and relationship consensus
+  attestations only. The existing `files` map carries that Core evidence;
+  `packages` is empty. No recursive application-tree or package snapshot is
+  permitted. Chat history, delivery queues, contact labels, plugin state, ZIPs,
+  platform secrets, process grants and derived projections MUST NOT be exported.
+  Backup creation MUST NOT prune or rewrite those local sources. A new backup
+  restores Core continuity, not application content or autonomous workflows.
+  New clear payloads are bounded at 96 MiB; excess Core data fails export rather
+  than truncating Ledger. Existing v3 full-state exports remain read-only import
+  compatibility (320 MiB clear-payload allowance, 192 MiB archived files);
+  v2 Ledger exports and v1/raw-Ledger inputs retain their existing read-only
+  compatibility. Retiring those formats requires an explicit owner decision.
+  Opaque archived package bytes MUST NOT be interpreted as private state.
 - `CapsuleBackupCodec` is the sole backup wire-format owner and
   `CapsulePersistenceService` is the sole backup payload writer.
   `BackupFileExportService` owns file export and sharing for both the seed
@@ -556,7 +562,7 @@ Storage:
   request broad storage access. Screens and platform adapters MUST NOT
   serialize, encrypt, decrypt, or reinterpret backup payloads.
 - Both Import Backup and phrase Recovery MUST converge on the complete import
-  owner for v3. Restore MUST validate authenticated paths, bounds, package
+  owner for v3. Restore MUST validate authenticated paths, bounds, legacy package
   preflight and the native Ledger signatures/structure before publishing data.
   Existing Capsule data MUST NOT be overwritten or merged with an old snapshot;
   installed package conflicts MUST fail without downgrading other Capsules.

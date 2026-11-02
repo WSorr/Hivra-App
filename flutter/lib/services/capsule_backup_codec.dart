@@ -27,8 +27,10 @@ class CapsuleBackupCodec {
   static const int version = 1;
   static const int ledgerOnlyEncryptedVersion = 2;
   static const int encryptedVersion = 3;
-  // Base64 of bounded Capsule files plus installed packages and Ledger data.
-  static const int maxBackupBytes = 320 * 1024 * 1024;
+  // New exports carry Core history and relationship evidence, not app archives.
+  static const int maxBackupBytes = 96 * 1024 * 1024;
+  // Existing full-state v3 exports remain readable without emitting them again.
+  static const int maxLegacyBackupBytes = 320 * 1024 * 1024;
   static const String encryptedSuite = 'hkdf-sha256+a256gcm';
   static const String _keyInfo = 'hivra.capsule_backup.v2';
   static const LedgerViewSupport _support = LedgerViewSupport();
@@ -109,7 +111,7 @@ class CapsuleBackupCodec {
     String inputJson,
     Uint8List seed,
   ) async {
-    if (inputJson.length > maxBackupBytes * 2) return null;
+    if (inputJson.length > maxLegacyBackupBytes * 2) return null;
     final envelope = _decodeJsonMap(inputJson.trim());
     if (envelope == null ||
         envelope['schema'] != schema ||

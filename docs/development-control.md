@@ -289,7 +289,24 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
-The bounded owner-configurable lightweight Chat retention outcome is complete.
+The selected bounded outcome is a Core-only Capsule backup. New exports retain
+Ledger, Capsule type/network metadata and relationship consensus evidence;
+Chat content, local delivery queues, contact labels, opaque plugin state and
+installed ZIPs are excluded. The owner accepts loss of application content when
+recovering from a new backup. This does not prune local app state or unresolved
+effect evidence, revoke an existing remote grant, or resume a recovered app.
+Restore identity/history/relationships through the existing authenticated v3
+codec and atomic import owner; use normal installation/reconnection afterward.
+Application volume, corruption or package removal must not block Core export.
+Keep existing full-state v3 imports read-only until that supported format is
+explicitly retired; no new full-state export path remains. No separate app
+archive, synchronization engine or new backup format is selected. Acceptance
+must prove size independence, unchanged source app data, authenticated recovery,
+restart and failure rollback, then exact packaged Mac/Android export/recovery.
+Native acceptance for this changed scope is pending.
+
+The bounded owner-configurable lightweight Chat retention outcome was completed
+before the Core-only backup decision above; its native evidence is historical.
 The existing encrypted Capsule timeline remains the only retained message
 window across conversations, restart and package replacement. A default 100 MB
 budget for UTF-8 serialized completed message records replaces the 256-record
@@ -302,7 +319,7 @@ The existing timeline/read-state owner and files remain; no service archive,
 mandatory history synchronization, new storage engine or recovery of evicted
 messages is part of this outcome. Acceptance covers cross-conversation eviction,
 unresolved-delivery preservation and write failure in focused tests, retained
-window recovery/replacement, and budget/edit/eviction/restart on exact packaged
+then-accepted full-window recovery/replacement, and budget/edit/eviction/restart on exact packaged
 Mac/Android artifacts. Source checks pass: 668 Flutter tests, 113 FFI tests,
 analyzer and review gates. Exact artifacts from
 `f9024298ee0d9559856928a728a346ff6975d72e` passed budget reduction from 100 MB
@@ -437,8 +454,8 @@ existing contract, tests and acceptance; do not expand them implicitly.
   recovery of evicted messages from Nostr and a full messaging-service archive
   are non-goals. This bounded debt is closed by the existing encrypted timeline
   and owner budget control; packaged acceptance and its limits are recorded
-  under Selected Product Outcome. Broader host/package convergence remains
-  separate.
+  under Selected Product Outcome. Local restart/package replacement retain the window; new Core-only backups
+  do not transfer it. Broader host/package convergence remains separate.
 - Replaceable inference connections: an owner must be able to use updated or
   new models and add providers speaking an already supported inference
   protocol without rebuilding Capsule. Provider name, protocol, endpoint and
