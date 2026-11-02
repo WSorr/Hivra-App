@@ -11,56 +11,117 @@ class InferencePrompt {
   const InferencePrompt({required this.instructions, required this.inputJson});
 }
 
-enum InferenceProviderKind {
-  openAi(id: 'openai', label: 'OpenAI', defaultModel: 'gpt-5.5'),
-  gemini(
+enum InferenceProtocol {
+  responses('Responses'),
+  chatCompletions('Chat Completions'),
+  generateContent('Generate Content');
+
+  final String label;
+  const InferenceProtocol(this.label);
+}
+
+/// A saved destination and protocol, independent of the service's name.
+/// The built-in connections are presets; they do not define dispatch capability.
+class InferenceConnection {
+  static const openAi = InferenceConnection(
+    id: 'openai',
+    label: 'OpenAI',
+    defaultModel: 'gpt-5.5',
+    protocol: InferenceProtocol.responses,
+  );
+  static const gemini = InferenceConnection(
     id: 'gemini',
     label: 'Gemini',
     defaultModel: 'gemini-3.8-flash',
-    requiresApiKey: true,
-  ),
-  cloudflareWorkersAi(
+    protocol: InferenceProtocol.generateContent,
+  );
+  static const cloudflareWorkersAi = InferenceConnection(
     id: 'cloudflare_workers_ai',
     label: 'Cloudflare Workers AI',
     defaultModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-  ),
-  localOpenAiCompatible(
+    protocol: InferenceProtocol.chatCompletions,
+  );
+  static const localOpenAiCompatible = InferenceConnection(
     id: 'local_openai_compatible',
     label: 'Local OpenAI-compatible',
     defaultModel: 'llama3.1:8b',
     requiresApiKey: false,
+    protocol: InferenceProtocol.chatCompletions,
   );
+  static const values = [
+    openAi,
+    gemini,
+    cloudflareWorkersAi,
+    localOpenAiCompatible,
+  ];
 
   final String id;
   final String label;
   final String defaultModel;
+  final InferenceProtocol protocol;
+
+  /// Protocol base: /v1 for Responses/Chat, /v1beta/models for Generate Content.
+  final String? baseUrl;
   final bool requiresApiKey;
 
   bool get requiresBaseUrl =>
-      this == localOpenAiCompatible || this == cloudflareWorkersAi;
+      baseUrl != null ||
+      this == localOpenAiCompatible ||
+      this == cloudflareWorkersAi;
+  bool get isCustom => baseUrl != null;
 
-  const InferenceProviderKind({
+  const InferenceConnection({
     required this.id,
     required this.label,
     required this.defaultModel,
+    required this.protocol,
+    this.baseUrl,
     this.requiresApiKey = true,
   });
+
+  static Uri validateBaseUrl(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null ||
+        !['https', 'http'].contains(uri.scheme) ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasFragment) {
+      throw ArgumentError(
+        'Endpoint must be an HTTP(S) URL without user credentials or fragment',
+      );
+    }
+    return uri;
+  }
+
+  Uri endpointFor(String model) {
+    final base = validateBaseUrl(baseUrl!);
+    final segments = base.pathSegments.toList();
+    while (segments.isNotEmpty && segments.last.isEmpty) {
+      segments.removeLast();
+    }
+    final route = switch (protocol) {
+      InferenceProtocol.responses => ['responses'],
+      InferenceProtocol.chatCompletions => ['chat', 'completions'],
+      InferenceProtocol.generateContent => ['$model:generateContent'],
+    };
+    return base.replace(pathSegments: [...segments, ...route]);
+  }
 }
 
 class InferenceProviderResponse {
   final String text;
   final String model;
-  final InferenceProviderKind provider;
+  final InferenceConnection provider;
 
   const InferenceProviderResponse({
     required this.text,
     required this.model,
-    this.provider = InferenceProviderKind.openAi,
+    this.provider = InferenceConnection.openAi,
   });
 }
 
 abstract class InferenceProviderAdapter {
-  InferenceProviderKind get provider;
+  InferenceConnection get provider;
 
   Future<InferenceProviderResponse> ask({
     required String apiKey,
@@ -70,21 +131,18 @@ abstract class InferenceProviderAdapter {
   });
 }
 
-class OpenAiResponsesInferenceProviderAdapter
-    implements InferenceProviderAdapter {
-  final Uri endpoint;
+/// One transport owner; only protocol encoding and decoding vary.
+class InferenceProtocolAdapter implements InferenceProviderAdapter {
+  @override
+  final InferenceConnection provider;
   final Duration timeout;
   final InferenceHttpClientFactory _clientFactory;
 
-  OpenAiResponsesInferenceProviderAdapter({
-    Uri? endpoint,
+  InferenceProtocolAdapter({
+    this.provider = InferenceConnection.localOpenAiCompatible,
     this.timeout = const Duration(seconds: 60),
     InferenceHttpClientFactory? clientFactory,
-  }) : endpoint = endpoint ?? Uri.https('api.openai.com', '/v1/responses'),
-       _clientFactory = clientFactory ?? HttpClient.new;
-
-  @override
-  InferenceProviderKind get provider => InferenceProviderKind.openAi;
+  }) : _clientFactory = clientFactory ?? HttpClient.new;
 
   @override
   Future<InferenceProviderResponse> ask({
@@ -93,60 +151,154 @@ class OpenAiResponsesInferenceProviderAdapter
     required InferencePrompt prompt,
     String? baseUrl,
   }) async {
-    final normalizedKey = apiKey.trim();
-    final normalizedModel = model.trim();
-    if (normalizedKey.isEmpty) {
-      throw ArgumentError('OpenAI API key is empty');
+    final key = apiKey.trim();
+    final selectedModel = model.trim();
+    if (provider.requiresApiKey && key.isEmpty) {
+      throw ArgumentError('${provider.label} API key is empty');
     }
-    if (normalizedModel.isEmpty) {
-      throw ArgumentError('OpenAI model is empty');
-    }
-
+    if (selectedModel.isEmpty) throw ArgumentError('AI model is empty');
+    final endpoint =
+        provider.isCustom
+            ? provider.endpointFor(selectedModel)
+            : switch (provider.protocol) {
+              InferenceProtocol.responses => Uri.https(
+                'api.openai.com',
+                '/v1/responses',
+              ),
+              InferenceProtocol.generateContent => Uri.parse(
+                'https://generativelanguage.googleapis.com/v1beta/models/${Uri.encodeComponent(selectedModel)}:generateContent',
+              ),
+              InferenceProtocol.chatCompletions => chatCompletionsEndpoint(
+                provider,
+                baseUrl,
+              ),
+            };
+    final body = switch (provider.protocol) {
+      InferenceProtocol.responses => <String, Object>{
+        'model': selectedModel,
+        'store': false,
+        'instructions': prompt.instructions,
+        'input': prompt.inputJson,
+      },
+      InferenceProtocol.generateContent => <String, Object>{
+        'systemInstruction': {
+          'parts': [
+            {'text': prompt.instructions},
+          ],
+        },
+        'contents': [
+          {
+            'role': 'user',
+            'parts': [
+              {'text': prompt.inputJson},
+            ],
+          },
+        ],
+      },
+      InferenceProtocol.chatCompletions => <String, Object>{
+        'model': selectedModel,
+        'stream': false,
+        'messages': [
+          {'role': 'system', 'content': prompt.instructions},
+          {'role': 'user', 'content': prompt.inputJson},
+        ],
+        if (provider == InferenceConnection.cloudflareWorkersAi) ...{
+          'max_tokens': 2048,
+          'options': {'rejectIfBusy': true},
+        },
+      },
+    };
     final client = _clientFactory();
     try {
       final request = await client.postUrl(endpoint).timeout(timeout);
+      request.followRedirects = false;
       request.headers.contentType = ContentType.json;
-      request.headers.set(
-        HttpHeaders.authorizationHeader,
-        'Bearer $normalizedKey',
-      );
-      request.write(
-        jsonEncode(<String, dynamic>{
-          'model': normalizedModel,
-          'store': false,
-          'instructions': prompt.instructions,
-          'input': prompt.inputJson,
-        }),
-      );
-      final response = await request.close().timeout(timeout);
-      final body = await utf8.decodeStream(response).timeout(timeout);
-      final decoded = jsonDecode(body);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message =
-            _openAiFriendlyErrorMessage(
-              decoded,
-              statusCode: response.statusCode,
-            ) ??
-            'HTTP ${response.statusCode}';
-        throw StateError('AI provider request failed: $message');
+      if (key.isNotEmpty) {
+        if (provider.protocol == InferenceProtocol.generateContent) {
+          request.headers.set('x-goog-api-key', key);
+        } else {
+          request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $key');
+        }
       }
-      final text = extractOutputText(decoded);
+      request.write(jsonEncode(body));
+      final response = await request.close().timeout(timeout);
+      final textBody = await utf8.decodeStream(response).timeout(timeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        // An arbitrary service can echo the request. Do not surface its body.
+        throw StateError(
+          '${provider.label} request failed (HTTP ${response.statusCode}). '
+          'Check the connection, model access and provider status.',
+        );
+      }
+      final decoded = jsonDecode(textBody);
+      final text = switch (provider.protocol) {
+        InferenceProtocol.responses => extractResponsesText(decoded),
+        InferenceProtocol.generateContent => extractGenerateContentText(
+          decoded,
+        ),
+        InferenceProtocol.chatCompletions => extractChatText(decoded),
+      };
       if (text == null || text.trim().isEmpty) {
-        throw StateError('AI provider returned no text output');
+        throw StateError(
+          '${provider.label} returned no text for ${provider.protocol.label}',
+        );
       }
       return InferenceProviderResponse(
         text: text.trim(),
-        model: normalizedModel,
+        model: selectedModel,
         provider: provider,
       );
     } on TimeoutException {
       throw StateError('AI provider request timed out');
+    } on FormatException {
+      throw StateError(
+        '${provider.label} returned an invalid ${provider.protocol.label} response',
+      );
     } finally {
       client.close(force: true);
     }
   }
 
-  static String? extractOutputText(Object? decoded) {
+  static Uri chatCompletionsEndpoint(
+    InferenceConnection provider,
+    String? baseUrl,
+  ) {
+    final normalized = baseUrl?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      throw ArgumentError('${provider.label} endpoint is not saved');
+    }
+    final base = Uri.tryParse(normalized);
+    if (base == null || !base.hasScheme || base.host.isEmpty) {
+      throw ArgumentError('${provider.label} base URL is invalid');
+    }
+    if (base.scheme != 'http' && base.scheme != 'https') {
+      throw ArgumentError('${provider.label} base URL must use HTTP(S)');
+    }
+    final cleanPath =
+        base.path.endsWith('/')
+            ? base.path.substring(0, base.path.length - 1)
+            : base.path;
+    if (provider == InferenceConnection.cloudflareWorkersAi &&
+        (base.scheme != 'https' ||
+            base.host != 'api.cloudflare.com' ||
+            base.port != 443 ||
+            base.userInfo.isNotEmpty ||
+            base.hasQuery ||
+            base.hasFragment ||
+            !RegExp(
+              r'^/client/v4/accounts/[0-9a-f]{32}/ai$',
+            ).hasMatch(cleanPath))) {
+      throw ArgumentError(
+        'Cloudflare Workers AI requires its official HTTPS account endpoint',
+      );
+    }
+    if (!provider.requiresBaseUrl) {
+      throw ArgumentError('${provider.label} does not use Chat Completions');
+    }
+    return base.replace(path: '$cleanPath/v1/chat/completions');
+  }
+
+  static String? extractResponsesText(Object? decoded) {
     if (decoded is! Map<String, dynamic>) return null;
     final direct = decoded['output_text'];
     if (direct is String && direct.trim().isNotEmpty) {
@@ -173,104 +325,7 @@ class OpenAiResponsesInferenceProviderAdapter
     return fragments.join('\n').trim();
   }
 
-  static String? friendlyErrorMessageForTest(
-    Object? decoded, {
-    required int statusCode,
-  }) {
-    return _openAiFriendlyErrorMessage(decoded, statusCode: statusCode);
-  }
-}
-
-class GeminiGenerateContentInferenceProviderAdapter
-    implements InferenceProviderAdapter {
-  final Uri baseEndpoint;
-  final Duration timeout;
-  final InferenceHttpClientFactory _clientFactory;
-
-  GeminiGenerateContentInferenceProviderAdapter({
-    Uri? baseEndpoint,
-    this.timeout = const Duration(seconds: 60),
-    InferenceHttpClientFactory? clientFactory,
-  }) : baseEndpoint =
-           baseEndpoint ??
-           Uri.https('generativelanguage.googleapis.com', '/v1beta/models'),
-       _clientFactory = clientFactory ?? HttpClient.new;
-
-  @override
-  InferenceProviderKind get provider => InferenceProviderKind.gemini;
-
-  @override
-  Future<InferenceProviderResponse> ask({
-    required String apiKey,
-    required String model,
-    required InferencePrompt prompt,
-    String? baseUrl,
-  }) async {
-    final normalizedKey = apiKey.trim();
-    final normalizedModel = model.trim();
-    if (normalizedKey.isEmpty) {
-      throw ArgumentError('Gemini API key is empty');
-    }
-    if (normalizedModel.isEmpty) {
-      throw ArgumentError('Gemini model is empty');
-    }
-
-    final endpoint = baseEndpoint.replace(
-      path:
-          '${baseEndpoint.path}/${Uri.encodeComponent(normalizedModel)}'
-          ':generateContent',
-    );
-    final client = _clientFactory();
-    try {
-      final request = await client.postUrl(endpoint).timeout(timeout);
-      request.headers.contentType = ContentType.json;
-      request.headers.set('x-goog-api-key', normalizedKey);
-      request.write(
-        jsonEncode(<String, dynamic>{
-          'systemInstruction': <String, dynamic>{
-            'parts': <Map<String, String>>[
-              <String, String>{'text': prompt.instructions},
-            ],
-          },
-          'contents': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'role': 'user',
-              'parts': <Map<String, String>>[
-                <String, String>{'text': prompt.inputJson},
-              ],
-            },
-          ],
-        }),
-      );
-      final response = await request.close().timeout(timeout);
-      final body = await utf8.decodeStream(response).timeout(timeout);
-      final decoded = jsonDecode(body);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message =
-            _geminiFriendlyErrorMessage(
-              decoded,
-              statusCode: response.statusCode,
-            ) ??
-            'HTTP ${response.statusCode}';
-        throw StateError('AI provider request failed: $message');
-      }
-      final text = extractOutputText(decoded);
-      if (text == null || text.trim().isEmpty) {
-        throw StateError('AI provider returned no text output');
-      }
-      return InferenceProviderResponse(
-        text: text.trim(),
-        model: normalizedModel,
-        provider: provider,
-      );
-    } on TimeoutException {
-      throw StateError('AI provider request timed out');
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  static String? extractOutputText(Object? decoded) {
+  static String? extractGenerateContentText(Object? decoded) {
     if (decoded is! Map<String, dynamic>) return null;
     final fragments = <String>[];
     final candidates = decoded['candidates'];
@@ -293,154 +348,8 @@ class GeminiGenerateContentInferenceProviderAdapter
     if (fragments.isEmpty) return null;
     return fragments.join('\n').trim();
   }
-}
 
-class OpenAiChatCompletionsInferenceProviderAdapter
-    implements InferenceProviderAdapter {
-  @override
-  final InferenceProviderKind provider;
-  final Duration timeout;
-  final InferenceHttpClientFactory _clientFactory;
-
-  OpenAiChatCompletionsInferenceProviderAdapter({
-    this.provider = InferenceProviderKind.localOpenAiCompatible,
-    this.timeout = const Duration(seconds: 60),
-    InferenceHttpClientFactory? clientFactory,
-  }) : assert(
-         provider == InferenceProviderKind.localOpenAiCompatible ||
-             provider == InferenceProviderKind.cloudflareWorkersAi,
-       ),
-       _clientFactory = clientFactory ?? HttpClient.new;
-
-  @override
-  Future<InferenceProviderResponse> ask({
-    required String apiKey,
-    required String model,
-    required InferencePrompt prompt,
-    String? baseUrl,
-  }) async {
-    final normalizedModel = model.trim();
-    if (normalizedModel.isEmpty) {
-      throw ArgumentError('${provider.label} model is empty');
-    }
-    final normalizedKey = apiKey.trim();
-    if (provider.requiresApiKey && normalizedKey.isEmpty) {
-      throw ArgumentError('${provider.label} API token is empty');
-    }
-    final endpoint = chatCompletionsEndpoint(provider, baseUrl);
-    final client = _clientFactory();
-    try {
-      final request = await client.postUrl(endpoint).timeout(timeout);
-      request.followRedirects = false;
-      request.headers.contentType = ContentType.json;
-      if (normalizedKey.isNotEmpty) {
-        request.headers.set(
-          HttpHeaders.authorizationHeader,
-          'Bearer $normalizedKey',
-        );
-      }
-      request.write(
-        jsonEncode(<String, dynamic>{
-          'model': normalizedModel,
-          'messages': <Map<String, String>>[
-            <String, String>{'role': 'system', 'content': prompt.instructions},
-            <String, String>{'role': 'user', 'content': prompt.inputJson},
-          ],
-          'stream': false,
-          if (provider == InferenceProviderKind.cloudflareWorkersAi) ...{
-            'max_tokens': 2048,
-            'options': <String, bool>{'rejectIfBusy': true},
-          },
-        }),
-      );
-      final response = await request.close().timeout(timeout);
-      final body = await utf8.decodeStream(response).timeout(timeout);
-      if (provider == InferenceProviderKind.cloudflareWorkersAi &&
-          (response.statusCode < 200 || response.statusCode >= 300)) {
-        // Provider errors may echo credentials or input. Never surface them.
-        throw StateError(switch (response.statusCode) {
-          401 || 403 =>
-            'Cloudflare Workers AI access denied. Check the API token, Account ID and model access.',
-          429 =>
-            'Cloudflare Workers AI quota or rate limit reached. Check the dashboard before retrying.',
-          _ =>
-            'Cloudflare Workers AI request failed (HTTP ${response.statusCode}).',
-        });
-      }
-      final decoded = jsonDecode(body);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message =
-            _providerErrorMessage(decoded) ?? 'HTTP ${response.statusCode}';
-        throw StateError('AI provider request failed: $message');
-      }
-      final text = extractOutputText(decoded);
-      if (text == null || text.trim().isEmpty) {
-        throw StateError('AI provider returned no text output');
-      }
-      return InferenceProviderResponse(
-        text: text.trim(),
-        model: normalizedModel,
-        provider: provider,
-      );
-    } on TimeoutException {
-      throw StateError('AI provider request timed out');
-    } on FormatException {
-      throw StateError('${provider.label} returned an invalid response');
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  static String cloudflareBaseUrlForAccount(String accountId) {
-    final account = accountId.trim().toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(account)) {
-      throw ArgumentError(
-        'Cloudflare Account ID must contain 32 hexadecimal characters',
-      );
-    }
-    return 'https://api.cloudflare.com/client/v4/accounts/$account/ai';
-  }
-
-  static Uri chatCompletionsEndpoint(
-    InferenceProviderKind provider,
-    String? baseUrl,
-  ) {
-    final normalized = baseUrl?.trim();
-    if (normalized == null || normalized.isEmpty) {
-      throw ArgumentError('${provider.label} endpoint is not saved');
-    }
-    final base = Uri.tryParse(normalized);
-    if (base == null || !base.hasScheme || base.host.isEmpty) {
-      throw ArgumentError('${provider.label} base URL is invalid');
-    }
-    if (base.scheme != 'http' && base.scheme != 'https') {
-      throw ArgumentError('${provider.label} base URL must use HTTP(S)');
-    }
-    final cleanPath =
-        base.path.endsWith('/')
-            ? base.path.substring(0, base.path.length - 1)
-            : base.path;
-    if (provider == InferenceProviderKind.cloudflareWorkersAi &&
-        (base.scheme != 'https' ||
-            base.host != 'api.cloudflare.com' ||
-            base.port != 443 ||
-            base.userInfo.isNotEmpty ||
-            base.hasQuery ||
-            base.hasFragment ||
-            !RegExp(
-              r'^/client/v4/accounts/[0-9a-f]{32}/ai$',
-            ).hasMatch(cleanPath))) {
-      throw ArgumentError(
-        'Cloudflare Workers AI requires its official HTTPS account endpoint',
-      );
-    }
-    if (!provider.requiresBaseUrl) {
-      throw ArgumentError('${provider.label} does not use Chat Completions');
-    }
-    return base.replace(path: '$cleanPath/v1/chat/completions');
-  }
-
-  static String? extractOutputText(Object? decoded) {
+  static String? extractChatText(Object? decoded) {
     if (decoded is! Map<String, dynamic>) return null;
     final choices = decoded['choices'];
     if (choices is! List || choices.isEmpty) return null;
@@ -465,95 +374,5 @@ class OpenAiChatCompletionsInferenceProviderAdapter
 }
 
 InferenceProviderAdapter inferenceProviderAdapterFor(
-  InferenceProviderKind provider,
-) {
-  return switch (provider) {
-    InferenceProviderKind.openAi => OpenAiResponsesInferenceProviderAdapter(),
-    InferenceProviderKind.gemini =>
-      GeminiGenerateContentInferenceProviderAdapter(),
-    InferenceProviderKind.localOpenAiCompatible ||
-    InferenceProviderKind.cloudflareWorkersAi =>
-      OpenAiChatCompletionsInferenceProviderAdapter(provider: provider),
-  };
-}
-
-String? _providerErrorMessage(Object? decoded) {
-  if (decoded is! Map<String, dynamic>) return null;
-  final error = decoded['error'];
-  if (error is Map<String, dynamic>) {
-    final message = error['message'];
-    if (message is String && message.trim().isNotEmpty) {
-      return message.trim();
-    }
-  }
-  return null;
-}
-
-String? _providerErrorCode(Object? decoded) {
-  if (decoded is! Map<String, dynamic>) return null;
-  final error = decoded['error'];
-  if (error is Map<String, dynamic>) {
-    final code = error['code'];
-    if (code is String && code.trim().isNotEmpty) {
-      return code.trim();
-    }
-    final status = error['status'];
-    if (status is String && status.trim().isNotEmpty) {
-      return status.trim();
-    }
-    final type = error['type'];
-    if (type is String && type.trim().isNotEmpty) {
-      return type.trim();
-    }
-  }
-  return null;
-}
-
-String? _openAiFriendlyErrorMessage(
-  Object? decoded, {
-  required int statusCode,
-}) {
-  final rawMessage = _providerErrorMessage(decoded);
-  final code = _providerErrorCode(decoded);
-  final normalized = '${code ?? ''} ${rawMessage ?? ''}'.toLowerCase().trim();
-
-  if (normalized.contains('insufficient_quota') ||
-      normalized.contains('quota')) {
-    return 'OpenAI API quota is exhausted for this key. Check billing, limits, or use another restricted key.';
-  }
-  if (statusCode == HttpStatus.unauthorized ||
-      normalized.contains('invalid_api_key') ||
-      normalized.contains('incorrect api key')) {
-    return 'OpenAI API key was rejected. Check the key value and project access.';
-  }
-  if (statusCode == HttpStatus.tooManyRequests ||
-      normalized.contains('rate_limit')) {
-    return 'OpenAI API rate limit reached. Wait and retry, or lower request frequency.';
-  }
-  return rawMessage;
-}
-
-String? _geminiFriendlyErrorMessage(
-  Object? decoded, {
-  required int statusCode,
-}) {
-  final rawMessage = _providerErrorMessage(decoded);
-  final code = _providerErrorCode(decoded);
-  final normalized = '${code ?? ''} ${rawMessage ?? ''}'.toLowerCase().trim();
-
-  if (normalized.contains('quota') ||
-      normalized.contains('resource_exhausted')) {
-    return 'Gemini API quota or free-tier limit is exhausted for this key. Check AI Studio rate limits or billing.';
-  }
-  if (statusCode == HttpStatus.unauthorized ||
-      statusCode == HttpStatus.forbidden ||
-      normalized.contains('api key not valid') ||
-      normalized.contains('permission_denied')) {
-    return 'Gemini API key was rejected. Check the key value, project, and API access.';
-  }
-  if (statusCode == HttpStatus.tooManyRequests ||
-      normalized.contains('rate limit')) {
-    return 'Gemini API rate limit reached. Wait and retry, or lower request frequency.';
-  }
-  return rawMessage;
-}
+  InferenceConnection provider,
+) => InferenceProtocolAdapter(provider: provider);

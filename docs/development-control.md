@@ -289,6 +289,17 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
+The current selected outcome is replaceable inference connections: the owner
+adds an already-supported protocol endpoint, selects a model, connects its key
+and uses the same AI Runtime from Analyst and authorized packages without
+rebuilding Capsule. Existing working credentials remain available. One HTTP
+transport replaces three implementations; connection configuration replaces
+closed product-name dispatch. The exact packaged Mac/Android journey must prove
+addition, model change, restart and explicit incompatibility without fallback.
+No publication, trade, VPS mutation or release is authorized by this outcome.
+Native qualification is pending; the preceding maintenance acceptance below
+remains historical evidence for its own artifacts.
+
 The bounded Capsule/package maintenance outcome is complete in
 `v1.0.5-test1`. Authenticated v3 backup/recovery uses the existing
 codec/persistence/file-delivery owners, with public Capsule ID + UTC filenames,
@@ -368,8 +379,10 @@ existing contract, tests and acceptance; do not expand them implicitly.
   in secure storage. Local model weights belong to the local inference
   executor, outside Capsule. Reuse the existing AI Runtime and adapters;
   a genuinely new protocol or execution capability may require an adapter
-  extension. The current uncommitted model-preference patch is partial work,
-  not completion of this scope. Acceptance: the same installed Mac/APK can
+  extension. Implementation is selected: saved protocol-based connections through the
+  existing AI Runtime, replacing closed provider dispatch and consolidating
+  HTTP execution. Native acceptance remains open until exact packaged Mac/APK
+  evidence is recorded. Acceptance: the same installed Mac/APK can
   change model, add a compatible provider, retain the selection after restart
   and report incompatibility without silently rerouting requests; Capsule
   identity, Ledger, relationships and package state remain unchanged.

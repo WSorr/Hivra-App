@@ -6,8 +6,115 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/inference_provider_adapter.dart';
 
 void main() {
+  for (final protocol in InferenceProtocol.values) {
+    test(
+      'a new name uses ${protocol.name} without a service adapter',
+      () async {
+        final connection = InferenceConnection(
+          id: 'owner-id',
+          label: 'Unlisted owner service',
+          defaultModel: 'model-v2',
+          protocol: protocol,
+          baseUrl: 'https://owner.example/protocol?api-version=2026-01-01',
+        );
+        final body = switch (protocol) {
+          InferenceProtocol.responses => '{"output_text":"answer"}',
+          InferenceProtocol.chatCompletions =>
+            '{"choices":[{"message":{"content":"answer"}}]}',
+          InferenceProtocol.generateContent =>
+            '{"candidates":[{"content":{"parts":[{"text":"answer"}]}}]}',
+        };
+        final client = _Client(body: body);
+        final adapter = InferenceProtocolAdapter(
+          provider: connection,
+          clientFactory: () => client,
+        );
+        final result = await adapter.ask(
+          apiKey: 'bound-key',
+          model: 'model-v2',
+          prompt: const InferencePrompt(
+            instructions: 'Explain',
+            inputJson: '{}',
+          ),
+        );
+        final suffix = switch (protocol) {
+          InferenceProtocol.responses => 'responses',
+          InferenceProtocol.chatCompletions => 'chat/completions',
+          InferenceProtocol.generateContent => 'model-v2:generateContent',
+        };
+        expect(
+          client.endpoint.toString(),
+          'https://owner.example/protocol/$suffix?api-version=2026-01-01',
+        );
+        expect(client.request.followRedirects, isFalse);
+        expect(
+          client.request.headers.values[protocol ==
+                  InferenceProtocol.generateContent
+              ? 'x-goog-api-key'
+              : HttpHeaders.authorizationHeader],
+          protocol == InferenceProtocol.generateContent
+              ? 'bound-key'
+              : 'Bearer bound-key',
+        );
+        expect(result.provider, connection);
+        expect(result.model, 'model-v2');
+        expect(result.text, 'answer');
+        expect(
+          inferenceProviderAdapterFor(connection),
+          isA<InferenceProtocolAdapter>(),
+        );
+        expect(client.closed, isTrue);
+      },
+    );
+
+    test(
+      '${protocol.name} incompatibility has no fallback or echoed secret',
+      () async {
+        for (final status in [200, 401, 302, 503]) {
+          final client = _Client(
+            status: status,
+            body: '{"error":{"message":"bound-key private-context"}}',
+          );
+          final connection = InferenceConnection(
+            id: 'custom',
+            label: 'Owner service',
+            defaultModel: 'model',
+            protocol: protocol,
+            baseUrl: 'https://owner.example/v1',
+            requiresApiKey: false,
+          );
+          final adapter = InferenceProtocolAdapter(
+            provider: connection,
+            clientFactory: () => client,
+          );
+          await expectLater(
+            adapter.ask(
+              apiKey: '',
+              model: 'model',
+              prompt: const InferencePrompt(
+                instructions: 'Explain',
+                inputJson: '{}',
+              ),
+            ),
+            throwsA(
+              predicate(
+                (e) =>
+                    e is StateError &&
+                    !e.toString().contains('bound-key') &&
+                    !e.toString().contains('private-context'),
+              ),
+            ),
+          );
+          expect(client.calls, 1);
+          expect(client.request.headers.values, isEmpty);
+          expect(client.closed, isTrue);
+        }
+      },
+    );
+  }
+
   group('Cloudflare Workers AI', () {
-    const provider = InferenceProviderKind.cloudflareWorkersAi;
+    const provider = InferenceConnection.cloudflareWorkersAi;
     const account = '0123456789abcdef0123456789abcdef';
     const baseUrl = 'https://api.cloudflare.com/client/v4/accounts/$account/ai';
     const prompt = InferencePrompt(
@@ -21,7 +128,7 @@ void main() {
         final client = _Client(
           body: '{"choices":[{"message":{"content":"A useful update"}}]}',
         );
-        final adapter = OpenAiChatCompletionsInferenceProviderAdapter(
+        final adapter = InferenceProtocolAdapter(
           provider: provider,
           clientFactory: () => client,
         );
@@ -58,7 +165,7 @@ void main() {
 
     test('requires a token and valid account before creating a client', () async {
       var created = false;
-      final adapter = OpenAiChatCompletionsInferenceProviderAdapter(
+      final adapter = InferenceProtocolAdapter(
         provider: provider,
         clientFactory: () {
           created = true;
@@ -96,19 +203,6 @@ void main() {
         throwsArgumentError,
       );
       expect(created, isFalse);
-      expect(
-        OpenAiChatCompletionsInferenceProviderAdapter.cloudflareBaseUrlForAccount(
-          ' ${account.toUpperCase()} ',
-        ),
-        baseUrl,
-      );
-      expect(
-        () =>
-            OpenAiChatCompletionsInferenceProviderAdapter.cloudflareBaseUrlForAccount(
-              'not-an-account',
-            ),
-        throwsArgumentError,
-      );
     });
 
     for (final status in [401, 403, 429, 503, 302]) {
@@ -120,7 +214,7 @@ void main() {
             body:
                 '{"errors":[{"message":"Bearer secret-token and private context"}]}',
           );
-          final adapter = OpenAiChatCompletionsInferenceProviderAdapter(
+          final adapter = InferenceProtocolAdapter(
             provider: provider,
             clientFactory: () => client,
           );
@@ -150,7 +244,7 @@ void main() {
     test('malformed or empty success cannot become a proposal', () async {
       for (final body in ['not-json secret-token', '{"choices":[]}']) {
         final client = _Client(body: body);
-        final adapter = OpenAiChatCompletionsInferenceProviderAdapter(
+        final adapter = InferenceProtocolAdapter(
           provider: provider,
           clientFactory: () => client,
         );
@@ -173,7 +267,7 @@ void main() {
 
     test('timeout closes the client without another attempt', () async {
       final client = _Client(neverComplete: true);
-      final adapter = OpenAiChatCompletionsInferenceProviderAdapter(
+      final adapter = InferenceProtocolAdapter(
         provider: provider,
         timeout: const Duration(milliseconds: 5),
         clientFactory: () => client,
@@ -197,9 +291,7 @@ void main() {
         final client = _Client(
           body: '{"choices":[{"message":{"content":"Local answer"}}]}',
         );
-        final adapter = OpenAiChatCompletionsInferenceProviderAdapter(
-          clientFactory: () => client,
-        );
+        final adapter = InferenceProtocolAdapter(clientFactory: () => client);
         final result = await adapter.ask(
           apiKey: '',
           model: 'local-model',
@@ -214,13 +306,13 @@ void main() {
           client.request.headers.values,
           isNot(contains(HttpHeaders.authorizationHeader)),
         );
-        expect(result.provider, InferenceProviderKind.localOpenAiCompatible);
+        expect(result.provider, InferenceConnection.localOpenAiCompatible);
       },
     );
   });
-  group('OpenAiResponsesInferenceProviderAdapter', () {
+  group('protocol text decoding', () {
     test('extracts direct output text', () {
-      final text = OpenAiResponsesInferenceProviderAdapter.extractOutputText(
+      final text = InferenceProtocolAdapter.extractResponsesText(
         <String, dynamic>{'output_text': 'Check transport outbox first.'},
       );
 
@@ -228,7 +320,7 @@ void main() {
     });
 
     test('extracts nested response content text', () {
-      final text = OpenAiResponsesInferenceProviderAdapter.extractOutputText(<
+      final text = InferenceProtocolAdapter.extractResponsesText(<
         String,
         dynamic
       >{
@@ -246,64 +338,39 @@ void main() {
     });
 
     test('rejects malformed response without text', () {
-      final text = OpenAiResponsesInferenceProviderAdapter.extractOutputText(
+      final text = InferenceProtocolAdapter.extractResponsesText(
         <String, dynamic>{'output': <Object?>[]},
       );
 
       expect(text, isNull);
     });
 
-    test('formats quota errors for users', () {
-      final message =
-          OpenAiResponsesInferenceProviderAdapter.friendlyErrorMessageForTest(<
-            String,
-            dynamic
-          >{
-            'error': <String, dynamic>{
-              'message':
-                  'You exceeded your current quota, please check your plan and billing details.',
-              'code': 'insufficient_quota',
-            },
-          }, statusCode: 429);
-
-      expect(
-        message,
-        'OpenAI API quota is exhausted for this key. Check billing, limits, or use another restricted key.',
-      );
-    });
-
     test('extracts Gemini candidate text', () {
-      final text =
-          GeminiGenerateContentInferenceProviderAdapter.extractOutputText(
+      final text = InferenceProtocolAdapter.extractGenerateContentText(
+        <String, dynamic>{
+          'candidates': <Map<String, dynamic>>[
             <String, dynamic>{
-              'candidates': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'content': <String, dynamic>{
-                    'parts': <Map<String, dynamic>>[
-                      <String, dynamic>{'text': 'Gemini finding.'},
-                    ],
-                  },
-                },
-              ],
+              'content': <String, dynamic>{
+                'parts': <Map<String, dynamic>>[
+                  <String, dynamic>{'text': 'Gemini finding.'},
+                ],
+              },
             },
-          );
+          ],
+        },
+      );
 
       expect(text, 'Gemini finding.');
     });
 
     test('extracts local OpenAI-compatible chat text', () {
-      final text =
-          OpenAiChatCompletionsInferenceProviderAdapter.extractOutputText(
-            <String, dynamic>{
-              'choices': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'message': <String, dynamic>{
-                    'content': 'Local model finding.',
-                  },
-                },
-              ],
-            },
-          );
+      final text = InferenceProtocolAdapter.extractChatText(<String, dynamic>{
+        'choices': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'message': <String, dynamic>{'content': 'Local model finding.'},
+          },
+        ],
+      });
 
       expect(text, 'Local model finding.');
     });

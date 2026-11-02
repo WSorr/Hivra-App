@@ -67,6 +67,20 @@ const _projection = CapsuleHistoryProjection(
 );
 
 class _RecordingRuntime implements CapsuleInferenceRuntime {
+  @override
+  Future<List<InferenceConnection>> loadConnections() async =>
+      InferenceConnection.values;
+  @override
+  Future<InferenceConnection> addConnection({
+    required String name,
+    required InferenceProtocol protocol,
+    required String baseUrl,
+    required String model,
+    required bool requiresApiKey,
+  }) async => throw UnimplementedError();
+  @override
+  Future<void> removeConnection(String id) async => throw UnimplementedError();
+
   CapsuleInferenceRequestV1? request;
 
   @override

@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_capsule_inspection_service.dart';
 import 'package:hivra_app/services/ai_doctor_chat_service.dart';
 import 'package:hivra_app/services/capsule_ai_runtime_service.dart';
-import 'package:hivra_app/services/inference_provider_adapter.dart';
 import 'package:hivra_app/services/ui_event_log_service.dart';
 import 'package:hivra_app/widgets/ai_diagnostics/provider_widgets.dart';
 
@@ -32,13 +31,101 @@ void main() {
   }
 
   Future<void> selectProvider(WidgetTester tester, String label) async {
-    await tester.tap(
-      find.byType(DropdownButtonFormField<InferenceProviderKind>),
-    );
+    await tester.tap(find.byType(DropdownButtonFormField<InferenceConnection>));
     await tester.pumpAndSettle();
     await tester.tap(find.text(label).last);
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+    'owner adds an unlisted connection, reopens it, asks and removes it',
+    (tester) async {
+      final runtime = _RecordingRuntime(preferredProviderId: 'gemini');
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add AI connection'));
+      await tester.pumpAndSettle();
+      Future<void> fill(String label, String value) async {
+        final field =
+            find
+                .byWidgetPredicate(
+                  (w) => w is TextField && w.decoration?.labelText == label,
+                )
+                .last;
+        await tester.ensureVisible(field);
+        await tester.enterText(field, value);
+      }
+
+      await fill('Connection name', 'Owner provider');
+      await fill('Protocol base URL', 'https://owner.example/v1');
+      await fill('Model', 'model-next');
+      await tester.tap(find.text('Add connection'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Owner provider API key is saved in secure storage.'),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      expect(find.text('Owner provider'), findsOneWidget);
+      expect(find.widgetWithText(TextField, 'model-next'), findsOneWidget);
+      final ask = find.text('Ask AI Analyst');
+      await tester.ensureVisible(ask);
+      await tester.tap(ask);
+      await tester.pumpAndSettle();
+      expect(runtime.request?.providerId, 'connection_test');
+      expect(runtime.request?.model, 'model-next');
+      final remove = find.text('Remove connection');
+      await tester.ensureVisible(remove);
+      await tester.tap(remove);
+      await tester.pumpAndSettle();
+      expect(find.text('Owner provider'), findsNothing);
+      expect(find.text('OpenAI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'answers identify their connection and cannot survive another selection or failure',
+    (tester) async {
+      final runtime = _RecordingRuntime(preferredProviderId: 'gemini');
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      Future<void> ask() async {
+        await tester.ensureVisible(find.text('Ask AI Analyst'));
+        await tester.tap(find.text('Ask AI Analyst'));
+        await tester.pumpAndSettle();
+      }
+
+      await ask();
+      expect(find.text('Gemini · gemini-3.8-flash'), findsOneWidget);
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byType(DropdownButtonFormField<InferenceConnection>),
+      );
+      await selectProvider(tester, 'OpenAI');
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsNothing,
+      );
+      await ask();
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsOneWidget,
+      );
+      runtime.error = StateError('Incompatible protocol');
+      await ask();
+      expect(
+        find.text('Finding: inspect local consensus evidence.'),
+        findsNothing,
+      );
+      expect(find.text('Incompatible protocol'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'Analyst accepts delayed storage status without an invented timeout',
@@ -351,9 +438,39 @@ class _NoopUiLog extends UiEventLogService {
 }
 
 class _RecordingRuntime implements CapsuleInferenceRuntime {
+  final connections = [...InferenceConnection.values];
+  @override
+  Future<List<InferenceConnection>> loadConnections() async => connections;
+  @override
+  Future<InferenceConnection> addConnection({
+    required String name,
+    required InferenceProtocol protocol,
+    required String baseUrl,
+    required String model,
+    required bool requiresApiKey,
+  }) async {
+    final connection = InferenceConnection(
+      id: 'connection_test',
+      label: name,
+      protocol: protocol,
+      baseUrl: baseUrl,
+      defaultModel: model,
+      requiresApiKey: requiresApiKey,
+    );
+    connections.add(connection);
+    preferredProviderId = connection.id;
+    return connection;
+  }
+
+  @override
+  Future<void> removeConnection(String id) async {
+    connections.removeWhere((c) => c.id == id);
+    if (preferredProviderId == id) preferredProviderId = null;
+  }
+
   String? preferredProviderId;
   final Map<String, String> models = {};
-  final Object? error;
+  Object? error;
   Future<bool> Function(String)? readPresence;
   Future<String?> Function()? readPreferred;
   final presenceCalls = <String>[];
@@ -392,9 +509,7 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   @override
   Future<String> loadPreferredModel(String providerId) async =>
       models[providerId] ??
-      InferenceProviderKind.values
-          .firstWhere((p) => p.id == providerId)
-          .defaultModel;
+      connections.firstWhere((p) => p.id == providerId).defaultModel;
 
   @override
   Future<void> saveProviderApiKey(String providerId, String apiKey) async {

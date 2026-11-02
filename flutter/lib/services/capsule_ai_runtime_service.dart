@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 
 import 'ai_doctor_credential_store.dart';
 import 'inference_provider_adapter.dart';
+export 'inference_provider_adapter.dart'
+    show InferenceConnection, InferenceProtocol;
 
 enum CapsuleInferenceProviderPolicyV1 { preferred, explicit }
 
@@ -203,6 +205,16 @@ abstract class CapsuleInferenceRuntime {
 
   String? get sessionProviderId;
 
+  Future<List<InferenceConnection>> loadConnections();
+  Future<InferenceConnection> addConnection({
+    required String name,
+    required InferenceProtocol protocol,
+    required String baseUrl,
+    required String model,
+    required bool requiresApiKey,
+  });
+  Future<void> removeConnection(String id);
+
   Future<void> savePreferredProviderId(String providerId, {String? model});
 
   Future<String?> loadPreferredProviderId();
@@ -233,14 +245,14 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   static final Map<String, int> _scopeGenerations = <String, int>{};
 
   final AiDoctorCredentialStore _credentialStore;
-  final InferenceProviderAdapter Function(InferenceProviderKind provider)
+  final InferenceProviderAdapter Function(InferenceConnection provider)
   _adapterFactory;
   final String? Function() _readActiveCapsuleRootHex;
 
   CapsuleAiRuntimeService({
     required AiDoctorCredentialStore credentialStore,
     required String? Function() readActiveCapsuleRootHex,
-    InferenceProviderAdapter Function(InferenceProviderKind provider)?
+    InferenceProviderAdapter Function(InferenceConnection provider)?
     adapterFactory,
   }) : _credentialStore = credentialStore,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
@@ -269,6 +281,27 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   @override
   String? get sessionProviderId =>
       _credentialStore.sessionPreferredProvider?.id;
+
+  @override
+  Future<List<InferenceConnection>> loadConnections() =>
+      _credentialStore.loadConnections();
+  @override
+  Future<InferenceConnection> addConnection({
+    required String name,
+    required InferenceProtocol protocol,
+    required String baseUrl,
+    required String model,
+    required bool requiresApiKey,
+  }) => _credentialStore.addConnection(
+    name: name,
+    protocol: protocol,
+    baseUrl: baseUrl,
+    model: model,
+    requiresApiKey: requiresApiKey,
+  );
+  @override
+  Future<void> removeConnection(String id) =>
+      _credentialStore.removeConnection(id);
 
   @override
   Future<void> savePreferredProviderId(
@@ -348,9 +381,15 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   }) {
     // Resolve mutable preferences at submission, never when a queued request
     // eventually executes. Explicit per-request selections remain authoritative.
+    late final InferenceConnection boundProvider;
+    late final String? boundBaseUrl;
+    late final String? boundApiKey;
     try {
       _validateRequest(request);
       final provider = _resolveProvider(request);
+      boundProvider = provider;
+      boundBaseUrl = _credentialStore.sessionBaseUrl(provider);
+      boundApiKey = _credentialStore.sessionApiKey(provider);
       final requestedModel = switch (request.modelPolicy) {
         CapsuleInferenceModelPolicyV1.providerDefault => _credentialStore
             .preferredModel(provider),
@@ -386,7 +425,15 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     _schedulerTail = _schedulerTail.then((_) async {
       try {
         completer.complete(
-          await _execute(request, scopeKey, generation, authorize),
+          await _execute(
+            request,
+            boundProvider,
+            boundBaseUrl,
+            boundApiKey,
+            scopeKey,
+            generation,
+            authorize,
+          ),
         );
       } catch (error, stackTrace) {
         completer.completeError(error, stackTrace);
@@ -401,23 +448,33 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
 
   Future<CapsuleInferenceResultV1> _execute(
     CapsuleInferenceRequestV1 request,
+    InferenceConnection boundProvider,
+    String? boundBaseUrl,
+    String? boundApiKey,
     String scopeKey,
     int generation,
     Future<void> Function()? authorize,
   ) async {
     _requireCurrentGeneration(scopeKey, generation);
     _requireMatchingCapsule(request.capsuleRootHex, stale: false);
-    final provider = _resolveProvider(request);
-    final requestedModel = request.model!;
-    if (_credentialStore.sessionPreferredProvider != provider ||
-        !_credentialStore.isPreferredProviderUnlocked) {
-      throw const CapsuleInferenceFailure(
-        CapsuleInferenceFailureCode.sessionLocked,
-        'AI access is locked for this app session',
-      );
+    final provider = boundProvider;
+    void requireBoundConnection() {
+      if (_requireProvider(request.providerId!) != boundProvider ||
+          _credentialStore.sessionPreferredProvider != boundProvider ||
+          !_credentialStore.isPreferredProviderUnlocked ||
+          _credentialStore.sessionBaseUrl(boundProvider) != boundBaseUrl ||
+          _credentialStore.sessionApiKey(boundProvider) != boundApiKey) {
+        throw const CapsuleInferenceFailure(
+          CapsuleInferenceFailureCode.sessionLocked,
+          'AI connection changed or was locked before dispatch',
+        );
+      }
     }
-    final apiKey = _credentialStore.sessionApiKey(provider);
-    final baseUrl = _credentialStore.sessionBaseUrl(provider);
+
+    requireBoundConnection();
+    final requestedModel = request.model!;
+    final apiKey = boundApiKey;
+    final baseUrl = boundBaseUrl;
     final adapter = _adapterFactory(provider);
     if (adapter.provider != provider) {
       throw const CapsuleInferenceFailure(
@@ -431,6 +488,7 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
       await authorize?.call();
       _requireCurrentGeneration(scopeKey, generation);
       _requireMatchingCapsule(request.capsuleRootHex, stale: false);
+      requireBoundConnection();
       response = await adapter
           .ask(
             apiKey: apiKey ?? '',
@@ -531,7 +589,7 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     }
   }
 
-  InferenceProviderKind _resolveProvider(CapsuleInferenceRequestV1 request) {
+  InferenceConnection _resolveProvider(CapsuleInferenceRequestV1 request) {
     return switch (request.providerPolicy) {
       CapsuleInferenceProviderPolicyV1.preferred =>
         _credentialStore.sessionPreferredProvider ??
@@ -564,9 +622,9 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     };
   }
 
-  static InferenceProviderKind _requireProvider(String providerId) {
+  InferenceConnection _requireProvider(String providerId) {
     final normalized = providerId.trim().toLowerCase();
-    for (final provider in InferenceProviderKind.values) {
+    for (final provider in _credentialStore.connections) {
       if (provider.id == normalized) return provider;
     }
     throw const CapsuleInferenceFailure(

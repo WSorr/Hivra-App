@@ -34,11 +34,10 @@ Capsule Host Runtime
        |-- disclosure and redaction gate
        |-- inference scheduler and budgets
        |-- proposal-schema validation
-       `-- provider adapters
-            |-- Gemini
-            |-- OpenAI
-            |-- Cloudflare Workers AI
-            `-- local OpenAI-compatible model
+       `-- one inference transport
+            |-- Responses encoding
+            |-- Chat Completions encoding
+            `-- Generate Content encoding
 ```
 
 The analogy is computational only. Capsule AI Runtime has no independent
@@ -115,31 +114,42 @@ Provider-native request, response, token, safety, and billing DTOs remain
 inside their adapters. A global `AiDto` layer and pass-through feature wrappers
 are forbidden.
 
-Cloudflare Workers AI and local models share the Chat Completions adapter.
-Cloudflare configuration uses an Account ID and a provider-isolated API token
-in the existing credential store. Its requests are restricted to the official
-HTTPS account endpoint without redirects; provider error bodies are not shown
-or logged. The local provider retains its configured endpoint and optional key.
-No automatic provider fallback is permitted on quota, capacity, or auth failure.
-Setup and current free-plan limits are owned by the [Cloudflare REST guide](https://developers.cloudflare.com/workers-ai/get-started/rest-api/)
-and [pricing documentation](https://developers.cloudflare.com/workers-ai/platform/pricing/).
-
 ### Owner-Selected Compute
 
-A compatible model update or new provider using an existing supported protocol
-must be representable as owner configuration through the same runtime path.
-Protocol, endpoint, model and the connection's secure credential reference are
-distinct from the provider's product name. New protocols or missing execution
-abilities may extend an adapter; a provider label alone is not such an ability.
-Local model weights belong to the chosen local executor, outside Capsule.
+Analyst lists saved connections and built-in presets. **Add AI connection**
+accepts an owner-selected name, supported protocol, protocol base URL, model
+and whether an API key is required. Responses and Chat Completions use a base
+such as `https://host/v1`; Generate Content uses `https://host/v1beta/models`.
+The runtime appends the protocol route, never infers a service from its name.
+A compatible service or model needs configuration, not a Capsule rebuild.
+A new protocol or genuinely missing execution ability may extend the transport.
+Local weights remain with the local executor, outside Capsule.
 
-Authorized packages should reuse this computation through explicit capability
-contracts. A feature-specific AI integration does not by itself establish a
-reusable package capability. Provider selection, data disclosure and budgets
-express owner choices; inference cannot expand those choices or acquire effect
-authority. Editorial policy remains capability-owned rather than an AI-runtime
-or host-wide restriction. No new provider, tool or background path is enabled
-merely by this target contract.
+One transport owns HTTP, timeout, redirect refusal and errors; three encodings
+reuse the existing protocol parsers. No automatic provider/model fallback is
+permitted. Errors show status or protocol incompatibility without echoing the
+service response body. Analyst labels each answer with its connection and
+model, and clears the preceding answer on a new request or changed selection;
+a previous success cannot stand in for a failed request. These wire formats follow the
+[Generate Content contract](https://ai.google.dev/api/generate-content) and
+[Chat Completions compatibility contract](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/).
+
+Connection names are presentation; random saved IDs bind configuration and
+secure credentials. A new destination receives a new ID and key reference,
+even when its name matches an existing connection. Replace an address/protocol
+by adding a new connection and connecting its key, then remove the old one.
+Removal clears only that connection's key, model preference and process lease.
+It cannot undo an already accepted inference request. Presets retain existing
+credential keys and endpoints; the Cloudflare preset retains its official
+HTTPS account destination and capacity option. Generic connections use the
+owner-selected HTTP(S) destination without user credentials in the URL or
+redirects. Protocol base URLs retain non-secret query parameters such as API
+versions when the runtime appends the route.
+
+Authorized packages reuse this computation through common `ai.infer`. Packages
+own prompts, context and proposal meaning; no connection or model selection
+acquires authority to publish, trade or mutate Capsule truth. There is one
+runtime and one credential owner for Analyst and packages.
 
 ### 4.1 Frozen 1.x Contract V1
 
@@ -199,14 +209,16 @@ they use the same inference runtime.
 
 Inference secrets stay in platform Secure Storage under the host AI owner. A
 user explicitly unlocks the selected provider into one process-memory lease.
-The selected provider id and per-provider model choices are non-secret host
-configuration stored outside Secure Storage by the same owner, in the existing
+Connection names, protocols, base URLs, preferred connection ID and model
+choices are non-secret host configuration stored outside Secure Storage by the same owner, in the existing
 provider preference file. Analyst saves and restores the model together with
 provider settings. A provider-default request uses the configured model, or
 the built-in initial default when no model was saved. Explicit request models
 remain authoritative. Runtime resolves provider and model into an explicit
 execution request before scheduling; its canonical identity includes that
-resolved choice. A later preference change cannot redirect a queued request.
+resolved choice. A later preference change cannot redirect a queued request. The queued lease
+also binds its connection, destination and credential; removal, lock or a changed
+lease during authorization fails before dispatch.
 No automatic model or provider fallback is performed on failure.
 
 One explicit unlock performs at most one protected credential read after

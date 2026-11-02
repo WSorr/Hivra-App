@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/ai_doctor_prompt_service.dart';
 import '../../services/ai_capsule_inspection_service.dart';
 import '../../services/ai_doctor_chat_service.dart';
-import '../../services/inference_provider_adapter.dart';
+import '../../services/capsule_ai_runtime_service.dart';
 import '../../services/ui_event_log_service.dart';
 
 class AiOutboundPreviewPanel extends StatelessWidget {
@@ -119,10 +119,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
   final TextEditingController _queryController = TextEditingController(
     text: 'What should I check next in this capsule?',
   );
-  InferenceProviderKind _provider = InferenceProviderKind.openAi;
+  InferenceConnection _provider = InferenceConnection.openAi;
+  List<InferenceConnection> _connections = InferenceConnection.values;
 
   AiDoctorOutboundPreview? _preview;
-  String? _answer;
+  AiDoctorChatResult? _answer;
   String? _error;
   String? _apiKeyStatusError;
   bool _apiKeyConfigured = false;
@@ -154,15 +155,18 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       _apiKeyStatusError = null;
     });
     try {
+      final connections = await widget.chatService.loadConnections();
       final providerId = await widget.chatService.loadPreferredProviderId();
       final provider =
-          InferenceProviderKind.values
+          connections
               .where((candidate) => candidate.id == providerId)
               .firstOrNull ??
-          _provider;
+          (connections.contains(_provider) ? _provider : connections.first);
       if (!mounted || revision != _statusRevision) return;
       setState(() {
+        _connections = connections;
         _provider = provider;
+        _answer = null;
         _modelController.text = provider.defaultModel;
         _baseUrlController.clear();
       });
@@ -177,7 +181,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
     }
   }
 
-  Future<void> _refreshApiKeyStatus(InferenceProviderKind provider) async {
+  Future<void> _refreshApiKeyStatus(InferenceConnection provider) async {
     final revision = ++_statusRevision;
     if (mounted && _provider == provider) {
       setState(() {
@@ -218,22 +222,13 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
 
   Future<void> _saveProviderSettings() async {
     await _run(() async {
-      if (_provider == InferenceProviderKind.cloudflareWorkersAi &&
-          _baseUrlController.text.trim().isEmpty &&
-          !_apiKeyConfigured) {
-        throw ArgumentError(
-          'Enter the Cloudflare Account ID before saving a new token',
-        );
-      }
       if (_provider.requiresBaseUrl &&
+          !_provider.isCustom &&
           _baseUrlController.text.trim().isNotEmpty) {
-        final baseUrl =
-            _provider == InferenceProviderKind.cloudflareWorkersAi
-                ? OpenAiChatCompletionsInferenceProviderAdapter.cloudflareBaseUrlForAccount(
-                  _baseUrlController.text,
-                )
-                : _baseUrlController.text;
-        await widget.chatService.saveProviderBaseUrl(_provider.id, baseUrl);
+        await widget.chatService.saveProviderBaseUrl(
+          _provider.id,
+          _baseUrlController.text,
+        );
       }
       if (_apiKeyController.text.trim().isNotEmpty) {
         await widget.chatService.saveProviderApiKey(
@@ -260,7 +255,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
         });
       }
       _apiKeyController.clear();
-      _showSnack('${_provider.label} settings saved in secure storage');
+      _showSnack('${_provider.label} settings saved');
     });
   }
 
@@ -282,6 +277,146 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       }
       _apiKeyController.clear();
       _showSnack('${_provider.label} settings cleared');
+    });
+  }
+
+  Future<void> _addConnection() async {
+    var name = '';
+    var url = '';
+    var model = '';
+    var protocol = InferenceProtocol.chatCompletions;
+    var requiresKey = true;
+    String? error;
+    var saving = false;
+    final added = await showDialog<InferenceConnection>(
+      context: context,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, update) => AlertDialog(
+                  title: const Text('Add AI connection'),
+                  content: SizedBox(
+                    width: 480,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            onChanged: (v) => name = v,
+                            decoration: const InputDecoration(
+                              labelText: 'Connection name',
+                            ),
+                          ),
+                          DropdownButtonFormField<InferenceProtocol>(
+                            initialValue: protocol,
+                            decoration: const InputDecoration(
+                              labelText: 'Protocol',
+                            ),
+                            items: [
+                              for (final p in InferenceProtocol.values)
+                                DropdownMenuItem(
+                                  value: p,
+                                  child: Text(p.label),
+                                ),
+                            ],
+                            onChanged: (p) {
+                              if (p != null) update(() => protocol = p);
+                            },
+                          ),
+                          TextField(
+                            onChanged: (v) => url = v,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            decoration: const InputDecoration(
+                              labelText: 'Protocol base URL',
+                              helperText:
+                                  'Responses / Chat: https://host/v1\nGenerate Content: https://host/v1beta/models',
+                            ),
+                          ),
+                          TextField(
+                            onChanged: (v) => model = v,
+                            decoration: const InputDecoration(
+                              labelText: 'Model',
+                            ),
+                          ),
+                          CheckboxListTile(
+                            value: requiresKey,
+                            title: const Text('API key required'),
+                            onChanged:
+                                (v) => update(() => requiresKey = v ?? true),
+                          ),
+                          const Text(
+                            'The key is connected on the Analyst screen after adding this destination.',
+                          ),
+                          if (error != null)
+                            Text(
+                              error!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          saving ? null : () => Navigator.pop(dialogContext),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () async {
+                                update(() => saving = true);
+                                try {
+                                  final connection = await widget.chatService
+                                      .addConnection(
+                                        name: name,
+                                        protocol: protocol,
+                                        baseUrl: url,
+                                        model: model,
+                                        requiresApiKey: requiresKey,
+                                      );
+                                  if (dialogContext.mounted) {
+                                    Navigator.pop(dialogContext, connection);
+                                  }
+                                } catch (e) {
+                                  if (dialogContext.mounted) {
+                                    update(() {
+                                      error = _doctorErrorMessage(e);
+                                      saving = false;
+                                    });
+                                  }
+                                }
+                              },
+                      child: const Text('Add connection'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    if (!mounted || added == null) return;
+    final connections = await widget.chatService.loadConnections();
+    if (!mounted) return;
+    setState(() {
+      _connections = connections;
+      _provider = added;
+      _answer = null;
+      _apiKeyController.clear();
+      _baseUrlController.clear();
+      _error = null;
+    });
+    await _refreshApiKeyStatus(added);
+  }
+
+  Future<void> _removeConnection() async {
+    await _run(() async {
+      await widget.chatService.removeConnection(_provider.id);
+      _apiKeyController.clear();
+      await _loadPreferredProvider();
     });
   }
 
@@ -326,7 +461,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
       if (!mounted) return;
       setState(() {
         _preview = result.preview;
-        _answer = result.text;
+        _answer = result;
       });
     });
   }
@@ -336,6 +471,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
     setState(() {
       _busy = true;
       _error = null;
+      _answer = null;
     });
     try {
       await action();
@@ -397,16 +533,16 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<InferenceProviderKind>(
+            DropdownButtonFormField<InferenceConnection>(
               key: ValueKey<String>('capsule_analyst_provider_${_provider.id}'),
               initialValue: _provider,
               decoration: const InputDecoration(
                 labelText: 'Inference provider',
                 border: OutlineInputBorder(),
               ),
-              items: InferenceProviderKind.values
+              items: _connections
                   .map(
-                    (provider) => DropdownMenuItem<InferenceProviderKind>(
+                    (provider) => DropdownMenuItem<InferenceConnection>(
                       value: provider,
                       child: Text(provider.label),
                     ),
@@ -419,6 +555,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                         if (provider == null) return;
                         setState(() {
                           _provider = provider;
+                          _answer = null;
                           _modelController.text = provider.defaultModel;
                           _baseUrlController.clear();
                           _apiKeyController.clear();
@@ -442,38 +579,40 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                       },
             ),
             const SizedBox(height: 12),
-            if (_provider.requiresBaseUrl) ...[
+            TextButton.icon(
+              onPressed: _busy ? null : _addConnection,
+              icon: const Icon(Icons.add),
+              label: const Text('Add AI connection'),
+            ),
+            if (_provider.isCustom) ...[
+              SelectableText(
+                '${_provider.protocol.label} · ${_provider.baseUrl}',
+              ),
+              Text(
+                'Saved destination. To replace its address or protocol, add a new connection with its own key.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+            if (_provider.requiresBaseUrl && !_provider.isCustom) ...[
               TextField(
                 controller: _baseUrlController,
                 decoration: InputDecoration(
-                  labelText:
-                      _provider == InferenceProviderKind.cloudflareWorkersAi
-                          ? 'Cloudflare Account ID'
-                          : 'Local OpenAI-compatible base URL',
+                  labelText: 'Inference base URL',
                   helperText:
-                      _provider == InferenceProviderKind.cloudflareWorkersAi
-                          ? '32-character Account ID from Workers AI → Use REST API. Leave blank to keep the saved account.'
-                          : 'Example: http://127.0.0.1:11434. Leave blank to keep the saved endpoint; requests use /v1/chat/completions.',
+                      'Leave blank to keep the saved endpoint. This preset appends /v1/chat/completions.',
                   border: const OutlineInputBorder(),
                 ),
               ),
-              if (_provider == InferenceProviderKind.cloudflareWorkersAi)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Workers Free includes 10,000 Neurons/day, resetting at 00:00 UTC. Some models require payment. Use a Workers AI API token; account billing applies.',
-                  ),
-                ),
               const SizedBox(height: 12),
             ],
             TextField(
               controller: _apiKeyController,
-              obscureText: _provider.requiresApiKey,
+              obscureText: true,
               autocorrect: false,
               enableSuggestions: false,
               decoration: InputDecoration(
                 labelText:
-                    _provider == InferenceProviderKind.cloudflareWorkersAi
+                    _provider == InferenceConnection.cloudflareWorkersAi
                         ? '${_provider.label} API token'
                         : _provider.requiresApiKey
                         ? '${_provider.label} API key'
@@ -529,6 +668,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             const SizedBox(height: 8),
             TextField(
               controller: _modelController,
+              onChanged: (_) => setState(() => _answer = null),
               enabled: !_busy && !_checkingApiKey,
               decoration: const InputDecoration(
                 labelText: 'Model',
@@ -550,9 +690,17 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                 ),
                 OutlinedButton.icon(
                   onPressed:
-                      _busy || _checkingApiKey ? null : _clearProviderSettings,
+                      _busy || _checkingApiKey
+                          ? null
+                          : _provider.isCustom
+                          ? _removeConnection
+                          : _clearProviderSettings,
                   icon: const Icon(Icons.delete_outline),
-                  label: const Text('Clear provider settings'),
+                  label: Text(
+                    _provider.isCustom
+                        ? 'Remove connection'
+                        : 'Clear provider settings',
+                  ),
                 ),
               ],
             ),
@@ -593,7 +741,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             ],
             if (_answer != null) ...[
               const SizedBox(height: 12),
-              SelectableText(_answer!, style: theme.textTheme.bodyMedium),
+              Text(
+                '${_answer!.providerLabel} · ${_answer!.model}',
+                style: theme.textTheme.labelLarge,
+              ),
+              SelectableText(_answer!.text, style: theme.textTheme.bodyMedium),
             ],
           ],
         ),

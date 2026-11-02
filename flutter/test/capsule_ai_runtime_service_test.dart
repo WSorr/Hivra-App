@@ -54,7 +54,7 @@ void main() {
         credentialStore: _SessionCredentialStore(),
         readActiveCapsuleRootHex: () => _capsuleA,
         adapterFactory: (provider) {
-          expect(provider, InferenceProviderKind.gemini);
+          expect(provider, InferenceConnection.gemini);
           return adapter;
         },
       );
@@ -70,7 +70,7 @@ void main() {
           providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
           providerId: 'gemini',
           modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
-          model: InferenceProviderKind.gemini.defaultModel,
+          model: InferenceConnection.gemini.defaultModel,
         ).requestId,
       );
       expect(result.capsuleRootHex, _capsuleA);
@@ -101,7 +101,7 @@ void main() {
   test(
     'Cloudflare uses the shared runtime lease and fails closed after provider switching',
     () async {
-      const provider = InferenceProviderKind.cloudflareWorkersAi;
+      const provider = InferenceConnection.cloudflareWorkersAi;
       final store = _SessionCredentialStore();
       final adapter = _RecordingAdapter(
         adapterProvider: provider,
@@ -138,6 +138,29 @@ void main() {
       expect(adapter.callCount, 1);
       runtime.lockProviderSession();
       expect(runtime.sessionProviderId, isNull);
+    },
+  );
+
+  test(
+    'changing a connection during authorization cannot dispatch a captured key',
+    () async {
+      final store = _SessionCredentialStore();
+      final adapter = _RecordingAdapter();
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) => adapter,
+      );
+      await expectLater(
+        runtime.inferAuthorized(
+          _request(),
+          authorize: () async {
+            store.lockSession();
+          },
+        ),
+        throwsA(_failure(CapsuleInferenceFailureCode.sessionLocked)),
+      );
+      expect(adapter.callCount, 0);
     },
   );
 
@@ -232,7 +255,7 @@ void main() {
       readActiveCapsuleRootHex: () => _capsuleA,
       adapterFactory:
           (_) =>
-              _RecordingAdapter(responseProvider: InferenceProviderKind.openAi),
+              _RecordingAdapter(responseProvider: InferenceConnection.openAi),
     );
 
     await expectLater(
@@ -261,7 +284,7 @@ void main() {
 
   test('adapter key confusion fails before credential disclosure', () async {
     final adapter = _RecordingAdapter(
-      adapterProvider: InferenceProviderKind.openAi,
+      adapterProvider: InferenceConnection.openAi,
     );
     final runtime = CapsuleAiRuntimeService(
       credentialStore: _SessionCredentialStore(),
@@ -282,8 +305,8 @@ void main() {
     () async {
       final store = _SessionCredentialStore();
       final adapter = _RecordingAdapter(
-        adapterProvider: InferenceProviderKind.openAi,
-        responseProvider: InferenceProviderKind.openAi,
+        adapterProvider: InferenceConnection.openAi,
+        responseProvider: InferenceConnection.openAi,
       );
       final runtime = CapsuleAiRuntimeService(
         credentialStore: store,
@@ -417,7 +440,7 @@ void main() {
     () async {
       final store =
           _SessionCredentialStore()
-            ..models[InferenceProviderKind.gemini] = 'model-before';
+            ..models[InferenceConnection.gemini] = 'model-before';
       final first = _RecordingAdapter(deferred: true);
       final second = _RecordingAdapter();
       final firstRuntime = CapsuleAiRuntimeService(
@@ -595,35 +618,35 @@ Matcher _failure(CapsuleInferenceFailureCode code) {
 
 class _SessionCredentialStore extends AiDoctorCredentialStore {
   bool unlocked;
-  InferenceProviderKind preferredProvider = InferenceProviderKind.gemini;
+  InferenceConnection preferredProvider = InferenceConnection.gemini;
   final List<String> configuration = <String>[];
-  final Map<InferenceProviderKind, String> models = {};
+  final Map<InferenceConnection, String> models = {};
 
   _SessionCredentialStore({this.unlocked = true});
 
   @override
-  InferenceProviderKind? get sessionPreferredProvider =>
+  InferenceConnection? get sessionPreferredProvider =>
       unlocked ? preferredProvider : null;
 
   @override
   bool get isPreferredProviderUnlocked => unlocked;
 
   @override
-  String? sessionApiKey(InferenceProviderKind provider) =>
+  String? sessionApiKey(InferenceConnection provider) =>
       unlocked ? '${provider.id}-key' : null;
 
   @override
-  String? sessionBaseUrl(InferenceProviderKind provider) => null;
+  String? sessionBaseUrl(InferenceConnection provider) => null;
 
   @override
-  Future<InferenceProviderKind> unlockPreferredProviderSession() async {
+  Future<InferenceConnection> unlockPreferredProviderSession() async {
     unlocked = true;
     return preferredProvider;
   }
 
   @override
-  Future<InferenceProviderKind> unlockProviderSession(
-    InferenceProviderKind provider,
+  Future<InferenceConnection> unlockProviderSession(
+    InferenceConnection provider,
   ) async {
     preferredProvider = provider;
     unlocked = true;
@@ -637,7 +660,7 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
 
   @override
   Future<void> savePreferredProvider(
-    InferenceProviderKind provider, {
+    InferenceConnection provider, {
     String? model,
   }) async {
     if (model != null) models[provider] = model;
@@ -646,38 +669,35 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
   }
 
   @override
-  Future<InferenceProviderKind?> loadPreferredProvider() async {
+  Future<InferenceConnection?> loadPreferredProvider() async {
     return preferredProvider;
   }
 
   @override
-  String preferredModel(InferenceProviderKind provider) =>
+  String preferredModel(InferenceConnection provider) =>
       models[provider] ?? provider.defaultModel;
 
   @override
-  Future<String> loadPreferredModel(InferenceProviderKind provider) async =>
+  Future<String> loadPreferredModel(InferenceConnection provider) async =>
       preferredModel(provider);
 
   @override
-  Future<void> saveApiKey(InferenceProviderKind provider, String apiKey) async {
+  Future<void> saveApiKey(InferenceConnection provider, String apiKey) async {
     configuration.add('save-key:${provider.id}:$apiKey');
   }
 
   @override
-  Future<void> clearApiKey(InferenceProviderKind provider) async {
+  Future<void> clearApiKey(InferenceConnection provider) async {
     configuration.add('clear-key:${provider.id}');
   }
 
   @override
-  Future<void> saveBaseUrl(
-    InferenceProviderKind provider,
-    String baseUrl,
-  ) async {
+  Future<void> saveBaseUrl(InferenceConnection provider, String baseUrl) async {
     configuration.add('save-url:${provider.id}:$baseUrl');
   }
 
   @override
-  Future<void> clearBaseUrl(InferenceProviderKind provider) async {
+  Future<void> clearBaseUrl(InferenceConnection provider) async {
     configuration.add('clear-url:${provider.id}');
   }
 }
@@ -687,8 +707,8 @@ class _RecordingAdapter implements InferenceProviderAdapter {
   final bool deferred;
   final void Function()? onStart;
   final void Function()? onComplete;
-  final InferenceProviderKind adapterProvider;
-  final InferenceProviderKind responseProvider;
+  final InferenceConnection adapterProvider;
+  final InferenceConnection responseProvider;
   final String? responseModel;
   final Completer<void> started = Completer<void>();
   final Completer<void> _release = Completer<void>();
@@ -702,13 +722,13 @@ class _RecordingAdapter implements InferenceProviderAdapter {
     this.deferred = false,
     this.onStart,
     this.onComplete,
-    this.adapterProvider = InferenceProviderKind.gemini,
-    this.responseProvider = InferenceProviderKind.gemini,
+    this.adapterProvider = InferenceConnection.gemini,
+    this.responseProvider = InferenceConnection.gemini,
     this.responseModel,
   });
 
   @override
-  InferenceProviderKind get provider => adapterProvider;
+  InferenceConnection get provider => adapterProvider;
 
   @override
   Future<InferenceProviderResponse> ask({
