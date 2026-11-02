@@ -289,7 +289,19 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
-The selected bounded outcome is a Core-only Capsule backup. New exports retain
+The owner selected `v1.0.5-test2` as the next complete unsigned test release
+before further Jack package development. Apple Developer ID/notarization and a
+dedicated Android release key are not connected; this is explicitly a test
+channel, not stable/public distribution. Build and exercise exact guarded
+Mac/Android packages from the selected clean source with its matching canonical
+runner, then bind their digests to manual signoff. Bounded feature acceptance
+below does not replace that packaged release journey. The complete User Lifetime
+qualification may remain explicitly PENDING for the test channel. No trade,
+publication to an external social service, or VPS mutation is part of this
+release. Resume Jack through the separate plugin repository after the release;
+do not add trading behavior to Capsule.
+
+The completed bounded Core-only Capsule backup outcome below retains
 Ledger and Capsule type/network metadata only; operational pair attestations,
 Chat content, local delivery queues, contact labels, opaque plugin state and
 installed ZIPs are excluded. The owner accepts loss of application content when

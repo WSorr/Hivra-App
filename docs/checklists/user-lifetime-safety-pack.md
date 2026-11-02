@@ -70,16 +70,20 @@ waits.
       Capsule-scoped plugin state are projected without duplicate installation.
 - [ ] Update or reinstall the same plugin id and confirm exactly one active
       package remains; failed update preserves the previous active package.
-- [ ] Remove the plugin and confirm its package and Capsule-scoped secrets/state
-      are removed through the canonical lifecycle.
+- [ ] Remove the plugin with explicit saved-data deletion and confirm its
+      package and Capsule-scoped secrets/state are removed through the canonical
+      lifecycle. Ordinary removal may retain opaque reconnect evidence and does
+      not undo external operations; reinstall never restores execution authority.
 - [ ] Complete the existing Moltbook smoke checklist separately when Moltbook is
       included in the named release candidate.
 
 ## Scenario 3: Recovery On New Device Path
 
 - [ ] Export backup for capsule A.
-- [ ] Confirm the exported full backup is authenticated envelope v3 and does not
-      expose plaintext Ledger owner/events.
+- [ ] Confirm the exported Core-only backup is authenticated envelope v3 and
+      does not expose plaintext Ledger owner/events. Application content,
+      credentials and installed packages are excluded; reconnect applications
+      through their normal installation/permission paths after recovery.
 - [ ] Recover Capsule A using seed + backup into an empty Capsule destination.
       A new destination, or a test Capsule removed through the product after
       preserving backup/seed, suffices. Record reused platform state and preserve
