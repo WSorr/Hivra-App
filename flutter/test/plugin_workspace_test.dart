@@ -16,6 +16,178 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 
 void main() {
+  testWidgets(
+    'scheduled observation preserves owner draft edits until an explicit package action',
+    (tester) async {
+      final actions = <String>[];
+      Map<String, dynamic>? submitted;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
+              if (action == 'apply') submitted = settings;
+              return {
+                ...presentation(),
+                'execution': {'active': true, 'enabled': true, 'running': true},
+                'fields': [
+                  {
+                    'id': 'limit',
+                    'label': 'Owner limit',
+                    'type': 'number',
+                    'value': 1,
+                  },
+                ],
+                'actions': [
+                  {'id': 'apply', 'label': 'Apply choice'},
+                ],
+              };
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('plugin-field-limit'));
+      await tester.enterText(field, '2.5');
+      await tester.pump(const Duration(seconds: 16));
+      await tester.pumpAndSettle();
+      expect(actions.where((a) => a == 'open').length, greaterThan(1));
+      expect(tester.widget<TextField>(field).controller!.text, '2.5');
+      expect(submitted, isNull);
+      await tester.tap(find.byKey(const ValueKey('plugin-action-apply')));
+      await tester.pumpAndSettle();
+      expect(submitted?['limit'], 2.5);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'workspace keeps status readable and submits edited inputs on narrow and wide screens',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      for (final size in [const Size(360, 780), const Size(1280, 900)]) {
+        await tester.binding.setSurfaceSize(size);
+        var limit = 1.0;
+        Map<String, dynamic>? submitted;
+        Map<String, dynamic> view() => {
+          ...presentation(),
+          'summary': 'Owner connection · saved settings',
+          'message':
+              'Current observation\nThe external result remains unverified.',
+          'fields': [
+            {
+              'id': 'asset',
+              'label': 'Instrument',
+              'type': 'text',
+              'value': 'EXAMPLE',
+            },
+            {
+              'id': 'limit',
+              'label': 'Owner limit',
+              'type': 'number',
+              'value': limit,
+            },
+            {'id': 'budget', 'label': 'Budget', 'type': 'number', 'value': 20},
+          ],
+          'actions': [
+            {'id': 'refresh', 'label': 'Refresh observation'},
+            {'id': 'other', 'label': 'Other action'},
+          ],
+          'execution': {
+            'active': false,
+            'enabled': false,
+            'running': false,
+            'expires_at_ms': null,
+          },
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              key: ValueKey(size),
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction: (action, settings) async {
+                if (action == 'refresh') {
+                  submitted = settings;
+                  limit = (settings['limit'] as num).toDouble();
+                }
+                return view();
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getTopLeft(find.text('Current status')).dy,
+          lessThan(tester.getTopLeft(find.text('Configuration')).dy),
+        );
+        final field = find.byKey(const ValueKey('plugin-field-limit'));
+        await tester.ensureVisible(field);
+        await tester.enterText(field, '1.25');
+        await tester.pumpAndSettle();
+        expect(find.text('Current observation'), findsOneWidget);
+        expect(
+          find.text(
+            'Changes not applied. The observation below uses the previous settings.',
+          ),
+          findsOneWidget,
+        );
+        final action = find.byKey(const ValueKey('plugin-action-refresh'));
+        await tester.ensureVisible(action);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+        expect(submitted?['limit'], 1.25);
+        expect(find.text('Current observation'), findsOneWidget);
+        expect(find.text('Current status'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      }
+    },
+  );
+
+  testWidgets(
+    'inactive or unavailable access never claims authorization until revocation',
+    (tester) async {
+      for (final active in [false, null, true]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              key: ValueKey(active),
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction:
+                  (_, _) async => {
+                    ...presentation(),
+                    'execution': {
+                      'active': active,
+                      'enabled': active,
+                      'running': false,
+                      'expires_at_ms': null,
+                    },
+                  },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final text = find.textContaining(
+          active == true
+              ? 'Permissions active'
+              : active == false
+              ? 'Permissions inactive'
+              : 'Permission status unavailable',
+        );
+        await tester.ensureVisible(text);
+        expect(text, findsOneWidget);
+        expect(
+          find.textContaining('Until you revoke access.'),
+          active == true ? findsOneWidget : findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
   test(
     'catalog is common and an unrelated package selects its continuation',
     () async {
@@ -122,6 +294,11 @@ void main() {
         final f = await Fixture.create();
         addTearDown(f.close);
         await f.enable();
+        f.extraRequest = {
+          'response_json_paths': {
+            'value': ['data', 'value'],
+          },
+        };
         f.credential = 'default';
         f.auth = {
           'headers': {
@@ -838,14 +1015,114 @@ void main() {
     },
   );
   testWidgets(
+    'choice source requests only its declared access and cancellation never loads choices',
+    (tester) async {
+      final readAccess = {
+        'version': 2,
+        'network': [
+          {
+            'origin': 'https://catalog.example',
+            'methods': ['GET'],
+            'credential': null,
+          },
+        ],
+        'credentials': <String, dynamic>{},
+      };
+      var loads = 0;
+      var grants = 0;
+      Map<String, dynamic>? execution;
+      Map<String, dynamic> view() => {
+        ...presentation(),
+        if (execution != null) 'execution': execution,
+        'fields': [
+          {
+            'id': 'destination',
+            'type': 'choice',
+            'label': 'Destination',
+            'value': 'alpha',
+            'source': {'action': 'catalog', 'access': readAccess},
+          },
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            listSecrets:
+                () async =>
+                    throw StateError('Public choices must not open the vault'),
+            configureExecution: ({
+              required enabled,
+              required expiresAtMs,
+              expectedRevision,
+              revoke = false,
+              approvedScope,
+              credentialBindings,
+              settings = const {},
+            }) async {
+              grants++;
+              expect(approvedScope!['access'], readAccess);
+              expect(approvedScope['action'], isNull);
+              expect(credentialBindings, isEmpty);
+              execution = {
+                'enabled': true,
+                'active': true,
+                'running': false,
+                'access': readAccess,
+                'credentials': {},
+                'revision': grants,
+              };
+              return view();
+            },
+            runWorkspaceAction: (action, settings) async {
+              if (action == 'catalog') loads++;
+              return {
+                ...view(),
+                if (action == 'catalog') 'options': ['alpha', 'beta'],
+              };
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('plugin-field-destination')));
+      await tester.pumpAndSettle();
+      expect(loads, 0);
+      await tester.tap(find.text('Cancel').last);
+      await tester.pumpAndSettle();
+      expect(grants, 0);
+      await tester.tap(find.byKey(const ValueKey('plugin-field-destination')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Allow'));
+      await tester.pumpAndSettle();
+      expect(loads, 1);
+      await tester.tap(find.widgetWithText(ListTile, 'beta'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('plugin-field-destination')));
+      await tester.pumpAndSettle();
+      expect(grants, 1);
+      expect(loads, 2);
+      expect(find.text('Allow'), findsNothing);
+      await tester.tap(find.text('Cancel').last);
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
     'a choice asks the package-selected action through the common executor',
     (tester) async {
       final actions = <String>[];
+      var destination = 'alpha';
+      Map<String, dynamic>? applied;
       await tester.pumpWidget(
         MaterialApp(
           home: PluginWorkspaceScreen(
             runWorkspaceAction: (action, settings) async {
               actions.add(action);
+              if (action == 'apply') {
+                applied = settings;
+                destination = settings['destination'] as String;
+              }
               return {
                 ...presentation(),
                 'fields': [
@@ -853,11 +1130,19 @@ void main() {
                     'id': 'destination',
                     'type': 'choice',
                     'label': 'Destination',
-                    'value': 'alpha',
+                    'value': destination,
                     'source': {'action': 'list_destinations'},
                   },
                 ],
-                if (action == 'list_destinations') 'options': ['alpha', 'beta'],
+                'actions': [
+                  {'id': 'apply', 'label': 'Apply destination'},
+                ],
+                if (action == 'list_destinations')
+                  'options': [
+                    'alpha',
+                    'beta',
+                    for (var i = 0; i < 1100; i++) 'item-$i',
+                  ],
               };
             },
           ),
@@ -867,10 +1152,221 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('plugin-field-destination')));
       await tester.pumpAndSettle();
       expect(actions, ['open', 'list_destinations']);
-      await tester.tap(find.text('beta'));
+      await tester.enterText(
+        find.byKey(const ValueKey('plugin-choice-search')),
+        'beta',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'beta'));
       await tester.pumpAndSettle();
       expect(find.text('beta'), findsOneWidget);
+      expect(applied, isNull);
+      await tester.tap(find.byKey(const ValueKey('plugin-action-apply')));
+      await tester.pumpAndSettle();
+      expect(applied?['destination'], 'beta');
+      expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
+    },
+  );
+  test(
+    'HTTP JSON paths select nested arrays without interpreting service success',
+    () async {
+      for (final paths in [
+        null,
+        {
+          'failure': ['fault'],
+          'names': ['items', '*', 'name'],
+        },
+        {
+          'first': ['items', '0', 'value'],
+          'absent': ['missing'],
+        },
+      ]) {
+        final dispatcher = PluginCapabilityDispatcher(
+          send:
+              (m, u, h, b) async => {
+                'status': 422,
+                'headers': {'Content-Length': '999', 'X-Service': 'fixture'},
+                'body': jsonEncode({
+                  'fault': 'rejected',
+                  'items': [
+                    {'name': 'A', 'value': 3, 'unused': 'x' * 70000},
+                    {'name': 'B', 'value': 4},
+                  ],
+                }),
+              },
+        );
+        final result = await dispatcher.http(
+          {
+            'url': 'https://one.example/list',
+            'method': 'GET',
+            'max_response_bytes': 128 * 1024,
+            if (paths != null) 'response_json_paths': paths,
+          },
+          access: permission('https://one.example'),
+          readCredentials: () async => {},
+          authorize: () async {},
+        );
+        expect(result['outcome'], 'response');
+        expect(result['status'], 422);
+        if (paths == null) {
+          expect((result['body'] as String).length, greaterThan(70000));
+        } else {
+          expect(
+            result['json'],
+            paths.containsKey('names')
+                ? {
+                  'failure': 'rejected',
+                  'names': ['A', 'B'],
+                }
+                : {'first': 3, 'absent': null},
+          );
+          expect(result['headers'], {'X-Service': 'fixture'});
+        }
+      }
+    },
+  );
+  test(
+    'HTTP JSON paths reject invalid bounds before dispatch and malformed replies remain uncertain',
+    () async {
+      for (final paths in [
+        [],
+        {},
+        {
+          'x': [1],
+        },
+        {'x': List.filled(17, 'field')},
+        {
+          'x': ['x' * 65],
+        },
+        {
+          'name': ['name'],
+        },
+      ]) {
+        var calls = 0;
+        final dispatcher = PluginCapabilityDispatcher(
+          send: (m, u, h, b) async {
+            calls++;
+            return {'status': 200, 'body': '{broken'};
+          },
+        );
+        final result = await dispatcher.http(
+          {
+            'url': 'https://one.example/list',
+            'method': 'GET',
+            'response_json_paths': paths,
+          },
+          access: permission('https://one.example'),
+          readCredentials: () async => {},
+          authorize: () async {},
+        );
+        expect(calls, paths is Map && paths.containsKey('name') ? 1 : 0);
+        expect(result['outcome'], calls == 0 ? 'not_dispatched' : 'unknown');
+      }
+    },
+  );
+  test(
+    'JSON selection cannot hide echoed secrets or expand the response bound',
+    () async {
+      final dispatcher = PluginCapabilityDispatcher(
+        send:
+            (m, u, h, b) async => {
+              'status': 200,
+              'body': '{"hidden":"synthetic-secret","value":"safe"}',
+            },
+      );
+      final result = await dispatcher.http(
+        {
+          'url': 'https://one.example/list',
+          'method': 'GET',
+          'credential': 'default',
+          'auth': {
+            'headers': {
+              'Authorization': {'field': 'token'},
+            },
+          },
+          'response_json_paths': {
+            'value': ['value'],
+          },
+        },
+        access: permission('https://one.example'),
+        readCredentials: () async => {'token': 'synthetic-secret'},
+        authorize: () async {},
+      );
+      expect(result, {'outcome': 'unknown', 'error': 'protected_response'});
+      final large = PluginCapabilityDispatcher(
+        send:
+            (m, u, h, b) async => {
+              'status': 200,
+              'body': jsonEncode({'v': 'x' * 4000}),
+            },
+      );
+      final overflow = await large.http(
+        {
+          'url': 'https://one.example/list',
+          'method': 'GET',
+          'response_json_paths': {for (var i = 0; i < 8; i++) '$i': []},
+        },
+        access: permission('https://one.example'),
+        readCredentials: () async => {},
+        authorize: () async {},
+      );
+      expect(overflow['outcome'], 'unknown');
+    },
+  );
+  test(
+    'projected catalog reads bound source and returned data separately without truncation',
+    () async {
+      final rows = List.generate(
+        1400,
+        (i) => {'name': 'ITEM-$i', 'unused': 'x' * 450},
+      );
+      var calls = 0;
+      final dispatcher = PluginCapabilityDispatcher(
+        send: (m, u, h, b) async {
+          calls++;
+          return {
+            'status': 200,
+            'body': jsonEncode({'items': rows}),
+          };
+        },
+      );
+      Future<Map<String, dynamic>> read(
+        int bound,
+        Map<String, List<String>> paths,
+      ) => dispatcher.http(
+        {
+          'url': 'https://one.example/catalog',
+          'method': 'GET',
+          'max_response_bytes': bound,
+          'response_json_paths': paths,
+        },
+        access: permission('https://one.example'),
+        readCredentials: () async => {},
+        authorize: () async {},
+      );
+      final complete = await read(1024 * 1024, {
+        'names': ['items', '*', 'name'],
+      });
+      expect(complete['outcome'], 'response');
+      expect(
+        (complete['json'] as Map)['names'],
+        List.generate(1400, (i) => 'ITEM-$i'),
+      );
+      expect(
+        (await read(256 * 1024, {
+          'names': ['items', '*', 'name'],
+        }))['outcome'],
+        'unknown',
+      );
+      expect((await read(1024 * 1024, {'full': []}))['outcome'], 'unknown');
+      expect(
+        (await read(1024 * 1024 + 1, {
+          'names': ['items', '*', 'name'],
+        }))['outcome'],
+        'not_dispatched',
+      );
+      expect(calls, 3);
     },
   );
   test(

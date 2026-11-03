@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-02
+Status date: 2026-11-03
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -154,8 +154,8 @@ separately; neither target prose nor accepted 1.x limitations prove completion.
 - Protected `main` includes package/VPS recovery, the common protocol-2
   workspace, replacement/reopen/restart and manifest capability admission.
   Read Git for the current commit.
-- The latest published prerelease is `v1.0.5-test1`, with runtime source
-  `21ae7b5` and its matching canonical runner. Its tag adds only digest-bound
+- The latest published prerelease is `v1.0.5-test2`, with runtime source
+  `898162f` and its matching canonical runner. Its tag adds only digest-bound
   manual signoff; ZIP/APK bytes are the exact smoke-tested artifacts. It is an
   unsigned test release for Apple Silicon and local macOS Android Emulator
   (API 36, arm64). Intel, other Android runtime combinations and the complete
@@ -184,7 +184,7 @@ separately; neither target prose nor accepted 1.x limitations prove completion.
 
 ## Current Jack Ventura Boundary
 
-Jack Ventura 0.2.0 is the local, unreleased reference package for the common
+Jack Ventura 0.2.1 is the local, unreleased reference package for the common
 protocol-2 workspace path. Its protocol, parsing, preflight and recovery are
 package-owned; the host owns generic access enforcement and execution. The
 implemented wire contract has one owner: `plugins/plugin_host_api_v1.md`.
@@ -289,17 +289,104 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
-The owner selected `v1.0.5-test2` as the next complete unsigned test release
-before further Jack package development. Apple Developer ID/notarization and a
-dedicated Android release key are not connected; this is explicitly a test
-channel, not stable/public distribution. Build and exercise exact guarded
-Mac/Android packages from the selected clean source with its matching canonical
-runner, then bind their digests to manual signoff. Bounded feature acceptance
-below does not replace that packaged release journey. The complete User Lifetime
-qualification may remain explicitly PENDING for the test channel. No trade,
-publication to an external social service, or VPS mutation is part of this
-release. Resume Jack through the separate plugin repository after the release;
-do not add trading behavior to Capsule.
+The `v1.0.5-test2` unsigned test prerelease is published. Exact Mac/Android
+artifact acceptance, digests and limits belong to
+`checklists/release-manual-signoff-log.md`; complete User Lifetime remains
+explicitly PENDING.
+
+The owner selected Jack next, followed by its complete product/visual pass.
+Keep service protocol, account facts and strategy in `hivra-plugins`; Capsule
+continues to supply the common API and generic workspace presentation.
+First make stop coverage observable for the unique position matched to the
+managed fill: current closing STOP_MARKET orders, quantity, trigger/source,
+partial coverage, duplicates and unavailable/stale evidence. An attached-stop
+request or entry/TP receipt does not establish protection. Reacquire these
+service observations per action; retain no new stop-history archive or host
+trade controller. This bounded observation outcome does not place/amend a
+missing stop or qualify full TP/SL closure. Stop repair is excluded by the
+owner; full TP/SL closure remains unqualified.
+Verify ordinary restart, failed reads, position mismatch and the unchanged
+package replacement/revocation boundary. Native synthetic-service replay and
+UI presentation qualify local behavior, never live exchange execution.
+Then improve Jack's connection/configuration/position/result journey and
+visual hierarchy using package presentation and the existing generic workspace;
+no service-name dispatch or host strategy rules. No live trade, social
+publication, VPS mutation, commit or new release is authorized by these passes.
+
+The local 0.2.1 implementation now presents connection, entry, observed/saved
+position, stop coverage and inactive-attempt states through that same workspace.
+Status/actions precede responsive settings; exact order/calculation evidence
+remains expandable. Draft edits survive running-schedule polling and dispatch
+only through an explicit action; package rules still own managed-plan changes.
+Local checks passed 87 Jack tests, the plugin review, 676 Flutter tests, analyzer
+and host review. The released Mac FFI exercised the actual candidate WASM in
+471 synthetic invocations with no network or trading commands. A release-mode
+Mac preview rendered recorded WASM views for connection, position, failed read
+and inactive attempt. This preview is not guarded packaged or live acceptance;
+Android guarded-candidate acceptance remains unqualified; automatic stop
+repair is excluded by the owner.
+Execution owners/paths remain one package lifecycle and one common executor;
+two retired presentation rewrites were removed. Evidence and the preview are
+in `/Volumes/Dev/projects/hivra-artifacts/jack-protection-20261102`.
+
+The owner confirmed that the stop attached to the entry already works and
+excluded stop restoration/amendment. The current bounded outcome is complete,
+searchable instrument selection from the service contract catalog, not the
+quote ticker. A saved comparison found 81 quoted USDT symbols outside the active,
+API-open set and one available contract absent from quotes; the ticker path is
+replaced. Jack filters contract status/API-open flags and USDT support itself;
+Capsule has no instrument policy. Selection is explicit and cannot rewrite a
+managed plan. The catalog lives only in the chooser's memory and is reacquired
+on reopening/retry; only the owner's selected symbol is retained. Acceptance
+found that first-time public selection still required the broader account grant.
+Choice `source.access` now uses the existing owner permission dialog for public
+GET only, with no Keychain selection or scheduled workflow. Account connection
+and Start retain their existing explicit owner-grant path.
+
+The existing `http.request` gains optional package-selected JSON paths, discovered
+through `api.describe`: one bounded request/result, no response handles, persistent
+catalog, service adapter or second executor. The original source is bounded at
+1 MiB with projection; raw/selected results still fit 256 KiB. Selected JSON is
+returned directly, avoiding JSON encoded inside a string. This permits complete
+catalog reads without a host-owned chunk/cache lifecycle. Protocol interpretation,
+eligibility and pre-entry rechecks remain package-owned. A missing capability or
+insufficient source bound produces an explicit Capsule-update requirement.
+The contract owner is `plugins/plugin_host_api_v1.md`.
+
+Native measurements disproved the earlier assumption that the historical 5M
+instruction allowance could process the complete catalog. The same import-free
+runtime now has a finite 16M fuel allowance; memory/input/output and owner-grant
+boundaries are unchanged. Infinite entry/start functions must still trap. This
+is a generic execution resource bound, not package/business authorization.
+Service observations, source snapshots and measurements remain in
+`/Volumes/Dev/projects/hivra-artifacts/jack-protection-20261102`.
+
+The corrected catalog path passed actual common HTTP dispatch and current-source
+universal Mac FFI with the candidate WASM: 1325 source contracts, all 942 eligible
+USDT choices, a 33922-byte selected JSON value, unchanged opaque state and no
+trading requests. Applying ACH-USDT and reopening retained the selection without
+dispatching effects. Runtime tests (13) include infinite entry/start fuel traps;
+plugin review, 87 Jack tests, 676 Flutter tests, analyzer and host review pass.
+The earlier 1023-option quote replay is superseded, not this catalog's acceptance.
+Existing Mac/Android previews prove generic search and
+selection presentation only. They have no Capsule parent route and do not prove
+Jack-to-Capsule return; that navigation acceptance remains open. The owner
+refused installation in the working Capsule, which remains untouched. The
+published `v1.0.5-test2` lacks the new optional ability and execution budget;
+new guarded Capsule artifact acceptance and live trading remain unqualified.
+The owner authorized finishing this bounded Mac/Android acceptance, including
+Jack-to-Capsule return, on isolated test contexts only. Local commits in both
+repositories and pushing the Capsule branch for its matching CI runner are
+authorized; no merge, tag, publication, trade, stop repair or VPS mutation is
+authorized. The working Capsule must remain unchanged.
+
+Android presentation smoke now passed in the isolated `jack_preview` release-mode
+application on API 36 / arm64-v8a, using recorded actual WASM output and the
+changed common workspace renderer: position, unavailable observation, responsive
+actions/settings and scrolling. It has a separate application ID, uses no working
+Capsule or credentials and is not the guarded Capsule APK or Android WASM/live
+exchange acceptance. APK digest and screenshots are recorded with the existing
+Jack evidence above. No new host capability or delivery path was added.
 
 The completed bounded Core-only Capsule backup outcome below retains
 Ledger and Capsule type/network metadata only; operational pair attestations,

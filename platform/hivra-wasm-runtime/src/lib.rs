@@ -11,7 +11,9 @@ const MAX_MODULE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_INPUT_BYTES: usize = 512 * 1024;
 const MAX_OUTPUT_BYTES: usize = 128 * 1024;
 const MAX_LINEAR_MEMORY_BYTES: usize = 128 * 1024 * 1024;
-const FUEL_LIMIT: u64 = 5_000_000;
+// Full service catalogs must fit one bounded invocation, without a host-owned
+// catalog/cache lifecycle. The current contract projection needs ~11M fuel.
+const FUEL_LIMIT: u64 = 16_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeError {
