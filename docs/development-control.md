@@ -304,6 +304,19 @@ artifact acceptance, digests and limits belong to
 `checklists/release-manual-signoff-log.md`; complete User Lifetime remains
 explicitly PENDING.
 
+The next selected delivery outcome is installation through the existing signed
+Discovery catalog, not another local-package import. Promote the compatible
+Capsule `v1.0.5-test3` before the catalog set Jack 0.2.1, Moltbook 0.8.2 and
+Chat 0.2.3: the published test2 lacks Jack's required common host abilities.
+Chat receives a new version because its changed manifest must not reuse the
+published 0.2.2 identity. Use the existing canonical Linux plugin builder,
+signed catalog and registry installation path; no second installer, package
+store or Capsule is needed. Acceptance must load the published catalog,
+download/install its exact pinned package, open it, return to the same Capsule
+and retain the installation after restart. Use the existing Samsung Capsule;
+do not replace the Mac Jack package while its remote workflow is active.
+Commit, push, merge, tags and publication still require explicit approval.
+
 The owner selected Jack next, followed by its complete product/visual pass.
 On 2026-11-03 the owner authorized live trading and VPS changes for this product
 acceptance. Use the existing owner Capsule and its explicit trading settings;
