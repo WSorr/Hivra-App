@@ -360,9 +360,15 @@ Jack returned to that Capsule through both app-bar and Android system Back.
 The live catalog exposed a concrete limit: 1,124 available instruments exceed
 the 16 KiB generic view budget. The common view budget is now 64 KiB, still
 inside the unchanged 128 KiB WASM output boundary; lists are not shortened or
-stored by the host. Exact Android catalog/restart acceptance of this correction
-remains pending. Previous source checks pass 681 Flutter tests, analyzer and
-review gates; CI `41649675003` is green. Artifact digests and native observations
+stored by the host. The exact guarded Android artifact from `845d81d` then
+passed full catalog loading, search, ACH-USDT selection and an actual 1m market
+refresh on that Samsung. A cold restart retained all three packages and
+ACH-USDT/1m settings; both app-bar Back and Android system Back returned to the
+same Capsule, with its Ledger v8 unchanged. The staged package copies were
+removed from Downloads after installation. No Android credentials, trading
+Start or VPS binding were added; this does not qualify Android trading or TP.
+Source checks pass 682 Flutter tests, analyzer and review gates; CI
+`41661825858` is green. Artifact digests and native observations
 remain in the existing `jack-capsule-acceptance-20261103/acceptance.json` evidence
 record. No new Capsule, emulator, preview project or backup was created.
 Opening the owner's installed catalog Jack 0.1.13 exposed a real compatibility
