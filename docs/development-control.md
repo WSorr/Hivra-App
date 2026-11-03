@@ -193,7 +193,7 @@ separately; neither target prose nor accepted 1.x limitations prove completion.
 
 ## Current Jack Ventura Boundary
 
-Jack Ventura 0.2.1 is the local, unreleased reference package for the common
+Jack Ventura 0.2.1 is published in `v0.2.11-plugins` for the common
 protocol-2 workspace path. Its protocol, parsing, preflight and recovery are
 package-owned; the host owns generic access enforcement and execution. The
 implemented wire contract has one owner: `plugins/plugin_host_api_v1.md`.
@@ -299,23 +299,31 @@ compatibility, isolation or product acceptance.
 
 ## Selected Product Outcome
 
-The `v1.0.5-test2` unsigned test prerelease is published. Exact Mac/Android
-artifact acceptance, digests and limits belong to
+The `v1.0.5-test3` unsigned test prerelease and `v0.2.11-plugins` are
+published. Exact Mac/Android artifact acceptance, digests and limits belong to
 `checklists/release-manual-signoff-log.md`; complete User Lifetime remains
 explicitly PENDING.
 
-The next selected delivery outcome is installation through the existing signed
-Discovery catalog, not another local-package import. Promote the compatible
-Capsule `v1.0.5-test3` before the catalog set Jack 0.2.1, Moltbook 0.8.2 and
-Chat 0.2.3: the published test2 lacks Jack's required common host abilities.
-Chat receives a new version because its changed manifest must not reuse the
-published 0.2.2 identity. Use the existing canonical Linux plugin builder,
-signed catalog and registry installation path; no second installer, package
-store or Capsule is needed. Acceptance must load the published catalog,
-download/install its exact pinned package, open it, return to the same Capsule
-and retain the installation after restart. Use the existing Samsung Capsule;
-do not replace the Mac Jack package while its remote workflow is active.
-Commit, push, merge, tags and publication still require explicit approval.
+The bounded signed Discovery delivery outcome is complete. Update Capsule to
+`v1.0.5-test3`, then use Plugins → Discover plugins to install Jack 0.2.1,
+Moltbook 0.8.2 and Chat 0.2.3. Test2 lacks Jack's required common host abilities.
+The compatible Capsule was published before promoting the signed catalog;
+public downloads match its pinned canonical Linux package digests.
+
+The existing Samsung Capsule passed actual public catalog download/install,
+opening all three packages, Jack AppBar Back and system Back, and a cold
+application restart with the same Ledger and retained settings/packages.
+Same-version local Jack/Moltbook packages were removed with saved-data deletion
+unchecked before installing the published packages. No new Capsule, backup,
+installer or package store was created. The registry remains the single install
+owner for both file import and Discovery (one before, one after).
+The exact Mac ZIP also passed in-place update, existing Jack open/return and
+local Analyst inspection; its working Jack package and VPS were not replaced
+or changed. This delivery does not qualify full TP/SL or social publication.
+Evidence has one owner:
+`/Volumes/Dev/projects/hivra-artifacts/jack-capsule-acceptance-20261103/acceptance.json`.
+The owner explicitly authorized commits, push, merge, tags and these test
+publications; future passes and releases still require explicit approval.
 
 The owner selected Jack next, followed by its complete product/visual pass.
 On 2026-11-03 the owner authorized live trading and VPS changes for this product
@@ -444,7 +452,7 @@ found and fixed incomplete choice view envelopes; all choice stages now satisfy
 the canonical workspace contract. Public choice grants exclude old schedule
 fields, so authorizing a read cannot resume a revoked workflow.
 
-Guarded unpublished `v1.0.5-test3` ZIP/APK artifacts bind runtime source
+Earlier pre-publication `v1.0.5-test3` ZIP/APK candidates bound runtime source
 `b7f7e09` to its matching canonical CI runner; CI run `41591994124` succeeded.
 The exact Mac artifact used an isolated application identifier and data home;
 the exact release APK ran in a dedicated API 36 arm64 emulator. Independent
@@ -475,13 +483,13 @@ true missing candles are still rejected. Current gates pass 90 Jack tests,
 infinite entry/start fuel traps. Synthetic native workflow replay uses 369
 invocations; it does not qualify trading execution.
 
-The working Capsule and Samsung were not controlled or used for this acceptance.
-No account secrets, Start, live trading, stop repair, social publication or VPS
-change was authorized or performed. Local commits in both repositories and the
+That earlier isolated acceptance did not use the working Capsule or Samsung.
+It performed no account-secret connection, Start, live trading, stop repair,
+social publication or VPS change. Local commits in both repositories and the
 Capsule feature-branch push for its CI runner were authorized; merge, tag and
-publication remain unauthorized. This bounded public-market/navigation evidence
-is not full TP/SL, autonomous trading, Intel-native, physical-Android or general
-release qualification.
+publication were not authorized at that stage. That bounded public-market
+evidence is not full TP/SL, autonomous trading, Intel-native, physical-Android
+or general release qualification.
 
 The completed bounded Core-only Capsule backup outcome below retains
 Ledger and Capsule type/network metadata only; operational pair attestations,
