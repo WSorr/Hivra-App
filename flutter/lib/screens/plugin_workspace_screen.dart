@@ -875,7 +875,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       final access =
           rawAccess is Map ? Map<String, dynamic>.from(rawAccess) : null;
       if (access != null && !_hasAccess(access)) {
-        final granted = await _authorize(access);
+        final granted = await _authorize(
+          access,
+          scope: {
+            'version': 2,
+            'access': access,
+            'description': 'Load ${field['label']} choices',
+          },
+        );
         if (!granted || !mounted) return;
       }
       if (!mounted) return;
