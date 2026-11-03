@@ -11,6 +11,53 @@ import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/plugin_host_contract_handler.dart';
 
 void main() {
+  test(
+    'choice loading access uses the same validated permission descriptor',
+    () {
+      Map<String, dynamic> view(dynamic access) => {
+        'title': 'Choose',
+        'message': '',
+        'details': '',
+        'actions': [],
+        'rows': [],
+        'columns': [],
+        'fields': [
+          {
+            'id': 'item',
+            'label': 'Item',
+            'type': 'choice',
+            'value': 'a',
+            'source': {'action': 'load', 'access': access},
+          },
+        ],
+      };
+      final access = {
+        'version': 2,
+        'network': [
+          {
+            'origin': 'https://catalog.example',
+            'methods': ['GET'],
+            'credential': null,
+          },
+        ],
+        'credentials': {},
+      };
+      expect(
+        () => PluginWorkspaceContractHandler.validateView(
+          view(access),
+          capabilities: {},
+        ),
+        returnsNormally,
+      );
+      expect(
+        () => PluginWorkspaceContractHandler.validateView(
+          view({...access, 'network': 'invalid'}),
+          capabilities: {},
+        ),
+        throwsFormatException,
+      );
+    },
+  );
   group('PluginHostApiService', () {
     test(
       'raw binding cannot authorize or invoke an external package',

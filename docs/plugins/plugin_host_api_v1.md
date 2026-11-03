@@ -191,7 +191,7 @@ All requests have `kind`, a correlation `id` matching
 | --- | --- | --- | --- |
 | `api.describe` | none | none | `catalog`: operation descriptors |
 | `runtime.yield` | `workspace.continue` | none | correlation only; begins a fresh bounded invocation |
-| `http.request` | `network.http` and `credentials.use` when protected | `url`, `method`, optional string `body`, string-map `headers`, `credential`, `auth`, `max_response_bytes` | `outcome`, HTTP `status`, bounded `headers` and `body`, or safe `error` |
+| `http.request` | `network.http` and `credentials.use` when protected | `url`, `method`, optional string `body`, string-map `headers`, `credential`, `auth`, `max_response_bytes`, `response_json_paths` | `outcome`, HTTP `status`, bounded `headers`, raw `body` or selected `json`, or safe `error` |
 | `runtime.wait` | `workspace.continue` | integer `milliseconds` from 0 to 60000 | correlation only after a bounded delay |
 | `storage.read` | `state.plugin.read_write` | `key` | string or null `value`, or size `error` |
 | `storage.write` | `state.plugin.read_write` | `key`, string `value` | `written` |
@@ -265,7 +265,11 @@ fully revokes host dispatch. A package may expose an ordinary partial-Stop
 workflow without revoking access to its remaining operations.
 
 Choice fields use `source.action` through the same action executor and return
-`view.options`. There is no field-specific host action or service lookup.
+`view.options`. An optional `source.access` declares the access needed to load
+those choices. The host reuses a matching active grant, or opens the same owner
+permission dialog before loading. Cancel dispatches nothing. A choice grant
+creates no schedule and never implies connected credentials or Start. There is
+no field-specific executor or service lookup.
 
 HTTP permits exact HTTPS origins and explicit methods (GET, HEAD, POST, PUT,
 PATCH, DELETE, OPTIONS). Origin permission covers paths at that origin; the
@@ -280,6 +284,33 @@ outputs. A service needing another signing primitive requires a common API
 extension. Protected values and signed URLs echoed by a service are withheld
 from response body/headers; that outcome remains uncertain.
 
+A package may opt into `response_json_paths` when that optional field is
+advertised by `api.describe`. It is a map of output names to JSON path-token
+arrays; it performs technical projection only. For example,
+`{"status":["status"],"names":["items","*","name"]}` retains the service's
+status value and returns an array of names. Object tokens select exact keys;
+array `*` maps the remaining path over each element, and a nonnegative decimal
+index selects one element. An empty path selects the whole JSON value; a missing
+or incompatible path returns null. Output names have no host-defined meaning.
+
+There are at most 8 paths, 16 tokens per path, and 64 characters per name/token.
+With projection, `max_response_bytes` bounds the original source up to the
+advertised `max_response_json_source_bytes` (1 MiB). The returned projection
+must fit both that selected bound and the unchanged 256 KiB result ceiling;
+there is no truncation. Without projection the source/result ceiling remains
+256 KiB. These separate bounds allow a compact result from a larger service
+catalog without increasing WASM input or memory limits. Protected-echo
+checks cover the original body/headers. The selection is returned as the `json`
+value instead of a JSON-encoded `body` string, avoiding a second decoding layer
+in the package. HTTP status is preserved; obsolete content-length/encoding
+response headers are omitted after projection. Invalid
+JSON or an oversized projected response yields `unknown` after transport
+admission; it never proves non-delivery. Without this option the bounded raw
+body is returned unchanged. The host neither classifies service success nor
+caches a response, and JSON selection does not expand network/credential grants.
+An older host remains usable for existing requests; a package requiring this
+ability must check the catalog before issuing its request.
+
 HTTP outcomes have precise delivery meaning: `not_dispatched` means no
 transport admission; `unknown` means the host cannot prove non-delivery;
 `response` means an HTTP response, including service errors. Only the package
@@ -291,8 +322,9 @@ The result includes `text`, `provider_id`, `provider_label` and `model`. Unavail
 
 Resource bounds: state 32 KiB, transient context 16 KiB, view 16 KiB; HTTP body
 24 KiB request/default response; a request may select `max_response_bytes` up to
-256 KiB. The total WASM invocation input is bounded at 512 KiB; output remains
-128 KiB, linear memory 128 MiB and fuel 5,000,000. Response headers 8 KiB/64 fields, access descriptor
+256 KiB for raw responses, or 1 MiB source with JSON projection whose returned
+body still fits 256 KiB. The total WASM invocation input is bounded at 512 KiB; output remains
+128 KiB, linear memory 128 MiB and fuel 16,000,000. Response headers 8 KiB/64 fields, access descriptor
 4 KiB/16 origin entries, and at most 512 continuations in one owner action or
 scheduled wake. Existing ABI input/output/fuel bounds also apply to the
 combined envelope. `storage.*` accepts only safe `data-` keys in this
@@ -419,7 +451,7 @@ External execution is fail-closed:
 - zip module paths cannot traverse parents;
 - modules cannot import host functions;
 - module, input, output, linear memory, and fuel are bounded: linear memory
-  permits at most 128 MiB per invocation; fuel remains 5,000,000;
+  permits at most 128 MiB per invocation; fuel is bounded at 16,000,000;
 - missing exports, signature mismatch, traps, invalid UTF-8, malformed
   envelopes, and output-hash mismatch are rejected;
 - no legacy fail-open path exists for missing contract or capability metadata.

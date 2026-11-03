@@ -172,6 +172,9 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
               ).hasMatch((field['source'] as Map)['action']))) {
         throw const FormatException('Invalid package option action');
       }
+      if (field['type'] == 'choice' && field['source']['access'] != null) {
+        PluginCapabilityDispatcher.validateAccess(field['source']['access']);
+      }
     }
     ids.clear();
     for (final action in actions) {

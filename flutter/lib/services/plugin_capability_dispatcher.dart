@@ -10,6 +10,9 @@ class PluginCapabilityDispatcher {
   static const version = 2;
   static const maxBodyBytes = 24 * 1024;
   static const maxResponseBodyBytes = 256 * 1024;
+  static const maxResponseJsonSourceBytes = 1024 * 1024;
+  static const maxResponseJsonPaths = 8;
+  static const maxResponseJsonPathDepth = 16;
   final Future<Map<String, dynamic>> Function(
     String method,
     Uri uri,
@@ -46,8 +49,12 @@ class PluginCapabilityDispatcher {
         'credential',
         'auth',
         'max_response_bytes',
+        'response_json_paths',
       ],
       'max_response_bytes': maxResponseBodyBytes,
+      'max_response_json_source_bytes': maxResponseJsonSourceBytes,
+      'max_response_json_paths': maxResponseJsonPaths,
+      'max_response_json_path_depth': maxResponseJsonPathDepth,
       'outcomes': ['response', 'not_dispatched', 'unknown'],
     },
     'storage.read': {
@@ -175,11 +182,32 @@ class PluginCapabilityDispatcher {
     var admitted = false;
     final secretValues = <String>[];
     try {
+      final selectedPaths = request['response_json_paths'];
       final responseLimit = request['max_response_bytes'] ?? maxBodyBytes;
       if (responseLimit is! int ||
           responseLimit < 1 ||
-          responseLimit > maxResponseBodyBytes) {
+          responseLimit >
+              (selectedPaths == null
+                  ? maxResponseBodyBytes
+                  : maxResponseJsonSourceBytes)) {
         throw const FormatException('Invalid response bound');
+      }
+      if (selectedPaths != null &&
+          (selectedPaths is! Map ||
+              selectedPaths.isEmpty ||
+              selectedPaths.length > maxResponseJsonPaths ||
+              selectedPaths.entries.any(
+                (entry) =>
+                    entry.key is! String ||
+                    (entry.key as String).isEmpty ||
+                    (entry.key as String).length > 64 ||
+                    entry.value is! List ||
+                    (entry.value as List).length > maxResponseJsonPathDepth ||
+                    (entry.value as List).any(
+                      (part) => part is! String || part.length > 64,
+                    ),
+              ))) {
+        throw const FormatException('Invalid response JSON paths');
       }
       if (!allows(access, request) ||
           request['url'].length > 2048 ||
@@ -314,11 +342,50 @@ class PluginCapabilityDispatcher {
           (auth != null && visible.contains(uri.toString()))) {
         return {'outcome': 'unknown', 'error': 'protected_response'};
       }
+      var responseBody = result['body'] as String;
+      Map<String, dynamic>? selectedJson;
+      if (selectedPaths != null) {
+        final decoded = jsonDecode(responseBody);
+        Object? select(Object? value, List path, int offset) {
+          if (offset == path.length) return value;
+          final part = path[offset] as String;
+          if (value is Map) return select(value[part], path, offset + 1);
+          if (value is List) {
+            if (part == '*') {
+              return [for (final item in value) select(item, path, offset + 1)];
+            }
+            final index = int.tryParse(part);
+            if (index != null && index >= 0 && index < value.length) {
+              return select(value[index], path, offset + 1);
+            }
+          }
+          return null;
+        }
+
+        selectedJson = {
+          for (final entry in selectedPaths.entries)
+            entry.key as String: select(decoded, entry.value as List, 0),
+        };
+        responseBody = jsonEncode(selectedJson);
+        if (utf8.encode(responseBody).length > responseLimit ||
+            utf8.encode(responseBody).length > maxResponseBodyBytes) {
+          throw const FormatException('Projected response exceeds its bound');
+        }
+        responseHeaders.removeWhere(
+          (key, _) => {
+            'content-length',
+            'content-encoding',
+          }.contains(key.toLowerCase()),
+        );
+      }
       return {
         'outcome': 'response',
         'status': result['status'],
         'headers': responseHeaders,
-        'body': result['body'],
+        if (selectedJson == null)
+          'body': responseBody
+        else
+          'json': selectedJson,
       };
     } catch (_) {
       return {
