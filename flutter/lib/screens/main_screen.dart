@@ -46,7 +46,11 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
   if (pluginId != null &&
       pluginId.isNotEmpty &&
       requiredCapabilities != null &&
-      record.capabilities.toSet().containsAll(requiredCapabilities)) {
+      pluginCapabilitiesSatisfyContract(
+        pluginId: pluginId,
+        contractKind: contractKind,
+        capabilities: record.capabilities,
+      )) {
     return contractKind;
   }
   return null;

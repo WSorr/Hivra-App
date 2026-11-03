@@ -1118,6 +1118,8 @@ class _InstalledPluginTile extends StatelessWidget {
                           ? 'Removal pending'
                           : ready
                           ? 'Ready'
+                          : !capabilitiesMatch
+                          ? 'Update plugin'
                           : 'Needs attention',
                   accent:
                       ready ? const Color(0xFF75D98A) : const Color(0xFFFFA06B),
@@ -1143,6 +1145,14 @@ class _InstalledPluginTile extends StatelessWidget {
               ],
             ),
           ),
+          if (!record.removalPending && !capabilitiesMatch)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                'This package needs a compatible update for this Capsule. Saved data is retained.',
+                style: TextStyle(color: Color(0xFFFFA06B)),
+              ),
+            ),
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(

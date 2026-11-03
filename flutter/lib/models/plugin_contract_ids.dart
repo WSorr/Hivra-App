@@ -18,6 +18,15 @@ const Set<String> pluginWorkspaceRequiredCapabilities = <String>{
   'workspace.render',
   'workspace.continue',
 };
+const Set<String> pluginWorkspaceCapabilities = <String>{
+  ...pluginWorkspaceRequiredCapabilities,
+  'consensus_guard.read',
+  'workspace.schedule',
+  'state.plugin.read_write',
+  'network.http',
+  'credentials.use',
+  'inference.request',
+};
 const String capsuleChatContractKind = 'capsule_chat';
 const Set<String> capsuleChatRequiredCapabilities = <String>{
   'consensus_guard.read',
@@ -48,5 +57,8 @@ bool pluginCapabilitiesSatisfyContract({
     pluginId: pluginId,
     contractKind: contractKind,
   );
-  return required == null || capabilities.toSet().containsAll(required);
+  final declared = capabilities.toSet();
+  return (required == null || declared.containsAll(required)) &&
+      (contractKind?.trim() != pluginWorkspaceContractKind ||
+          declared.every(pluginWorkspaceCapabilities.contains));
 }

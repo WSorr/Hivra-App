@@ -184,11 +184,13 @@ class WasmPluginRegistryService {
       }
       final record = WasmPluginRecord(
         id: id,
-        displayName: _displayNameFromFile(
-          preflight.pluginId?.isNotEmpty == true
-              ? preflight.pluginId!
-              : sourceName,
-        ),
+        displayName:
+            preflight.displayName ??
+            _displayNameFromFile(
+              preflight.pluginId?.isNotEmpty == true
+                  ? preflight.pluginId!
+                  : sourceName,
+            ),
         originalFileName: sourceName,
         storedFileName: storedFileName,
         sizeBytes: await storedFile.length(),

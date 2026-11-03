@@ -11,6 +11,7 @@ class WasmPluginPackagePreflight {
   final String packageKind;
   final String? pluginId;
   final String? pluginVersion;
+  final String? displayName;
   final String? contractKind;
   final String? runtimeAbi;
   final String? runtimeEntryExport;
@@ -21,6 +22,7 @@ class WasmPluginPackagePreflight {
     required this.packageKind,
     this.pluginId,
     this.pluginVersion,
+    this.displayName,
     this.contractKind,
     this.runtimeAbi,
     this.runtimeEntryExport,
@@ -105,6 +107,15 @@ class WasmPluginPackagePreflightService {
       throw const FormatException('Plugin manifest is missing plugin_id');
     }
     final pluginVersion = _parsePluginVersion(manifest);
+    final displayName = manifest['display_name'];
+    if (displayName != null &&
+        (displayName is! String ||
+            displayName.trim().isEmpty ||
+            displayName.length > 128)) {
+      throw const FormatException(
+        'Plugin display_name must be a non-empty name of at most 128 characters',
+      );
+    }
 
     final contract = manifest['contract'];
     if (contract is! Map) {
@@ -177,6 +188,7 @@ class WasmPluginPackagePreflightService {
       packageKind: 'zip',
       pluginId: pluginId,
       pluginVersion: pluginVersion,
+      displayName: (displayName as String?)?.trim(),
       contractKind: contractKind,
       runtimeAbi: runtimeAbi,
       runtimeEntryExport: runtimeEntryExport,

@@ -406,6 +406,7 @@ void main() {
             'schema': 'hivra.plugin.manifest',
             'version': 1,
             'release_version': '0.1.0',
+            'display_name': 'Moltbook Ambassador',
             'plugin_id': 'hivra.contract.moltbook-ambassador.v1',
             'contract': {'kind': 'plugin_workspace_v1'},
             'runtime': {
@@ -424,6 +425,7 @@ void main() {
     final installed = await service.installPluginFromFile(sourceFile);
 
     expect(installed.packageKind, 'zip');
+    expect(installed.displayName, 'Moltbook Ambassador');
     expect(installed.pluginId, 'hivra.contract.moltbook-ambassador.v1');
     expect(installed.pluginVersion, '0.1.0');
     expect(installed.contractKind, 'plugin_workspace_v1');
@@ -438,6 +440,7 @@ void main() {
     final loaded = await service.loadPlugins();
     expect(loaded, isNotEmpty);
     expect(loaded.first.packageKind, 'zip');
+    expect(loaded.first.displayName, 'Moltbook Ambassador');
     expect(loaded.first.pluginId, 'hivra.contract.moltbook-ambassador.v1');
   });
 

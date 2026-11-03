@@ -155,6 +155,43 @@ void main() {
     );
   });
 
+  test(
+    'retired named operations remain readable but cannot activate a workspace',
+    () {
+      final record = _record(
+        pluginId: 'example.service',
+        contractKind: pluginWorkspaceContractKind,
+        capabilities: [
+          ...pluginWorkspaceRequiredCapabilities,
+          'account.connect',
+        ],
+      );
+      expect(
+        WasmPluginRecord.fromJson(record.toJson()).capabilities,
+        unorderedEquals(record.capabilities),
+      );
+      expect(installedPluginWorkspaceContractKind(record), isNull);
+      expect(
+        pluginCapabilitiesSatisfyContract(
+          pluginId: record.pluginId,
+          contractKind: record.contractKind,
+          capabilities: record.capabilities,
+        ),
+        isFalse,
+      );
+      expect(
+        installedPluginWorkspaceContractKind(
+          _record(
+            pluginId: 'different.package',
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: pluginWorkspaceCapabilities.toList(),
+          ),
+        ),
+        pluginWorkspaceContractKind,
+      );
+    },
+  );
+
   test('mutated or incomplete manifest profiles expose no workspace', () {
     final invalidProfiles = <WasmPluginRecord>[
       _record(pluginId: 'hivra.contract.other-chat.v1'),

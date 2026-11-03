@@ -101,6 +101,15 @@ prerequisites or automatic debts; expanding the matrix needs explicit approval.
 Record untested environments. Universal binary checks, data isolation, recovery
 and channel-specific signing/signoff requirements remain mandatory.
 
+Reuse one isolated acceptance profile per runtime instead of accumulating
+Capsules, preview applications and emulator definitions for successive passes.
+Fixture-only packages belong in tests, never in the owner's working profile or
+the product catalog. A clean-install/recovery case may use disposable userdata;
+remove that data and its test credentials through the normal lifecycle after
+the check, once no unresolved effects remain. Retain digest-bound results and
+necessary release artifacts, not duplicate app bundles, generated backup payloads
+or standalone preview projects. Cleanup belongs to the same acceptance journey.
+
 ### 6. Upgrade dependencies and tooling as one controlled unit
 
 An upgrade must record the previous and new versions, why the change is needed,
@@ -296,6 +305,14 @@ artifact acceptance, digests and limits belong to
 explicitly PENDING.
 
 The owner selected Jack next, followed by its complete product/visual pass.
+On 2026-11-03 the owner authorized live trading and VPS changes for this product
+acceptance. Use the existing owner Capsule and its explicit trading settings;
+an expired earlier grant does not supply new limits or duration. No new test
+Capsules, preview applications or standalone acceptance projects are authorized.
+The target is Capsule with three replaceable WASM packages; existing isolation,
+owner authorization and unresolved-delivery guarantees stay in place while
+security/strategy redesign remains outside this product pass. Commit, push,
+publication and release still require explicit approval.
 Keep service protocol, account facts and strategy in `hivra-plugins`; Capsule
 continues to supply the common API and generic workspace presentation.
 First make stop coverage observable for the unique position matched to the
@@ -311,8 +328,20 @@ package replacement/revocation boundary. Native synthetic-service replay and
 UI presentation qualify local behavior, never live exchange execution.
 Then improve Jack's connection/configuration/position/result journey and
 visual hierarchy using package presentation and the existing generic workspace;
-no service-name dispatch or host strategy rules. No live trade, social
-publication, VPS mutation, commit or new release is authorized by these passes.
+no service-name dispatch or host strategy rules. Social publication, commit and
+new releases are not authorized by this product pass.
+
+Jack's public trading journey now converges on connect, configure, Start/Stop
+and actual order/position observation. The previous manual prepare/place/cancel
+actions are sealed at the package boundary; the same private cycle steps and
+recovery identities remain. Timeframe selection reuses the existing package
+choice action without extending the host API. Qualification of these changes
+is pending the actual existing-Capsule journey; unit checks alone do not close it.
+Opening the owner's installed catalog Jack 0.1.13 exposed a real compatibility
+defect: retired named capabilities were still marked ready, then the old package
+rejected the common execution projection. Activation/readiness and invocation
+now share the existing supported-capability decision. Archived metadata remains
+readable for backup/removal; no old adapter or private-state migration is added.
 
 The local 0.2.1 implementation now presents connection, entry, observed/saved
 position, stop coverage and inactive-attempt states through that same workspace.
@@ -325,8 +354,9 @@ release-mode previews rendered recorded WASM views for connection, position,
 failed read and inactive attempt. Those previews alone do not qualify guarded
 artifacts or live execution; automatic stop repair remains excluded by the owner.
 Execution owners/paths remain one package lifecycle and one common executor;
-two retired presentation rewrites were removed. Evidence and the preview are
-in `/Volumes/Dev/projects/hivra-artifacts/jack-protection-20261102`.
+two retired presentation rewrites were removed. Recorded preview evidence is
+in `/Volumes/Dev/projects/hivra-artifacts/jack-protection-20261102`; the disposable
+preview application and project have been removed.
 
 The owner confirmed that the stop attached to the entry already works and
 excluded stop restoration/amendment. The current bounded outcome is complete,

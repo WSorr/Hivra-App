@@ -461,6 +461,13 @@ class PluginHostApiService {
     if (missing.isNotEmpty) {
       return 'Runtime capabilities are missing required grants';
     }
+    if (!pluginCapabilitiesSatisfyContract(
+      pluginId: pluginId,
+      contractKind: runtimeBinding.contractKind,
+      capabilities: normalized,
+    )) {
+      return 'This plugin uses a retired API. Install a compatible plugin update; saved data is retained.';
+    }
     return null;
   }
 
