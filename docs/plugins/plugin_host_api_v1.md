@@ -29,6 +29,19 @@ host financial preflight, normalization and host-selected continuations are
 removed. Moltbook 0.8.0 uses the common path without a storage capability.
 Chat retains its relationship-scoped specialized contract.
 
+Workspace activation admits only the supported common capability set. Retired
+named service capabilities remain readable in archived package metadata for
+backup/removal, but do not authorize opening or invoking that package. Readiness
+and execution use the same contract decision; the owner sees an update request
+instead of a private WASM schema error. This does not restore a retired adapter
+or reinterpret saved package state.
+
+An installable manifest may provide `display_name` (a non-empty string up to
+128 characters). The existing installed record uses that package-owned name;
+identity, replacement and grants continue to use `plugin_id` and package digest.
+Older manifests retain their derived label. Names do not add an API operation
+or require product-name mappings in Capsule.
+
 ### Responsibilities
 
 | Owner | Responsibility |

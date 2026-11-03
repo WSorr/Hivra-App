@@ -60,6 +60,42 @@ void main() {
   );
   group('PluginHostApiService', () {
     test(
+      'retired workspace operations are refused before invoking WASM',
+      () async {
+        var calls = 0;
+        final host = _service(
+          runtimeBinding: const PluginRuntimeBinding.externalPackage(
+            packageId: 'old-workspace',
+            packageVersion: '0.1.13',
+            packageKind: 'zip',
+            packageDigestHex:
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            runtimeAbi: 'hivra_host_abi_v2',
+            runtimeEntryExport: 'hivra_evaluate_v1',
+            runtimeModulePath: 'plugin/module.wasm',
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: [
+              'workspace.render',
+              'workspace.continue',
+              'account.connect',
+            ],
+          ),
+          onRuntimeInvoke: () => calls++,
+        );
+        final response = await host.executeWithRuntimeHook(
+          const PluginHostApiRequest(
+            schemaVersion: 1,
+            pluginId: 'example.service',
+            method: pluginWorkspaceMethod,
+            args: {},
+          ),
+        );
+        expect(response.errorCode, 'runtime_capability_mismatch');
+        expect(response.errorMessage, contains('compatible plugin update'));
+        expect(calls, 0);
+      },
+    );
+    test(
       'raw binding cannot authorize or invoke an external package',
       () async {
         var calls = 0;

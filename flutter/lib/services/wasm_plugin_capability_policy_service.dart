@@ -1,6 +1,7 @@
+import '../models/plugin_contract_ids.dart';
+
 class WasmPluginCapabilityPolicyService {
   static const Set<String> _allowedCapabilities = <String>{
-    'consensus_guard.read',
     // Retired contract metadata stays readable for backup/removal only.
     // Remove these names when pre-0.8 package archives are intentionally retired.
     'content.draft.prepare',
@@ -8,13 +9,7 @@ class WasmPluginCapabilityPolicyService {
     'content.engagement.plan',
     'content.reply.prepare',
     'content.reply.delegate',
-    'inference.request',
-    'network.http',
-    'credentials.use',
-    'workspace.render',
-    'workspace.continue',
-    'workspace.schedule',
-    'state.plugin.read_write',
+    ...pluginWorkspaceCapabilities,
     'market.candles.read',
     'market.instruments.read',
     'account.snapshot.read',
