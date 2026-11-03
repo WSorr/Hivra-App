@@ -28,12 +28,16 @@ hosted shared computer.
 - A relationship begins through an explicit invitation between Capsules.
 - Relationships are private trust facts, not likes, follows, or public edges.
 - A Capsule does not need a relationship to run solo drones.
-- External services and transports are replaceable adapters.
-- External effects require explicit bounded authority and durable receipts.
+- Packages interpret external service protocols; host transports and technical
+  execution remain replaceable.
+- External effects require owner-granted authority. A visible service result
+  or honest uncertainty must not be confused with successful execution.
 
 The permanent engineering direction is defined in `product-axis.md`:
 authenticated input becomes reproducible local truth through one owner, while
-every external effect follows one idempotent lifecycle.
+each external effect has one responsible lifecycle owner. Idempotency and
+recovery depend on the service protocol and the package's declared retention
+choice; a common HTTP request does not promise exactly-once execution.
 
 ## 3. Capsule
 
@@ -65,9 +69,10 @@ screens do not become truth stores: they display canonical projections derived
 from the Ledger or from the dedicated owner of operational state.
 
 Not every local record is a Ledger fact. Delivery queues, routing caches,
-pair-attestation evidence, plugin state, external-effect journals, and secrets
-have dedicated stores because they represent operations or private capability
-state rather than Capsule domain history.
+pair-attestation evidence, optional package checkpoints and secrets have their
+own lifecycle owners. A stateless package reacquires service observations
+without a local business-history store. These are operations or private
+capability state rather than Capsule domain history.
 
 This distinction gives the user two useful views:
 
@@ -141,8 +146,8 @@ keys, filesystems, networks, provider credentials, or Ledger mutation.
 The person owns intent and delegates authority through Capsule. A drone owns
 its capability policy and may compute a proposal; the host checks authorization
 and executes only the capability covered by the owner's intent or delegation.
-The external adapter performs the effect and returns evidence to its one
-durable lifecycle owner.
+The technical executor returns service evidence to the package that owns the
+workflow; it does not interpret that evidence as product success.
 
 This keeps inference, trading strategy, chat behavior, staking logic, and
 external social agents replaceable without changing Core identity or history.
@@ -189,15 +194,19 @@ trusted relationship from their own authenticated history.
 ### Work through a drone
 
 The user opens a drone, supplies or approves bounded intent, reviews relevant
-state, and authorizes an exact effect when required. The effect remains
-traceable and recoverable after timeout or restart.
+state, and grants the required access. Start may authorize the complete
+workflow without per-step approval. The package follows its declared recovery
+contract after timeout or restart and reports unresolved outcomes honestly.
 
 ### Recover
 
-The recovery phrase restores Capsule identity. A backup restores the richer
-local history and operational state included by its explicit format. External
-service credentials are separate and are never silently reconstructed from the
-Capsule seed.
+The recovery phrase restores Capsule identity; the authenticated Ledger backup
+restores signed history and relationships. New backups contain Core continuity
+only, not Chat content, service observations, package checkpoints, installed
+packages or secrets. Install/reconnect applications normally after recovery.
+Operational pair evidence can be reacquired from peers. Old full-state imports
+remain read-only compatibility, not the scope of new backups. External service
+credentials are separate and are never reconstructed from the Capsule seed.
 
 ## 12. Glossary
 
@@ -214,4 +223,4 @@ Capsule seed.
 | Pair Consensus | Authenticated agreement over one pair-scoped view |
 | Drone | Isolated WASM extension using bounded host capabilities |
 | Transport | Replaceable host adapter for authenticated envelope delivery |
-| External effect | Durable provider action performed under bounded authority |
+| External effect | Service action requested under owner-granted authority |

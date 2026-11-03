@@ -13,6 +13,14 @@ import 'capsule_file_store.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'wasm_plugin_registry_service.dart';
 
+class WorkspaceVpsBusy implements Exception {
+  const WorkspaceVpsBusy();
+
+  @override
+  String toString() =>
+      'VPS is busy with another runner. No installation or execution transfer was performed. Retire the existing installation or choose another server.';
+}
+
 /// Only authenticated transport and installation. Private workspace state and
 /// provider effects remain opaque and enter the existing workspace executor.
 class PluginWorkspaceRemoteService {
@@ -207,6 +215,13 @@ class PluginWorkspaceRemoteService {
                 'selected': true,
               };
       validateConnection(c, owner, record.pluginId!);
+      final existing = await _execute(
+        client,
+        'if [ -f /var/lib/hivra-workspace/runner.json ]; then cat /var/lib/hivra-workspace/runner.json; else printf "{}"; fi',
+        const [],
+      );
+      validateInstallationTarget(c, _json(existing));
+      if (!stillOwned()) throw StateError('Capsule changed');
       // Persist key/pin before installation: a lost acknowledgement can be
       // recovered using the same identity, not by creating another runner.
       await vault.saveSecret(
@@ -218,20 +233,6 @@ class PluginWorkspaceRemoteService {
         secretValue: pem,
       );
       await _save(c);
-      final existing = await _execute(
-        client,
-        'if [ -f /var/lib/hivra-workspace/runner.json ]; then cat /var/lib/hivra-workspace/runner.json; else printf "{}"; fi',
-        const [],
-      );
-      final binding = _json(existing);
-      if (binding.isNotEmpty &&
-          (binding['owner'] != owner ||
-              binding['plugin_id'] != record.pluginId ||
-              binding['executor_id'] != c['executor_id'])) {
-        throw StateError(
-          'This VPS installation belongs to another Capsule or package',
-        );
-      }
       final input = await _setupInput(c, record);
       if (!stillOwned()) throw StateError('Capsule or package changed');
       final public =
@@ -261,6 +262,8 @@ class PluginWorkspaceRemoteService {
           'Capsule changed; VPS installed without trading authority',
         );
       }
+    } on WorkspaceVpsBusy {
+      rethrow;
     } catch (_) {
       throw StateError(
         'VPS connection/installation failed. Check the address, root login and server fingerprint. No trading Start is implied; retry uses the same installation.',
@@ -268,6 +271,21 @@ class PluginWorkspaceRemoteService {
     } finally {
       client.close();
     }
+  }
+
+  static void validateInstallationTarget(
+    Map<String, dynamic> connection,
+    Map<String, dynamic> binding,
+  ) {
+    if (binding.isEmpty) return;
+    if (binding['owner'] != connection['owner'] ||
+        binding['plugin_id'] != connection['plugin_id'] ||
+        binding['executor_id'] != connection['executor_id']) {
+      throw const WorkspaceVpsBusy();
+    }
+    final digest = binding['package_digest'];
+    if (digest is! String) throw StateError('Invalid VPS installation binding');
+    _checkBinding(connection, binding, digest: digest);
   }
 
   Future<Map<String, dynamic>> _setupInput(

@@ -61,7 +61,7 @@ release row to make it current.
 | Identity migration | `identity-decoupling-migration.md` |
 | Capsule addressing | `capsule-addressing-model.md` |
 | Android seed migration | `android-keystore-migration.md` |
-| Toolchain evolution | `docs/platform-toolchain-evolution.md` |
+| Toolchain evolution | [Toolchain contract](platform-toolchain-evolution.md) |
 
 The generated ownership report is
 `generated/architecture-ownership-baseline.md`; its source is
@@ -73,13 +73,14 @@ The generated ownership report is
 | --- | --- |
 | Chat deterministic contract | `plugins/plugin_host_api_v1.md` |
 | Chat delivery and durable handoff | `architecture/transport-delivery-lifecycle.md` |
-| Moltbook | `plugins/moltbook_agent_drone_design_v1.md` |
+| Moltbook entry point | `plugins/moltbook_agent_drone_design_v1.md` |
 | Moltbook stateless common-API workflow, service history and receipt/recovery limits | `plugins/moltbook_engagement_lifecycle_v1.md` |
 | External plugin source, canonical identity and replacement boundary | `plugins/external_plugin_source.md` |
 
-Moltbook still contains historical implementation material. It is consolidated
-only when its product capability migrates out of the Flutter host; no separate
-documentation project is authorized.
+Moltbook and Jack use the common workspace contract. Chat retains its
+relationship-scoped specialized contract; do not describe that remaining host
+binding as a completed generic capability. Current versions and acceptance
+limits belong to `development-control.md`, not this map.
 
 ## Verification
 

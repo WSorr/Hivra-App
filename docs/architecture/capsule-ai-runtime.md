@@ -373,7 +373,7 @@ added.
 
 ### 9.5 Moltbook Common Inference
 
-Moltbook 0.8.0 uses common workspace `ai.infer`. Its former
+Moltbook uses common workspace `ai.infer`. Its former
 `MoltbookPublicBulletinAiService`, host prompts, durable feed checkpoint,
 approval/delegation controller and publication-effect service are removed.
 The runtime continues to own the preferred connection, process-scoped secret

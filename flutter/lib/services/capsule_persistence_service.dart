@@ -343,22 +343,6 @@ class CapsulePersistenceService {
     return true;
   }
 
-  Future<String?> exportBackupEnvelope(CapsulePersistenceBindings hivra) async {
-    final ledger = hivra.exportLedger();
-    if (ledger == null || ledger.isEmpty) return null;
-    final state = await _readStateForCurrentCapsule(hivra);
-    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
-      ledgerJson: ledger,
-      isGenesis: state?['isGenesis'] == true,
-      isNeste: state?['isNeste'] != false,
-    );
-
-    final dir = await _currentCapsuleDir(hivra, create: true);
-    await _fileStore.writeBackup(dir, backupJson);
-    await _touchRuntimeCapsuleMetadata(hivra);
-    return _fileStore.backupPath(dir);
-  }
-
   Future<String?> exportBackupEnvelopeToPath(
     CapsulePersistenceBindings hivra,
     String targetPath,
@@ -440,14 +424,6 @@ class CapsulePersistenceService {
       backupJson: backupJson,
       coreProjectionJson: coreProjectionJson,
     );
-  }
-
-  Future<void> clearPersistedData(
-    CapsulePersistenceBindings hivra, {
-    bool includeBackup = false,
-  }) async {
-    final dir = await _currentCapsuleDir(hivra);
-    await _fileStore.clearPersisted(dir, includeBackup: includeBackup);
   }
 
   Future<String?> resolveActiveCapsuleHex(
@@ -552,48 +528,6 @@ class CapsulePersistenceService {
     await _setActiveCapsule(activeHex);
     await _syncLocalCapsuleContactCards(hivra, onlyPubKeyHex: activeHex);
     return true;
-  }
-
-  Future<String?> diagnoseActiveCapsuleBootstrap(
-    CapsulePersistenceBindings hivra,
-  ) async {
-    final activeHex = await resolveActiveCapsuleHex(hivra);
-    if (activeHex == null || activeHex.isEmpty) {
-      return 'No active capsule selected';
-    }
-
-    final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
-    if (bootstrap == null) {
-      return 'No bootstrap data for capsule $activeHex';
-    }
-
-    if (!hivra.saveSeed(bootstrap.seed)) {
-      return 'Failed to save seed for capsule $activeHex';
-    }
-
-    if (!hivra.createCapsule(
-      bootstrap.seed,
-      isGenesis: bootstrap.isGenesis,
-      isNeste: bootstrap.isNeste,
-      ownerMode: _ownerModeCode(bootstrap.identityMode),
-    )) {
-      return 'Failed to create runtime capsule for $activeHex';
-    }
-
-    final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
-    final runtimeHex =
-        runtimePubKey != null && runtimePubKey.length == 32
-            ? _bytesToHex(runtimePubKey)
-            : null;
-    if (runtimeHex != activeHex) {
-      return 'Seed/pubkey mismatch: expected $activeHex, got ${runtimeHex ?? 'none'}';
-    }
-
-    if (!_importBootstrapLedgerCandidates(hivra, bootstrap)) {
-      return 'Failed to import ledger for capsule $activeHex';
-    }
-
-    return null;
   }
 
   Future<CapsuleBootstrapReport> diagnoseBootstrapReport(
@@ -825,22 +759,6 @@ class CapsulePersistenceService {
       legacyStateExists: await _fileStore.legacyStateFile(docs).exists(),
       legacyBackupExists: await _fileStore.legacyBackupFile(docs).exists(),
     );
-  }
-
-  Future<void> deleteActiveCapsule(CapsulePersistenceBindings hivra) async {
-    final pubKeyHex = await resolveActiveCapsuleHex(hivra);
-    if (pubKeyHex == null || pubKeyHex.isEmpty) return;
-    await deleteCapsule(pubKeyHex, deleteLocalData: true, hivra: hivra);
-  }
-
-  Future<String> getCurrentBackupPath(CapsulePersistenceBindings hivra) async {
-    final dir = await _currentCapsuleDir(hivra, create: true);
-    return _fileStore.backupPath(dir);
-  }
-
-  Future<String> getCurrentLedgerPath(CapsulePersistenceBindings hivra) async {
-    final dir = await _currentCapsuleDir(hivra, create: true);
-    return _fileStore.ledgerPath(dir);
   }
 
   Future<List<CapsuleIndexEntry>> listCapsules({

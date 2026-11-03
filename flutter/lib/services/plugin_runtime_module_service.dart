@@ -390,11 +390,13 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     return {
       ...view,
       'host_connection': {
-        'target': c?['selected'] == true ? 'vps' : 'local',
+        'target': 'local',
+        'selected': c?['selected'] == true,
         'host': c?['host'],
         'port': c?['port'],
         'installed': c?['package_id'] != null,
-        'health': 'not_started',
+        'health':
+            c?['package_id'] == null ? 'setup_unconfirmed' : 'not_started',
       },
     };
   }

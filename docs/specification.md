@@ -871,8 +871,10 @@ Mandatory constraints:
     Legacy raw records remain removable but confer no execution authority.
 
 Further API development MUST follow the unified boundary in
-`plugins/plugin_host_api_v1.md`; provider-specific v1 host contracts are current
-implementation constraints, not a template for future service integrations.
+`plugins/plugin_host_api_v1.md`. Moltbook and Jack use common technical operations;
+retired named service methods are not executable compatibility paths. Chat
+retains its specialized relationship/delivery contract. These current boundaries
+are not a template for adding a host adapter for each future service.
 Package code remains isolated: mediated network/credential execution does not
 imply direct sockets, filesystem access, raw keys or arbitrary identity signing.
 
@@ -1476,10 +1478,11 @@ Every WASM drone method MUST declare one execution scope:
 - `market_scan`: the method reads public/external data and may rank opportunities, but does not mutate a pair-scoped contract.
 - `pair_scoped`: the method acts with, for, or toward a specific peer Capsule.
 
-Trading 1.x has been retired and no Trading contract is currently maintained.
-A future own-account Trading plugin would use `solo` for exchange effects and
-`market_scan` for public observation, never `pair_scoped`; its methods and
-capabilities require a separately approved contract. Chat remains the
+The former embedded Trading 1.x implementation is retired. Its replacement,
+the installed Jack package, uses common workspace operations for own-account
+exchange effects and public observation; it is not `pair_scoped` and adds no
+Trading-specific Core contract. Product rules and acceptance limits belong to
+`plugins/trading-plugin-mvp.md` and `development-control.md`. Chat remains the
 maintained pair-consensus-bound capability.
 
 Rules:

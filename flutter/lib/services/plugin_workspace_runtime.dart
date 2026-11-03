@@ -627,7 +627,7 @@ class PluginWorkspaceRuntime {
         );
       }, authorityOnly: true),
     );
-    _armScheduledExecution(record, owner, control);
+    _armScheduledExecution(record, owner, control, runImmediately: enabled);
     if (releaseToExecutorId != null) {
       stopWorkspaceScheduling(pluginId: record.pluginId);
       // The target has not acknowledged adoption yet. A source-side snapshot
@@ -1256,8 +1256,9 @@ class PluginWorkspaceRuntime {
   void _armScheduledExecution(
     WasmPluginRecord record,
     String owner,
-    Map<String, dynamic> control,
-  ) {
+    Map<String, dynamic> control, {
+    bool runImmediately = false,
+  }) {
     if (_schedulingClosed ||
         !scheduleTimers ||
         (control['executor'] ?? 'local') != executionHost) {
@@ -1283,9 +1284,11 @@ class PluginWorkspaceRuntime {
     _scheduledBindings[key] = binding;
     _scheduledGenerations[key] = generation;
     _scheduledHosts[key] = this;
-    void arm() {
+    void arm({bool immediately = false}) {
       _scheduledTimers[key] = Timer(
-        Duration(seconds: control['scope']['interval_seconds']),
+        immediately
+            ? Duration.zero
+            : Duration(seconds: control['scope']['interval_seconds']),
         () async {
           if (!identical(_scheduledGenerations[key], generation)) return;
           if (!_isStillOwnedBy(owner)) {
@@ -1328,7 +1331,9 @@ class PluginWorkspaceRuntime {
       );
     }
 
-    arm();
+    // Explicit Start wakes the package now. Reopening/resuming only restores
+    // the interval; service history and cooldowns remain package concerns.
+    arm(immediately: runImmediately);
   }
 
   static void _clearSchedule(String key) {

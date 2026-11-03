@@ -7,6 +7,12 @@ Automated preflight and deterministic fixtures do not satisfy this log. Add a
 row only after installing or launching the packaged artifact for that exact
 platform and completing the platform release checklist.
 
+Rows describe the conditions when the exact artifact was exercised. Notes
+written before promotion may say unpublished or pending Discovery; they are
+historical evidence, not the current release board. Current publication and
+subsequent bounded acceptance belong to `../development-control.md` and its
+linked evidence. Do not rewrite earlier observations as if they happened later.
+
 Required status values:
 
 - `PASS`: gate was manually completed for this exact build tag and artifact.

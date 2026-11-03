@@ -49,3 +49,14 @@ cleans that plugin's vault entries.
 The vault does not interpret provider credentials or return stored values to UI. A
 provider-specific connection service may request one exact secret only after
 capturing the active Capsule root.
+
+## Current Removal Ordering Limit
+
+`PluginRuntimeModuleService` closes admission, then clears eligible private files
+before calling vault deletion. If native vault cleanup fails, package removal
+stays pending and non-executable, but some private files may already be gone.
+The default-retained common checkpoint/`data-` files are excluded from that
+cleanup unless the owner selected saved-data deletion. This is a current limit
+against the secret-first ordering above, not proof of atomic data/secret deletion
+or permission to discard unresolved evidence. Registry retry remains the existing
+recovery path; no second cleanup owner is introduced.

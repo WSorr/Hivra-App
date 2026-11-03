@@ -24,9 +24,9 @@ current limits; package policy does not become universal host policy.
 
 The maintained 1.x workspace implements the common operations below using the
 existing bounded JSON ABI. Protocol 2 is a capability protocol version, not
-activation of Hivra 2.0. Jack 0.2.0 uses this path. The old Jack provider adapter,
+activation of Hivra 2.0. Jack uses this path. The old Jack provider adapter,
 host financial preflight, normalization and host-selected continuations are
-removed. Moltbook 0.8.0 uses the common path without a storage capability.
+removed. Moltbook uses the common path without a storage capability.
 Chat retains its relationship-scoped specialized contract.
 
 Workspace activation admits only the supported common capability set. Retired
@@ -109,6 +109,16 @@ service availability; it cannot undo an admitted request or an exchange order.
 The existing local/VPS custody mechanism prevents two scheduled executors for
 the same grant. Package-defined scheduling needs no host trading state machine.
 
+Selecting a VPS address is not execution handoff. The host presents the actual
+executor from the current grant; a selected but unacknowledged VPS leaves local
+execution labelled local and setup explicitly unconfirmed. Root-authenticated
+installation reads the current server binding before saving a new connection or
+applying installation changes. Another runner produces an explicit busy result,
+not a generic login failure or implied server execution. The connecting device
+is not an installation owner; the existing runner binding identifies occupancy.
+This path does not silently replace that runner, transfer its authority or undo
+its already accepted external operations.
+
 ### Owner-Granted Connections: Accepted Product Model
 
 The Capsule is the person's execution environment. The person is the authority
@@ -163,7 +173,7 @@ action-scoped access bypass or second Start approval for unchanged access.
 A changed destination, method or credential connection requires the owner's
 updated grant. Full revocation is available for stateless and scheduled plugins.
 
-Moltbook 0.8.0 implements this path without a host controller or product stores.
+Moltbook implements this path without a host controller or product stores.
 Its service-history and stateless recovery contract belongs to
 `moltbook_engagement_lifecycle_v1.md`. The host reads no prior product checkpoint
 for a package lacking `state.plugin.read_write`.
@@ -275,6 +285,13 @@ interval_seconds, description, access}`; it reuses an active matching grant,
 including its expiry and secret connections. It asks for permission only when
 required access is absent or broader. Permissions need no schedule; `running`
 means a scheduled workflow, while `enabled` means the owner's access is enabled.
+In the local source, explicit Start schedules its first wake immediately; the
+configured interval separates subsequent completed cycles. Reopening a workspace
+or restoring an existing scheduler retains the interval and does not add an
+extra immediate action. Merely connecting credentials without a schedule runs
+no cycle. Every wake uses the same package/grant-checked executor; service
+publication history and rate limits remain package-owned. Published test3 still
+waits one interval before its first wake.
 The owner may choose a deadline or authorize until revocation. `workspace.stop`
 fully revokes host dispatch. A package may expose an ordinary partial-Stop
 workflow without revoking access to its remaining operations.
@@ -361,7 +378,7 @@ dispatch deny access without asking the host to parse Jack's private state.
 The owner ended the old local test sessions and explicitly excluded migration
 of their trading history from this pass. There is no old-journal importer,
 old-ID mapping, old-checkpoint upgrade, or legacy named-request execution
-fallback. Jack 0.2.0 requires a fresh workspace session; an old local test
+fallback. The protocol-2 replacement requires a fresh workspace session; an old local test
 workspace uses normal package removal with explicit saved-data deletion and
 reinstall. Incompatible state is rejected before
 persistence. Existing local files are not deleted by this source change. Future migration of real owner
@@ -369,9 +386,10 @@ sessions must explicitly define which unresolved identities require retention
 before replacing their execution path. New protocol-2 sessions retain their
 own pending intent across ordinary restart.
 
-The common API also supplies HTTP/authentication and inference primitives for
-other packages. It does not claim Moltbook's old host workflow has migrated.
-No live trading, VPS changes or production qualification are part of this pass.
+The same HTTP/authentication and inference primitives support Moltbook's
+package-owned workflow; its old host controller is removed. Current release
+versions and native/live acceptance limits belong to `../development-control.md`;
+this contract does not qualify product execution.
 
 ## Implemented v1 Contracts
 
@@ -486,11 +504,12 @@ The packed evaluate result is `(output_ptr << 32) | output_len`.
   host accepts the canonical result only when its peer, client message id,
   creation timestamp, and bounded canonical message text remain bound to the
   exact request; it never fills missing semantic fields from host input.
-- Moltbook draft, planning, reply, and delegated-reply methods require their
-  corresponding `content.*` capabilities. WASM output is proposal or bounded
-  authorization evidence, not a network publication receipt.
-- Host fallback is retained only for explicitly allowed compatibility methods.
-  It is not a second WASM evaluator and must not duplicate plugin semantics.
+- Common-workspace packages request the technical operations listed above.
+  Moltbook has no named host methods: its content preparation, publication,
+  verification and reconciliation live in WASM. Retired `content.*` names are
+  metadata-only compatibility and cannot authorize invocation.
+- Both maintained contract families require the installed WASM runtime; neither
+  falls back to host-owned product semantics.
 
 ## Consensus Scopes
 

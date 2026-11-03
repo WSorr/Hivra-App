@@ -1,6 +1,6 @@
 # Moltbook Engagement Lifecycle v1
 
-Moltbook 0.8.0 is a stateless installed `plugin_workspace_v1` package. This
+Moltbook is a stateless installed `plugin_workspace_v1` package. This
 contract replaces the former host controller, publication/effect journal,
 local drafts, feed checkpoints, public-note cache and archived-result workflow.
 The earlier packaged 0.7.3 acceptance does not qualify this replacement.
@@ -61,6 +61,13 @@ ends scheduling; it cannot remove content already accepted by Moltbook. Replacem
 or removal invalidates in-flight admission, including queued inference. A new
 package never inherits the old package digest's grant.
 
+An explicit Start must evaluate fresh service history without an initial
+30-minute sleep. The cycle interval is a polling choice, not evidence of a
+recent publication. Moltbook's separate post/comment cooldowns belong to the
+service; the package observes history and interprets service rejections without
+blind retries. Generic first-wake behavior and its delivery status have one
+owner in `plugin_host_api_v1.md`.
+
 ## Stateless Recovery And Limits
 
 Profile history is the service's recent window, not a complete account archive.
@@ -76,8 +83,9 @@ history after a lost acknowledgement/process exit, this stateless workflow
 cannot guarantee exactly-once creation across starts. This is an explicit
 changed guarantee, not a host-owned journal or additional approval requirement.
 Existing legacy data files are not executed or automatically erased by this code
-change. Generic opaque backup/custody preserves existing bytes without replaying
-them. Known retired capability metadata remains readable for old-archive recovery
+change. Existing custody and read-only legacy full-state imports may preserve
+those bytes without replaying them; new Core-only backups exclude them. Known
+retired capability metadata remains readable for old-archive recovery
 and removal until that archive compatibility is explicitly retired; old named
 Moltbook methods have no handler and cannot run.
 
@@ -92,9 +100,12 @@ synthetic HTTP/AI ports. It verifies restart reconstruction, owner settings,
 absence of product-state files, revocation and removal during inference.
 There are no live service writes or real AI/Keychain calls in these checks.
 
-Native Keychain interaction and guarded packaged macOS/Android smoke remain
-required. A dirty checkout and a canonical runner for different committed source
-cannot qualify a release. Live publication is not authorized by these tests.
+Current versions and actual native read-and-prepare/Discovery acceptance belong
+to `../development-control.md`; synthetic checks alone do not establish that
+evidence. Guarded smoke must bind the exact package and runtime bytes. A dirty
+checkout and a canonical runner for different committed source cannot qualify
+a release. Live publication/reply/challenge qualification remains separate;
+neither these tests nor installation authorizes service writes.
 
 Protocol reference checked on 2026-11-01: the service's official
 [API skill](https://www.moltbook.com/skill.md), including profile recent history,

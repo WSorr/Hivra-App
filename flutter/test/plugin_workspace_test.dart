@@ -9,13 +9,306 @@ import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/screens/plugin_workspace_screen.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
+import 'package:hivra_app/services/capsule_contact_label_store.dart';
+import 'package:hivra_app/services/capsule_passive_receive_coordinator.dart';
+import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
+import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
+import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/plugin_capability_dispatcher.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
+import 'package:hivra_app/services/plugin_runtime_module_service.dart';
+import 'package:hivra_app/services/plugin_workspace_remote_service.dart';
 import 'package:hivra_app/services/plugin_workspace_runtime.dart';
+import 'package:hivra_app/services/ui_event_log_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
+import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 
 void main() {
+  test(
+    'Start wakes the package immediately; observation never starts a second cycle',
+    () async {
+      final f = await Fixture.create();
+      final runtime = f.runtime(scheduleTimers: true);
+      addTearDown(() async {
+        runtime.stopWorkspaceScheduling(permanently: true);
+        await f.close();
+      });
+      final permissions =
+          {...f.schedule}
+            ..remove('action')
+            ..remove('interval_seconds');
+      await runtime.setWorkspaceExecution(
+        record: f.registry.record,
+        enabled: true,
+        expiresAtMs: null,
+        approvedScope: permissions,
+        credentialBindings: {
+          'default': {'token': 'ref-token'},
+        },
+      );
+      expect(f.sends, 0);
+      final finished = Completer<void>();
+      f.onInvoke = (action) async {
+        if (action == 'finish_custom_operation') finished.complete();
+      };
+      await runtime.setWorkspaceExecution(
+        record: f.registry.record,
+        enabled: true,
+        expiresAtMs: null,
+        expectedRevision: 1,
+        approvedScope: {...f.schedule, 'interval_seconds': 1800},
+      );
+      await finished.future.timeout(const Duration(seconds: 2));
+      await runtime.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      expect(f.sends, 1);
+      runtime.stopWorkspaceScheduling();
+      await runtime.resumeWorkspaceScheduling(f.registry.record);
+      await runtime.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      // Give a zero-delay wake an opportunity to run: restoration must retain
+      // the interval rather than treating process/UI recovery as a new Start.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(f.actions.where((action) => action == 'run'), hasLength(1));
+      expect(f.sends, 1);
+      expect(
+        (await runtime.readWorkspaceExecution(f.registry.record))!['revision'],
+        2,
+      );
+    },
+  );
+
+  test(
+    'immediate Start still checks revocation and package replacement before dispatch',
+    () async {
+      for (final replace in [false, true]) {
+        final f = await Fixture.create();
+        final runtime = f.runtime(scheduleTimers: true);
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        f.onInvoke = (action) async {
+          if (action == 'run') {
+            entered.complete();
+            await release.future;
+          }
+        };
+        try {
+          await runtime.setWorkspaceExecution(
+            record: f.registry.record,
+            enabled: true,
+            expiresAtMs: null,
+            approvedScope: f.schedule,
+            credentialBindings: {
+              'default': {'token': 'ref-token'},
+            },
+          );
+          await entered.future.timeout(const Duration(seconds: 2));
+          Future<Map<String, dynamic>>? stopped;
+          if (replace) {
+            f.registry.digest = 'c' * 64;
+          } else {
+            stopped = runtime.setWorkspaceExecution(
+              record: f.registry.record,
+              enabled: false,
+              revoke: true,
+              expiresAtMs: null,
+            );
+            for (var i = 0; i < 100; i++) {
+              if ((await runtime.readWorkspaceExecution(
+                    f.registry.record,
+                  ))?['revoked'] ==
+                  true) {
+                break;
+              }
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+            expect(
+              (await runtime.readWorkspaceExecution(
+                f.registry.record,
+              ))?['revoked'],
+              true,
+            );
+          }
+          release.complete();
+          await stopped;
+          // The serialized read waits for the interrupted first cycle to end.
+          await runtime.runWorkspaceAction(
+            record: f.registry.record,
+            action: 'open',
+          );
+          expect(f.sends, 0);
+        } finally {
+          if (!release.isCompleted) release.complete();
+          runtime.stopWorkspaceScheduling(permanently: true);
+          await f.close();
+        }
+      }
+    },
+  );
+
+  test(
+    'VPS occupancy follows its runner binding, not the connecting device',
+    () {
+      final connection = {
+        'owner': 'a' * 64,
+        'plugin_id': 'example.unrelated',
+        'executor_id': 'e' * 64,
+      };
+      final installed = {
+        ...connection,
+        'package_id': 'server-package',
+        'package_digest': 'b' * 64,
+      };
+      PluginWorkspaceRemoteService.validateInstallationTarget(connection, {});
+      PluginWorkspaceRemoteService.validateInstallationTarget(
+        connection,
+        installed,
+      );
+      for (final other in [
+        {'owner': 'c' * 64},
+        {'plugin_id': 'another.package'},
+        {'executor_id': 'f' * 64},
+      ]) {
+        expect(
+          () => PluginWorkspaceRemoteService.validateInstallationTarget(
+            connection,
+            {...installed, ...other},
+          ),
+          throwsA(isA<WorkspaceVpsBusy>()),
+        );
+      }
+    },
+  );
+
+  test(
+    'selected but unacknowledged VPS cannot relabel local execution',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      final directory = await f.files.capsuleDirForHex('a' * 64);
+      await f.files.writePluginState(
+        directory,
+        f.registry.record.pluginId!,
+        PluginWorkspaceRemoteService.connectionFile,
+        jsonEncode({
+          'owner': 'a' * 64,
+          'plugin_id': f.registry.record.pluginId,
+          'host': 'server.example',
+          'port': 22,
+          'fingerprint': 'SHA256:${'A' * 43}',
+          'executor_id': 'e' * 64,
+          'package_id': null,
+          'package_digest': null,
+          'selected': true,
+        }),
+      );
+      final unused = UnusedWorkspacePorts();
+      final module = PluginRuntimeModule(
+        registry: f.registry,
+        sourceCatalog: const WasmPluginSourceCatalogService(),
+        manualChecks: unused,
+        pluginHostApi: f.runtime().pluginHostApi,
+        attestationExchange: unused,
+        chatDelivery: unused,
+        passiveReceive: unused,
+        contactLabels: unused,
+        uiLog: unused,
+        fileStore: f.files,
+        secretVault: unused,
+        readActiveCapsuleRootHex: () => f.owner,
+      );
+      final view = await module.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      expect(view['execution']['mode'], 'local');
+      expect(view['execution']['running'], isTrue);
+      expect(view['host_connection']['target'], 'local');
+      expect(view['host_connection']['selected'], isTrue);
+      expect(view['host_connection']['health'], 'setup_unconfirmed');
+      expect(f.sends, 0);
+    },
+  );
+
+  testWidgets('busy VPS stays explicit while the local workflow is running', (
+    tester,
+  ) async {
+    var opens = 0, connections = 0;
+    final busy = const WorkspaceVpsBusy();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
+          runWorkspaceAction: (action, settings) async {
+            opens++;
+            return {
+              ...presentation(),
+              'execution': {'mode': 'local', 'running': true, 'active': true},
+              'host_connection': {
+                'target': 'local',
+                'selected': true,
+                'host': 'server.example',
+                'port': 22,
+                'installed': false,
+                'health': 'setup_unconfirmed',
+              },
+            };
+          },
+          connectVps: ({
+            required host,
+            required port,
+            required password,
+            required trustPeer,
+          }) async {
+            connections++;
+            throw busy;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('On this device · keep the app open'), findsOneWidget);
+    expect(find.textContaining('VPS execution ·'), findsNothing);
+    expect(find.textContaining('Setup not confirmed'), findsOneWidget);
+    final connect = find.text('Connect VPS');
+    await tester.ensureVisible(connect);
+    await tester.tap(connect);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byWidgetPredicate((w) => w is TextField && w.obscureText),
+      'synthetic-test-password',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect securely'));
+    await tester.pumpAndSettle();
+    expect(connections, 1);
+    expect(find.text(busy.toString()), findsOneWidget);
+    final observedOpens = opens;
+    await tester.pump(const Duration(seconds: 61));
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pumpAndSettle();
+    expect(find.text(busy.toString()), findsOneWidget);
+    expect(opens, observedOpens);
+    expect(find.textContaining('VPS execution ·'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'scheduled observation preserves owner draft edits until an explicit package action',
     (tester) async {
@@ -1571,6 +1864,20 @@ Map<String, dynamic> presentation() => {
   'confirmation': null,
 };
 
+class UnusedWorkspacePorts
+    implements
+        ManualConsensusCheckService,
+        ConsensusAttestationExchangeService,
+        CapsuleChatDeliveryService,
+        CapsulePassiveReceivePort,
+        CapsuleContactLabelStore,
+        CapsuleScopedSecretVault,
+        UiEventLogService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw StateError('Unrelated port invoked: ${invocation.memberName}');
+}
+
 class Registry extends WasmPluginRegistryService {
   bool installed = true;
   bool network = true;
@@ -1685,79 +1992,82 @@ class Fixture {
     if (auth != null) 'auth': auth,
     ...extraRequest,
   };
-  PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
-    registry: registry,
-    infer: infer,
-    fileStore: files,
-    readActiveCapsuleRootHex: () => owner,
-    scheduleTimers: false,
-    readCredentials: ({required owner, required pluginId}) async {
-      await onReadSecrets?.call();
-      return secrets;
-    },
+  PluginWorkspaceRuntime runtime({bool scheduleTimers = false}) =>
+      PluginWorkspaceRuntime(
+        registry: registry,
+        infer: infer,
+        fileStore: files,
+        readActiveCapsuleRootHex: () => owner,
+        scheduleTimers: scheduleTimers,
+        readCredentials: ({required owner, required pluginId}) async {
+          await onReadSecrets?.call();
+          return secrets;
+        },
 
-    capabilities: PluginCapabilityDispatcher(
-      send: (m, u, h, b) async {
-        sends++;
-        await onSend?.call();
-        return {'status': 200, 'body': 'arbitrary service bytes'};
-      },
-    ),
-    pluginHostApi: PluginHostApiService(
-      handlers: [],
-      resolveRuntimeBinding: registry.resolveRuntimeBinding,
-      resolveRuntimeInvoke: (request, binding) async {
-        final action = request.args['action'] as String;
-        settingsSeen.add(
-          Map<String, dynamic>.from(
-            request.args['settings'] as Map? ?? const {},
-          ),
-        );
-        actions.add(action);
-        await onInvoke?.call(action);
-        final state = Map<String, dynamic>.from(
-          request.args['state'] as Map? ?? {},
-        );
-        var requests = <Map<String, dynamic>>[];
-        if (action == 'run') {
-          state['private_schema'] = {'pending': true};
-          requests = [this.request()];
-        }
-        if (action == 'finish_custom_operation') {
-          received.add(
-            Map<String, dynamic>.from(request.args['result'] as Map),
-          );
-          if (chain && received.length == 1) requests = [this.request()];
-        }
-        if (newSchema && action == 'open') {
-          state['entirely_different_shape'] = [state.remove('private_schema')];
-        }
-        return PluginRuntimeInvokeEvidence(
-          mode: 'wasmi_v1',
-          modulePath: 'plugin/module.wasm',
-          moduleSelection: 'manifest_module_path',
-          moduleDigestHex: 'e' * 64,
-          invokeDigestHex: 'f' * 64,
-          semanticStatus: PluginHostApiStatus.executed,
-          semanticErrorCode: null,
-          semanticErrorMessage: null,
-          semanticResult: {
-            'state': registry.persistent ? state : null,
-            'context': {'package_selected': 'opaque'},
-            'view': {
-              ...presentation(),
-              'message':
-                  received.isEmpty
-                      ? 'Ready'
-                      : received.last['outcome'] ?? 'accepted',
-              if (registry.scheduled) 'schedule': schedule,
-            },
-            'requests': requests,
+        capabilities: PluginCapabilityDispatcher(
+          send: (m, u, h, b) async {
+            sends++;
+            await onSend?.call();
+            return {'status': 200, 'body': 'arbitrary service bytes'};
           },
-        );
-      },
-    ),
-  );
+        ),
+        pluginHostApi: PluginHostApiService(
+          handlers: [],
+          resolveRuntimeBinding: registry.resolveRuntimeBinding,
+          resolveRuntimeInvoke: (request, binding) async {
+            final action = request.args['action'] as String;
+            settingsSeen.add(
+              Map<String, dynamic>.from(
+                request.args['settings'] as Map? ?? const {},
+              ),
+            );
+            actions.add(action);
+            await onInvoke?.call(action);
+            final state = Map<String, dynamic>.from(
+              request.args['state'] as Map? ?? {},
+            );
+            var requests = <Map<String, dynamic>>[];
+            if (action == 'run') {
+              state['private_schema'] = {'pending': true};
+              requests = [this.request()];
+            }
+            if (action == 'finish_custom_operation') {
+              received.add(
+                Map<String, dynamic>.from(request.args['result'] as Map),
+              );
+              if (chain && received.length == 1) requests = [this.request()];
+            }
+            if (newSchema && action == 'open') {
+              state['entirely_different_shape'] = [
+                state.remove('private_schema'),
+              ];
+            }
+            return PluginRuntimeInvokeEvidence(
+              mode: 'wasmi_v1',
+              modulePath: 'plugin/module.wasm',
+              moduleSelection: 'manifest_module_path',
+              moduleDigestHex: 'e' * 64,
+              invokeDigestHex: 'f' * 64,
+              semanticStatus: PluginHostApiStatus.executed,
+              semanticErrorCode: null,
+              semanticErrorMessage: null,
+              semanticResult: {
+                'state': registry.persistent ? state : null,
+                'context': {'package_selected': 'opaque'},
+                'view': {
+                  ...presentation(),
+                  'message':
+                      received.isEmpty
+                          ? 'Ready'
+                          : received.last['outcome'] ?? 'accepted',
+                  if (registry.scheduled) 'schedule': schedule,
+                },
+                'requests': requests,
+              },
+            );
+          },
+        ),
+      );
   Future<void> enable() async {
     await runtime().setWorkspaceExecution(
       record: registry.record,

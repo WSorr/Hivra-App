@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import '../services/plugin_capability_dispatcher.dart';
+import '../services/plugin_workspace_remote_service.dart' show WorkspaceVpsBusy;
 
 import 'package:flutter/material.dart';
 
@@ -316,6 +317,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           trustPeer: (_) async => false,
         );
         connected = true;
+      } on WorkspaceVpsBusy catch (error) {
+        if (mounted) {
+          setState(() {
+            _error = error.toString();
+            _actionResultVisible = true;
+          });
+        }
       } catch (_) {
         if (mounted) {
           setState(
@@ -466,6 +474,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         },
       );
       connected = true;
+    } on WorkspaceVpsBusy catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.toString();
+          _actionResultVisible = true;
+        });
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -1043,7 +1058,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             widget.useOnline != null &&
             view?['host_connection']?['installed'] == true);
     final health = switch (view?['host_connection']?['health']) {
-      'not_started' => 'Connected · ready to start',
+      'not_started' => 'Execution has not moved to this VPS',
+      'setup_unconfirmed' => 'Setup not confirmed',
       'running' => 'Runner is running',
       'detached' => 'Execution authority ended',
       _ => 'Checking connection',
@@ -1291,6 +1307,12 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 : 'Local execution · keep this app open for scheduled cycles.',
                             style: theme.textTheme.bodyMedium,
                           ),
+                          if (view['host_connection']?['target'] != 'vps' &&
+                              view['host_connection']?['host'] != null)
+                            Text(
+                              '${view['host_connection']['selected'] == true ? 'Selected' : 'Saved'} VPS ${view['host_connection']['host']} · $health. This session is on this device.',
+                              style: theme.textTheme.bodySmall,
+                            ),
                           const SizedBox(height: 10),
                           Wrap(
                             spacing: 10,
