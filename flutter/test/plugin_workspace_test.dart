@@ -1030,7 +1030,19 @@ void main() {
       };
       var loads = 0;
       var grants = 0;
-      Map<String, dynamic>? execution;
+      Map<String, dynamic>? execution = {
+        'enabled': false,
+        'active': false,
+        'running': false,
+        'revoked': true,
+        'scope': {
+          'version': 2,
+          'action': 'cycle',
+          'interval_seconds': 60,
+          'description': 'Previously authorized workflow',
+          'access': readAccess,
+        },
+      };
       Map<String, dynamic> view() => {
         ...presentation(),
         if (execution != null) 'execution': execution,
