@@ -335,7 +335,7 @@ connection and queue. The package supplies instructions and input; the same
 package/grant is rechecked at actual adapter dispatch after queue waiting.
 The result includes `text`, `provider_id`, `provider_label` and `model`. Unavailable inference is reported without a fallback product controller.
 
-Resource bounds: state 32 KiB, transient context 16 KiB, view 16 KiB; HTTP body
+Resource bounds: state 32 KiB, transient context 16 KiB, view 64 KiB; HTTP body
 24 KiB request/default response; a request may select `max_response_bytes` up to
 256 KiB for raw responses, or 1 MiB source with JSON projection whose returned
 body still fits 256 KiB. The total WASM invocation input is bounded at 512 KiB; output remains

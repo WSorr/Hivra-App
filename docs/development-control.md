@@ -353,8 +353,15 @@ workflow. The three original Capsule Ledger hashes are unchanged. The owner's
 existing manual ACH order is neither adopted nor cancelled. This qualifies
 connection, remote scheduling and restart continuity, not a new entry fill,
 TP/SL closure or a service restart during an in-flight mutation. The owner chose
-to wait for Samsung rather than update the connected Xiaomi; exact Android
-acceptance remains pending. Source checks pass 681 Flutter tests, analyzer and
+to wait for Samsung rather than update the connected Xiaomi. The same exact
+Android build updated Samsung SM-A075F in place, preserving its existing
+Capsule and Ledger v8. All three approved packages installed through Add package;
+Jack returned to that Capsule through both app-bar and Android system Back.
+The live catalog exposed a concrete limit: 1,124 available instruments exceed
+the 16 KiB generic view budget. The common view budget is now 64 KiB, still
+inside the unchanged 128 KiB WASM output boundary; lists are not shortened or
+stored by the host. Exact Android catalog/restart acceptance of this correction
+remains pending. Previous source checks pass 681 Flutter tests, analyzer and
 review gates; CI `41649675003` is green. Artifact digests and native observations
 remain in the existing `jack-capsule-acceptance-20261103/acceptance.json` evidence
 record. No new Capsule, emulator, preview project or backup was created.

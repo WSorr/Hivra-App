@@ -11,6 +11,33 @@ import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/plugin_host_contract_handler.dart';
 
 void main() {
+  test('complete package choice lists remain bounded without truncation', () {
+    final options = List.generate(1400, (index) => 'RESOURCE-$index');
+    final view = <String, dynamic>{
+      'title': 'Choose resource',
+      'message': '',
+      'details': '',
+      'actions': [],
+      'rows': [],
+      'columns': [],
+      'fields': [],
+      'options': options,
+    };
+    expect(utf8.encode(jsonEncode(view)).length, greaterThan(16 * 1024));
+    expect(
+      () => PluginWorkspaceContractHandler.validateView(view, capabilities: {}),
+      returnsNormally,
+    );
+    expect(view['options'], same(options));
+    expect(
+      () => PluginWorkspaceContractHandler.validateView({
+        ...view,
+        'details': 'x' * (64 * 1024),
+      }, capabilities: {}),
+      throwsFormatException,
+    );
+  });
+
   test(
     'choice loading access uses the same validated permission descriptor',
     () {

@@ -113,7 +113,7 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
       }
     }
 
-    if (utf8.encode(jsonEncode(view)).length > 16 * 1024 ||
+    if (utf8.encode(jsonEncode(view)).length > 64 * 1024 ||
         view['title'] is! String ||
         (view['title'] as String).isEmpty ||
         view['message'] is! String ||
