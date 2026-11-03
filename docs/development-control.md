@@ -203,8 +203,9 @@ development UI smoke on Apple Silicon macOS also passed: independent package
 installation, common catalog, owner grants/revocation, cold restart, replacement
 with a different private schema and uninstall/reinstall with retained checkpoint.
 It used Debug, the existing test-home override and a separate app identifier;
-it is not canonical guarded release acceptance. Android and Linux/VPS UI
-qualification remain untested. No live provider acceptance was established.
+it is not canonical guarded release acceptance. The later bounded packaged
+Mac/Android public-market journey is recorded below; Linux/VPS UI and live
+trading qualification remain untested.
 Moltbook 0.8.0 now uses this same workspace path; its native/packaged
 acceptance remains separate from synthetic reference-package evidence. No new strategy, trading runner or host fallback belongs
 to this pass.
@@ -318,13 +319,11 @@ position, stop coverage and inactive-attempt states through that same workspace.
 Status/actions precede responsive settings; exact order/calculation evidence
 remains expandable. Draft edits survive running-schedule polling and dispatch
 only through an explicit action; package rules still own managed-plan changes.
-Local checks passed 87 Jack tests, the plugin review, 676 Flutter tests, analyzer
-and host review. The released Mac FFI exercised the actual candidate WASM in
-471 synthetic invocations with no network or trading commands. A release-mode
-Mac preview rendered recorded WASM views for connection, position, failed read
-and inactive attempt. This preview is not guarded packaged or live acceptance;
-Android guarded-candidate acceptance remains unqualified; automatic stop
-repair is excluded by the owner.
+Local checks and native synthetic-service replay cover the observation workflow;
+the current counts and exact packaged evidence are recorded below. Earlier
+release-mode previews rendered recorded WASM views for connection, position,
+failed read and inactive attempt. Those previews alone do not qualify guarded
+artifacts or live execution; automatic stop repair remains excluded by the owner.
 Execution owners/paths remain one package lifecycle and one common executor;
 two retired presentation rewrites were removed. Evidence and the preview are
 in `/Volumes/Dev/projects/hivra-artifacts/jack-protection-20261102`.
@@ -361,32 +360,51 @@ is a generic execution resource bound, not package/business authorization.
 Service observations, source snapshots and measurements remain in
 `/Volumes/Dev/projects/hivra-artifacts/jack-protection-20261102`.
 
-The corrected catalog path passed actual common HTTP dispatch and current-source
-universal Mac FFI with the candidate WASM: 1325 source contracts, all 942 eligible
-USDT choices, a 33922-byte selected JSON value, unchanged opaque state and no
-trading requests. Applying ACH-USDT and reopening retained the selection without
-dispatching effects. Runtime tests (13) include infinite entry/start fuel traps;
-plugin review, 87 Jack tests, 676 Flutter tests, analyzer and host review pass.
-The earlier 1023-option quote replay is superseded, not this catalog's acceptance.
-Existing Mac/Android previews prove generic search and
-selection presentation only. They have no Capsule parent route and do not prove
-Jack-to-Capsule return; that navigation acceptance remains open. The owner
-refused installation in the working Capsule, which remains untouched. The
-published `v1.0.5-test2` lacks the new optional ability and execution budget;
-new guarded Capsule artifact acceptance and live trading remain unqualified.
-The owner authorized finishing this bounded Mac/Android acceptance, including
-Jack-to-Capsule return, on isolated test contexts only. Local commits in both
-repositories and pushing the Capsule branch for its matching CI runner are
-authorized; no merge, tag, publication, trade, stop repair or VPS mutation is
-authorized. The working Capsule must remain unchanged.
+The complete catalog passed common HTTP dispatch and native WASM validation:
+1325 captured source contracts produced all 942 eligible USDT choices, with no
+persistent catalog or trading request. Actual installed-package acceptance also
+found and fixed incomplete choice view envelopes; all choice stages now satisfy
+the canonical workspace contract. Public choice grants exclude old schedule
+fields, so authorizing a read cannot resume a revoked workflow.
 
-Android presentation smoke now passed in the isolated `jack_preview` release-mode
-application on API 36 / arm64-v8a, using recorded actual WASM output and the
-changed common workspace renderer: position, unavailable observation, responsive
-actions/settings and scrolling. It has a separate application ID, uses no working
-Capsule or credentials and is not the guarded Capsule APK or Android WASM/live
-exchange acceptance. APK digest and screenshots are recorded with the existing
-Jack evidence above. No new host capability or delivery path was added.
+Guarded unpublished `v1.0.5-test3` ZIP/APK artifacts bind runtime source
+`b7f7e09` to its matching canonical CI runner; CI run `41591994124` succeeded.
+The exact Mac artifact used an isolated application identifier and data home;
+the exact release APK ran in a dedicated API 36 arm64 emulator. Independent
+Jack package replacement used the same Capsule artifacts. Digests, source
+commits, observations and screenshots have one evidence owner:
+`/Volumes/Dev/projects/hivra-artifacts/jack-capsule-acceptance-20261103/acceptance.json`.
+The published `v1.0.5-test2` lacks the new optional ability and fuel budget.
+
+Mac passed public catalog/search/ACH selection, full six-frame actual market
+history, recovery from service rejection, return to its disposable Capsule,
+process restart and retained selection without an autonomous workflow.
+Android passed public catalog/search/ACH selection, an actual 1m market refresh,
+package replacement, AppBar Back and system Back into the same disposable
+Capsule. Its full six-frame read stopped on provider `100410` after bounded
+retries and remains unqualified; it did not hang or dispatch trading effects.
+A cold emulator reboot and fresh application process retained the same Capsule,
+ACH-USDT and 1m setting; no scheduled workflow resumed.
+
+Real service acceptance fixed exclusive candle end times and replaced 24-candle
+pages with measured 96-candle pages, processing 12-candle strategy chunks.
+The package keeps its 64 KiB input and 16 KiB continuation bounds. It uses the
+existing common wait primitive between candle reads and permits at most two
+five-second retries of rejected candle reads across an action. Mutations retain
+the existing reconcile-only path; no host service controller or new API operation
+was added. Captured actual 600-candle history passes the packaged Mac FFI;
+true missing candles are still rejected. Current gates pass 90 Jack tests,
+678 Flutter tests, analyzer, host/plugin reviews and 13 runtime tests including
+infinite entry/start fuel traps. Synthetic native workflow replay uses 369
+invocations; it does not qualify trading execution.
+
+The working Capsule and Samsung were not controlled or used for this acceptance.
+No account secrets, Start, live trading, stop repair, social publication or VPS
+change was authorized or performed. Local commits in both repositories and the
+Capsule feature-branch push for its CI runner were authorized; merge, tag and
+publication remain unauthorized. This bounded public-market/navigation evidence
+is not full TP/SL, autonomous trading, Intel-native, physical-Android or general
+release qualification.
 
 The completed bounded Core-only Capsule backup outcome below retains
 Ledger and Capsule type/network metadata only; operational pair attestations,
