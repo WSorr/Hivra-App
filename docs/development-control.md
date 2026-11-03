@@ -336,7 +336,14 @@ and actual order/position observation. The previous manual prepare/place/cancel
 actions are sealed at the package boundary; the same private cycle steps and
 recovery identities remain. Timeframe selection reuses the existing package
 choice action without extending the host API. Qualification of these changes
-is pending the actual existing-Capsule journey; unit checks alone do not close it.
+includes existing-Capsule Mac installation of all three packages, open/return,
+actual ACH-USDT 1m public market reads and retained configuration after cold
+restart. Account connection remains pending: the owner encountered a disabled
+Allow button without a reason. The common permission form now derives its
+explanation from the same validation decision and labels values by their
+package-declared role; no service-specific host path or secret diagnostics are
+added. Exact updated-artifact connection and Android acceptance remain pending;
+unit checks alone do not close them.
 Opening the owner's installed catalog Jack 0.1.13 exposed a real compatibility
 defect: retired named capabilities were still marked ready, then the old package
 rejected the common execution projection. Activation/readiness and invocation

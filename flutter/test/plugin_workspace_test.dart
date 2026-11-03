@@ -790,6 +790,97 @@ void main() {
     },
   );
   testWidgets(
+    'permission form identifies an incomplete credential without exposing values',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final access = permission('https://unrelated.example');
+      access['credentials'] = {
+        'default': [
+          {'id': 'request', 'label': 'Request key'},
+          {'id': 'signing', 'label': 'Signing key'},
+        ],
+      };
+      var writes = 0, grants = 0;
+      Map<String, dynamic> view() => {
+        ...presentation(),
+        'access': access,
+        'actions': [
+          {'id': 'link', 'label': 'Connect', 'host': 'workspace.authorize'},
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['credentials.use'],
+            listSecrets: () async => [],
+            saveSecrets: (secrets) async {
+              writes++;
+              return [
+                for (var i = 0; i < secrets.length; i++)
+                  {'id': 'ref-$i', 'label': secrets[i]['label']!},
+              ];
+            },
+            configureExecution: ({
+              required enabled,
+              required expiresAtMs,
+              expectedRevision,
+              revoke = false,
+              approvedScope,
+              credentialBindings,
+              settings = const {},
+            }) async {
+              grants++;
+              expect(credentialBindings, {
+                'default': {'request': 'ref-0', 'signing': 'ref-1'},
+              });
+              return view();
+            },
+            runWorkspaceAction: (action, settings) async => view(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+      final issue = find.byKey(const ValueKey('plugin-permission-issue'));
+      final confirm = find.byKey(const ValueKey('plugin-confirm-permissions'));
+      for (final id in ['request', 'signing']) {
+        final picker = find.byKey(ValueKey('plugin-secret-default-$id'));
+        await tester.ensureVisible(picker);
+        await tester.tap(picker);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Add new secret…').last);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(ValueKey('plugin-secret-value-default-$id')),
+          'test-private-$id',
+        );
+        await tester.pumpAndSettle();
+      }
+      // Both values can be present while a separate name is incomplete.
+      final name = find.byKey(
+        const ValueKey('plugin-secret-name-default-request'),
+      );
+      await tester.enterText(name, '');
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      expect(tester.widget<Text>(issue).data, contains('Request key'));
+      expect(tester.widget<Text>(issue).data, isNot(contains('test-private')));
+      expect(writes, 0);
+      expect(grants, 0);
+      await tester.enterText(name, 'Request key');
+      await tester.pumpAndSettle();
+      expect(issue, findsNothing);
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
+      await tester.ensureVisible(confirm);
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+      expect(writes, 1);
+      expect(grants, 1);
+    },
+  );
+  testWidgets(
     'first connection stores only on Allow, passes references, and fails without a grant',
     (tester) async {
       for (final outcome in ['allow', 'cancel', 'fail', 'leave']) {
