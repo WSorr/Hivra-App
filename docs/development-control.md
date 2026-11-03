@@ -338,12 +338,26 @@ recovery identities remain. Timeframe selection reuses the existing package
 choice action without extending the host API. Qualification of these changes
 includes existing-Capsule Mac installation of all three packages, open/return,
 actual ACH-USDT 1m public market reads and retained configuration after cold
-restart. Account connection remains pending: the owner encountered a disabled
-Allow button without a reason. The common permission form now derives its
-explanation from the same validation decision and labels values by their
-package-declared role; no service-specific host path or secret diagnostics are
-added. Exact updated-artifact connection and Android acceptance remain pending;
-unit checks alone do not close them.
+restart. The owner encountered a disabled Allow button without a reason. The
+common permission form now derives its explanation from the same validation
+decision and labels values by their package-declared role; no service-specific
+host path or secret diagnostics are added.
+
+The exact guarded Mac artifact from `b428ee8` passed actual BingX connection,
+open-order reads, canonical VPS installation and owner Start. The same bound
+Jack package then advanced complete ACH-USDT 1m observations while the Mac
+process was closed. Reopening the same Capsule returned to the running VPS
+workflow without another Start; local authority remains assigned to that VPS.
+Back returns to the Capsule's three installed packages without ending the
+workflow. The three original Capsule Ledger hashes are unchanged. The owner's
+existing manual ACH order is neither adopted nor cancelled. This qualifies
+connection, remote scheduling and restart continuity, not a new entry fill,
+TP/SL closure or a service restart during an in-flight mutation. The owner chose
+to wait for Samsung rather than update the connected Xiaomi; exact Android
+acceptance remains pending. Source checks pass 681 Flutter tests, analyzer and
+review gates; CI `41649675003` is green. Artifact digests and native observations
+remain in the existing `jack-capsule-acceptance-20261103/acceptance.json` evidence
+record. No new Capsule, emulator, preview project or backup was created.
 Opening the owner's installed catalog Jack 0.1.13 exposed a real compatibility
 defect: retired named capabilities were still marked ready, then the old package
 rejected the common execution projection. Activation/readiness and invocation
