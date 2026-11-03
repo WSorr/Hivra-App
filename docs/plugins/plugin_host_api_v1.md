@@ -150,7 +150,9 @@ service token/key directly from the owner. One Allow decision saves new fields
 together in the existing vault and binds only their references. Cancel and a
 failed native write do not issue a grant. The first connection does not require
 an older product screen, service adapter, terminal setup or a secret supplied by
-WASM. Secret custody and partial-failure behavior have one owner:
+WASM. Value fields use the package-declared credential label. The same form
+validation that disables Allow explains the incomplete field or duration without
+including any secret value. Secret custody and partial-failure behavior have one owner:
 `../architecture/capsule-scoped-secret-lifecycle.md`. Native
 secure storage performs authentication according to the Keychain item's access
 policy; Hivra never asks for the system password. The grant stores references,

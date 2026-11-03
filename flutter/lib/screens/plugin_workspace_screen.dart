@@ -620,13 +620,40 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           for (final field in entry.value as List) field['id'] as String: '',
         },
     };
-    bool incompleteSecret(String alias, String field) =>
-        selected[alias]?[field] == null ||
-        (selected[alias]?[field] == newSecret &&
-            (names[alias]![field]!.trim().isEmpty ||
-                names[alias]![field]!.trim().length > 128 ||
-                values[alias]![field]!.trim().isEmpty ||
-                values[alias]![field]!.trim().length > 4096));
+    String? permissionIssue() {
+      for (final entry in declarations.entries) {
+        for (final field in entry.value as List) {
+          final alias = entry.key as String;
+          final id = field['id'] as String;
+          final label = field['label'] as String;
+          if (selected[alias]?[id] == null) {
+            return 'Choose a saved secret or Add new secret for $label.';
+          }
+          if (selected[alias]?[id] != newSecret) continue;
+          final name = names[alias]![id]!.trim();
+          final value = values[alias]![id]!.trim();
+          if (name.isEmpty) return 'Enter a secret name for $label.';
+          if (name.length > 128) {
+            return 'Use a secret name of at most 128 characters for $label.';
+          }
+          if (value.isEmpty) return 'Enter the secret value for $label.';
+          if (value.length > 4096) {
+            return 'The secret value for $label exceeds 4096 characters.';
+          }
+        }
+      }
+      if (!untilRevoked) {
+        final duration = double.tryParse(hours);
+        if (duration == null ||
+            !duration.isFinite ||
+            duration <= 0 ||
+            duration > 1000000) {
+          return 'Enter a duration above 0 and at most 1000000 hours. Use a decimal point for part of an hour.';
+        }
+      }
+      return null;
+    }
+
     final accepted =
         await showDialog<bool>(
           context: context,
@@ -706,8 +733,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                     obscureText: true,
                                     autocorrect: false,
                                     enableSuggestions: false,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Service token or key',
+                                    decoration: InputDecoration(
+                                      labelText: '${field['label']} value',
                                       helperText:
                                           'Never enter your device password here.',
                                     ),
@@ -750,6 +777,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             const Text(
                               'This permission covers the plugin workflow. The plugin handles service logic; the service owns its account state. Revocation blocks new requests and cannot undo accepted actions.',
                             ),
+                            if (permissionIssue() case final issue?) ...[
+                              const SizedBox(height: 12),
+                              Text(
+                                issue,
+                                key: const ValueKey('plugin-permission-issue'),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -761,19 +795,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         FilledButton(
                           key: const ValueKey('plugin-confirm-permissions'),
                           onPressed:
-                              declarations.entries.any(
-                                        (e) => (e.value as List).any(
-                                          (f) => incompleteSecret(
-                                            e.key as String,
-                                            f['id'] as String,
-                                          ),
-                                        ),
-                                      ) ||
-                                      (!untilRevoked &&
-                                          (double.tryParse(hours) == null ||
-                                              !double.parse(hours).isFinite ||
-                                              double.parse(hours) <= 0 ||
-                                              double.parse(hours) > 1000000))
+                              permissionIssue() != null
                                   ? null
                                   : () => Navigator.pop(context, true),
                           child: const Text('Allow'),
