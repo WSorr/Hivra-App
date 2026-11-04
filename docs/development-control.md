@@ -188,7 +188,8 @@ separately; neither target prose nor accepted 1.x limitations prove completion.
   publication journal and local product stores are removed. Its authoritative
   workflow and changed stateless recovery guarantees belong to
   `plugins/moltbook_engagement_lifecycle_v1.md`. Earlier packaged 0.7.3 evidence
-  does not qualify the replacement; no live publication is authorized.
+  does not qualify the replacement. Live writes require an explicit owner grant;
+  the bounded November 4 Mac publication was separately authorized.
 - Capsule-scoped credential stores remain authoritative; AI unlock is
   process-scoped. Exact SDK/compiler versions have one owner:
   `../toolchains/hivra-baseline.conf`.
@@ -234,8 +235,9 @@ Its explicit stateless recovery limit belongs to
 Moltbook 0.8.2 passed authenticated history, AI news/reply preparation without
 sending, and restart reconstruction on macOS/Android. Evidence remains in
 `/Volumes/Dev/projects/hivra-artifacts/moltbook-live-read-prepare-20261101`.
-This closes read-and-prepare, not live publication/reply/challenge qualification
-or the remaining general host/package convergence debt.
+That earlier evidence closes read-and-prepare only. The later bounded Mac
+publication and independent 0.8.4 Discovery update are recorded below; neither
+closes the remaining general host/package convergence debt.
 
 The existing common permission form supports new secret input and reference
 reuse; Cancel/native write failure issues no grant. Native owner-connection
@@ -247,14 +249,31 @@ Documentation and green fixtures alone do not establish product acceptance.
 
 ## Selected Product Outcome
 
-The `v1.0.5-test3` unsigned test prerelease and `v0.2.11-plugins` are
+The `v1.0.5-test3` unsigned test prerelease and `v0.2.12-plugins` are
 published. Exact Mac/Android artifact acceptance, digests and limits belong to
 `checklists/release-manual-signoff-log.md`; complete User Lifetime remains
 explicitly PENDING.
 
-The bounded signed Discovery delivery outcome is complete. Update Capsule to
+Moltbook 0.8.4 is published independently through the signed Discovery catalog
+in `v0.2.12-plugins`, from `hivra-plugins` PR #21. It uses the existing common API;
+Capsule was not rebuilt or replaced. The exact canonical Linux package passed
+the real-WASM host probe and replaced the installed local 0.8.3 through public
+Discovery on the existing Mac Capsule. It opened and returned to the same
+Ledger v121; all three Ledger files and the app executable/AOT hashes stayed
+unchanged. Installed Chat/Jack versions and package bytes were retained. A
+replacement digest requires reconnection and does not resume prior authority.
+The same implementation in the preceding local 0.8.3 candidate completed an
+owner-authorized news publication with an independent verified public receipt.
+No new publication was sent during the 0.8.4 Discovery acceptance. Generated
+prose remains model-dependent; exact 0.8.4 Android/live-write acceptance was not
+repeated. The package tests cover fresh history, computed verification,
+receipt/deduplication, restart and revocation/removal through the existing probe.
+Release digests, CI, public downloads and native evidence are owned by
+`/Volumes/Dev/projects/hivra-artifacts/jack-capsule-acceptance-20261103/moltbook-smoke-20261104/plugin-candidate.json`.
+
+The original `v0.2.11-plugins` signed Discovery delivery outcome is complete. Update Capsule to
 `v1.0.5-test3`, then use Plugins → Discover plugins to install Jack 0.2.1,
-Moltbook 0.8.2 and Chat 0.2.3. Test2 lacks Jack's required common host abilities.
+Moltbook 0.8.4 and Chat 0.2.3. Test2 lacks Jack's required common host abilities.
 The compatible Capsule was published before promoting the signed catalog;
 public downloads match its pinned canonical Linux package digests.
 
@@ -336,7 +355,7 @@ Earlier release records retain their own artifact-specific backup, delivery,
 recovery and dependency-update evidence. They cannot qualify changed bytes or
 silently enlarge current recovery scope. General User Lifetime, native Intel,
 a separate macOS user, long-term migration, full Jack TP/SL and Moltbook live
-writes remain unqualified by the bounded Discovery delivery. Within supported
+writes remain unqualified by that original bounded Discovery delivery. Within supported
 capabilities, package changes remain independent; host changes require a new
 exact-artifact smoke. No permanently frozen host ABI is claimed.
 

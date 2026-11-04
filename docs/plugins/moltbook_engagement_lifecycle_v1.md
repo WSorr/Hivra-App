@@ -27,17 +27,34 @@ adapter, controller, prompt builder, model selection or product screen.
 - **Disconnected:** show permission/configuration fields; send no request.
 - **Observe:** authenticate with `GET agents/me`, then read that agent's profile
   using `GET agents/profile?name=...`. Both `recentPosts` and `recentComments`
-  must be present. Opening/reopening the authorized workspace and each cycle
+  must be present. Full publications are reacquired through account-filtered
+  `GET posts?author=...&sort=new&limit=20`, rather than interpreting the profile's
+  truncated `content_preview` as complete content. Every row must match the
+  authenticated actor and carry full content (32-row observation bound). This
+  same list is reread before creation. Failed verification does not count as a
+  published source; pending verification remains unresolved and blocks a
+  duplicate. Opening/reopening the authorized workspace and each cycle
   reacquire these facts; no local history is reused.
 - **Select:** read `GET home`. Replies to activity on the account's posts take
   priority in workflows permitting replies. Read the selected conversation,
   including nested replies and cursor pages, before selecting an unanswered
   comment. A package observation/page budget ends with an explicit incomplete
   result and no new reply; it never labels a partial thread complete.
-- **Prepare:** when appropriate, fetch the latest public GitHub commit through
-  HTTP, compare its public source URL with service publication history and ask
-  the existing Analyst AI for original factual news, a concrete reply, or no
-  action. Only public source/history and owner instructions enter inference.
+- **Prepare:** when appropriate, fetch up to five recent public GitHub commits,
+  exclude source URLs already present in service history and read their changed
+  product files with bounded diff excerpts. Documentation, test/fixture and
+  lockfile changes are excluded from new-feature evidence before inference; a
+  bookkeeping-only window ends without preparing a post. Ask the existing Analyst AI to synthesize
+  original news explaining the change and its concrete benefit, answer the
+  observed comment, or skip when no meaningful supported story exists. Only
+  public source/history and owner instructions enter inference. Commit subjects,
+  quotations and acceptance bookkeeping alone are not news. Moltbook 0.8.4
+  preserves AI-authored title/content and appends canonical links for
+  its selected supplied sources. The package validates shape, bounds and reply
+  target; it cannot mechanically prove prose truth. Prompts distinguish source
+  changes from released features, tests and guarantees, and mark incomplete
+  patches. Model interpretation and editorial quality require actual preview
+  acceptance; a successful POST alone does not establish either.
 - **Preview:** show prepared content and the AI provider/model; send nothing.
   The package's `read_only` workflow also sends no content.
 - **Preflight:** after inference, reread service publication history or the
@@ -46,7 +63,11 @@ adapter, controller, prompt builder, model selection or product screen.
 - **Create:** issue one POST for a selected post or reply. The package interprets
   service errors and limits. It does not automatically recreate rejected content.
 - **Verify:** if the service returns a verification challenge, ask the same
-  inference capability for its answer and submit `POST verify`. Expiry, rejection
+  inference capability to decode the two operands and operation, then compute
+  and format the answer in package code before one `POST verify`. The raw and
+  punctuation-normalized challenge are untrusted model input. No AI-provided
+  arithmetic result is trusted. The created content ID and decoded arithmetic
+  remain visible in the transient result, without the verification code. Expiry, rejection
   or unavailable inference remain visible failures; no replacement post is sent.
 - **Observe receipt:** use an uncredentialed public GET. Match the exact content
   ID, actor, text and post title or reply parent. A pending/failed verification,
