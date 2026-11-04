@@ -61,10 +61,11 @@ void main() {
         approvedScope: {...f.schedule, 'interval_seconds': 1800},
       );
       await finished.future.timeout(const Duration(seconds: 2));
-      await runtime.runWorkspaceAction(
+      final observed = await runtime.runWorkspaceAction(
         record: f.registry.record,
         action: 'open',
       );
+      expect(observed['execution']['last_result'], 'response');
       expect(f.sends, 1);
       runtime.stopWorkspaceScheduling();
       await runtime.resumeWorkspaceScheduling(f.registry.record);
@@ -149,6 +150,49 @@ void main() {
           await f.close();
         }
       }
+    },
+  );
+
+  testWidgets(
+    'scheduled package result remains visible beside fresh observations',
+    (tester) async {
+      var opens = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction:
+                (_, _) async => {
+                  ...presentation(),
+                  'message': 'Fresh observation ${++opens}',
+                  'execution': {
+                    'active': true,
+                    'enabled': true,
+                    'running': true,
+                    'last_checked_at_ms': 1793750978108,
+                    'last_result':
+                        'Stopped: provider rejected content; nothing sent',
+                  },
+                },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Last cycle result'));
+      expect(
+        find.text('Stopped: provider rejected content; nothing sent'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Last completed cycle:'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pumpAndSettle();
+      expect(opens, greaterThan(1));
+      expect(
+        find.text('Stopped: provider rejected content; nothing sent'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Last successful cycle:'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
     },
   );
 

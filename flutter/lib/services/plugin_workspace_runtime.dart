@@ -657,9 +657,16 @@ class PluginWorkspaceRuntime {
       settings: Map<String, dynamic>.from(control['settings'] as Map),
     );
     final latest = await _readExecution(record, owner);
-    if (latest != null) {
+    if (latest != null &&
+        latest['revision'] == control['revision'] &&
+        _isStillOwnedBy(owner)) {
       final observed = {
         'last_checked_at_ms': DateTime.now().millisecondsSinceEpoch,
+        'last_result': ['message', 'details']
+            .map((key) => view[key])
+            .whereType<String>()
+            .where((text) => text.isNotEmpty)
+            .join('\n\n'),
       };
       _cycleObservations['$owner::${record.pluginId}'] = observed;
       view['execution'] = _executionPresentation(latest, observed);
@@ -1250,6 +1257,7 @@ class PluginWorkspaceRuntime {
     'revision': control['revision'],
     'expires_at_ms': control['expires_at_ms'],
     'last_checked_at_ms': observation?['last_checked_at_ms'],
+    'last_result': observation?['last_result'],
     'last_error': observation?['last_error'],
   };
 

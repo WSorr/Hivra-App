@@ -1366,13 +1366,23 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 : execution['expires_at_ms'] == null
                                 ? ' Until you revoke access.'
                                 : ' Until ${DateTime.fromMillisecondsSinceEpoch(execution['expires_at_ms'] as int).toLocal()}.'}'
-                            '${execution['last_checked_at_ms'] == null ? '' : '\nLast successful cycle: ${DateTime.fromMillisecondsSinceEpoch(execution['last_checked_at_ms'] as int).toLocal()}'}'
+                            '${execution['last_checked_at_ms'] == null ? '' : '\nLast completed cycle: ${DateTime.fromMillisecondsSinceEpoch(execution['last_checked_at_ms'] as int).toLocal()}'}'
                             '${execution['last_error'] == null ? '' : '\n${execution['last_error']}'}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant,
                               height: 1.5,
                             ),
                           ),
+                          if (execution['last_result'] is String &&
+                              (execution['last_result'] as String)
+                                  .isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Last cycle result',
+                              style: theme.textTheme.labelLarge,
+                            ),
+                            SelectableText(execution['last_result'] as String),
+                          ],
                           const SizedBox(height: 12),
                         ],
                         Wrap(

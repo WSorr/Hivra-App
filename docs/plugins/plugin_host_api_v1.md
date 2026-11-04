@@ -292,6 +292,12 @@ extra immediate action. Merely connecting credentials without a schedule runs
 no cycle. Every wake uses the same package/grant-checked executor; service
 publication history and rate limits remain package-owned. Published test3 still
 waits one interval before its first wake.
+The current executor also exposes the completed package cycle's message/details
+as `execution.last_result`, alongside its check timestamp, across foreground
+observation refreshes. This is an in-memory presentation only: grant changes,
+package replacement and process shutdown invalidate it. Completion is not a
+claim that a provider accepted an effect; the package's result retains that
+distinction. No service history or effect journal is persisted by this projection.
 The owner may choose a deadline or authorize until revocation. `workspace.stop`
 fully revokes host dispatch. A package may expose an ordinary partial-Stop
 workflow without revoking access to its remaining operations.
