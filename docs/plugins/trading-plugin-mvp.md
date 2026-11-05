@@ -68,7 +68,10 @@ quality is measured separately from actual closed-trade outcomes.
 5. After initial setup, the primary controls are the chosen instrument, margin
    per entry, and Start/Stop. Start, stop, or update with one user action each
    in either mode; do not expose a whitelist, scanner, runner ID, or session
-   hash as a prerequisite.
+   hash as a prerequisite. On VPS, Start replaces the previous managed runner
+   with this package and the selected instrument/settings, independent of which
+   authorized device installed it. Previous exchange orders are not cancelled;
+   the package retains unresolved identities and reconciles its selected scope.
    Keep advanced strategy settings and calculation evidence in optional,
    collapsed sections. Keep the execution mode, connected account, endpoint,
    current trading status, and actionable failures visible without expanding
@@ -203,6 +206,16 @@ quality is measured separately from actual closed-trade outcomes.
   completed trade. TP/SL closure does not require a new user session while
   the existing trading authority remains valid. Restart resumes reconciliation
   of the current lifecycle before evaluating another entry.
+- Show the last managed trade's result from actual exchange fills, not from an
+  empty position list. Bind exact entry/closing order IDs and position identity,
+  require complete matching quantities, and recheck positions/open orders before
+  calling it a full TP or SL. Show average execution prices, quantity, signed
+  trading fees/rebates and realized PnL; funding remains explicitly excluded from
+  a fills-only result. A different or mixed closure is labelled as such, and
+  missing or bounded/truncated evidence remains unconfirmed. Retain only one
+  owned-trade locator through the existing opaque checkpoint; reacquire fills
+  and result observations on open/refresh. Unavailable past-result history must
+  not prevent management of a current position or new authorized cycles.
 - Keep only the private decisions and pending operation identifiers necessary
   to continue safely. Exchange account history belongs to the exchange, not a
   host mirror. The package checkpoint preserves unresolved intent and existing

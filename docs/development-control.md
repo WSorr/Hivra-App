@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-03
+Status date: 2026-11-05
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -249,6 +249,33 @@ Documentation and green fixtures alone do not establish product acceptance.
 
 ## Selected Product Outcome
 
+The owner clarified remote Start: replace the one managed VPS process with the
+current package and chosen symbol/settings, independent of the installing device.
+The current source reuses setup/grant adoption for this lifecycle and removes the
+busy-runner veto; no service-specific host adapter or WASM API operation is added.
+The real-WASM probe covers another authorized device, selected-symbol Start,
+server checkpoint retention, stale replay, old control refusal and failed-Start
+revocation. Unit tests also cover a lost old observation and revocation before
+setup dispatch. This is source/synthetic evidence; the prior running 0.2.2
+artifact remains unchanged until exact-artifact acceptance of this host change. Its source contract is `plugins/plugin_host_api_v1.md`.
+
+The owner accepted Moltbook for v1 and selected Jack's completed-trade journey:
+show the actual exchange result, then continue the authorized cycle without a
+second product controller. The unreleased Jack 0.2.3 source includes the
+existing common HTTP/checkpoint path for one last-trade locator and transient
+fill accounting; no host implementation or API operation is added. It also
+recovers a pre-dispatch interruption as not sent while retaining uncertain
+sent identities. Native synthetic closure/reopen evidence is not live TP
+acceptance. The preceding exact local 0.2.2 package was installed through the
+existing Mac UI without rebuilding Capsule, after returning the old VPS authority and checkpoint.
+Reconnection reused the saved secrets; owner Start resumed ACH-USDT 1m, margin
+1 USDT and stop budget 20% on the same VPS. The previously stranded pre-dispatch
+plan became not sent. All three Ledger files and application executable/AOT
+hashes remained unchanged. Live closure/reentry, restart during a managed trade
+and Android 0.2.2 acceptance remain pending. No new Capsule, backup or emulator
+is part of this pass. Digest-bound checks and current observation use the
+existing `jack_completed_trade_20261105` section in the acceptance record below.
+
 The `v1.0.5-test3` unsigned test prerelease and `v0.2.12-plugins` are
 published. Exact Mac/Android artifact acceptance, digests and limits belong to
 `checklists/release-manual-signoff-log.md`; complete User Lifetime remains
@@ -265,8 +292,9 @@ replacement digest requires reconnection and does not resume prior authority.
 The same implementation in the preceding local 0.8.3 candidate completed an
 owner-authorized news publication with an independent verified public receipt.
 No new publication was sent during the 0.8.4 Discovery acceptance. Generated
-prose remains model-dependent; exact 0.8.4 Android/live-write acceptance was not
-repeated. The package tests cover fresh history, computed verification,
+prose remains model-dependent. The existing physical Samsung also passed the
+0.8.2 to 0.8.4 public Discovery update/open/return without an APK rebuild, new
+Capsule or publication. Exact 0.8.4 live-write acceptance was not repeated. The package tests cover fresh history, computed verification,
 receipt/deduplication, restart and revocation/removal through the existing probe.
 Release digests, CI, public downloads and native evidence are owned by
 `/Volumes/Dev/projects/hivra-artifacts/jack-capsule-acceptance-20261103/moltbook-smoke-20261104/plugin-candidate.json`.

@@ -256,6 +256,13 @@ void validateWorkspaceExecutionSchedule(Map<String, dynamic> scope) {
   if (scope['version'] == 2) {
     final scheduled =
         scope['action'] != null || scope['interval_seconds'] != null;
+    if (scope.containsKey('start_action') &&
+        (scope['start_action'] is! String ||
+            !RegExp(
+              r'^[a-z][a-z0-9_]{0,63}$',
+            ).hasMatch(scope['start_action']))) {
+      throw StateError('Invalid package Start action');
+    }
     if ((scheduled &&
             (scope['action'] is! String ||
                 !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(scope['action']) ||

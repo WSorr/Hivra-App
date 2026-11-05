@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import '../services/plugin_capability_dispatcher.dart';
-import '../services/plugin_workspace_remote_service.dart' show WorkspaceVpsBusy;
 
 import 'package:flutter/material.dart';
 
@@ -119,6 +118,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       },
   };
 
+  bool get _remoteSelected =>
+      _view?['host_connection']?['target'] == 'vps' ||
+      _view?['host_connection']?['selected'] == true;
+
   Future<void> _run(String action) async {
     final descriptor = (_view?['actions'] as List? ?? const []).where(
       (a) => (a as Map)['id'] == action,
@@ -130,6 +133,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
     if (_busy || _choosing) return;
     if (_observationUnavailable &&
+        !_remoteSelected &&
         const {'workspace.start'}.contains(hostAction)) {
       return;
     }
@@ -159,7 +163,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     });
     try {
       final settings = action == 'open' ? <String, dynamic>{} : _settings();
-      var view = await widget.runWorkspaceAction(action, settings);
+      final remoteStart = hostAction == 'workspace.start' && _remoteSelected;
+      // The new server process invokes the package Start after installation.
+      // Never send selected settings to the previous runner before replacement.
+      var view =
+          remoteStart
+              ? _view!
+              : await widget.runWorkspaceAction(action, settings);
       if (!mounted || generation != _presentationGeneration) return;
       if (hostAction == 'workspace.start') {
         final configure = widget.configureExecution;
@@ -167,6 +177,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           throw StateError('Scheduled execution is not available in this host');
         }
         final scope = Map<String, dynamic>.from(view['schedule'] as Map);
+        if (remoteStart) scope['start_action'] = action;
         final access = Map<String, dynamic>.from(scope['access'] as Map);
         if (!_hasAccess(access)) {
           setState(() {
@@ -317,20 +328,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           trustPeer: (_) async => false,
         );
         connected = true;
-      } on WorkspaceVpsBusy catch (error) {
-        if (mounted) {
-          setState(() {
-            _error = error.toString();
-            _actionResultVisible = true;
-          });
-        }
       } catch (_) {
         if (mounted) {
-          setState(
-            () =>
-                _error =
-                    'Saved VPS connection was not acknowledged. Check server availability; no execution Start was granted.',
-          );
+          setState(() {
+            _error =
+                'Saved VPS connection was not acknowledged. Check server availability; no execution Start was granted.';
+            _actionResultVisible = true;
+          });
         }
       } finally {
         if (mounted) setState(() => _busy = false);
@@ -474,20 +478,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         },
       );
       connected = true;
-    } on WorkspaceVpsBusy catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error.toString();
-          _actionResultVisible = true;
-        });
-      }
     } catch (_) {
       if (mounted) {
-        setState(
-          () =>
-              _error =
-                  'VPS connection was not completed. Check installer availability, login and server identity. No execution Start was granted.',
-        );
+        setState(() {
+          _error =
+              'VPS connection was not completed. Check installer availability, login and server identity. No execution Start was granted.';
+          _actionResultVisible = true;
+        });
       }
     } finally {
       password = '';
@@ -1108,6 +1105,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               : _busy ||
                   _choosing ||
                   (_observationUnavailable &&
+                      !_remoteSelected &&
                       action['host'] == 'workspace.start')
               ? null
               : () => _run(action['id'] as String);
@@ -1239,6 +1237,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         ),
                       ],
                       if (actions.isNotEmpty) ...[
+                        if (_remoteSelected &&
+                            actions.any(
+                              (a) => a['host'] == 'workspace.start',
+                            )) ...[
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Start replaces the VPS runner with this package and the selected settings. Already accepted service actions remain in effect.',
+                          ),
+                        ],
                         const SizedBox(height: 22),
                         Wrap(
                           spacing: 10,

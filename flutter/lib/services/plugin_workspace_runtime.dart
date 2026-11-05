@@ -499,7 +499,11 @@ class PluginWorkspaceRuntime {
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(releaseToExecutorId))) {
       throw StateError('Invalid VPS execution target');
     }
-    final previous = await _readExecution(record, owner);
+    final previous = await _readExecution(
+      record,
+      owner,
+      enforceHost: releaseToExecutorId == null,
+    );
     if (settings.isEmpty && previous?['settings'] is Map) {
       settings = Map<String, dynamic>.from(previous!['settings'] as Map);
     }
@@ -596,7 +600,11 @@ class PluginWorkspaceRuntime {
     await _serialize(
       '$owner::${record.pluginId}::execution',
       () => _withWorkspaceLease(owner, record, () async {
-        final current = await _readExecution(record, owner);
+        final current = await _readExecution(
+          record,
+          owner,
+          enforceHost: releaseToExecutorId == null,
+        );
         if (current?['revision'] != previous?['revision']) {
           throw StateError('Execution authority changed during confirmation');
         }
@@ -844,6 +852,7 @@ class PluginWorkspaceRuntime {
   Future<void> adoptWorkspaceFromLocal({
     required WasmPluginRecord record,
     required Map<String, dynamic> checkpoint,
+    bool preserveWorkspace = false,
   }) async {
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (executionHost != 'vps' || owner == null) {
@@ -924,9 +933,9 @@ class PluginWorkspaceRuntime {
               directory,
               record.pluginId!,
               {
-                if (checkpoint['workspace'] != null)
+                if (checkpoint['workspace'] != null && !preserveWorkspace)
                   'workspace.v1.json': checkpoint['workspace'] as String,
-                if (checkpoint['effects'] != null)
+                if (checkpoint['effects'] != null && !preserveWorkspace)
                   'external_effects.v1.json': checkpoint['effects'] as String,
                 _executionFile: jsonEncode({
                   ...incoming,

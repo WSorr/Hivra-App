@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
@@ -153,6 +154,247 @@ void main() {
     },
   );
 
+  test(
+    'remote Start uses one setup with the new selection; revoked Start sends no setup',
+    () async {
+      for (final fault in ['none', 'secret', 'stale']) {
+        final revoke = fault != 'none';
+        final f = await Fixture.create();
+        try {
+          final bytes = utf8.encode('synthetic package transport');
+          final package = File('${f.home.path}/package.zip');
+          await package.writeAsBytes(bytes);
+          f.registry.packagePath = package.path;
+          f.registry.digest = sha256.convert(bytes).toString();
+          await f.enable();
+          await f.changeGrant((g) {
+            g['executor'] = 'vps';
+            g['executor_id'] = 'e' * 64;
+            g['handoff_id'] = 'd' * 64;
+          });
+          final dir = await f.files.capsuleDirForHex(f.owner);
+          final connection = {
+            'owner': f.owner,
+            'plugin_id': f.registry.record.pluginId,
+            'executor_id': 'f' * 64,
+            'host': 'server.example',
+            'port': 22,
+            'fingerprint': 'SHA256:${'A' * 43}',
+            'selected': true,
+            'package_id': 'previous-server-package',
+            'package_digest': 'c' * 64,
+          };
+          await f.files.writePluginState(
+            dir,
+            f.registry.record.pluginId!,
+            PluginWorkspaceRemoteService.connectionFile,
+            jsonEncode(connection),
+          );
+          final calls = <String>[];
+          final binding = {...connection}..removeWhere(
+            (key, _) =>
+                ![
+                  'owner',
+                  'plugin_id',
+                  'executor_id',
+                  'package_id',
+                  'package_digest',
+                ].contains(key),
+          );
+          binding['package_id'] = 'new-server-package';
+          binding['package_digest'] = f.registry.digest;
+          final unused = UnusedWorkspacePorts();
+          if (fault == 'secret') {
+            unused.beforeResolve =
+                () => f.changeGrant((g) {
+                  g['enabled'] = false;
+                  g['revision']++;
+                });
+          }
+          final remote = PluginWorkspaceRemoteService(
+            files: f.files,
+            vault: unused,
+            registry: f.registry,
+            requestTransport: (c, command, payload) async {
+              final body = jsonDecode(utf8.decode(payload)) as Map;
+              calls.add(
+                command == 'request' ? body['command'] as String : command,
+              );
+              if (command == 'setup') {
+                expect(body['checkpoint']['execution']['settings'], {
+                  'selection': 'new-choice',
+                });
+                expect(
+                  body['checkpoint']['execution']['executor_id'],
+                  'f' * 64,
+                );
+                return jsonEncode(binding);
+              }
+              return jsonEncode({
+                'ok': true,
+                'result': {
+                  'binding': binding,
+                  'runner': {'state': 'running', 'execution_controls': 4},
+                  'view': {
+                    ...presentation(),
+                    'execution': {
+                      'mode': 'vps',
+                      'active': true,
+                      'running': true,
+                    },
+                  },
+                },
+              });
+            },
+          );
+          await remote.connect(
+            owner: f.owner,
+            record: f.registry.record,
+            host: 'server.example',
+            port: 22,
+            password: '',
+            trustPeer:
+                (_) async => throw StateError('Saved pin must not be replaced'),
+            stillOwned: () => true,
+          );
+          expect(
+            calls,
+            isEmpty,
+            reason: 'Selecting a saved VPS must not control its prior runner',
+          );
+          final module = PluginRuntimeModule(
+            registry: f.registry,
+            sourceCatalog: const WasmPluginSourceCatalogService(),
+            manualChecks: unused,
+            pluginHostApi: f.runtime().pluginHostApi,
+            attestationExchange: unused,
+            chatDelivery: unused,
+            passiveReceive: unused,
+            contactLabels: unused,
+            uiLog: unused,
+            fileStore: f.files,
+            secretVault: unused,
+            readActiveCapsuleRootHex: () => f.owner,
+            workspaceRemote: remote,
+          );
+          if (fault == 'stale') {
+            await f.changeGrant((g) {
+              g['enabled'] = false;
+              g['revision']++;
+            });
+          }
+          final operation = module.setWorkspaceExecution(
+            record: f.registry.record,
+            enabled: true,
+            expiresAtMs: null,
+            expectedRevision: 1,
+            approvedScope: {
+              ...f.schedule,
+              'start_action': 'begin_owner_workflow',
+            },
+            settings: const {'selection': 'new-choice'},
+          );
+          if (revoke) {
+            await expectLater(operation, throwsStateError);
+            expect(calls, isEmpty);
+          } else {
+            final view = await operation;
+            expect(view['host_connection']['target'], 'vps');
+            expect(calls.first, 'setup');
+            expect(calls, isNot(contains('action')));
+            expect(calls, isNot(contains('execution')));
+          }
+          expect(f.sends, 0);
+        } finally {
+          await f.close();
+        }
+      }
+    },
+  );
+
+  testWidgets(
+    'remote Start replaces execution with the selected settings without sending Start to the old runner',
+    (tester) async {
+      final actions = <String>[];
+      Map<String, dynamic>? selected;
+      final access = permission('https://one.example');
+      final scope = {
+        'version': 2,
+        'action': 'run',
+        'interval_seconds': 60,
+        'description': 'Owner workflow',
+        'access': access,
+      };
+      Map<String, dynamic> view() => {
+        ...presentation(),
+        'fields': [
+          {
+            'id': 'selection',
+            'type': 'text',
+            'label': 'Selection',
+            'value': 'old-choice',
+          },
+        ],
+        'actions': [
+          {'id': 'start', 'label': 'Start', 'host': 'workspace.start'},
+        ],
+        'schedule': scope,
+        'execution': {
+          'mode': 'vps',
+          'enabled': true,
+          'active': true,
+          'running': true,
+          'revision': 1,
+          'expires_at_ms': null,
+          'access': access,
+          'credentials': {
+            'default': {'token': 'ref-token'},
+          },
+        },
+        'host_connection': {
+          'target': 'vps',
+          'selected': true,
+          'host': 'server.example',
+        },
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
+              if (actions.length > 1) {
+                throw const SocketException('Old executor unavailable');
+              }
+              return view();
+            },
+            configureExecution: ({
+              required enabled,
+              required expiresAtMs,
+              expectedRevision,
+              revoke = false,
+              approvedScope,
+              credentialBindings,
+              settings = const {},
+            }) async {
+              selected = settings;
+              return view();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'new-choice');
+      await tester.pump(const Duration(seconds: 61));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+      expect(actions, ['open', 'open']);
+      expect(selected, {'selection': 'new-choice'});
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets(
     'scheduled package result remains visible beside fresh observations',
     (tester) async {
@@ -193,40 +435,6 @@ void main() {
       );
       expect(find.textContaining('Last successful cycle:'), findsNothing);
       await tester.pumpWidget(const SizedBox());
-    },
-  );
-
-  test(
-    'VPS occupancy follows its runner binding, not the connecting device',
-    () {
-      final connection = {
-        'owner': 'a' * 64,
-        'plugin_id': 'example.unrelated',
-        'executor_id': 'e' * 64,
-      };
-      final installed = {
-        ...connection,
-        'package_id': 'server-package',
-        'package_digest': 'b' * 64,
-      };
-      PluginWorkspaceRemoteService.validateInstallationTarget(connection, {});
-      PluginWorkspaceRemoteService.validateInstallationTarget(
-        connection,
-        installed,
-      );
-      for (final other in [
-        {'owner': 'c' * 64},
-        {'plugin_id': 'another.package'},
-        {'executor_id': 'f' * 64},
-      ]) {
-        expect(
-          () => PluginWorkspaceRemoteService.validateInstallationTarget(
-            connection,
-            {...installed, ...other},
-          ),
-          throwsA(isA<WorkspaceVpsBusy>()),
-        );
-      }
     },
   );
 
@@ -281,77 +489,84 @@ void main() {
     },
   );
 
-  testWidgets('busy VPS stays explicit while the local workflow is running', (
-    tester,
-  ) async {
-    var opens = 0, connections = 0;
-    final busy = const WorkspaceVpsBusy();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PluginWorkspaceScreen(
-          capabilities: const ['workspace.schedule'],
-          runWorkspaceAction: (action, settings) async {
-            opens++;
-            return {
-              ...presentation(),
-              'execution': {'mode': 'local', 'running': true, 'active': true},
-              'host_connection': {
-                'target': 'local',
-                'selected': true,
-                'host': 'server.example',
-                'port': 22,
-                'installed': false,
-                'health': 'setup_unconfirmed',
-              },
-            };
-          },
-          connectVps: ({
-            required host,
-            required port,
-            required password,
-            required trustPeer,
-          }) async {
-            connections++;
-            throw busy;
-          },
+  testWidgets(
+    'failed VPS connection retains the local workflow without relabelling execution',
+    (tester) async {
+      var opens = 0, connections = 0;
+      final busy = StateError('Synthetic connection failure');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              opens++;
+              return {
+                ...presentation(),
+                'execution': {'mode': 'local', 'running': true, 'active': true},
+                'host_connection': {
+                  'target': 'local',
+                  'selected': true,
+                  'host': 'server.example',
+                  'port': 22,
+                  'installed': false,
+                  'health': 'setup_unconfirmed',
+                },
+              };
+            },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+            }) async {
+              connections++;
+              throw busy;
+            },
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('On this device · keep the app open'), findsOneWidget);
-    expect(find.textContaining('VPS execution ·'), findsNothing);
-    expect(find.textContaining('Setup not confirmed'), findsOneWidget);
-    final connect = find.text('Connect VPS');
-    await tester.ensureVisible(connect);
-    await tester.tap(connect);
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byWidgetPredicate((w) => w is TextField && w.obscureText),
-      'synthetic-test-password',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Connect securely'));
-    await tester.pumpAndSettle();
-    expect(connections, 1);
-    expect(find.text(busy.toString()), findsOneWidget);
-    final observedOpens = opens;
-    await tester.pump(const Duration(seconds: 61));
-    for (final state in [
-      AppLifecycleState.inactive,
-      AppLifecycleState.hidden,
-      AppLifecycleState.paused,
-      AppLifecycleState.hidden,
-      AppLifecycleState.inactive,
-      AppLifecycleState.resumed,
-    ]) {
-      tester.binding.handleAppLifecycleStateChanged(state);
-    }
-    await tester.pumpAndSettle();
-    expect(find.text(busy.toString()), findsOneWidget);
-    expect(opens, observedOpens);
-    expect(find.textContaining('VPS execution ·'), findsNothing);
-    await tester.pumpWidget(const SizedBox());
-  });
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('On this device · keep the app open'), findsOneWidget);
+      expect(find.textContaining('VPS execution ·'), findsNothing);
+      expect(find.textContaining('Setup not confirmed'), findsOneWidget);
+      final connect = find.text('Connect VPS');
+      await tester.ensureVisible(connect);
+      await tester.tap(connect);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate((w) => w is TextField && w.obscureText),
+        'synthetic-test-password',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect securely'));
+      await tester.pumpAndSettle();
+      expect(connections, 1);
+      expect(
+        find.textContaining('VPS connection was not completed'),
+        findsOneWidget,
+      );
+      final observedOpens = opens;
+      await tester.pump(const Duration(seconds: 61));
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('VPS connection was not completed'),
+        findsOneWidget,
+      );
+      expect(opens, observedOpens);
+      expect(find.textContaining('VPS execution ·'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets(
     'scheduled observation preserves owner draft edits until an explicit package action',
@@ -1917,6 +2132,16 @@ class UnusedWorkspacePorts
         CapsuleContactLabelStore,
         CapsuleScopedSecretVault,
         UiEventLogService {
+  Future<void> Function()? beforeResolve;
+  @override
+  Future<Map<String, String>> resolveReferences(
+    String owner,
+    Map<String, String> references,
+  ) async {
+    await beforeResolve?.call();
+    return references.map((key, _) => MapEntry(key, 'synthetic-$key'));
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw StateError('Unrelated port invoked: ${invocation.memberName}');
@@ -1927,6 +2152,7 @@ class Registry extends WasmPluginRegistryService {
   bool network = true;
   bool persistent = true, scheduled = true;
   String digest = 'b' * 64;
+  String? packagePath;
   final record = const WasmPluginRecord(
     id: 'package',
     displayName: 'Unrelated application',
@@ -1962,6 +2188,7 @@ class Registry extends WasmPluginRegistryService {
             packageVersion: '1.0.0',
             packageKind: 'zip',
             packageDigestHex: digest,
+            packageFilePath: packagePath,
             contractKind: pluginWorkspaceContractKind,
             capabilities:
                 record.capabilities

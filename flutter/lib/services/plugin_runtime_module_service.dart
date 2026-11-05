@@ -423,6 +423,63 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     );
     var c = await _remote.connection(owner, record.pluginId!);
     if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
+    if (enabled && approvedScope?['action'] != null && c?['selected'] == true) {
+      if (credentialBindings == null &&
+          expectedRevision != null &&
+          expectedRevision != grant?['revision']) {
+        throw StateError(
+          'Start authority changed; reopen the current permissions',
+        );
+      }
+      // Start belongs to the current owner and selection, not the device that
+      // happened to install the previous server process. No old runner action.
+      await super.setWorkspaceExecution(
+        record: record,
+        enabled: true,
+        expiresAtMs: expiresAtMs,
+        expectedRevision: grant?['revision'] as int?,
+        approvedScope: approvedScope,
+        credentialBindings:
+            credentialBindings ??
+            (grant?['credentials'] as Map?)?.map(
+              (k, v) =>
+                  MapEntry(k as String, Map<String, String>.from(v as Map)),
+            ),
+        settings: settings,
+        releaseToExecutorId: c!['executor_id'] as String,
+      );
+      final checkpoint = await releaseWorkspaceToVps(
+        record,
+        executorId: c['executor_id'] as String,
+      );
+      c = await _remote.ensurePackage(
+        owner,
+        record,
+        credentialBindings: credentialBindings,
+        checkpoint: checkpoint,
+        authorize: () async {
+          final current = await super.readWorkspaceExecution(
+            record,
+            enforceHost: false,
+          );
+          final installed = await registry.resolveRuntimeBinding(
+            record.pluginId!,
+          );
+          if (activeCapsuleRootHex() != owner ||
+              current?['revision'] != checkpoint['execution']['revision'] ||
+              current?['enabled'] != true ||
+              current?['revoked'] == true ||
+              installed.packageId != record.id ||
+              installed.packageDigestHex != checkpoint['package_digest']) {
+            throw StateError(
+              'Start authority changed before server replacement',
+            );
+          }
+        },
+      );
+      await _requireExecutionControls(c, requireReplacement: true);
+      return runWorkspaceAction(record: record, action: 'open');
+    }
     if (grant?['executor'] == 'vps') {
       if (credentialBindings != null) {
         throw StateError(
@@ -453,14 +510,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
               record.id) {
         throw StateError('Capsule or package changed during authorization');
       }
-      if (!enabled) {
-        await _remote.request(c, 'adopt', {
-          'checkpoint': await releaseWorkspaceToVps(
-            record,
-            executorId: c['executor_id'] as String,
-          ),
-        });
-      }
       await _remote.request(c, 'execution', {
         'enabled': enabled,
         'settings': settings,
@@ -481,31 +530,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       }
       return runWorkspaceAction(record: record, action: 'open');
     }
-    if (enabled && c?['selected'] == true) {
-      c = await _remote.ensurePackage(
-        owner,
-        record,
-        credentialBindings: credentialBindings,
-      );
-      await _requireExecutionControls(c);
-      if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
-      await super.setWorkspaceExecution(
-        record: record,
-        enabled: true,
-        expiresAtMs: expiresAtMs,
-        expectedRevision: expectedRevision,
-        approvedScope: approvedScope,
-        credentialBindings: credentialBindings,
-        settings: settings,
-        releaseToExecutorId: c['executor_id'] as String,
-      );
-      final checkpoint = await releaseWorkspaceToVps(
-        record,
-        executorId: c['executor_id'] as String,
-      );
-      await _remote.request(c, 'adopt', {'checkpoint': checkpoint});
-      return runWorkspaceAction(record: record, action: 'open');
-    }
     return super.setWorkspaceExecution(
       record: record,
       enabled: enabled,
@@ -520,10 +544,12 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
   }
 
   Future<void> _requireExecutionControls(
-    Map<String, dynamic> connection,
-  ) async {
+    Map<String, dynamic> connection, {
+    bool requireReplacement = false,
+  }) async {
     final status = await _remote.request(connection, 'status');
-    if (status['runner']?['execution_controls'] != 3) {
+    final controls = status['runner']?['execution_controls'];
+    if (controls is! int || controls < (requireReplacement ? 4 : 3)) {
       throw StateError(
         'Update the VPS runtime before changing permission terms',
       );

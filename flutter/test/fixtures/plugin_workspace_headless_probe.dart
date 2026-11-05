@@ -519,6 +519,43 @@ Future<void> _checkInstalledWasm(
               'status':
                   exit && phase == 'partial' ? 'PARTIALLY_FILLED' : 'FILLED',
             };
+          } else if (uri.path.endsWith('/allOrders')) {
+            data = {
+              'orders': [
+                {
+                  'orderId': '999',
+                  'positionID': '456',
+                  'symbol': 'BTC-USDT',
+                  'side': 'SELL',
+                  'positionSide': 'LONG',
+                  'status': 'FILLED',
+                  'executedQty': '1',
+                  'type': 'LIMIT',
+                },
+              ],
+            };
+          } else if (uri.path.endsWith('/allFillOrders')) {
+            final entry = uri.queryParameters['orderId'] == '123';
+            if (uri.queryParameters['tradingUnit'] != 'COIN' ||
+                !uri.queryParameters.containsKey('startTs') ||
+                !uri.queryParameters.containsKey('endTs')) {
+              throw StateError('Incorrect fill-history request');
+            }
+            data = {
+              'fill_orders': [
+                {
+                  'tradeId': entry ? '1' : '2',
+                  'orderId': entry ? '123' : '999',
+                  'symbol': 'BTC-USDT',
+                  'side': entry ? 'BUY' : 'SELL',
+                  'qty': '1',
+                  'price': entry ? '96.5' : '105',
+                  'fee': entry ? '-0.01' : '-0.02',
+                  'realizedPnl': entry ? '0' : '8.5',
+                  'time': now - 1,
+                },
+              ],
+            };
           } else if (uri.path.endsWith('/positions')) {
             data =
                 phase == 'partial'
@@ -580,7 +617,7 @@ Future<void> _checkInstalledWasm(
             final first = start ?? current - span;
             final last = end ?? current;
             data = [
-              for (var t = first; t <= last; t += span)
+              for (var t = first; end == null ? t <= last : t < last; t += span)
                 [t, '100', '101', '99', '100', '0'],
             ];
           } else {
@@ -718,7 +755,16 @@ Future<void> _checkInstalledWasm(
       'common API actual-WASM partial reducing fill retained; manual order unchanged PASS',
     );
     phase = 'filled';
-    await runtime().runWorkspaceAction(record: record, action: 'refresh_order');
+    final closedView = await runtime().runWorkspaceAction(
+      record: record,
+      action: 'refresh_order',
+    );
+    if (!closedView['message'].toString().contains('Last trade · TP') ||
+        !closedView['message'].toString().contains('8.470000 USDT')) {
+      throw StateError(
+        'Actual WASM did not show the verified trade result: ${closedView['message']}',
+      );
+    }
     final retired = await files.readPluginState(
       directory,
       record.pluginId!,
@@ -729,7 +775,13 @@ Future<void> _checkInstalledWasm(
         'Actual WASM did not retire the exact filled reducing exit',
       );
     }
-    await runtime().runWorkspaceAction(record: record, action: 'open');
+    final reopenedView = await runtime().runWorkspaceAction(
+      record: record,
+      action: 'open',
+    );
+    if (!reopenedView['message'].toString().contains('Last trade · TP')) {
+      throw StateError('Result was not reacquired after reopening');
+    }
     final reopened = jsonDecode(
       (await files.readPluginState(
         directory,
@@ -743,7 +795,169 @@ Future<void> _checkInstalledWasm(
     stdout.writeln(
       'common API actual-WASM full reducing closure/reopen PASS; synthetic provider only, no network or writes',
     );
+    // Use this same disposable runtime, not another Capsule or preview app.
+    // Start from another server-authorized device retains the server's opaque
+    // checkpoint, replaces authority and applies the new package selection.
+    final root = await dirs.rootDirectory();
+    await Process.run('chmod', ['700', root.path]);
+    final binding = await registry.resolveRuntimeBinding(record.pluginId!);
+    final installation = {
+      'owner': owner,
+      'plugin_id': record.pluginId,
+      'executor_id': 'e' * 64,
+      'package_digest': binding.packageDigestHex,
+      'package': base64Encode(await package.readAsBytes()),
+      'credentials': jsonDecode(keys),
+    };
+    final prior = await WorkspaceRunner.setup(root, installation);
+    final grant = Map<String, dynamic>.from(
+      (await runtime().readWorkspaceExecution(record))!,
+    );
+    await files.writePluginState(
+      directory,
+      record.pluginId!,
+      'workspace-execution.v1.json',
+      jsonEncode({...grant, 'executor': 'vps', 'executor_id': 'e' * 64}),
+    );
+    final checkpoint = {
+      'owner': owner,
+      'plugin_id': record.pluginId,
+      'package_digest': binding.packageDigestHex,
+      'execution': {
+        ...grant,
+        'executor': 'vps',
+        'executor_id': 'f' * 64,
+        'handoff_id': 'd' * 64,
+        'scope': {
+          ...grant['scope'] as Map,
+          'action': 'cycle',
+          'start_action': 'start',
+          'interval_seconds': 60,
+        },
+        'settings': {...settings, 'symbol': 'MNT-USDT'},
+      },
+      // This stale client copy must not replace the newer server checkpoint.
+      'workspace': jsonEncode(seed), 'effects': null,
+    };
+    final start = {
+      ...installation,
+      'executor_id': 'f' * 64,
+      'checkpoint': checkpoint,
+    };
+    final replaced = await WorkspaceRunner.setup(root, start);
+    if (replaced['executor_id'] != 'f' * 64 ||
+        replaced['package_digest'] != binding.packageDigestHex) {
+      throw StateError('Start did not replace the previous device binding');
+    }
+    var current =
+        jsonDecode(
+              (await files.readPluginState(
+                directory,
+                record.pluginId!,
+                'workspace.v1.json',
+              ))!,
+            )
+            as Map;
+    if (current['engine']['settings']['symbol'] != 'MNT-USDT' ||
+        current['engine']['entry'] != null ||
+        current['last_trade'] == null) {
+      throw StateError(
+        'Start lost server evidence or kept the previous selection',
+      );
+    }
+    current['new_entries'] = false;
+    await files.writePluginState(
+      directory,
+      record.pluginId!,
+      'workspace.v1.json',
+      jsonEncode(current),
+    );
+    final beforeReplay = await files.readPluginState(
+      directory,
+      record.pluginId!,
+      'workspace.v1.json',
+    );
+    await WorkspaceRunner.setup(root, start);
+    if (await files.readPluginState(
+          directory,
+          record.pluginId!,
+          'workspace.v1.json',
+        ) !=
+        beforeReplay) {
+      throw StateError(
+        'Lost acknowledgement replayed Start or restored stale client state',
+      );
+    }
+    final server = WorkspaceRunner(
+      root: root,
+      registry: registry,
+      binding: replaced,
+      runtime: WorkspaceRunner.runtimeFor(
+        root,
+        replaced,
+        registry,
+        scheduleTimers: false,
+      ),
+    );
+    try {
+      await server.dispatch({...prior, 'command': 'status'});
+      throw StateError('Old device still controls the replacement');
+    } on StateError catch (error) {
+      if (error.message == 'Old device still controls the replacement') rethrow;
+    }
+    final invalid = jsonDecode(jsonEncode(start)) as Map<String, dynamic>;
+    invalid['checkpoint']['execution']['handoff_id'] = '9' * 64;
+    invalid['checkpoint']['execution']['settings']['symbol'] = 'invalid';
+    var refused = false;
+    try {
+      await WorkspaceRunner.setup(root, invalid);
+    } catch (_) {
+      refused = true;
+    }
+    final ended =
+        jsonDecode(
+              (await files.readPluginState(
+                directory,
+                record.pluginId!,
+                'workspace-execution.v1.json',
+              ))!,
+            )
+            as Map;
+    if (!refused ||
+        ended['enabled'] != false ||
+        ended['revoked'] != true ||
+        !_sameJson(
+          jsonDecode(
+            (await files.readPluginState(
+              directory,
+              record.pluginId!,
+              'workspace.v1.json',
+            ))!,
+          ),
+          jsonDecode(beforeReplay!),
+        )) {
+      throw StateError(
+        'Failed Start revived authority or lost opaque evidence',
+      );
+    }
+    stdout.writeln(
+      'server replacement PASS: other device, selected symbol, retained opaque evidence, no stale replay, old control refused, failed Start revoked; no network',
+    );
     if (executable != null) {
+      // Independent process/restart smoke starts from the original synthetic
+      // local grant, not the intentionally revoked replacement-failure case.
+      await files.writePluginState(
+        directory,
+        record.pluginId!,
+        'workspace-execution.v1.json',
+        jsonEncode(grant),
+      );
+      await files.writePluginState(
+        directory,
+        record.pluginId!,
+        'workspace.v1.json',
+        retired,
+      );
       await _checkProductionProcess(executable, registry, files, record, owner);
     }
   } finally {
@@ -791,11 +1005,18 @@ Future<void> _checkProductionProcess(
       'package': base64Encode(packageBytes),
       'credentials': null,
     };
-    Future<Map<String, dynamic>> setup(Map<String, dynamic> input) async {
-      final installer = await Process.start(executable.path, [
-        'setup',
-        root.path,
-      ]);
+    Future<Map<String, dynamic>> setup(
+      Map<String, dynamic> input, {
+      String? authorizedExecutor,
+    }) async {
+      final installer = await Process.start(
+        executable.path,
+        ['setup', root.path],
+        environment:
+            authorizedExecutor == null
+                ? null
+                : {'HIVRA_WORKSPACE_EXECUTOR_ID': authorizedExecutor},
+      );
       final output = installer.stdout.transform(utf8.decoder).join();
       final errors = installer.stderr.transform(utf8.decoder).join();
       installer.stdin.writeln(jsonEncode(input));
@@ -823,8 +1044,11 @@ Future<void> _checkProductionProcess(
       );
     }
     try {
-      await setup({...installation, 'owner': 'e' * 64});
-      throw StateError('Foreign installation was accepted');
+      await setup({
+        ...installation,
+        'executor_id': 'e' * 64,
+      }, authorizedExecutor: 'f' * 64);
+      throw StateError('Mismatched SSH identity was accepted');
     } on StateError catch (error) {
       if (!error.message.toString().startsWith('Runner setup failed:')) rethrow;
     }
@@ -1111,6 +1335,18 @@ Future<void> _checkProductionProcess(
   }
 }
 
+bool _sameJson(dynamic a, dynamic b) {
+  if (a is Map && b is Map) {
+    return a.length == b.length &&
+        a.keys.every((key) => b.containsKey(key) && _sameJson(a[key], b[key]));
+  }
+  if (a is List && b is List) {
+    return a.length == b.length &&
+        List.generate(a.length, (i) => i).every((i) => _sameJson(a[i], b[i]));
+  }
+  return a == b;
+}
+
 class _Registry extends WasmPluginRegistryService {
   bool installed = true;
   String digest = 'b' * 64;
@@ -1136,14 +1372,16 @@ class _Registry extends WasmPluginRegistryService {
   );
   @override
   Future<PluginRuntimeBinding> resolveRuntimeBinding(String pluginId) async =>
-      PluginRuntimeBinding.externalPackage(
-        packageId: record.id,
-        packageVersion: '1.0.0',
-        packageKind: 'zip',
-        packageDigestHex: digest,
-        contractKind: pluginWorkspaceContractKind,
-        capabilities: record.capabilities,
-      );
+      installed
+          ? PluginRuntimeBinding.externalPackage(
+            packageId: record.id,
+            packageVersion: '1.0.0',
+            packageKind: 'zip',
+            packageDigestHex: digest,
+            contractKind: pluginWorkspaceContractKind,
+            capabilities: record.capabilities,
+          )
+          : throw StateError('Package removed');
   @override
   Future<List<WasmPluginRecord>> loadPlugins() async =>
       installed ? [record] : [];

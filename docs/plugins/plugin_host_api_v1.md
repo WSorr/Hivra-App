@@ -112,12 +112,24 @@ the same grant. Package-defined scheduling needs no host trading state machine.
 Selecting a VPS address is not execution handoff. The host presents the actual
 executor from the current grant; a selected but unacknowledged VPS leaves local
 execution labelled local and setup explicitly unconfirmed. Root-authenticated
-installation reads the current server binding before saving a new connection or
-applying installation changes. Another runner produces an explicit busy result,
-not a generic login failure or implied server execution. The connecting device
-is not an installation owner; the existing runner binding identifies occupancy.
-This path does not silently replace that runner, transfer its authority or undo
-its already accepted external operations.
+installation prepares the owner's chosen server installation. An explicit Start
+replaces its one managed runner with the current package and selected settings;
+the device that installed the previous runner is not a server owner. Existing
+server-authorized SSH keys may request a new Start, while ordinary observation,
+Stop and removal remain bound to the current installation.
+
+The existing setup path stops/drains the service, seals its old grant through
+the canonical authority owner, installs the current package and adopts only the
+new owner Start. Where the server already has that Capsule/package checkpoint,
+it retains those opaque bytes instead of restoring a stale device copy. The
+package receives its own `workspace.start` action ID (carried as
+`scope.start_action`) with the new settings; service interpretation and recovery
+remain package-owned. Replaying the same setup acknowledgement does not invoke
+Start again or overwrite progressed state. Failed package Start revokes its new
+grant; no previous execution resumes as a fallback. Native execution controls 4
+provide this replacement ability; older runners need the normal runtime update.
+Already accepted service actions are not cancelled by process replacement. The
+UI states this consequence before Start; no per-step product approval is added.
 
 ### Owner-Granted Connections: Accepted Product Model
 
@@ -274,8 +286,8 @@ owner, package ID/digest, executor and exact network scope in the existing
 Local dispatch resolves them through the existing Capsule-scoped vault. An
 owner-selected remote executor receives a version-3 protected provisioning
 payload (`connections: {alias: {field: value}}`) through the existing custody
-path. The updated runner advertises `execution_controls: 3`; older runners
-are refused for permission changes and package actions. Rebinding credentials
+path. Controls 3 support explicit permission terms; controls 4 add replacement
+on owner Start. Older runners are refused for the unsupported change. Rebinding credentials
 requires returning authority locally first.
 
 A `workspace.authorize` presentation action opens owner permissions before
