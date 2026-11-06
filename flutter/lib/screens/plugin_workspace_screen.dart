@@ -1182,6 +1182,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                       _error != null &&
                       !_busy &&
                       _supportsExecution &&
+                      widget.connectVps != null)
+                    OutlinedButton(
+                      onPressed: _choosing ? null : _connectVps,
+                      child: const Text('Connect VPS'),
+                    ),
+                  if (view == null &&
+                      _error != null &&
+                      !_busy &&
+                      _supportsExecution &&
                       widget.useOnline != null)
                     TextButton(
                       onPressed: _choosing ? null : _useOnline,

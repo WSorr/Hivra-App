@@ -46,10 +46,24 @@ void main() {
             useOnline: () async {
               returned = true;
             },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+            }) async {
+              fail('Cancelling reconnection must not change the VPS');
+            },
           ),
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect VPS'));
+      await tester.pumpAndSettle();
+      expect(find.text('Connect your VPS'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(actions, ['open']);
       await tester.tap(find.text('Recover local access'));
       await tester.pumpAndSettle();
       expect(returned, isFalse);

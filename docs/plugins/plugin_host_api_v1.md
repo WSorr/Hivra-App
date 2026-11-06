@@ -124,7 +124,8 @@ checkpoint. It cannot end or observe the replacement's active grant. The
 existing custody owner verifies the handoff in both return phases; restoration
 uses the same local checkpoint path and leaves execution expired and stopped.
 If first open fails, the workspace shell keeps **Recover local access** visible
-beside Retry. No package evaluation, service request or renewed grant is needed
+beside Retry and the existing VPS connection form, so runtime access can also
+be restored when first open fails. No package evaluation, service request or renewed grant is needed
 to retrieve the opaque checkpoint. An unreachable server or a missing/replaced
 handoff remains an explicit failure; no local fallback or history archive is
 created. This recovery requires the corresponding Capsule and VPS runtime
