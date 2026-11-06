@@ -852,7 +852,6 @@ class PluginWorkspaceRuntime {
   Future<void> adoptWorkspaceFromLocal({
     required WasmPluginRecord record,
     required Map<String, dynamic> checkpoint,
-    bool preserveWorkspace = false,
   }) async {
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (executionHost != 'vps' || owner == null) {
@@ -871,85 +870,115 @@ class PluginWorkspaceRuntime {
       throw StateError('Checkpoint belongs to another VPS');
     }
     final key = '$owner::${record.pluginId}';
-    await _serialize(
-      key,
-      () => _withWorkspaceLease(
-        owner,
-        record,
-        () => _serialize(
-          '$key::execution',
-          () => _withWorkspaceLease(owner, record, () async {
-            final binding = await registry.resolveRuntimeBinding(
-              record.pluginId!,
-            );
-            if (binding.packageId != record.id ||
-                binding.packageDigestHex != checkpoint['package_digest'] ||
-                !binding.capabilities.contains('workspace.schedule') ||
-                !_isStillOwnedBy(owner)) {
-              throw StateError('Handoff package or Capsule changed');
-            }
-            final previous = await _readExecution(
-              record,
-              owner,
-              enforceHost: false,
-              allowRemoteRecoveryBinding: true,
-            );
-            if (previous != null) {
-              if (previous['handoff_id'] == incoming['handoff_id'] &&
-                  previous['handoff_digest'] == digest &&
-                  previous['executor'] == 'vps') {
-                if ((!workspaceExecutionEnabled(incoming) &&
-                        workspaceExecutionEnabled(previous)) ||
-                    (incoming['revoked'] == true &&
-                        previous['revoked'] != true)) {
-                  final directory = await _fileStore.capsuleDirForHex(owner);
-                  await _fileStore.writePluginState(
-                    directory,
-                    record.pluginId!,
-                    _executionFile,
-                    jsonEncode({
-                      ...previous,
-                      workspaceExecutionFlag(previous): false,
-                      if (incoming['revoked'] == true) 'revoked': true,
-                      'revision': (previous['revision'] as int) + 1,
-                    }),
+    var newlyAdopted = false;
+    try {
+      await _serialize(
+        key,
+        () => _withWorkspaceLease(owner, record, () async {
+          await _serialize(
+            '$key::execution',
+            () => _withWorkspaceLease(owner, record, () async {
+              final binding = await registry.resolveRuntimeBinding(
+                record.pluginId!,
+              );
+              if (binding.packageId != record.id ||
+                  binding.packageDigestHex != checkpoint['package_digest'] ||
+                  !binding.capabilities.contains('workspace.schedule') ||
+                  !_isStillOwnedBy(owner)) {
+                throw StateError('Handoff package or Capsule changed');
+              }
+              final previous = await _readExecution(
+                record,
+                owner,
+                enforceHost: false,
+                allowRemoteRecoveryBinding: true,
+              );
+              if (previous != null) {
+                if (previous['handoff_id'] == incoming['handoff_id'] &&
+                    previous['handoff_digest'] == digest &&
+                    previous['executor'] == 'vps') {
+                  if ((!workspaceExecutionEnabled(incoming) &&
+                          workspaceExecutionEnabled(previous)) ||
+                      (incoming['revoked'] == true &&
+                          previous['revoked'] != true)) {
+                    final directory = await _fileStore.capsuleDirForHex(owner);
+                    await _fileStore.writePluginState(
+                      directory,
+                      record.pluginId!,
+                      _executionFile,
+                      jsonEncode({
+                        ...previous,
+                        workspaceExecutionFlag(previous): false,
+                        if (incoming['revoked'] == true) 'revoked': true,
+                        'revision': (previous['revision'] as int) + 1,
+                      }),
+                    );
+                  }
+                  return;
+                }
+                if (previous['executor'] != 'local' ||
+                    workspaceExecutionIsActive(previous) ||
+                    workspaceExecutionEnabled(previous) ||
+                    previous['handoff_id'] == incoming['handoff_id']) {
+                  throw StateError(
+                    'VPS already owns another workspace checkpoint',
                   );
                 }
-                return;
               }
-              if (previous['executor'] != 'local' ||
-                  workspaceExecutionIsActive(previous) ||
-                  workspaceExecutionEnabled(previous) ||
-                  previous['handoff_id'] == incoming['handoff_id']) {
-                throw StateError(
-                  'VPS already owns another workspace checkpoint',
-                );
-              }
-            }
-            final directory = await _fileStore.capsuleDirForHex(
+              final directory = await _fileStore.capsuleDirForHex(
+                owner,
+                create: true,
+              );
+              final preserveWorkspace =
+                  await _fileStore.readPluginState(
+                    directory,
+                    record.pluginId!,
+                    'workspace.v1.json',
+                  ) !=
+                  null;
+              await _fileStore.restorePluginCheckpoint(
+                directory,
+                record.pluginId!,
+                {
+                  if (checkpoint['workspace'] != null && !preserveWorkspace)
+                    'workspace.v1.json': checkpoint['workspace'] as String,
+                  if (checkpoint['effects'] != null && !preserveWorkspace)
+                    'external_effects.v1.json': checkpoint['effects'] as String,
+                  _executionFile: jsonEncode({
+                    ...incoming,
+                    'package_id': record.id,
+                    'handoff_digest': digest,
+                  }),
+                },
+                replaceSealed: previous != null,
+              );
+              newlyAdopted = true;
+            }, authorityOnly: true),
+          );
+          // Setup and resumption share custody and package execution. A replay
+          // acknowledges the original grant without repeating its Start.
+          final startAction = (incoming['scope'] as Map?)?['start_action'];
+          if (newlyAdopted && startAction is String) {
+            await _runWorkspaceOwned(
               owner,
-              create: true,
+              record,
+              startAction,
+              Map<String, dynamic>.from(incoming['settings'] as Map),
             );
-            await _fileStore.restorePluginCheckpoint(
-              directory,
-              record.pluginId!,
-              {
-                if (checkpoint['workspace'] != null && !preserveWorkspace)
-                  'workspace.v1.json': checkpoint['workspace'] as String,
-                if (checkpoint['effects'] != null && !preserveWorkspace)
-                  'external_effects.v1.json': checkpoint['effects'] as String,
-                _executionFile: jsonEncode({
-                  ...incoming,
-                  'package_id': record.id,
-                  'handoff_digest': digest,
-                }),
-              },
-              replaceSealed: previous != null,
-            );
-          }, authorityOnly: true),
-        ),
-      ),
-    );
+          }
+        }),
+      );
+    } catch (_) {
+      if (newlyAdopted) {
+        await setWorkspaceExecution(
+          record: record,
+          enabled: false,
+          revoke: true,
+          expiresAtMs: null,
+        );
+      }
+      rethrow;
+    }
     await resumeWorkspaceScheduling(record);
   }
 

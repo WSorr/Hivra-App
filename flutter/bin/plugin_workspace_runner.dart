@@ -410,15 +410,6 @@ class WorkspaceRunner {
       }
       await _writePrivateJson(configFile, binding);
       if (checkpoint != null) {
-        final files = CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
-        );
-        final capsule = await files.capsuleDirForHex(input['owner'] as String);
-        final existing = await files.readPluginState(
-          capsule,
-          input['plugin_id'] as String,
-          'workspace.v1.json',
-        );
         final runtime = runtimeFor(
           root,
           binding,
@@ -428,25 +419,7 @@ class WorkspaceRunner {
         await runtime.adoptWorkspaceFromLocal(
           record: record,
           checkpoint: checkpoint,
-          preserveWorkspace: existing != null,
         );
-        try {
-          await runtime.runWorkspaceAction(
-            record: record,
-            action: checkpoint['execution']['scope']['start_action'] as String,
-            settings: Map<String, dynamic>.from(
-              checkpoint['execution']['settings'] as Map,
-            ),
-          );
-        } catch (_) {
-          await runtime.setWorkspaceExecution(
-            record: record,
-            enabled: false,
-            revoke: true,
-            expiresAtMs: null,
-          );
-          rethrow;
-        }
       }
       return binding;
     } finally {

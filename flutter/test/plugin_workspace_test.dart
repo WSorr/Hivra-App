@@ -283,29 +283,51 @@ void main() {
           'workspace.v1.json',
           retained,
         );
-        final nextBinding = {
-          ...oldBinding,
-          'package_digest': serverFiles.registry.digest,
-        };
-        final nextRuntime = WorkspaceRunner.runtimeFor(
-          root,
-          nextBinding,
-          serverFiles.registry,
-          scheduleTimers: false,
+        serverFiles.owner = f.owner;
+        final nextRuntime = serverFiles.runtime(
+          executionHost: 'vps',
+          executionIdentity: oldBinding['executor_id'],
         );
-        await nextRuntime.adoptWorkspaceFromLocal(
-          record: serverFiles.registry.record,
-          checkpoint: {
-            ...checkpoint,
+        final nextCheckpoint = {
+          ...checkpoint,
+          'package_digest': serverFiles.registry.digest,
+          'execution': {
+            ...checkpoint['execution'] as Map,
             'package_digest': serverFiles.registry.digest,
-            'execution': {
-              ...checkpoint['execution'] as Map,
-              'package_digest': serverFiles.registry.digest,
-              'handoff_id': '8' * 64,
+            'handoff_id': '8' * 64,
+            'scope': {
+              ...checkpoint['execution']['scope'] as Map,
+              'start_action': 'begin_owner_workflow',
             },
-            'workspace': '{"new_shape":["stale device copy"]}',
           },
-          preserveWorkspace: true,
+          'workspace': '{"new_shape":["stale device copy"]}',
+        };
+        final starting = Completer<void>(), releaseStart = Completer<void>();
+        serverFiles.onInvoke = (action) async {
+          if (action == 'begin_owner_workflow') {
+            starting.complete();
+            await releaseStart.future;
+          }
+        };
+        final firstAdoption = nextRuntime.adoptWorkspaceFromLocal(
+          record: serverFiles.registry.record,
+          checkpoint: nextCheckpoint,
+        );
+        await starting.future;
+        var replayAcknowledged = false;
+        final replay = nextRuntime
+            .adoptWorkspaceFromLocal(
+              record: serverFiles.registry.record,
+              checkpoint: nextCheckpoint,
+            )
+            .then((_) => replayAcknowledged = true);
+        await Future<void>.delayed(Duration.zero);
+        expect(replayAcknowledged, isFalse);
+        releaseStart.complete();
+        await Future.wait([firstAdoption, replay]);
+        expect(
+          serverFiles.actions.where((a) => a == 'begin_owner_workflow'),
+          hasLength(1),
         );
         expect(
           await serverFiles.files.readPluginState(
@@ -320,6 +342,39 @@ void main() {
         );
         expect(adopted!['handoff_id'], '8' * 64);
         expect(adopted['package_digest'], serverFiles.registry.digest);
+        await nextRuntime.returnWorkspaceToLocal(serverFiles.registry.record);
+        serverFiles.onInvoke = (action) async {
+          if (action == 'begin_owner_workflow') {
+            throw StateError('Start failed');
+          }
+        };
+        final failedCheckpoint = {
+          ...nextCheckpoint,
+          'execution': {
+            ...nextCheckpoint['execution'] as Map,
+            'handoff_id': '9' * 64,
+          },
+        };
+        await expectLater(
+          nextRuntime.adoptWorkspaceFromLocal(
+            record: serverFiles.registry.record,
+            checkpoint: failedCheckpoint,
+          ),
+          throwsStateError,
+        );
+        final failed = await nextRuntime.readWorkspaceExecution(
+          serverFiles.registry.record,
+        );
+        expect(failed!['revoked'], isTrue);
+        expect(failed['enabled'], isFalse);
+        await nextRuntime.adoptWorkspaceFromLocal(
+          record: serverFiles.registry.record,
+          checkpoint: failedCheckpoint,
+        );
+        expect(
+          serverFiles.actions.where((a) => a == 'begin_owner_workflow'),
+          hasLength(2),
+        );
       } finally {
         await f.close();
         await serverFiles.close();
@@ -2563,82 +2618,85 @@ class Fixture {
     if (auth != null) 'auth': auth,
     ...extraRequest,
   };
-  PluginWorkspaceRuntime runtime({bool scheduleTimers = false}) =>
-      PluginWorkspaceRuntime(
-        registry: registry,
-        infer: infer,
-        fileStore: files,
-        readActiveCapsuleRootHex: () => owner,
-        scheduleTimers: scheduleTimers,
-        readCredentials: ({required owner, required pluginId}) async {
-          await onReadSecrets?.call();
-          return secrets;
-        },
+  PluginWorkspaceRuntime runtime({
+    bool scheduleTimers = false,
+    String executionHost = 'local',
+    String? executionIdentity,
+  }) => PluginWorkspaceRuntime(
+    registry: registry,
+    infer: infer,
+    fileStore: files,
+    readActiveCapsuleRootHex: () => owner,
+    scheduleTimers: scheduleTimers,
+    executionHost: executionHost,
+    executionIdentity: executionIdentity,
+    readCredentials: ({required owner, required pluginId}) async {
+      await onReadSecrets?.call();
+      return secrets;
+    },
 
-        capabilities: PluginCapabilityDispatcher(
-          send: (m, u, h, b) async {
-            sends++;
-            await onSend?.call();
-            return {'status': 200, 'body': 'arbitrary service bytes'};
+    capabilities: PluginCapabilityDispatcher(
+      send: (m, u, h, b) async {
+        sends++;
+        await onSend?.call();
+        return {'status': 200, 'body': 'arbitrary service bytes'};
+      },
+    ),
+    pluginHostApi: PluginHostApiService(
+      handlers: [],
+      resolveRuntimeBinding: registry.resolveRuntimeBinding,
+      resolveRuntimeInvoke: (request, binding) async {
+        final action = request.args['action'] as String;
+        settingsSeen.add(
+          Map<String, dynamic>.from(
+            request.args['settings'] as Map? ?? const {},
+          ),
+        );
+        actions.add(action);
+        await onInvoke?.call(action);
+        final state = Map<String, dynamic>.from(
+          request.args['state'] as Map? ?? {},
+        );
+        var requests = <Map<String, dynamic>>[];
+        if (action == 'run') {
+          state['private_schema'] = {'pending': true};
+          requests = [this.request()];
+        }
+        if (action == 'finish_custom_operation') {
+          received.add(
+            Map<String, dynamic>.from(request.args['result'] as Map),
+          );
+          if (chain && received.length == 1) requests = [this.request()];
+        }
+        if (newSchema && action == 'open') {
+          state['entirely_different_shape'] = [state.remove('private_schema')];
+        }
+        return PluginRuntimeInvokeEvidence(
+          mode: 'wasmi_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex: 'e' * 64,
+          invokeDigestHex: 'f' * 64,
+          semanticStatus: PluginHostApiStatus.executed,
+          semanticErrorCode: null,
+          semanticErrorMessage: null,
+          semanticResult: {
+            'state': registry.persistent ? state : null,
+            'context': {'package_selected': 'opaque'},
+            'view': {
+              ...presentation(),
+              'message':
+                  received.isEmpty
+                      ? 'Ready'
+                      : received.last['outcome'] ?? 'accepted',
+              if (registry.scheduled) 'schedule': schedule,
+            },
+            'requests': requests,
           },
-        ),
-        pluginHostApi: PluginHostApiService(
-          handlers: [],
-          resolveRuntimeBinding: registry.resolveRuntimeBinding,
-          resolveRuntimeInvoke: (request, binding) async {
-            final action = request.args['action'] as String;
-            settingsSeen.add(
-              Map<String, dynamic>.from(
-                request.args['settings'] as Map? ?? const {},
-              ),
-            );
-            actions.add(action);
-            await onInvoke?.call(action);
-            final state = Map<String, dynamic>.from(
-              request.args['state'] as Map? ?? {},
-            );
-            var requests = <Map<String, dynamic>>[];
-            if (action == 'run') {
-              state['private_schema'] = {'pending': true};
-              requests = [this.request()];
-            }
-            if (action == 'finish_custom_operation') {
-              received.add(
-                Map<String, dynamic>.from(request.args['result'] as Map),
-              );
-              if (chain && received.length == 1) requests = [this.request()];
-            }
-            if (newSchema && action == 'open') {
-              state['entirely_different_shape'] = [
-                state.remove('private_schema'),
-              ];
-            }
-            return PluginRuntimeInvokeEvidence(
-              mode: 'wasmi_v1',
-              modulePath: 'plugin/module.wasm',
-              moduleSelection: 'manifest_module_path',
-              moduleDigestHex: 'e' * 64,
-              invokeDigestHex: 'f' * 64,
-              semanticStatus: PluginHostApiStatus.executed,
-              semanticErrorCode: null,
-              semanticErrorMessage: null,
-              semanticResult: {
-                'state': registry.persistent ? state : null,
-                'context': {'package_selected': 'opaque'},
-                'view': {
-                  ...presentation(),
-                  'message':
-                      received.isEmpty
-                          ? 'Ready'
-                          : received.last['outcome'] ?? 'accepted',
-                  if (registry.scheduled) 'schedule': schedule,
-                },
-                'requests': requests,
-              },
-            );
-          },
-        ),
-      );
+        );
+      },
+    ),
+  );
   Future<void> enable() async {
     await runtime().setWorkspaceExecution(
       record: registry.record,

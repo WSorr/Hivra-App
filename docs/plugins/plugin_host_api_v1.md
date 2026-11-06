@@ -136,8 +136,9 @@ new owner Start. Where the server already has that Capsule/package checkpoint,
 it retains those opaque bytes instead of restoring a stale device copy. The
 package receives its own `workspace.start` action ID (carried as
 `scope.start_action`) with the new settings; service interpretation and recovery
-remain package-owned. Replaying the same setup acknowledgement does not invoke
-Start again or overwrite progressed state. Failed package Start revokes its new
+remain package-owned. Setup and resumption of an unacknowledged handoff converge in the same custody
+owner before package Start and scheduling. Replaying the same acknowledgement
+does not invoke Start again or overwrite progressed state. Failed package Start revokes its new
 grant; no previous execution resumes as a fallback. Native execution controls 4
 provide this replacement ability; older runners need the normal runtime update.
 Already accepted service actions are not cancelled by process replacement. The
