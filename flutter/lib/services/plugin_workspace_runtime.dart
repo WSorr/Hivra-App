@@ -298,6 +298,7 @@ class PluginWorkspaceRuntime {
     }
 
     Future<Map<String, String>> secrets(Map<String, dynamic> request) async {
+      await accessFor(request);
       final alias = request['credential'] as String;
       final fields = (control?['credentials'] as Map?)?[alias];
       if (fields is! Map) {
@@ -378,6 +379,9 @@ class PluginWorkspaceRuntime {
           } else {
             var admitted = false;
             try {
+              // A current grant is required before the AI port can open its
+              // saved credentials. Queue waiting still rechecks at dispatch.
+              await accessFor(request);
               result = await infer!(
                 {...request, 'plugin_id': pluginId},
                 () async {

@@ -112,12 +112,11 @@ class CapsuleScopedSecretVault {
     });
   }
 
-  /// Owner-facing metadata only. Native Keychain access happens here; neither
-  /// the picker nor a package receives secret values.
+  /// Owner-facing metadata only, reusing this process's unlocked vault.
+  /// Neither the picker nor a package receives secret values.
   Future<List<Map<String, String>>> listReferences(String capsuleHex) {
     final owner = _capsuleHex(capsuleHex);
     return _locked(() async {
-      _coordinator.cache = null;
       final entries = await _loadEntries();
       return [
         for (final entry in entries.values)

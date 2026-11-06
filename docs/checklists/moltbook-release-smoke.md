@@ -23,12 +23,19 @@ commit, release or VPS mutation is authorized by the migration checks.
       password into an application field. Select the Analyst connection normally.
 - [ ] Confirm network/inference destinations and permission duration. Start with
       `read_only`, or use Prepare without sending. No POST may reach Moltbook.
+- [ ] Repeat Connect with active matching access: no second Allow or protected
+      vault read, no grant revision or schedule restart. Plugin permissions
+      remains available for an intentional connection/terms change.
 - [ ] Observe publication and comment history from the actual account; close,
       reopen and restart the app, confirming fresh service reads each time.
 - [ ] Change repository/community/editorial settings, issue the owner grant and
       restart. Owner settings must survive in that grant without product history.
 - [ ] Prepare content with the Analyst-selected provider/model; inspect provenance
       and source/conversation context. AI/service failures remain visible.
+- [ ] Repeat after app restart without opening Analyst first: the same saved AI
+      connection opens under the plugin grant, with native authentication only
+      as required. Denied/expired access opens no credential port; cancelling
+      native authentication sends no inference request.
 - [ ] Confirm that only the existing permission record is written for this
       stateless package. No draft, history, publication journal or feed checkpoint.
 - [ ] Start using the same grant without a second request for unchanged access.

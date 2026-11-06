@@ -85,13 +85,9 @@ universal host restrictions without a concrete protected property. External
 service limits remain external constraints, not evidence for unrelated local
 limits. Changing a model does not change the capability's authority.
 
-Inference credentials have one process-scoped host owner. A user action may
-unlock the configured provider into host memory for the current foreground app
-session. Feature modules reuse that session lease; they do not reread Keychain,
-copy the credential, or pass it into WASM. Closing the app or explicitly
-locking the lease clears the in-memory credential. A locked automatic cycle
-must stop before inference without opening an operating-system credential
-dialog, creating an effect, or consuming its input checkpoint.
+Inference credentials have one process-scoped host owner. Their access and
+lease lifecycle belong to `capsule-ai-runtime.md`. Feature modules and WASM
+receive no credential; an unlocked lease grants no capability authority.
 
 ### 3.4 Adapters
 

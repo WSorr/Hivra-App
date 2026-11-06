@@ -36,6 +36,11 @@ cleans that plugin's vault entries.
 ## Lifecycle
 
 - Save and replacement are serialized through one process-wide vault owner.
+- The same owner reuses the successfully loaded vault in process memory for
+  reference lists and authorized resolution. Opening another plugin's picker
+  does not clear it or cause another protected read. Writes and deletion update
+  that same cache; a new process reads Secure Storage again. This is secret
+  custody, not a package permission: each dispatch still requires its grant.
 - A malformed stored vault fails closed and is never replaced with defaults.
 - Deleting a Capsule removes every secret under its root before local Capsule
   artifacts and seed are removed.

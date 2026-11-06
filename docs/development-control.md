@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-05
+Status date: 2026-11-06
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -225,8 +225,10 @@ dispatchers, service adapters and host product controllers are removed. The host
 does not inspect package-private trading state or repeat strategy/editorial
 policy. Owner settings and Start can authorize the complete workflow; dispatch
 still enforces the current package, owner, grant and sandbox boundary. Chat
-retains a specialized relationship/delivery workspace and is not yet proof that
-every capability is replaceable through the generic workspace alone.
+retains the owner-selected specialized relationship/delivery workspace. Other
+current plugins use external-service APIs; the current VPS product journey is
+for exchange plugins. These different product lifecycles do not require moving
+Chat relationships into the external-service API or adding host service policy.
 
 Moltbook reads service publication/comment history on each authorized open/start
 and cycle, uses Analyst-selected inference, and retains no local product state.
@@ -249,7 +251,17 @@ Documentation and green fixtures alone do not establish product acceptance.
 
 ## Selected Product Outcome
 
-The current bounded repair makes an ended VPS handoff recoverable through the
+The current bounded pass makes an existing owner grant sufficient for common
+plugin Connect, inference and subsequent workflow requests. It reuses the
+existing permission form, secret vault, AI connection and dispatch owners;
+it adds no Core primitive, store, service adapter or per-step approval. Access
+is checked before opening protected credentials and again at effect dispatch. The
+source checks cover credential reuse, denied/cancelled access and changes during
+an action; exact packaged Mac/Samsung acceptance remains required. No live
+publication, trade or VPS change is part of this source pass. The implemented
+contract is `plugins/plugin_host_api_v1.md`.
+
+The preceding bounded repair makes an ended VPS handoff recoverable through the
 workspace UI after another device replaces the installation. It reuses the
 existing authenticated return and checkpoint-restoration owners, retains
 opaque state and unresolved evidence, and grants no execution permission.

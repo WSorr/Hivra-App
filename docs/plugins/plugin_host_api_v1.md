@@ -71,8 +71,8 @@ owner action or authorized scheduled wake
 
 For network operations the package supplies the destination, method, parameters
 or body, scoped credential reference and its own correlation/continuation data.
-The host checks that the installed package may use that destination and
-credential, applies authentication within dispatch, and returns bounded HTTP
+The host checks current package access before opening a protected credential,
+rechecks authority at dispatch, applies authentication there, and returns bounded HTTP
 status/body or a transport failure. It must distinguish a proven non-dispatch
 from an uncertain outcome; it does not invent a provider receipt or silently
 retry a possibly delivered mutation. Provider status and business errors are
@@ -304,8 +304,11 @@ path. Controls 3 support explicit permission terms; controls 4 add replacement
 on owner Start. Older runners are refused for the unsupported change. Rebinding credentials
 requires returning authority locally first.
 
-A `workspace.authorize` presentation action opens owner permissions before
-running the package's ordinary connection action. Package actions cannot carry
+A `workspace.authorize` presentation action reuses active matching access before
+running the package's ordinary connection action. Absent or broader access opens
+the existing owner permission form; **Plugin permissions** remains the explicit
+way to change an existing connection or its terms. Reusing Connect neither
+issues another grant nor restarts a schedule. Package actions cannot carry
 independent `access`. Start uses `schedule: {version: 2, action,
 interval_seconds, description, access}`; it reuses an active matching grant,
 including its expiry and secret connections. It asks for permission only when
@@ -380,8 +383,12 @@ transport admission; `unknown` means the host cannot prove non-delivery;
 `response` means an HTTP response, including service errors. Only the package
 interprets that response as success, rejection, partial completion or a receipt.
 The host never retries. Inference uses the existing owner-selected Capsule AI
-connection and queue. The package supplies instructions and input; the same
-package/grant is rechecked at actual adapter dispatch after queue waiting.
+connection and queue. A current inference grant is checked before opening that
+connection's protected credentials; no separate Analyst action is required.
+The process lease and native authentication behavior belong to
+`../architecture/capsule-ai-runtime.md`. The package supplies instructions and
+input; the same package/grant is rechecked at actual adapter dispatch after
+queue waiting.
 The result includes `text`, `provider_id`, `provider_label` and `model`. Unavailable inference is reported without a fallback product controller.
 
 Resource bounds: state 32 KiB, transient context 16 KiB, view 64 KiB; HTTP body

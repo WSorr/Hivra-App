@@ -139,7 +139,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
     final generation = ++_presentationGeneration;
     final preserveEdits = action == 'open' && _edited;
-    if (hostAction == 'workspace.authorize') {
+    if (hostAction == 'workspace.authorize' &&
+        !_hasAccess(Map<String, dynamic>.from(_view!['access'] as Map))) {
       setState(() => _choosing = true);
       try {
         final granted = await _authorize(

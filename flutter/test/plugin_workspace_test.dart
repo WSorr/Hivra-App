@@ -1150,6 +1150,16 @@ void main() {
       ]) {
         final f = await Fixture.create();
         addTearDown(f.close);
+        f.credential = 'default';
+        f.auth = {
+          'headers': {
+            'Authorization': {'field': 'token', 'prefix': 'Bearer '},
+          },
+        };
+        var credentialReads = 0;
+        f.onReadSecrets = () async {
+          credentialReads++;
+        };
         if (fault != 'absent') await f.enable();
         if (fault == 'origin') f.url = 'https://elsewhere.example/action';
         if (fault == 'method') f.method = 'DELETE';
@@ -1169,6 +1179,7 @@ void main() {
           action: 'run',
         );
         expect(f.sends, 0, reason: fault);
+        expect(credentialReads, 0, reason: fault);
         expect(f.received.single['outcome'], 'not_dispatched', reason: fault);
       }
     },
@@ -1653,6 +1664,28 @@ void main() {
       );
     }
   });
+
+  test(
+    'missing inference permission never opens the provider credential port',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      f.requestKind = 'ai.infer';
+      await f.enable();
+      var credentialOpens = 0;
+      f.infer = (request, authorize) async {
+        credentialOpens++;
+        await authorize();
+        return {'outcome': 'response', 'text': 'Must not reach inference'};
+      };
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(credentialOpens, 0);
+      expect(f.received.single['outcome'], 'not_dispatched');
+    },
+  );
   testWidgets(
     'explicit package results and failures survive polling and app resume until reopening',
     (tester) async {
@@ -1937,7 +1970,7 @@ void main() {
     'one owner grant connects Keychain references and Start reuses it',
     (tester) async {
       final access = permission('https://one.example');
-      var grants = 0, starts = 0, opens = 0;
+      var grants = 0, starts = 0, opens = 0, secretPickers = 0, connections = 0;
       Map<String, dynamic>? execution;
       Map<String, Map<String, String>>? selected;
       Map<String, dynamic> view() => {
@@ -1960,10 +1993,12 @@ void main() {
         MaterialApp(
           home: PluginWorkspaceScreen(
             capabilities: const ['workspace.schedule', 'credentials.use'],
-            listSecrets:
-                () async => [
-                  {'id': 'ref-token', 'label': 'Service / account / token'},
-                ],
+            listSecrets: () async {
+              secretPickers++;
+              return [
+                {'id': 'ref-token', 'label': 'Service / account / token'},
+              ];
+            },
             configureExecution: ({
               required enabled,
               required expiresAtMs,
@@ -1987,6 +2022,7 @@ void main() {
               return view();
             },
             runWorkspaceAction: (action, settings) async {
+              if (action == 'link') connections++;
               if (action == 'start') starts++;
               if (action == 'open') opens++;
               return view();
@@ -2014,6 +2050,12 @@ void main() {
         'default': {'token': 'ref-token'},
       });
       expect(grants, 1);
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+      expect(connections, 2);
+      expect(secretPickers, 1);
+      expect(grants, 1);
+      expect(find.text('Allow'), findsNothing);
       await tester.tap(find.text('Start'));
       await tester.pumpAndSettle();
       expect(starts, 1);

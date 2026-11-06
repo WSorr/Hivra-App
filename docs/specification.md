@@ -634,12 +634,9 @@ Diagnostics:
 - WASM drones MAY request bounded inference only through a declared host
   capability and drone-owned proposal schema. They MUST NOT receive provider
   credentials or generic AI tools.
-- The configured provider MAY be unlocked into host process memory by an
-  explicit user action. A locked automatic cycle MUST stop before inference,
-  MUST NOT open an operating-system credential prompt, and MUST NOT consume its
-  pending input checkpoint.
-- Closing the application MUST clear the process-memory AI lease. Hivra 1.x
-  does not promise app-closed AI execution.
+- Protected credential access, process-memory lease reuse and cancellation
+  MUST follow `architecture/capsule-ai-runtime.md`; a credential lease is not
+  an execution grant.
 - History Advisor, Capsule Analyst, and Moltbook AI are
   routed through Capsule AI Runtime. No feature-owned provider dispatch or
   credential-read compatibility path remains. These features MUST NOT regain

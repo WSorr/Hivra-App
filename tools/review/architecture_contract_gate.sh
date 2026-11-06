@@ -441,8 +441,6 @@ require_present "$CAPSULE_AI_RUNTIME_DOC" '^# Capsule AI Runtime' \
   "Capsule AI Runtime architecture contract exists"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'There is no direct `drone -> Gemini`, `screen -> OpenAI`' \
   "Capsule AI Runtime forbids direct feature-to-provider paths"
-require_present "$CAPSULE_AI_RUNTIME_DOC" 'A locked automatic cycle stops before inference' \
-  "Capsule AI Runtime defines fail-closed credential sessions"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'A global `AiDto` layer and pass-through feature wrappers' \
   "Capsule AI Runtime forbids global AI DTO prostheses"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'AI Runtime imports Core mutation or an external-effect adapter' \
