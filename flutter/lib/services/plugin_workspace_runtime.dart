@@ -734,8 +734,8 @@ class PluginWorkspaceRuntime {
         (control['scope']['action'] != null &&
             !binding.capabilities.contains('workspace.schedule'))) {
       // A replaced package may not execute a stale local grant. A VPS grant
-      // and its sealed return receipt remain readable only for authenticated
-      // retirement. The original digest and opaque state are not rewritten;
+      // and its sealed return receipt remain readable for authenticated
+      // retirement or a fresh authorized handoff. Opaque state is not rewritten;
       // ordinary execution still requires the current package binding.
       return null;
     }
@@ -892,6 +892,7 @@ class PluginWorkspaceRuntime {
               record,
               owner,
               enforceHost: false,
+              allowRemoteRecoveryBinding: true,
             );
             if (previous != null) {
               if (previous['handoff_id'] == incoming['handoff_id'] &&

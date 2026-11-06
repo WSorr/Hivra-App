@@ -271,6 +271,55 @@ void main() {
         );
         await module.useWorkspaceOnline(f.registry.record);
         expect(calls, ['adopt', 'return', 'return']);
+
+        // A runtime update may install a new package while this owner's old
+        // sealed receipt still names the previous digest. A fresh authorized
+        // Start must retain those bytes, not treat the destination as empty.
+        serverFiles.registry.digest = 'd' * 64;
+        final retained = '{"package_owned":{"unresolved":"keep"}}';
+        await serverFiles.files.writePluginState(
+          directory,
+          f.registry.record.pluginId!,
+          'workspace.v1.json',
+          retained,
+        );
+        final nextBinding = {
+          ...oldBinding,
+          'package_digest': serverFiles.registry.digest,
+        };
+        final nextRuntime = WorkspaceRunner.runtimeFor(
+          root,
+          nextBinding,
+          serverFiles.registry,
+          scheduleTimers: false,
+        );
+        await nextRuntime.adoptWorkspaceFromLocal(
+          record: serverFiles.registry.record,
+          checkpoint: {
+            ...checkpoint,
+            'package_digest': serverFiles.registry.digest,
+            'execution': {
+              ...checkpoint['execution'] as Map,
+              'package_digest': serverFiles.registry.digest,
+              'handoff_id': '8' * 64,
+            },
+            'workspace': '{"new_shape":["stale device copy"]}',
+          },
+          preserveWorkspace: true,
+        );
+        expect(
+          await serverFiles.files.readPluginState(
+            directory,
+            f.registry.record.pluginId!,
+            'workspace.v1.json',
+          ),
+          retained,
+        );
+        final adopted = await nextRuntime.readWorkspaceExecution(
+          serverFiles.registry.record,
+        );
+        expect(adopted!['handoff_id'], '8' * 64);
+        expect(adopted['package_digest'], serverFiles.registry.digest);
       } finally {
         await f.close();
         await serverFiles.close();
