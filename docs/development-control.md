@@ -249,6 +249,15 @@ Documentation and green fixtures alone do not establish product acceptance.
 
 ## Selected Product Outcome
 
+The current bounded repair makes an ended VPS handoff recoverable through the
+workspace UI after another device replaces the installation. It reuses the
+existing authenticated return and checkpoint-restoration owners, retains
+opaque state and unresolved evidence, and grants no execution permission.
+First-open failure must retain a visible recovery control. Acceptance requires
+the changed Mac and Samsung builds and matching VPS runtime; source tests alone
+do not close the native recovery journey. No new Capsule, backup or executor is
+part of this repair. The implemented contract is `plugins/plugin_host_api_v1.md`.
+
 The owner clarified remote Start: replace the one managed VPS process with the
 current package and chosen symbol/settings, independent of the installing device.
 The current source reuses setup/grant adoption for this lifecycle and removes the

@@ -998,11 +998,17 @@ class PluginWorkspaceRuntime {
   /// End all remote authority before returning opaque state. Unlike Stop,
   /// this also ends reducing exits and is durable before draining actions.
   Future<Map<String, dynamic>> returnWorkspaceToLocal(
-    WasmPluginRecord record,
-  ) async {
+    WasmPluginRecord record, {
+    String? handoffId,
+    bool requireSealed = false,
+  }) async {
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (executionHost != 'vps' || owner == null) {
       throw StateError('A VPS executor is required');
+    }
+    if (requireSealed &&
+        !await (await _fileStore.capsuleDirForHex(owner)).exists()) {
+      throw StateError('No retained workspace to recover');
     }
     final key = '$owner::${record.pluginId}';
     await _serialize(
@@ -1015,6 +1021,13 @@ class PluginWorkspaceRuntime {
           allowRemoteRecoveryBinding: true,
         );
         if (control == null) throw StateError('No workspace to return');
+        if ((handoffId != null && control['handoff_id'] != handoffId) ||
+            (requireSealed &&
+                (control['executor'] != 'local' ||
+                    control['expires_at_ms'] != 0 ||
+                    workspaceExecutionEnabled(control)))) {
+          throw StateError('The assigned handoff has not been returned');
+        }
         if (control['executor'] == 'vps' &&
             control['executor_id'] != executionIdentity) {
           throw StateError('Workspace belongs to another executor');
@@ -1035,7 +1048,7 @@ class PluginWorkspaceRuntime {
             jsonEncode(sealed),
           );
         }
-        stopWorkspaceScheduling(pluginId: record.pluginId);
+        _clearSchedule(key);
       }, authorityOnly: true),
     );
     return _serialize(
@@ -1048,6 +1061,7 @@ class PluginWorkspaceRuntime {
           allowRemoteRecoveryBinding: true,
         );
         if (control == null ||
+            (handoffId != null && control['handoff_id'] != handoffId) ||
             control['executor'] != 'local' ||
             control['expires_at_ms'] != 0 ||
             workspaceExecutionEnabled(control)) {

@@ -506,7 +506,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
 
   Future<void> _useOnline() async {
     if (_busy || _choosing || widget.useOnline == null) return;
-    final remote = _view?['execution']?['mode'] == 'vps';
+    final remote = _view == null || _view?['execution']?['mode'] == 'vps';
     if (remote) {
       final accepted =
           await showDialog<bool>(
@@ -515,7 +515,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                 (context) => AlertDialog(
                   title: const Text('Return execution control to this app?'),
                   content: const Text(
-                    'End all VPS execution authority and retrieve its latest workspace checkpoint. This does not undo previously accepted external effects. Local cycles require a new Start; the app must remain open.',
+                    'Retrieve this workspace after ending its VPS authority. If another device already replaced it, recover its ended handoff without changing the new runner. Previously accepted external effects remain. Local cycles require a new Start; the app must remain open.',
                   ),
                   actions: [
                     TextButton(
@@ -1177,6 +1177,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             ? 'Retry opening plugin'
                             : 'Retry connection',
                       ),
+                    ),
+                  if (view == null &&
+                      _error != null &&
+                      !_busy &&
+                      _supportsExecution &&
+                      widget.useOnline != null)
+                    TextButton(
+                      onPressed: _choosing ? null : _useOnline,
+                      child: const Text('Recover local access'),
                     ),
                   if (view != null) ...[
                     panel('Current status', [

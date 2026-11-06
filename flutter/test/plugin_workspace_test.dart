@@ -26,7 +26,258 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 
+import '../bin/plugin_workspace_runner.dart';
+
 void main() {
+  testWidgets(
+    'failed first open keeps confirmed return reachable and never starts execution',
+    (tester) async {
+      var returned = false;
+      final actions = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
+              if (!returned) throw StateError('Previous installation replaced');
+              return presentation();
+            },
+            useOnline: () async {
+              returned = true;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Recover local access'));
+      await tester.pumpAndSettle();
+      expect(returned, isFalse);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(returned, isFalse);
+      await tester.tap(find.text('Recover local access'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Return to online'));
+      await tester.pumpAndSettle();
+      expect(returned, isTrue);
+      expect(find.text('Unrelated application'), findsOneWidget);
+      expect(actions, ['open', 'open']);
+      expect(find.text('Recover local access'), findsNothing);
+    },
+  );
+
+  test(
+    'old device returns only its sealed handoff through the normal module',
+    () async {
+      final f = await Fixture.create();
+      final serverFiles = await Fixture.create();
+      try {
+        await f.enable();
+        final local = f.runtime();
+        final checkpoint = await local.releaseWorkspaceToVps(
+          f.registry.record,
+          executorId: 'e' * 64,
+        );
+        final directory = await serverFiles.files.capsuleDirForHex(
+          f.owner,
+          create: true,
+        );
+        await serverFiles.files.restorePluginCheckpoint(
+          directory,
+          f.registry.record.pluginId!,
+          {
+            'workspace-execution.v1.json': jsonEncode(checkpoint['execution']),
+            if (checkpoint['workspace'] != null)
+              'workspace.v1.json': checkpoint['workspace'] as String,
+          },
+        );
+        final root =
+            await UserVisibleDataDirectoryService(
+              homeOverride: serverFiles.home.path,
+            ).rootDirectory();
+        final oldBinding = {
+          'owner': f.owner,
+          'plugin_id': f.registry.record.pluginId,
+          'package_id': 'old-server-package',
+          'package_digest': f.registry.digest,
+          'executor_id': 'e' * 64,
+        };
+        final newBinding = {
+          ...oldBinding,
+          'owner': 'c' * 64,
+          'package_id': serverFiles.registry.record.id,
+          'executor_id': 'f' * 64,
+        };
+        serverFiles.owner = newBinding['owner']!;
+        await serverFiles.enable();
+        final currentDirectory = await serverFiles.files.capsuleDirForHex(
+          serverFiles.owner,
+        );
+        final currentGrant = await serverFiles.files.readPluginState(
+          currentDirectory,
+          serverFiles.registry.record.pluginId!,
+          'workspace-execution.v1.json',
+        );
+        final runner = WorkspaceRunner(
+          root: root,
+          registry: serverFiles.registry,
+          binding: newBinding,
+          runtime: WorkspaceRunner.runtimeFor(
+            root,
+            newBinding,
+            serverFiles.registry,
+            scheduleTimers: false,
+          ),
+        );
+        await expectLater(
+          runner.dispatch({...oldBinding, 'command': 'status'}),
+          throwsStateError,
+        );
+        final request = {
+          ...oldBinding,
+          'command': 'return',
+          'handoff_id': checkpoint['execution']['handoff_id'],
+        };
+        // A stale device cannot end an active grant, even with its handoff ID.
+        await expectLater(runner.dispatch(request), throwsStateError);
+        final prior = WorkspaceRunner.runtimeFor(
+          root,
+          oldBinding,
+          serverFiles.registry,
+          scheduleTimers: false,
+        );
+        await prior.returnWorkspaceToLocal(serverFiles.registry.record);
+        final sealed = await serverFiles.files.readPluginState(
+          directory,
+          f.registry.record.pluginId!,
+          'workspace-execution.v1.json',
+        );
+        await expectLater(
+          runner.dispatch({...request, 'handoff_id': '9' * 64}),
+          throwsStateError,
+        );
+        await expectLater(
+          runner.dispatch({...request}..remove('handoff_id')),
+          throwsFormatException,
+        );
+        await expectLater(
+          runner.dispatch({...request, 'owner': '9' * 64}),
+          throwsStateError,
+        );
+        expect(
+          await (await serverFiles.files.capsuleDirForHex('9' * 64)).exists(),
+          isFalse,
+        );
+        final c = {
+          ...oldBinding,
+          'host': 'server.example',
+          'port': 22,
+          'fingerprint': 'SHA256:${'A' * 43}',
+          'selected': true,
+        };
+        final dir = await f.files.capsuleDirForHex(f.owner);
+        await f.files.writePluginState(
+          dir,
+          f.registry.record.pluginId!,
+          PluginWorkspaceRemoteService.connectionFile,
+          jsonEncode(c),
+        );
+        final calls = <String>[];
+        var removeDuringReturn = false;
+        final unused = UnusedWorkspacePorts();
+        final remote = PluginWorkspaceRemoteService(
+          files: f.files,
+          vault: unused,
+          registry: f.registry,
+          requestTransport: (_, command, payload) async {
+            expect(command, 'request');
+            final input = Map<String, dynamic>.from(
+              jsonDecode(utf8.decode(payload)) as Map,
+            );
+            calls.add(input['command'] as String);
+            final result = await runner.dispatch(input);
+            if (removeDuringReturn && input['command'] == 'return') {
+              f.registry.installed = false;
+            }
+            return jsonEncode({'ok': true, 'result': result});
+          },
+        );
+        final module = PluginRuntimeModule(
+          registry: f.registry,
+          sourceCatalog: const WasmPluginSourceCatalogService(),
+          manualChecks: unused,
+          pluginHostApi: local.pluginHostApi,
+          attestationExchange: unused,
+          chatDelivery: unused,
+          passiveReceive: unused,
+          contactLabels: unused,
+          uiLog: unused,
+          fileStore: f.files,
+          secretVault: unused,
+          readActiveCapsuleRootHex: () => f.owner,
+          workspaceRemote: remote,
+        );
+        await expectLater(
+          module.runWorkspaceAction(record: f.registry.record, action: 'open'),
+          throwsStateError,
+        );
+        removeDuringReturn = true;
+        await expectLater(
+          module.useWorkspaceOnline(f.registry.record),
+          throwsStateError,
+        );
+        f.registry.installed = true;
+        removeDuringReturn = false;
+        expect(
+          (await local.readWorkspaceExecution(
+            f.registry.record,
+            enforceHost: false,
+          ))!['executor'],
+          'vps',
+        );
+        await module.useWorkspaceOnline(f.registry.record);
+        final reopened = await module.runWorkspaceAction(
+          record: f.registry.record,
+          action: 'open',
+        );
+        expect(reopened['host_connection']['target'], 'local');
+        expect(reopened['execution']['active'], isFalse);
+        expect(reopened['execution']['running'], isFalse);
+        expect(
+          (await remote.connection(
+            f.owner,
+            f.registry.record.pluginId!,
+          ))!['selected'],
+          isFalse,
+        );
+        expect(calls, ['adopt', 'return', 'return']);
+        expect(f.sends, 0);
+        expect(
+          await serverFiles.files.readPluginState(
+            directory,
+            f.registry.record.pluginId!,
+            'workspace-execution.v1.json',
+          ),
+          sealed,
+        );
+        expect(
+          await serverFiles.files.readPluginState(
+            currentDirectory,
+            serverFiles.registry.record.pluginId!,
+            'workspace-execution.v1.json',
+          ),
+          currentGrant,
+        );
+        await module.useWorkspaceOnline(f.registry.record);
+        expect(calls, ['adopt', 'return', 'return']);
+      } finally {
+        await f.close();
+        await serverFiles.close();
+      }
+    },
+  );
+
   test(
     'Start wakes the package immediately; observation never starts a second cycle',
     () async {

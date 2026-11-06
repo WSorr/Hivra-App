@@ -682,7 +682,6 @@ if [ "\${SSH_ORIGINAL_COMMAND:-}" = uninstall ] && [ ! -f /var/lib/hivra-workspa
 fi
 case "\${SSH_ORIGINAL_COMMAND:-}" in
   request)
-    grep -Fq '"executor_id":"'"\$1"'"' /var/lib/hivra-workspace/runner.json
     exec runuser -u hivra-workspace -- env HIVRA_WORKSPACE_EXECUTOR_ID="\$1" /opt/hivra-workspace/current/bin/hivra-workspace-runner request /var/lib/hivra-workspace ;;
   setup)
     systemctl stop hivra-workspace-runner.service

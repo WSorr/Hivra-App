@@ -197,7 +197,9 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
             'Reconnect the assigned VPS before updating/removing this package',
           );
         }
-        final result = await _remote.request(c, 'return');
+        final result = await _remote.request(c, 'return', {
+          'handoff_id': grant['handoff_id'],
+        });
         await restoreWorkspaceFromVps(
           record: record,
           executorId: c['executor_id'] as String,
@@ -268,7 +270,9 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       if (c == null || c['executor_id'] != grant!['executor_id']) {
         throw StateError('Assigned VPS connection is unavailable');
       }
-      final result = await _remote.request(c, 'return');
+      final result = await _remote.request(c, 'return', {
+        'handoff_id': grant['handoff_id'],
+      });
       await restoreWorkspaceFromVps(
         record: record,
         executorId: c['executor_id'] as String,

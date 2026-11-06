@@ -118,6 +118,18 @@ the device that installed the previous runner is not a server owner. Existing
 server-authorized SSH keys may request a new Start, while ordinary observation,
 Stop and removal remain bound to the current installation.
 
+A replaced device may use the same authenticated `return` command with its
+original `handoff_id` to retrieve that Capsule/package's already sealed
+checkpoint. It cannot end or observe the replacement's active grant. The
+existing custody owner verifies the handoff in both return phases; restoration
+uses the same local checkpoint path and leaves execution expired and stopped.
+If first open fails, the workspace shell keeps **Recover local access** visible
+beside Retry. No package evaluation, service request or renewed grant is needed
+to retrieve the opaque checkpoint. An unreachable server or a missing/replaced
+handoff remains an explicit failure; no local fallback or history archive is
+created. This recovery requires the corresponding Capsule and VPS runtime
+update; earlier forced SSH commands reject requests from a replaced device.
+
 The existing setup path stops/drains the service, seals its old grant through
 the canonical authority owner, installs the current package and adopts only the
 new owner Start. Where the server already has that Capsule/package checkpoint,

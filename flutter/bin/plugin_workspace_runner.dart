@@ -572,12 +572,15 @@ class WorkspaceRunner {
   }
 
   Future<Map<String, dynamic>> dispatch(Map<String, dynamic> request) async {
-    if (_closing ||
-        request['owner'] != binding['owner'] ||
-        request['plugin_id'] != binding['plugin_id'] ||
-        request['package_id'] != binding['package_id'] ||
-        request['package_digest'] != binding['package_digest'] ||
-        request['executor_id'] != binding['executor_id']) {
+    if (_closing) throw StateError('Workspace runner is closing');
+    final current =
+        request['owner'] == binding['owner'] &&
+        request['plugin_id'] == binding['plugin_id'] &&
+        request['package_id'] == binding['package_id'] &&
+        request['package_digest'] == binding['package_digest'] &&
+        request['executor_id'] == binding['executor_id'];
+    final recovery = !current && request['command'] == 'return';
+    if (!current && !recovery) {
       throw StateError('Workspace request binding mismatch');
     }
     final record = await _record();
@@ -621,10 +624,48 @@ class WorkspaceRunner {
           settings: Map<String, dynamic>.from(request['settings'] as Map),
         );
       case 'return':
-        if (request.length != 6) throw const FormatException();
-        final checkpoint = await runtime.returnWorkspaceToLocal(record);
+        if (request.length != (request.containsKey('handoff_id') ? 7 : 6) ||
+            (request.containsKey('handoff_id') &&
+                (request['handoff_id'] is! String ||
+                    !RegExp(
+                      r'^[0-9a-f]{64}$',
+                    ).hasMatch(request['handoff_id'])))) {
+          throw const FormatException();
+        }
+        // SSH binds the device key to executor_id. A replaced device may
+        // retrieve only its matching sealed handoff, not control the new grant.
+        if (recovery &&
+            (!['owner', 'executor_id', 'package_digest', 'handoff_id'].every(
+                  (key) =>
+                      request[key] is String &&
+                      RegExp(r'^[0-9a-f]{64}$').hasMatch(request[key]),
+                ) ||
+                request['package_id'] is! String ||
+                request['plugin_id'] != record.pluginId)) {
+          throw const FormatException('Invalid handoff return');
+        }
+        final returnedBinding =
+            recovery
+                ? (Map<String, dynamic>.from(request)
+                  ..remove('command')
+                  ..remove('handoff_id'))
+                : binding;
+        final returning =
+            recovery
+                ? runtimeFor(
+                  root,
+                  returnedBinding,
+                  registry,
+                  scheduleTimers: false,
+                )
+                : runtime;
+        final checkpoint = await returning.returnWorkspaceToLocal(
+          record,
+          handoffId: request['handoff_id'] as String?,
+          requireSealed: recovery,
+        );
         return {
-          'binding': binding,
+          'binding': returnedBinding,
           'runner': {
             'state': 'detached',
             'started_at_ms': _startedAt,
