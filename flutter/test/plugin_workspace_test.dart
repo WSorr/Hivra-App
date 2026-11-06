@@ -1971,7 +1971,20 @@ void main() {
     (tester) async {
       final access = permission('https://one.example');
       var grants = 0, starts = 0, opens = 0, secretPickers = 0, connections = 0;
-      Map<String, dynamic>? execution;
+      Map<String, dynamic>? execution = {
+        'enabled': false,
+        'active': false,
+        'running': false,
+        'revoked': true,
+        'revision': 7,
+        'scope': {
+          'version': 2,
+          'action': 'old_cycle',
+          'interval_seconds': 60,
+          'description': 'Previous workflow',
+          'access': access,
+        },
+      };
       Map<String, Map<String, String>>? selected;
       Map<String, dynamic> view() => {
         ...presentation(),
@@ -2050,6 +2063,7 @@ void main() {
         'default': {'token': 'ref-token'},
       });
       expect(grants, 1);
+      expect(execution!['running'], isFalse);
       await tester.tap(find.text('Connect'));
       await tester.pumpAndSettle();
       expect(connections, 2);

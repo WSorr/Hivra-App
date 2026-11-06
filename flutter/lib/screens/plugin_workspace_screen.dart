@@ -855,7 +855,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       approvedScope:
           scope ??
           {
-            ...?_view?['execution']?['scope'] as Map?,
+            if (_view?['execution']?['running'] == true)
+              ...?_view?['execution']?['scope'] as Map?,
             'version': 2,
             'access': access,
             'description':

@@ -309,7 +309,9 @@ running the package's ordinary connection action. Absent or broader access opens
 the existing owner permission form; **Plugin permissions** remains the explicit
 way to change an existing connection or its terms. Reusing Connect neither
 issues another grant nor restarts a schedule. Package actions cannot carry
-independent `access`. Start uses `schedule: {version: 2, action,
+independent `access`. Connecting after Stop/revocation does not inherit the ended
+schedule; an explicit permissions edit may retain an already running workflow.
+Start uses `schedule: {version: 2, action,
 interval_seconds, description, access}`; it reuses an active matching grant,
 including its expiry and secret connections. It asks for permission only when
 required access is absent or broader. Permissions need no schedule; `running`
