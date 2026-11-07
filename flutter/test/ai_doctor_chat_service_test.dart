@@ -38,6 +38,114 @@ void main() {
   }
 
   testWidgets(
+    'Cloudflare account ID saves the existing endpoint and retains the saved key on reopen',
+    (tester) async {
+      final runtime = _RecordingRuntime(
+        preferredProviderId: 'cloudflare_workers_ai',
+      );
+      await showCard(tester, runtime);
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      final account = find.widgetWithText(TextField, 'Cloudflare Account ID');
+      expect(
+        find.widgetWithText(TextField, 'Inference base URL'),
+        findsNothing,
+      );
+      await tester.ensureVisible(account);
+      await tester.enterText(account, ' 0123456789ABCDEF0123456789ABCDEF ');
+      final save = find.text('Save / replace provider settings');
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      expect(
+        runtime.configuration,
+        contains(
+          'save-url:cloudflare_workers_ai:https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai',
+        ),
+      );
+      expect(
+        runtime.configuration.where((op) => op.startsWith('save-key:')),
+        isEmpty,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await showCard(tester, runtime);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(account).controller!.text, isEmpty);
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      expect(
+        runtime.configuration.where((op) => op.startsWith('save-url:')),
+        hasLength(1),
+      );
+      expect(
+        runtime.configuration.where((op) => op.startsWith('save-key:')),
+        isEmpty,
+      );
+      await tester.ensureVisible(
+        find.byType(DropdownButtonFormField<InferenceConnection>),
+      );
+      await selectProvider(tester, 'Local OpenAI-compatible');
+      expect(
+        find.widgetWithText(TextField, 'Inference base URL'),
+        findsOneWidget,
+      );
+      expect(account, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('Cloudflare validates the account before saving a new token', (
+    tester,
+  ) async {
+    final runtime = _RecordingRuntime(
+      preferredProviderId: 'cloudflare_workers_ai',
+    )..readPresence = (_) async => false;
+    await showCard(tester, runtime);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Cloudflare Workers AI API token'),
+      'synthetic-token',
+    );
+    for (final value in [
+      'short',
+      'https://example.com',
+      '0123456789abcdef0123456789abcde/ai',
+    ]) {
+      final account = find.widgetWithText(TextField, 'Cloudflare Account ID');
+      await tester.ensureVisible(account);
+      await tester.enterText(account, value);
+      final save = find.text('Save / replace provider settings');
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      expect(runtime.configuration, isEmpty);
+      expect(runtime.operations, isEmpty);
+      expect(find.textContaining('32 hexadecimal characters'), findsOneWidget);
+    }
+    final account = find.widgetWithText(TextField, 'Cloudflare Account ID');
+    await tester.ensureVisible(account);
+    await tester.enterText(account, '0123456789abcdef0123456789abcdef');
+    final save = find.text('Save / replace provider settings');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(
+      runtime.configuration,
+      contains('save-key:cloudflare_workers_ai:synthetic-token'),
+    );
+    expect(
+      tester
+          .widget<TextField>(
+            find.widgetWithText(TextField, 'Cloudflare Workers AI API token'),
+          )
+          .controller!
+          .text,
+      isEmpty,
+    );
+  });
+
+  testWidgets(
     'owner can inspect exact outbound data locally and edits invalidate the preview',
     (tester) async {
       final runtime = _RecordingRuntime();
