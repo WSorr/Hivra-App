@@ -55,7 +55,9 @@ is recovery work and cannot roll back or invalidate the committed record.
   `removalPending`. This host-owned status denies runtime binding and replacement;
   it is not plugin-private state and does not create a second registry.
 - With admission closed, the application module stops scheduling, drains admitted
-  actions and clears Capsule-scoped secrets. Common-workspace checkpoints and
+  actions and clears Capsule-scoped secrets before deleting private files. A
+  native secret cleanup failure leaves private files intact for retry, including
+  when saved-data deletion was selected. Common-workspace checkpoints and
   `data-` storage are retained by default; the owner may explicitly select saved-
   data deletion, accepting loss of pending recovery information. Other private
   plugin files are cleared. Cleanup runs outside the registry mutation lock so

@@ -192,14 +192,17 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Integrate the validated 1.x work through one reviewed branch, then close the
-remaining v1 journeys in priority order. Keep one checkout writer and one PR
-under integration at a time; re-read the remote base and exact head before
-merging. A clean `main` is the integration baseline, not a claim that every
-runtime debt is accepted.
+Keep private plugin files intact when native secret cleanup fails during removal.
+Registry admission remains closed;
+the existing file-store traversal supplies the runtime-owned scope to the vault
+before file deletion, without a second cleanup path or owner. Tests must cover
+both retention choices and retry from the durable pending record. Working
+Capsules are not removal fixtures. Integrate serially through required PR gates;
+re-read the remote base and exact head before merging. A clean `main` is the
+integration baseline, not a claim that every runtime debt is accepted.
 
-First finish owner-granted connection reuse and inference on Mac/Samsung with
-the existing packages and Capsules. Then qualify device replacement and Start
+The next native acceptance is owner-granted connection reuse and inference on
+Mac/Samsung with the existing packages and Capsules. Then qualify device replacement and Start
 recovery with matching runtime artifacts when VPS access and owner authority
 are available. Jack's actual completed-trade journey needs separate live
 evidence; do not substitute placement receipts or synthetic fills. Retained
@@ -223,6 +226,7 @@ work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
+| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Reuse owner-granted connections | Existing grants cover Connect, inference and subsequent requests; cancelled/denied access and package/grant changes are checked. Complete exact Mac/Samsung acceptance of credential reuse and inference remains required. |
 | Recover after another device replaces the VPS installation | Authenticated return restores the sealed opaque checkpoint without new authority; recovery remains visible after failed first open. Finish exact Mac/Samsung and matching-runner recovery acceptance, including an unreachable VPS. |

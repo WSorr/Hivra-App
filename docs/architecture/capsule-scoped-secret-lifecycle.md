@@ -55,13 +55,17 @@ The vault does not interpret provider credentials or return stored values to UI.
 provider-specific connection service may request one exact secret only after
 capturing the active Capsule root.
 
-## Current Removal Ordering Limit
+## Removal Failure And Retry
 
-`PluginRuntimeModuleService` closes admission, then clears eligible private files
-before calling vault deletion. If native vault cleanup fails, package removal
-stays pending and non-executable, but some private files may already be gone.
-The default-retained common checkpoint/`data-` files are excluded from that
-cleanup unless the owner selected saved-data deletion. This is a current limit
-against the secret-first ordering above, not proof of atomic data/secret deletion
-or permission to discard unresolved evidence. Registry retry remains the existing
-recovery path; no second cleanup owner is introduced.
+`PluginRuntimeModule` closes admission and drains actions before asking the vault
+to delete the plugin's secrets. `CapsuleFileStore` captures the runtime-owned
+Capsule directory set once and calls that cleanup before deleting any eligible
+private file. A denied or failed native cleanup leaves those files intact and
+the registry record pending and non-executable. The existing Retry removal path
+repeats secure cleanup before file deletion, including after restart.
+
+The default-retained common checkpoint/`data-` files remain excluded unless the
+owner selected saved-data deletion. A later file or registry-write failure may
+leave already-removed secrets and a pending package; retry is idempotent. This
+ordering is not an atomic transaction across Keychain and the filesystem and
+does not add a second cleanup owner or restoration of deleted secrets.
