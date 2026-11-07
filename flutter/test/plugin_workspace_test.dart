@@ -1042,6 +1042,76 @@ void main() {
     },
   );
 
+  for (final trust in [false, true]) {
+    testWidgets(
+      'VPS connection confirms the presented identity before continuing (trust: $trust)',
+      (tester) async {
+        final actions = <String>[];
+        bool? trusted;
+        final fingerprint = 'SHA256:${'B' * 43}';
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction: (action, settings) async {
+                actions.add(action);
+                return {
+                  ...presentation(),
+                  'host_connection': {
+                    'host': 'server.example',
+                    'port': 22,
+                    'installed': false,
+                  },
+                };
+              },
+              connectVps: ({
+                required host,
+                required port,
+                required password,
+                required trustPeer,
+              }) async {
+                expect(host, 'server.example');
+                expect(port, 22);
+                expect(password, 'synthetic-test-password');
+                trusted = await trustPeer(fingerprint);
+                if (!trusted!) throw StateError('Server identity declined');
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Connect VPS'));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byWidgetPredicate((w) => w is TextField && w.obscureText),
+          'synthetic-test-password',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Connect securely'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(trusted, isNull);
+        expect(
+          find.textContaining(
+            'server.example:22\n$fingerprint',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+        expect(actions, ['open']);
+        await tester.tap(find.text(trust ? 'Trust this server' : 'Cancel'));
+        await tester.pumpAndSettle();
+        expect(trusted, trust);
+        expect(actions, trust ? ['open', 'open'] : ['open']);
+        expect(
+          find.textContaining('VPS connection was not completed'),
+          trust ? findsNothing : findsOneWidget,
+        );
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets(
     'scheduled observation preserves owner draft edits until an explicit package action',
     (tester) async {

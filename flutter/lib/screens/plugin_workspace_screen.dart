@@ -461,7 +461,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                     (context) => AlertDialog(
                       title: const Text('Confirm server identity'),
                       content: SelectableText(
-                        '$host:$port\n$fingerprint\n\nCompare this fingerprint with your VPS provider or a trusted SSH connection. A different fingerprint will be refused on future connections.',
+                        '$host:$port\n$fingerprint\n\nCompare this fingerprint with your VPS provider or a trusted SSH connection before sending the root password. After successful root login, this becomes the saved server identity. If it changes again, ordinary access is blocked until you confirm the new identity during VPS recovery.',
                       ),
                       actions: [
                         TextButton(
