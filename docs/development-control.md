@@ -193,17 +193,23 @@ branch state; published artifacts and their signoff belong to
 ## Selected Product Outcome
 
 Restore the existing stopped workspace through the normal VPS connection form
-when the server's SSH identity has changed. The owner may verify the presented
-fingerprint during root-authenticated recovery; successful root login updates
+when the server's SSH identity has changed. If an old device still holds an
+active grant but cannot open the workspace, its existing revocation control
+must remain reachable. Persist local revocation before attempting remote stop;
+report an unacknowledged remote stop without pretending the server stopped.
+Keep one control and the existing custody owner, not a second offline lifecycle.
+The owner may verify the presented fingerprint during root-authenticated
+recovery; successful root login updates
 the existing connection pin. Ordinary saved-key access must continue to reject
 a different identity. Rejection, failed authentication or a changed Capsule
 must not save the new pin. Retain the executor identity, local opaque checkpoint
 and revoked execution permission. Do not grant Start or create a parallel
 connection, recovery store or SSH bypass.
 
-Qualification requires the existing identity-dialog accept/cancel tests and an
-exact packaged restore of only Hivra runtime on the owner's existing VPS. Check
-saved-key access after reconnect/restart, the stopped grant and preservation of
+Qualification requires identity-dialog accept/cancel and failed-open revocation
+tests, durable revoked handoff across reopen with opaque evidence preserved,
+and an exact packaged restore of only Hivra runtime on the owner's existing
+VPS. Check saved-key access after reconnect/restart, the stopped grant and preservation of
 the local checkpoint. Website, Amnezia, service orders and trading Start remain
 outside the authorized mutation scope. A running unit alone does not establish
 checkpoint recovery or Jack's trade acceptance.
