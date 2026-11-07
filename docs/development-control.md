@@ -192,35 +192,30 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Make Chat and pair-attestation delivery select the same peer endpoint, and
-prevent concurrent card import/local-key synchronization/Capsule cleanup from
-overwriting another card update. `CapsuleAddressService` is the existing owner;
-the maintained priority and storage boundary belong to the
-[addressing model](capsule-addressing-model.md).
+Keep long public-card JSON from covering the import/cancel actions on narrow
+or keyboard-reduced screens. `SettingsScreen` retains the existing dialog and
+delegates import to `SettingsService` / `CapsuleAddressService`; card validation,
+permissions and storage do not change.
 
-Consolidate the two routing implementations and two card-file mutation owners,
-then remove confirmed unused service methods and the unused host-readiness
-summary with its tests. Retain Core/pair authority checks and unresolved
-delivery evidence. No new runtime owner, storage format, dependency or document
-is needed. The [project map](README.md) follows the consolidated paths.
-
-Source acceptance covers conflicting address observations in both delivery
-consumers, concurrent updates through separate service instances, reopening the
-same file, queue recovery after failure and Core activation with a corrupt
-contact book. Exact native acceptance is authorized on the existing Mac and
-Samsung Capsules without creating new acceptance profiles. No release, live
-publication, trading Start or VPS change is authorized by this acceptance.
+Use Flutter 3.47.4's existing scrollable `AlertDialog` body and bounded multiline
+editor. Paste/Scan QR belong beside input; Cancel/Import remain in the footer.
+No new screen, widget class, state owner, dependency or storage is needed.
+Source checks cover narrow/wide layouts, Android landscape, larger text,
+keyboard insets, scrolling, validation errors and submission. Exact Mac and
+Samsung smoke reuses existing Capsules without publication, trading Start or
+VPS changes; no new test entities are authorized.
 
 ## Runtime Work Still Awaiting Acceptance
 
-This consolidation does not close prior runtime work. The common API
+The import-form repair does not close prior runtime work. The common API
 contract owns behavior; the existing acceptance record owns artifact-bound
 results. Source tests, fixtures and earlier packaged runs do not qualify
 changed bytes.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
-| Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact Mac/Android invitation/Chat, restart and card-removal smoke remains open; no working Capsule was changed. |
+| Keep import actions accessible with long public-card JSON | Existing dialog/body/editor layout is repaired; exact Mac/Samsung acceptance of changed bytes remains open. |
+| Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Reuse owner-granted connections | Existing grants cover Connect, inference and subsequent requests; cancelled/denied access and package/grant changes are checked. Complete exact Mac/Samsung acceptance of credential reuse and inference remains required. |
 | Recover after another device replaces the VPS installation | Authenticated return restores the sealed opaque checkpoint without new authority; recovery remains visible after failed first open. Finish exact Mac/Samsung and matching-runner recovery acceptance, including an unreachable VPS. |
 | Start the selected package/settings on the chosen VPS | One setup/custody owner replaces the managed process independently of the installing device; stale replay and failed-Start revocation have source/real-WASM evidence. Device replacement and failure recovery need matching-artifact native evidence. |
