@@ -1287,81 +1287,105 @@ void main() {
     );
   });
 
-  test(
-    'prefers contact-card transport when root also appears as relationship peer',
-    () async {
-      const peerRootHex =
-          '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
-      const peerTransportHex =
-          'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
-      const localRootHex =
-          '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
-      Uint8List? sentToPubkey;
+  for (final conflicting in [false, true]) {
+    test(
+      'prefers contact-card transport; conflicting observations=$conflicting',
+      () async {
+        const peerRootHex =
+            '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+        const peerTransportHex =
+            'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
+        const localRootHex =
+            '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+        Uint8List? sentToPubkey;
 
-      final service = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-          workerBootstrap: const <String, Object?>{
-            'activeCapsuleHex': localRootHex,
-          },
-        ),
-        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
-          const ManualConsensusCheck(
-            peerHex: peerRootHex,
-            peerLabel: 'peer',
-            invitationCount: 1,
-            relationshipCount: 1,
-            hashHex:
-                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            canonicalJson: '{}',
-            blockingFacts: <ConsensusBlockingFact>[],
+        final service = CapsuleChatDeliveryService(
+          runtime: _FakeRuntime(
+            capsuleRootKey: _hexToBytes(localRootHex),
+            workerBootstrap: const <String, Object?>{
+              'activeCapsuleHex': localRootHex,
+            },
           ),
-        ]),
-        loadRelationships:
-            () => <Relationship>[
-              Relationship(
-                // Regression shape: a mixed root/transport ledger can expose the
-                // root as peerPubkey. Sending must still prefer the contact card
-                // transport endpoint for a root-addressed peer.
-                peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
-                peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
-                kind: StarterKind.juice,
-                ownStarterId: base64Encode(Uint8List(32)),
-                peerStarterId: base64Encode(
-                  Uint8List.fromList(List<int>.filled(32, 1)),
+          manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+            const ManualConsensusCheck(
+              peerHex: peerRootHex,
+              peerLabel: 'peer',
+              invitationCount: 1,
+              relationshipCount: 1,
+              hashHex:
+                  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              canonicalJson: '{}',
+              blockingFacts: <ConsensusBlockingFact>[],
+            ),
+          ]),
+          loadRelationships:
+              () => <Relationship>[
+                Relationship(
+                  // Regression shape: a mixed root/transport ledger can expose the
+                  // root as peerPubkey. Sending must still prefer the contact card
+                  // transport endpoint for a root-addressed peer.
+                  peerPubkey: base64Encode(
+                    conflicting
+                        ? Uint8List.fromList(List.filled(32, 3))
+                        : _hexToBytes(peerRootHex),
+                  ),
+                  peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                  kind: StarterKind.juice,
+                  ownStarterId: base64Encode(Uint8List(32)),
+                  peerStarterId: base64Encode(
+                    Uint8List.fromList(List<int>.filled(32, 1)),
+                  ),
+                  establishedAt: DateTime.utc(2026, 6, 28),
                 ),
-                establishedAt: DateTime.utc(2026, 6, 28),
-              ),
-            ],
-        listTrustedCards:
-            () async => const <CapsuleAddressCard>[
-              CapsuleAddressCard(
-                rootKey:
-                    'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
-                rootHex: peerRootHex,
-                nostrNpub:
-                    'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
-                nostrHex: peerTransportHex,
-              ),
-            ],
-        sendWorkerRunner: (args) async {
-          sentToPubkey = args['toPubkey'] as Uint8List;
-          return <String, Object?>{'result': 0, 'lastError': null};
-        },
-      );
+              ],
+          loadInvitations:
+              () =>
+                  conflicting
+                      ? [
+                        Invitation(
+                          id: 'conflict',
+                          fromPubkey: base64Encode(
+                            Uint8List.fromList(List.filled(32, 4)),
+                          ),
+                          fromRootPubkey: base64Encode(
+                            _hexToBytes(peerRootHex),
+                          ),
+                          kind: StarterKind.juice,
+                          status: InvitationStatus.accepted,
+                          sentAt: DateTime.utc(2026),
+                        ),
+                      ]
+                      : [],
+          listTrustedCards:
+              () async => const <CapsuleAddressCard>[
+                CapsuleAddressCard(
+                  rootKey:
+                      'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
+                  rootHex: peerRootHex,
+                  nostrNpub:
+                      'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
+                  nostrHex: peerTransportHex,
+                ),
+              ],
+          sendWorkerRunner: (args) async {
+            sentToPubkey = args['toPubkey'] as Uint8List;
+            return <String, Object?>{'result': 0, 'lastError': null};
+          },
+        );
 
-      final result = await service.sendCanonicalEnvelope(
-        authorize: () async {},
-        peerHex: peerRootHex,
-        expectedCapsuleRootHex: localRootHex,
-        canonicalEnvelopeJson: '{"message_text":"hello"}',
-      );
+        final result = await service.sendCanonicalEnvelope(
+          authorize: () async {},
+          peerHex: peerRootHex,
+          expectedCapsuleRootHex: localRootHex,
+          canonicalEnvelopeJson: '{"message_text":"hello"}',
+        );
 
-      expect(result.isSuccess, isTrue);
-      expect(result.deliveryPeerHex, equals(peerTransportHex));
-      expect(_bytesToHex(sentToPubkey!), equals(peerTransportHex));
-    },
-  );
+        expect(result.isSuccess, isTrue);
+        expect(result.deliveryPeerHex, equals(peerTransportHex));
+        expect(_bytesToHex(sentToPubkey!), equals(peerTransportHex));
+      },
+    );
+  }
 
   test(
     'chat send rejects root-only relationship without transport card',

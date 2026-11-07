@@ -36,9 +36,4 @@ class WasmPluginCapabilityPolicyService {
     final ordered = normalized.toList()..sort();
     return ordered;
   }
-
-  List<String> allowedCapabilities() {
-    final ordered = _allowedCapabilities.toList()..sort();
-    return ordered;
-  }
 }

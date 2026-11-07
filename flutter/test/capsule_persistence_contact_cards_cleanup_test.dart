@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:bech32/bech32.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/capsule_index_store.dart';
+import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/capsule_persistence_service.dart';
 

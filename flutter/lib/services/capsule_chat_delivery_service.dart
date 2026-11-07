@@ -719,101 +719,18 @@ class CapsuleChatDeliveryService {
     });
   }
 
-  Future<_PeerIdentityIndex> _loadPeerIdentityIndex() async {
-    final transportPeers = <String>{};
-    final transportToRoot = <String, String>{};
-    final rootToTransport = <String, String>{};
-
-    final relationships = _loadRelationships();
-    for (final relationship in relationships) {
-      if (!relationship.isActive || relationship.hasPendingRemoteBreak) {
-        continue;
-      }
-      final transportHex = _decodeB64ToHex32(relationship.peerPubkey);
-      if (transportHex == null) continue;
-
-      final peerRoot = relationship.peerRootPubkey;
-      if (peerRoot == null || peerRoot.isEmpty) {
-        transportPeers.add(transportHex);
-        continue;
-      }
-      final rootHex = _decodeB64ToHex32(peerRoot);
-      if (rootHex == null) continue;
-      _rememberPeerTransport(
-        transportPeers: transportPeers,
-        transportToRoot: transportToRoot,
-        rootToTransport: rootToTransport,
-        rootHex: rootHex,
-        transportHex: transportHex,
-      );
-    }
-
+  Future<PeerIdentityIndex> _loadPeerIdentityIndex() async {
     List<CapsuleAddressCard> cards;
     try {
       cards = await _listTrustedCards();
     } catch (_) {
       cards = const <CapsuleAddressCard>[];
     }
-    for (final card in cards) {
-      final rootHex = _normalizeHex32(card.rootHex);
-      final transportHex = _normalizeHex32(card.nostrHex);
-      if (rootHex == null || transportHex == null) continue;
-      _rememberPeerTransport(
-        transportPeers: transportPeers,
-        transportToRoot: transportToRoot,
-        rootToTransport: rootToTransport,
-        rootHex: rootHex,
-        transportHex: transportHex,
-      );
-    }
-
-    _mergeInvitationIdentityProjection(
-      transportPeers: transportPeers,
-      transportToRoot: transportToRoot,
-      rootToTransport: rootToTransport,
+    return const CapsuleAddressService().peerIdentityIndex(
+      relationships: _loadRelationships(),
+      invitations: _loadInvitations(),
+      cards: cards,
     );
-
-    return _PeerIdentityIndex(
-      transportPeers: transportPeers,
-      transportToRoot: transportToRoot,
-      rootToTransport: rootToTransport,
-    );
-  }
-
-  void _mergeInvitationIdentityProjection({
-    required Set<String> transportPeers,
-    required Map<String, String> transportToRoot,
-    required Map<String, String> rootToTransport,
-  }) {
-    for (final invitation in _loadInvitations()) {
-      if (!invitation.isIncoming) continue;
-      final senderRoot = _decodeB64ToHex32(invitation.fromRootPubkey ?? '');
-      final senderTransport = _decodeB64ToHex32(invitation.fromPubkey);
-      if (senderRoot == null || senderTransport == null) continue;
-      _rememberPeerTransport(
-        transportPeers: transportPeers,
-        transportToRoot: transportToRoot,
-        rootToTransport: rootToTransport,
-        rootHex: senderRoot,
-        transportHex: senderTransport,
-      );
-    }
-  }
-
-  void _rememberPeerTransport({
-    required Set<String> transportPeers,
-    required Map<String, String> transportToRoot,
-    required Map<String, String> rootToTransport,
-    required String rootHex,
-    required String transportHex,
-  }) {
-    if (rootHex == transportHex) return;
-    transportPeers.add(transportHex);
-    transportToRoot[transportHex] = rootHex;
-    final current = rootToTransport[rootHex];
-    if (current == null || current == rootHex) {
-      rootToTransport[rootHex] = transportHex;
-    }
   }
 
   Uint8List? _hexToBytes(String hex) {
@@ -839,21 +756,6 @@ class CapsuleChatDeliveryService {
   int? _toInt(Object? value) {
     if (value is int) return value;
     return int.tryParse('$value');
-  }
-
-  String? _decodeB64ToHex32(String value) {
-    try {
-      final bytes = base64.decode(value);
-      if (bytes.length != 32) return null;
-      return _hex(Uint8List.fromList(bytes));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String? _normalizeHex32(String value) {
-    final normalized = value.trim().toLowerCase();
-    return _isLowerHex64(normalized) ? normalized : null;
   }
 
   String _hex(Uint8List bytes) =>
@@ -915,36 +817,4 @@ class _ChatTransportItem {
     required this.timestampMs,
     this.deferredItem,
   });
-}
-
-class _PeerIdentityIndex {
-  final Set<String> _transportPeers;
-  final Map<String, String> _transportToRoot;
-  final Map<String, String> _rootToTransport;
-
-  const _PeerIdentityIndex({
-    required Set<String> transportPeers,
-    required Map<String, String> transportToRoot,
-    required Map<String, String> rootToTransport,
-  }) : _transportPeers = transportPeers,
-       _transportToRoot = transportToRoot,
-       _rootToTransport = rootToTransport;
-
-  String? resolveTransportForSend(String peerHex) {
-    final normalized = peerHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return null;
-    final mappedTransport = _rootToTransport[normalized];
-    if (mappedTransport != null) return mappedTransport;
-    if (_transportPeers.contains(normalized)) return normalized;
-    return null;
-  }
-
-  String resolveConsensusForIncoming(String transportPeerHex) {
-    final normalized = transportPeerHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return normalized;
-    return _transportToRoot[normalized] ?? normalized;
-  }
-
-  static bool _isHex64(String value) =>
-      RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
 }

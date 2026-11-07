@@ -473,26 +473,6 @@ class CapsuleFileStore {
     return owners;
   }
 
-  Future<void> clearPersisted(
-    Directory dir, {
-    bool includeBackup = false,
-  }) async {
-    final state = stateFile(dir);
-    final ledger = ledgerFile(dir);
-    final backup = backupFile(dir);
-    if (await state.exists()) await state.delete();
-    if (await ledger.exists()) await ledger.delete();
-    if (includeBackup && await backup.exists()) await backup.delete();
-  }
-
-  Future<String> backupPath(Directory dir) async {
-    return backupFile(dir).path;
-  }
-
-  Future<String> ledgerPath(Directory dir) async {
-    return ledgerFile(dir).path;
-  }
-
   Future<void> deleteCapsuleDir(String pubKeyHex) async {
     final dir = await capsuleDirForHex(pubKeyHex);
     if (await dir.exists()) {

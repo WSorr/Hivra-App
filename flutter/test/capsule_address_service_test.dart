@@ -5,6 +5,9 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/ffi/capsule_address_runtime.dart';
+import 'package:hivra_app/models/invitation.dart';
+import 'package:hivra_app/models/relationship.dart';
+import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/utils/hivra_id_format.dart';
@@ -449,6 +452,153 @@ $nbsp$nbsp}
     expect(listed, isEmpty);
     expect(await service.contactCount(), 0);
   });
+  test('routing prefers cards, then relationships, then invitations', () {
+    final root = Uint8List.fromList(List.filled(32, 1));
+    final cardEndpoint = Uint8List.fromList(List.filled(32, 2));
+    final relationshipEndpoint = Uint8List.fromList(List.filled(32, 3));
+    final invitationEndpoint = Uint8List.fromList(List.filled(32, 4));
+    final relationship = Relationship(
+      peerPubkey: base64Encode(relationshipEndpoint),
+      peerRootPubkey: base64Encode(root),
+      kind: StarterKind.juice,
+      ownStarterId: '',
+      peerStarterId: '',
+      establishedAt: DateTime.utc(2026),
+    );
+    final invitation = Invitation(
+      id: 'routing',
+      fromPubkey: base64Encode(invitationEndpoint),
+      fromRootPubkey: base64Encode(root),
+      kind: StarterKind.juice,
+      status: InvitationStatus.accepted,
+      sentAt: DateTime.utc(2026),
+    );
+    final card = CapsuleAddressCard(
+      rootKey: HivraIdFormat.formatCapsuleKeyBytes(root),
+      rootHex: _toHex(root),
+      nostrNpub: HivraIdFormat.formatNostrKeyBytes(cardEndpoint),
+      nostrHex: _toHex(cardEndpoint),
+    );
+    final index = service.peerIdentityIndex(
+      relationships: [relationship],
+      invitations: [invitation],
+      cards: [card],
+    );
+    expect(index.resolveTransportForSend(_toHex(root)), _toHex(cardEndpoint));
+    for (final endpoint in [
+      cardEndpoint,
+      relationshipEndpoint,
+      invitationEndpoint,
+    ]) {
+      expect(index.resolveConsensusForIncoming(_toHex(endpoint)), _toHex(root));
+    }
+    expect(
+      service
+          .peerIdentityIndex(
+            relationships: [relationship],
+            invitations: [invitation],
+            cards: [],
+          )
+          .resolveTransportForSend(_toHex(root)),
+      _toHex(relationshipEndpoint),
+    );
+    expect(
+      service
+          .peerIdentityIndex(
+            relationships: [],
+            invitations: [invitation],
+            cards: [],
+          )
+          .resolveTransportForSend(_toHex(root)),
+      _toHex(invitationEndpoint),
+    );
+  });
+
+  test(
+    'concurrent imports and cleanup through separate instances retain updates',
+    () async {
+      Future<bool> upsert(int i) => CapsuleAddressService(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      ).upsertTrustedCardFromKeys(
+        rootPubkey: Uint8List.fromList(List.filled(32, i + 1)),
+        nostrPubkey: Uint8List.fromList(List.filled(32, i + 65)),
+      );
+      await Future.wait(List.generate(16, upsert));
+      expect(await service.contactCount(), 16);
+      await Future.wait<void>([
+        for (var i = 0; i < 8; i++)
+          service.removeCapsuleReferences(
+            _toHex(Uint8List.fromList(List.filled(32, i + 1))),
+          ),
+        for (var i = 16; i < 24; i++) upsert(i).then((_) {}),
+      ]);
+      final reopened = CapsuleAddressService(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      );
+      expect(
+        (await reopened.listTrustedCards()).map((c) => c.rootHex).toSet(),
+        {
+          for (var i = 8; i < 24; i++)
+            _toHex(Uint8List.fromList(List.filled(32, i + 1))),
+        },
+      );
+    },
+  );
+
+  test('failed card mutation does not poison later imports', () async {
+    final file = File('${tempDocsDir.path}/capsule_contact_cards.json');
+    await file.writeAsString('{broken');
+    final root = Uint8List.fromList(List.filled(32, 1));
+    final endpoint = Uint8List.fromList(List.filled(32, 2));
+    await expectLater(
+      service.upsertTrustedCardFromKeys(
+        rootPubkey: root,
+        nostrPubkey: endpoint,
+      ),
+      throwsFormatException,
+    );
+    expect(await file.readAsString(), '{broken');
+    await file.writeAsString('{}');
+    expect(
+      await service.upsertTrustedCardFromKeys(
+        rootPubkey: root,
+        nostrPubkey: endpoint,
+      ),
+      isTrue,
+    );
+    expect(await service.contactCount(), 1);
+  });
+
+  test(
+    'local key synchronization preserves a signed card for matching keys',
+    () async {
+      final root = Uint8List.fromList(List.filled(32, 1));
+      final endpoint = Uint8List.fromList(List.filled(32, 2));
+      final signature = _toHex(Uint8List.fromList(List.filled(64, 3)));
+      final card = CapsuleAddressCard(
+        version: 2,
+        rootKey: HivraIdFormat.formatCapsuleKeyBytes(root),
+        rootHex: _toHex(root),
+        nostrNpub: HivraIdFormat.formatNostrKeyBytes(endpoint),
+        nostrHex: _toHex(endpoint),
+        signatureHex: signature,
+      );
+      final signed = CapsuleAddressService(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+        runtime: _FakeCapsuleAddressRuntime(
+          verifiedDigestHex: _toHex(card.signingDigest32()),
+          verifiedPubkeyHex: _toHex(root),
+          verifiedSignatureHex: signature,
+        ),
+      );
+      await signed.importCardJson(card.toPrettyJson());
+      await service.upsertTrustedCardFromKeys(
+        rootPubkey: root,
+        nostrPubkey: endpoint,
+      );
+      expect((await service.listTrustedCards()).single.signatureHex, signature);
+    },
+  );
 }
 
 String _toHex(Uint8List bytes) =>

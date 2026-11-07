@@ -100,13 +100,6 @@ class CapsuleBackupCodec {
     });
   }
 
-  static Future<String?> tryDecryptLedgerJson(
-    String inputJson,
-    Uint8List seed,
-  ) async {
-    return (await tryDecodeBackup(inputJson, seed))?.ledgerJson;
-  }
-
   static Future<CapsuleBackupContents?> tryDecodeBackup(
     String inputJson,
     Uint8List seed,

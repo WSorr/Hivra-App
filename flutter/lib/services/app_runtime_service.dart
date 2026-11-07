@@ -17,7 +17,6 @@ import 'invitation_delivery_service.dart';
 import 'invitation_intent_handler.dart';
 import 'ledger_view_service.dart';
 import 'manual_consensus_check_service.dart';
-import 'plugin_execution_guard_service.dart';
 import 'relationship_service.dart';
 import 'settings_service.dart';
 import 'plugin_host_api_service.dart';
@@ -136,19 +135,6 @@ class AppRuntimeService {
     return _hex(root);
   }
 
-  String? signRootCommitment(String commitmentHashHex) =>
-      _runtime.signConsensusCommitment(commitmentHashHex);
-
-  bool verifyRootCommitmentSignature({
-    required String commitmentHashHex,
-    required String capsuleRootHex,
-    required String signatureHex,
-  }) => _runtime.verifyConsensusSignature(
-    messageHashHex: commitmentHashHex,
-    participantIdHex: capsuleRootHex,
-    signatureHex: signatureHex,
-  );
-
   ConsensusRuntimeService buildConsensusRuntimeService() {
     return ConsensusRuntimeService(
       exportLedger: _runtime.exportLedger,
@@ -164,12 +150,6 @@ class AppRuntimeService {
     );
   }
 
-  PluginExecutionGuardService buildPluginExecutionGuardService() {
-    return PluginExecutionGuardService(
-      consensus: buildConsensusRuntimeService(),
-    );
-  }
-
   ManualConsensusCheckService buildManualConsensusCheckService() {
     final consensus = buildConsensusRuntimeService();
     return ManualConsensusCheckService(
@@ -179,10 +159,6 @@ class AppRuntimeService {
         attestations: _consensusAttestations,
       ),
     );
-  }
-
-  ConsensusAttestationSyncService buildConsensusAttestationSyncService() {
-    return _consensusAttestations;
   }
 
   ConsensusAttestedGuardService buildConsensusAttestedGuardService() {

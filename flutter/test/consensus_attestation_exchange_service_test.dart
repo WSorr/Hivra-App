@@ -231,47 +231,73 @@ void main() {
       expect(sync.markDeliveredCalls, 1);
     });
 
-    test('prefers contact-card transport for root-addressed peer', () async {
-      const peerRootHex =
-          '1111111111111111111111111111111111111111111111111111111111111111';
-      const peerTransportHex =
-          '2222222222222222222222222222222222222222222222222222222222222222';
-      final sync = _FakeConsensusAttestationSyncService();
+    for (final conflicting in [false, true]) {
+      test(
+        'prefers contact-card transport; conflicting observations=$conflicting',
+        () async {
+          const peerRootHex =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerTransportHex =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final sync = _FakeConsensusAttestationSyncService();
 
-      final service = ConsensusAttestationExchangeService(
-        sync: sync,
-        loadRelationships:
-            () => <Relationship>[
-              Relationship(
-                peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
-                peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
-                kind: StarterKind.juice,
-                ownStarterId: base64Encode(Uint8List(32)),
-                peerStarterId: base64Encode(
-                  Uint8List.fromList(List<int>.filled(32, 1)),
-                ),
-                establishedAt: DateTime.utc(2026, 7, 10),
-              ),
-            ],
-        listTrustedCards:
-            () async => const <CapsuleAddressCard>[
-              CapsuleAddressCard(
-                rootKey: 'h1peer',
-                rootHex: peerRootHex,
-                nostrNpub: 'npub1peer',
-                nostrHex: peerTransportHex,
-              ),
-            ],
+          final service = ConsensusAttestationExchangeService(
+            sync: sync,
+            loadRelationships:
+                () => <Relationship>[
+                  Relationship(
+                    peerPubkey: base64Encode(
+                      conflicting
+                          ? Uint8List.fromList(List.filled(32, 3))
+                          : _hexToBytes(peerRootHex),
+                    ),
+                    peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                    kind: StarterKind.juice,
+                    ownStarterId: base64Encode(Uint8List(32)),
+                    peerStarterId: base64Encode(
+                      Uint8List.fromList(List<int>.filled(32, 1)),
+                    ),
+                    establishedAt: DateTime.utc(2026, 7, 10),
+                  ),
+                ],
+            loadInvitations:
+                () =>
+                    conflicting
+                        ? [
+                          Invitation(
+                            id: 'conflict',
+                            fromPubkey: base64Encode(
+                              Uint8List.fromList(List.filled(32, 4)),
+                            ),
+                            fromRootPubkey: base64Encode(
+                              _hexToBytes(peerRootHex),
+                            ),
+                            kind: StarterKind.juice,
+                            status: InvitationStatus.accepted,
+                            sentAt: DateTime.utc(2026),
+                          ),
+                        ]
+                        : [],
+            listTrustedCards:
+                () async => const <CapsuleAddressCard>[
+                  CapsuleAddressCard(
+                    rootKey: 'h1peer',
+                    rootHex: peerRootHex,
+                    nostrNpub: 'npub1peer',
+                    nostrHex: peerTransportHex,
+                  ),
+                ],
+          );
+
+          final result = await service.ensureForPeer(peerRootHex);
+
+          expect(result.status, ConsensusAttestationExchangeStatus.syncing);
+          expect(result.localEvidenceSent, isTrue);
+          expect(sync.sentPeerRootHex, peerRootHex);
+          expect(sync.sentPeerTransportHex, peerTransportHex);
+        },
       );
-
-      final result = await service.ensureForPeer(peerRootHex);
-
-      expect(result.status, ConsensusAttestationExchangeStatus.syncing);
-      expect(result.localEvidenceSent, isTrue);
-      expect(sync.sentPeerRootHex, peerRootHex);
-      expect(sync.sentPeerTransportHex, peerTransportHex);
-    });
-
+    }
     test('blocks root-addressed peer without transport card', () async {
       const peerRootHex =
           '1111111111111111111111111111111111111111111111111111111111111111';
