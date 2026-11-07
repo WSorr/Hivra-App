@@ -186,6 +186,173 @@ void main() {
     },
   );
 
+  testWidgets(
+    'failed first open keeps one revocation control and recovery reachable',
+    (tester) async {
+      final actions = <String>[];
+      var revocations = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
+              throw const SocketException('VPS unavailable');
+            },
+            configureExecution: ({
+              required enabled,
+              required expiresAtMs,
+              expectedRevision,
+              revoke = false,
+              approvedScope,
+              credentialBindings,
+              settings = const {},
+            }) async {
+              expect(enabled, isFalse);
+              expect(revoke, isTrue);
+              revocations++;
+              throw StateError('Remote stop unavailable');
+            },
+            connectVps:
+                ({
+                  required host,
+                  required port,
+                  required password,
+                  required trustPeer,
+                }) async => fail('Revocation must not install a server'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final revoke = find.text('Revoke plugin permissions');
+      expect(revoke, findsOneWidget);
+      await tester.tap(revoke);
+      await tester.pumpAndSettle();
+      expect(revocations, 1);
+      expect(actions, ['open']);
+      expect(revoke, findsOneWidget);
+      expect(find.text('Connect VPS'), findsOneWidget);
+      await tester.tap(find.text('Retry opening plugin'));
+      await tester.pumpAndSettle();
+      expect(actions, ['open', 'open']);
+      expect(revocations, 1);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  test(
+    'missing VPS, failed transport or package replacement cannot prevent local revocation',
+    () async {
+      for (final fault in ['missing', 'unavailable', 'replacement']) {
+        final connected = fault != 'missing';
+        final f = await Fixture.create();
+        try {
+          await f.enable();
+          final local = f.runtime();
+          await local.runWorkspaceAction(
+            record: f.registry.record,
+            action: 'open',
+          );
+          final checkpoint = await local.releaseWorkspaceToVps(
+            f.registry.record,
+            executorId: 'e' * 64,
+          );
+          if (fault == 'replacement') f.registry.digest = 'c' * 64;
+          final directory = await f.files.capsuleDirForHex(f.owner);
+          if (connected) {
+            await f.files.writePluginState(
+              directory,
+              f.registry.record.pluginId!,
+              PluginWorkspaceRemoteService.connectionFile,
+              jsonEncode({
+                'owner': f.owner,
+                'plugin_id': f.registry.record.pluginId,
+                'executor_id': 'e' * 64,
+                'host': 'server.example',
+                'port': 22,
+                'fingerprint': 'SHA256:${'A' * 43}',
+                'selected': true,
+                'package_id': f.registry.record.id,
+                'package_digest': checkpoint['package_digest'],
+              }),
+            );
+          }
+          final ports = UnusedWorkspacePorts();
+          final commands = <String>[];
+          final module = PluginRuntimeModule(
+            registry: f.registry,
+            sourceCatalog: const WasmPluginSourceCatalogService(),
+            manualChecks: ports,
+            pluginHostApi: local.pluginHostApi,
+            attestationExchange: ports,
+            chatDelivery: ports,
+            passiveReceive: ports,
+            contactLabels: ports,
+            uiLog: ports,
+            fileStore: f.files,
+            secretVault: ports,
+            readActiveCapsuleRootHex: () => f.owner,
+            workspaceRemote: PluginWorkspaceRemoteService(
+              files: f.files,
+              vault: ports,
+              registry: f.registry,
+              requestTransport: (c, command, input) async {
+                commands.add(
+                  (jsonDecode(utf8.decode(input)) as Map)['command'] as String,
+                );
+                throw const SocketException('VPS unavailable');
+              },
+            ),
+          );
+          await expectLater(
+            module.setWorkspaceExecution(
+              record: f.registry.record,
+              enabled: false,
+              expiresAtMs: null,
+              revoke: true,
+            ),
+            throwsStateError,
+          );
+          // Reopen the custody owner: recovery must carry the revoked grant,
+          // not the old active permission, while preserving opaque evidence.
+          final recovered = await f.runtime().releaseWorkspaceToVps(
+            f.registry.record,
+            executorId: 'e' * 64,
+          );
+          expect(recovered['execution']['enabled'], isFalse);
+          expect(recovered['execution']['revoked'], isTrue);
+          expect(
+            recovered['execution']['revision'],
+            checkpoint['execution']['revision'] + 1,
+          );
+          expect(recovered['workspace'], checkpoint['workspace']);
+          expect(recovered['effects'], checkpoint['effects']);
+          expect(recovered['package_digest'], checkpoint['package_digest']);
+          expect(
+            recovered['execution']['handoff_id'],
+            checkpoint['execution']['handoff_id'],
+          );
+          if (fault == 'replacement') {
+            await expectLater(
+              f.runtime().setReleasedWorkspaceEntries(
+                f.registry.record,
+                executorId: 'e' * 64,
+                enabled: true,
+                expectedRevision: recovered['execution']['revision'] as int,
+              ),
+              throwsStateError,
+            );
+          }
+          expect(commands, connected ? ['status'] : isEmpty);
+          expect(f.sends, 0);
+          expect(f.actions, everyElement('open'));
+        } finally {
+          await f.close();
+        }
+      }
+    },
+  );
+
   test(
     'old device returns only its sealed handoff through the normal module',
     () async {
@@ -861,6 +1028,8 @@ void main() {
       await tester.enterText(find.byType(TextField), 'new-choice');
       await tester.pump(const Duration(seconds: 61));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Start'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Start'));
       await tester.pumpAndSettle();
       expect(actions, ['open', 'open']);
@@ -1041,6 +1210,76 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  for (final trust in [false, true]) {
+    testWidgets(
+      'VPS connection confirms the presented identity before continuing (trust: $trust)',
+      (tester) async {
+        final actions = <String>[];
+        bool? trusted;
+        final fingerprint = 'SHA256:${'B' * 43}';
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction: (action, settings) async {
+                actions.add(action);
+                return {
+                  ...presentation(),
+                  'host_connection': {
+                    'host': 'server.example',
+                    'port': 22,
+                    'installed': false,
+                  },
+                };
+              },
+              connectVps: ({
+                required host,
+                required port,
+                required password,
+                required trustPeer,
+              }) async {
+                expect(host, 'server.example');
+                expect(port, 22);
+                expect(password, 'synthetic-test-password');
+                trusted = await trustPeer(fingerprint);
+                if (!trusted!) throw StateError('Server identity declined');
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Connect VPS'));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byWidgetPredicate((w) => w is TextField && w.obscureText),
+          'synthetic-test-password',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Connect securely'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(trusted, isNull);
+        expect(
+          find.textContaining(
+            'server.example:22\n$fingerprint',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+        expect(actions, ['open']);
+        await tester.tap(find.text(trust ? 'Trust this server' : 'Cancel'));
+        await tester.pumpAndSettle();
+        expect(trusted, trust);
+        expect(actions, trust ? ['open', 'open'] : ['open']);
+        expect(
+          find.textContaining('VPS connection was not completed'),
+          trust ? findsNothing : findsOneWidget,
+        );
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
 
   testWidgets(
     'scheduled observation preserves owner draft edits until an explicit package action',

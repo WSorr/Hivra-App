@@ -500,32 +500,45 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           revoke: revoke,
         );
       }
-      if (c == null || c['executor_id'] != grant!['executor_id']) {
-        throw StateError(
-          'Reconnect the assigned VPS; remote stop is unconfirmed',
-        );
+      try {
+        if (c == null || c['executor_id'] != grant!['executor_id']) {
+          throw StateError(
+            'Reconnect the assigned VPS; remote stop is unconfirmed',
+          );
+        }
+        if (enabled ||
+            revoke ||
+            grant['revoked'] == true ||
+            grant['expires_at_ms'] == null) {
+          await _requireExecutionControls(c);
+        }
+        if (activeCapsuleRootHex() != owner ||
+            (await registry.resolveRuntimeBinding(
+                  record.pluginId!,
+                )).packageId !=
+                record.id) {
+          throw StateError('Capsule or package changed during authorization');
+        }
+        await _remote.request(c, 'execution', {
+          'enabled': enabled,
+          'settings': settings,
+          'scope': approvedScope,
+          if (enabled || revoke) ...{
+            'expires_at_ms': expiresAtMs,
+            'expected_revision': expectedRevision,
+            'revoke': revoke,
+          },
+        });
+      } catch (_) {
+        if (!enabled && revoke) {
+          throw StateError(
+            'Permissions revoked on this device. Remote stop is unconfirmed; '
+            'restore VPS access before assuming its workflow stopped. '
+            'Already accepted external actions are not undone.',
+          );
+        }
+        rethrow;
       }
-      if (enabled ||
-          revoke ||
-          grant['revoked'] == true ||
-          grant['expires_at_ms'] == null) {
-        await _requireExecutionControls(c);
-      }
-      if (activeCapsuleRootHex() != owner ||
-          (await registry.resolveRuntimeBinding(record.pluginId!)).packageId !=
-              record.id) {
-        throw StateError('Capsule or package changed during authorization');
-      }
-      await _remote.request(c, 'execution', {
-        'enabled': enabled,
-        'settings': settings,
-        'scope': approvedScope,
-        if (enabled || revoke) ...{
-          'expires_at_ms': expiresAtMs,
-          'expected_revision': expectedRevision,
-          'revoke': revoke,
-        },
-      });
       if (enabled) {
         await setReleasedWorkspaceEntries(
           record,

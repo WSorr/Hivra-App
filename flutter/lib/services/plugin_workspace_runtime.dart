@@ -1004,7 +1004,12 @@ class PluginWorkspaceRuntime {
     await _serialize(
       '$owner::${record.pluginId}::execution',
       () => _withWorkspaceLease(owner, record, () async {
-        final control = await _readExecution(record, owner, enforceHost: false);
+        final control = await _readExecution(
+          record,
+          owner,
+          enforceHost: false,
+          allowRemoteRecoveryBinding: !enabled,
+        );
         if (control == null ||
             control['executor'] != 'vps' ||
             control['executor_id'] != executorId ||

@@ -118,6 +118,22 @@ the device that installed the previous runner is not a server owner. Existing
 server-authorized SSH keys may request a new Start, while ordinary observation,
 Stop and removal remain bound to the current installation.
 
+Full revocation remains reachable when first workspace open fails, including
+SSH authentication or an unavailable VPS. The existing custody owner saves
+local revocation before contacting the remote executor, including a retained
+remote grant from a replaced package. Enabling execution still requires the
+current package binding. If remote stop is not acknowledged, the UI reports
+that uncertainty; local revocation cannot prove
+that an unreachable executor stopped. A later recovered handoff carries the
+revoked permission and retained opaque state, without renewing execution.
+
+Saved-key connections strictly require the saved SSH server fingerprint. During
+explicit root-authenticated installation/recovery, a new or changed fingerprint
+uses the existing owner identity-confirmation dialog before the root password
+is sent. Only successful root authentication permits saving the confirmed pin;
+rejection or failed authentication keeps the old binding. This updates the same
+connection and executor identity, not execution permission or package state.
+
 A replaced device may use the same authenticated `return` command with its
 original `handoff_id` to retrieve that Capsule/package's already sealed
 checkpoint. It cannot end or observe the replacement's active grant. The

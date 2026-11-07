@@ -180,7 +180,9 @@ class PluginWorkspaceRemoteService {
       onPasswordRequest: () => password,
       onVerifyHostKey: (_, fingerprint) async {
         final actual = utf8.decode(fingerprint);
-        if (peer != null) return actual == peer;
+        if (peer == actual) return true;
+        // Explicit root recovery may confirm a changed server identity.
+        // Saved-key access below remains pinned and never offers this choice.
         if (!await trustPeer(actual) || !stillOwned()) return false;
         peer = actual;
         return true;
@@ -193,7 +195,7 @@ class PluginWorkspaceRemoteService {
       }
       final c =
           previous != null
-              ? {...previous, 'selected': true}
+              ? {...previous, 'fingerprint': peer, 'selected': true}
               : <String, dynamic>{
                 'owner': owner,
                 'plugin_id': record.pluginId,
@@ -229,6 +231,7 @@ class PluginWorkspaceRemoteService {
         secretName: 'ssh_key',
         secretValue: pem,
       );
+      if (!stillOwned()) throw StateError('Capsule or package changed');
       await _save(c);
       final input = await _setupInput(c, record);
       if (!stillOwned()) throw StateError('Capsule or package changed');
