@@ -432,6 +432,7 @@ class CapsuleFileStore {
 
   Future<Set<String>> deletePluginStateFromAllCapsules(
     String pluginId, {
+    Future<void> Function(Set<String> owners)? beforeDelete,
     Set<String> preserveFileNames = const {},
     Set<String> preserveFilePrefixes = const {},
   }) async {
@@ -441,13 +442,22 @@ class CapsuleFileStore {
     final capsuleDirs =
         await root
             .list(followLinks: false)
-            .where((entry) => entry is Directory)
+            .where(
+              (entry) =>
+                  entry is Directory &&
+                  RegExp(r'^[0-9a-f]{64}$').hasMatch(
+                    entry.uri.pathSegments.where((s) => s.isNotEmpty).last,
+                  ),
+            )
             .cast<Directory>()
             .toList();
     for (final capsuleDir in capsuleDirs) {
-      final owner = capsuleDir.uri.pathSegments.where((s) => s.isNotEmpty).last;
-      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(owner)) continue;
-      owners.add(owner);
+      owners.add(capsuleDir.uri.pathSegments.where((s) => s.isNotEmpty).last);
+    }
+    // Capture the runtime-owned scope once. A failed native secret cleanup must
+    // leave every private file intact for the existing pending-removal retry.
+    await beforeDelete?.call(Set.unmodifiable(owners));
+    for (final capsuleDir in capsuleDirs) {
       final stateDir = await pluginStateDirectory(capsuleDir, pluginId);
       if (await stateDir.exists()) {
         if (preserveFileNames.isEmpty && preserveFilePrefixes.isEmpty) {

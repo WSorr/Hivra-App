@@ -29,6 +29,111 @@ import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  for (final deleteSavedData in [false, true]) {
+    test(
+      'failed secret cleanup preserves private data across retry (delete saved data: $deleteSavedData)',
+      () async {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        final dirs = UserVisibleDataDirectoryService(homeOverride: f.home.path);
+        var registry = WasmPluginRegistryService(dataDirs: dirs);
+        final plugins = await registry.pluginsDirectory(create: true);
+        await File(
+          '${plugins.path}/${f.registry.record.storedFileName}',
+        ).writeAsString('inactive fixture package');
+        await File(
+          '${plugins.path}/registry.json',
+        ).writeAsString(jsonEncode([f.registry.record.toJson()]));
+        final ownerDir = await f.files.capsuleDirForHex(f.owner, create: true);
+        final otherOwner = 'c' * 64;
+        await f.files.capsuleDirForHex(otherOwner, create: true);
+        final plugin = f.registry.record.pluginId!;
+        const pending = '{"private_shape":["unresolved-request"]}';
+        await f.files.writePluginState(
+          ownerDir,
+          plugin,
+          'workspace.v1.json',
+          pending,
+        );
+        await f.files.writePluginState(
+          ownerDir,
+          plugin,
+          'cache.json',
+          'keep on failure',
+        );
+        final ports = UnusedWorkspacePorts();
+        var failCleanup = true;
+        var cleanupCalls = 0;
+        ports.onDeletePlugin = (id, owners) async {
+          cleanupCalls++;
+          expect(id, plugin);
+          expect(owners, {f.owner, otherOwner});
+          expect(
+            await f.files.readPluginState(
+              ownerDir,
+              plugin,
+              'workspace.v1.json',
+            ),
+            pending,
+          );
+          expect(
+            await f.files.readPluginState(ownerDir, plugin, 'cache.json'),
+            'keep on failure',
+          );
+          expect((await registry.loadPlugins()).single.removalPending, isTrue);
+          expect(
+            (await registry.resolveRuntimeBinding(plugin)).source,
+            'host_fallback',
+          );
+          if (failCleanup) throw StateError('Native secret cleanup denied');
+        };
+        PluginRuntimeModule module() => PluginRuntimeModule(
+          registry: registry,
+          sourceCatalog: const WasmPluginSourceCatalogService(),
+          manualChecks: ports,
+          pluginHostApi: f.runtime().pluginHostApi,
+          attestationExchange: ports,
+          chatDelivery: ports,
+          passiveReceive: ports,
+          contactLabels: ports,
+          uiLog: ports,
+          fileStore: f.files,
+          secretVault: ports,
+          readActiveCapsuleRootHex: () => f.owner,
+        );
+        await expectLater(
+          module().removePlugin(
+            f.registry.record,
+            deleteSavedData: deleteSavedData,
+          ),
+          throwsStateError,
+        );
+        expect((await registry.loadPlugins()).single.removalPending, isTrue);
+        expect(
+          await f.files.readPluginState(ownerDir, plugin, 'cache.json'),
+          'keep on failure',
+        );
+        failCleanup = false;
+        registry = WasmPluginRegistryService(dataDirs: dirs);
+        await module().removePlugin(
+          (await registry.loadPlugins()).single,
+          deleteSavedData: deleteSavedData,
+        );
+        expect(cleanupCalls, 2);
+        expect(await registry.loadPlugins(), isEmpty);
+        expect(
+          await f.files.readPluginState(ownerDir, plugin, 'cache.json'),
+          isNull,
+        );
+        expect(
+          await f.files.readPluginState(ownerDir, plugin, 'workspace.v1.json'),
+          deleteSavedData ? isNull : pending,
+        );
+        expect(f.sends, 0);
+      },
+    );
+  }
+
   testWidgets(
     'failed first open keeps confirmed return reachable and never starts execution',
     (tester) async {
@@ -2558,6 +2663,18 @@ class UnusedWorkspacePorts
         CapsuleScopedSecretVault,
         UiEventLogService {
   Future<void> Function()? beforeResolve;
+  Future<void> Function(String, Set<String>)? onDeletePlugin;
+
+  @override
+  Future<void> deletePlugin(
+    String pluginId, {
+    required Set<String> capsuleHexes,
+  }) async {
+    final cleanup = onDeletePlugin;
+    if (cleanup == null) throw StateError('Unexpected secret deletion');
+    await cleanup(pluginId, capsuleHexes);
+  }
+
   @override
   Future<Map<String, String>> resolveReferences(
     String owner,
