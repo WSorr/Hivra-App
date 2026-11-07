@@ -86,48 +86,47 @@ class WasmPluginRegistryService {
   }
 
   Future<List<WasmPluginRecord>> loadPlugins() async {
-    return _serialized(() => _loadPluginsUnlocked(failClosed: true));
+    return _serialized(_loadPluginsUnlocked);
   }
 
-  Future<List<WasmPluginRecord>> _loadPluginsUnlocked({
-    bool failClosed = false,
-  }) async {
+  Future<List<WasmPluginRecord>> _loadPluginsUnlocked() async {
     final file = await _registryFile();
     if (!await file.exists()) {
       await _cleanupUnreferencedFiles(const <WasmPluginRecord>[]);
       return const <WasmPluginRecord>[];
     }
 
-    try {
-      final decoded = _parseJsonList(await file.readAsString());
-      if (decoded == null) {
-        throw const FormatException('Plugin registry must be a JSON list');
-      }
-      final records =
-          decoded
-              .map(_coerceJsonMap)
-              .whereType<Map<String, dynamic>>()
-              .map(WasmPluginRecord.fromJson)
-              .toList()
-            ..sort((a, b) => b.installedAtIso.compareTo(a.installedAtIso));
-      final deduped = _dedupeByPluginId(records);
-      final existingOnly = await _filterRecordsWithStoredFile(deduped);
-      if (existingOnly.length != records.length) {
-        final stale =
-            records
-                .where(
-                  (record) => !existingOnly.any((kept) => kept.id == record.id),
-                )
-                .toList();
-        await _writeRegistry(existingOnly);
-        await _deleteStoredFilesForRecords(stale);
-      }
-      await _cleanupUnreferencedFiles(existingOnly);
-      return existingOnly;
-    } catch (_) {
-      if (failClosed) rethrow;
-      return const <WasmPluginRecord>[];
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! List) {
+      throw const FormatException('Plugin registry must be a JSON list');
     }
+    final records = <WasmPluginRecord>[];
+    for (final entry in decoded) {
+      // Cleanup needs a complete inventory, never a silently salvaged subset.
+      if (entry is! Map<String, dynamic> ||
+          entry['id'] is! String ||
+          (entry['id'] as String).trim().isEmpty ||
+          entry['storedFileName'] is! String ||
+          !_isSafeStoredFileName(entry['storedFileName'] as String)) {
+        throw const FormatException('Invalid plugin registry entry');
+      }
+      records.add(WasmPluginRecord.fromJson(entry));
+    }
+    records.sort((a, b) => b.installedAtIso.compareTo(a.installedAtIso));
+    final deduped = _dedupeByPluginId(records);
+    final existingOnly = await _filterRecordsWithStoredFile(deduped);
+    if (existingOnly.length != records.length) {
+      final stale =
+          records
+              .where(
+                (record) => !existingOnly.any((kept) => kept.id == record.id),
+              )
+              .toList();
+      await _writeRegistry(existingOnly);
+      await _deleteStoredFilesForRecords(stale);
+    }
+    await _cleanupUnreferencedFiles(existingOnly);
+    return existingOnly;
   }
 
   Future<void> _writeRegistry(List<WasmPluginRecord> records) async {
@@ -165,7 +164,7 @@ class WasmPluginRegistryService {
     final storedFile = File('${pluginsDir.path}/$storedFileName');
     var registryCommitted = false;
     try {
-      final existing = await _loadPluginsUnlocked(failClosed: true);
+      final existing = await _loadPluginsUnlocked();
       await _atomicWrites.writeBytes(
         storedFile,
         await sourceFile.readAsBytes(),
@@ -243,7 +242,7 @@ class WasmPluginRegistryService {
     Future<void> Function()? cleanup,
   }) async {
     final found = await _serialized(() async {
-      final records = await _loadPluginsUnlocked(failClosed: true);
+      final records = await _loadPluginsUnlocked();
       final selected = records.where((record) => record.id == id);
       if (selected.isEmpty) return false;
       if (!selected.single.removalPending) {
@@ -274,7 +273,7 @@ class WasmPluginRegistryService {
     Map<String, String> packages,
     Future<T> Function() restore,
   ) => _serialized(() async {
-    final original = await _loadPluginsUnlocked(failClosed: true);
+    final original = await _loadPluginsUnlocked();
     final dir = await pluginsDirectory();
     final stage = await Directory.systemTemp.createTemp(
       'hivra-backup-packages-',
@@ -337,7 +336,7 @@ class WasmPluginRegistryService {
   });
 
   Future<void> _removePluginUnlocked(String id) async {
-    final records = await _loadPluginsUnlocked(failClosed: true);
+    final records = await _loadPluginsUnlocked();
     final kept = <WasmPluginRecord>[];
     final removed = <WasmPluginRecord>[];
 
@@ -502,17 +501,6 @@ class WasmPluginRegistryService {
         release.complete();
       }
     })();
-  }
-
-  List<dynamic>? _parseJsonList(String rawJson) {
-    final decoded = jsonDecode(rawJson);
-    return decoded is List ? decoded : null;
-  }
-
-  Map<String, dynamic>? _coerceJsonMap(Object? value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) return Map<String, dynamic>.from(value);
-    return null;
   }
 
   Future<List<WasmPluginRecord>> _filterRecordsWithStoredFile(

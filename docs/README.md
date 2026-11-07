@@ -82,7 +82,7 @@ release row to make it current.
 | --- | --- |
 | Transport delivery and receipts | [Delivery lifecycle](architecture/transport-delivery-lifecycle.md) |
 | External effects | [Effect lifecycle](architecture/external-effect-lifecycle.md) |
-| Plugin installation, replacement and restart-safe removal cleanup | [Package lifecycle](architecture/plugin-package-lifecycle.md) |
+| Plugin installation, replacement, fail-closed registry cleanup and restart-safe removal | [Package lifecycle](architecture/plugin-package-lifecycle.md) |
 | Unified protocol-2 operation catalog, owner connections, optional storage and workspace boundary; specialized v1 contracts and outstanding migration | [Plugin Host API](plugins/plugin_host_api_v1.md) |
 | Capsule-scoped secrets, first connection, native custody and removal failure/retry | [Secret lifecycle](architecture/capsule-scoped-secret-lifecycle.md) |
 | Capsule AI Runtime, replaceable compute boundary, disclosure and session unlock | [AI runtime](architecture/capsule-ai-runtime.md) |

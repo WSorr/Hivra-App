@@ -95,7 +95,7 @@ void main() {
   });
 
   test(
-    'loadPlugins ignores malformed entries and sorts by installedAt desc',
+    'loadPlugins preserves legacy records and sorts by installedAt desc',
     () async {
       final pluginsDir = await service.pluginsDirectory(create: true);
       await File(
@@ -115,7 +115,6 @@ void main() {
             'sizeBytes': 1,
             'installedAtIso': '2026-03-29T10:00:00Z',
           },
-          'bad-entry',
           {
             'id': 'new',
             'displayName': 'New',
@@ -141,6 +140,95 @@ void main() {
 
     await expectLater(service.loadPlugins(), throwsA(isA<FormatException>()));
   });
+
+  test(
+    'incomplete registry entries never admit execution or destructive cleanup',
+    () async {
+      final source = await _createPluginPackage(tempDocsDir, version: '1.0.0');
+      final record = await service.installPluginFromFile(source);
+      final plugins = await service.pluginsDirectory();
+      final registry = File('${plugins.path}/registry.json');
+      final validRegistry = await registry.readAsString();
+      final stored = File('${plugins.path}/${record.storedFileName}');
+      final packageBytes = await stored.readAsBytes();
+      final unaccounted = File('${plugins.path}/unaccounted.zip');
+      await unaccounted.writeAsBytes(packageBytes, flush: true);
+      var cleanups = 0;
+
+      for (final invalid in <Object?>[
+        null,
+        'bad-entry',
+        7,
+        <Object?>[],
+        <String, Object?>{},
+        {'id': 'missing-file'},
+        {'storedFileName': 'unaccounted.zip'},
+        {'id': ' ', 'storedFileName': 'unaccounted.zip'},
+        {'id': 7, 'storedFileName': 'unaccounted.zip'},
+        {'id': 'missing-name', 'storedFileName': '', 'removalPending': true},
+        {
+          ...record.toJson(),
+          'id': 'unsafe-duplicate',
+          'installedAtIso': '2000-01-01T00:00:00Z',
+          'storedFileName': '../unaccounted.zip',
+        },
+      ]) {
+        // A valid neighbor must not make a partial inventory safe for cleanup.
+        for (final entries in [
+          [invalid],
+          [record.toJson(), invalid],
+        ]) {
+          final damaged = jsonEncode(entries);
+          await registry.writeAsString(damaged, flush: true);
+          final reopened = WasmPluginRegistryService(
+            dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+          );
+          for (final action in <Future<Object?> Function()>[
+            () => reopened.loadPlugins(),
+            () => reopened.resolveRuntimeBinding(record.pluginId!),
+            () => reopened.installPluginFromFile(source),
+            () => reopened.removePlugin(
+              record.id,
+              cleanup: () async {
+                cleanups++;
+              },
+            ),
+            () => reopened.withBackupPackages(
+              {record.pluginId!: base64Encode(packageBytes)},
+              () async => fail('Corrupt inventory must block legacy recovery'),
+            ),
+          ]) {
+            Object? failure;
+            try {
+              await action();
+            } catch (error) {
+              failure = error;
+            }
+            expect(await registry.readAsString(), damaged);
+            expect(
+              await stored.exists(),
+              isTrue,
+              reason:
+                  'A corrupt inventory must not delete an installed package',
+            );
+            expect(await stored.readAsBytes(), packageBytes);
+            expect(await unaccounted.readAsBytes(), packageBytes);
+            expect(cleanups, 0);
+            expect(failure, isA<FormatException>());
+          }
+        }
+      }
+
+      // Repairing the inventory releases the same queue; no reset or fallback.
+      await registry.writeAsString(validRegistry, flush: true);
+      expect(
+        (await service.resolveRuntimeBinding(record.pluginId!)).packageId,
+        record.id,
+      );
+      expect(await stored.readAsBytes(), packageBytes);
+      expect(await unaccounted.exists(), isFalse);
+    },
+  );
 
   test(
     'loadPlugins rejects unsafe paths and symlinks without deleting targets',
