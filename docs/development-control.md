@@ -192,30 +192,31 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Configure the existing Cloudflare Workers AI preset with Account ID and token,
-without making the owner assemble a URL. The existing connection configuration derives the
-same official account endpoint; the existing settings action, secure storage,
-provider session and inference dispatch remain the only owners. Do not persist
-a second account record or migrate saved endpoints. A blank Account ID retains
-the saved account; invalid input fails before endpoint or credential writes.
+Preserve installed package files when the registry contains an incomplete or
+malformed entry. The existing registry owner must validate the complete inventory
+before repair, orphan cleanup, runtime binding or a package mutation. Silently
+salvaging valid entries cannot establish which files are unowned; a second
+partial-inventory execution path is unnecessary. Reject the damaged inventory
+without rewriting it or deleting files. Keep normal legacy-record loading,
+duplicate-package repair, missing-file repair and orphan cleanup for valid
+inventories. Do not add a registry, recovery service or automatic reset.
 
-Qualification requires focused input/save/reopen tests and exact Mac/Samsung
-form acceptance, including an existing saved key and model. The earlier
-`owner_grant_reuse_20261107` acceptance record qualifies Moltbook 0.8.5 Connect,
-AI preparation without sending and return on the recorded 6e35c8d Capsule
-artifacts; it does not qualify this changed form or the later secret-first
-removal repair. No new Capsule, publication, trading Start or VPS mutation is
-part of this outcome. Integrate serially through required PR gates only with
-owner approval; a clean `main` does not claim all v1 runtime debt is accepted.
+Qualification requires real-filesystem faults across load, binding, install,
+remove and legacy archive recovery, preservation across reopen, and recovery
+through the same queue after the inventory is repaired. Exact Mac/Samsung smoke
+must keep the existing packages, Capsule and grants usable; do not inject
+corruption into owner data. Native corruption/recovery and destructive removal
+remain outside that smoke. No new Capsule, publication, trading Start or VPS
+mutation is part of this outcome.
 
-The import-form repair is accepted on exact `6e35c8d` Mac/Samsung artifacts:
-long JSON, editor scrolling, Cancel/reopen and existing-card Import passed;
-Samsung's real keyboard left both footer actions accessible. No new Capsule,
-card duplicate, dependency or execution path was added. All three Mac Ledgers,
-saved cards, installed registry and execution grants retained their digests.
-The artifact-bound result is `card_import_layout_20261107` in the existing
-acceptance record below; Android landscape and larger text have widget-test
-evidence, not a physical-device claim.
+The import form, Cloudflare Account ID form and bounded owner-connection reuse
+journeys are accepted on their recorded artifacts. The existing acceptance
+record below owns the results: `card_import_layout_20261107`,
+`cloudflare_account_form_20261107` and
+`owner_grant_reuse_20261107.current_main_qualification`. The last covers cold
+Mac/Samsung launch, saved access, repeated Connect, AI preparation without
+sending and return. These results do not qualify destructive removal or Jack's
+remote/trading journey; a clean `main` does not close those debts.
 
 ## Runtime Work Still Awaiting Acceptance
 
@@ -228,7 +229,6 @@ work.
 | --- | --- |
 | Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
-| Reuse owner-granted connections | Existing grants cover Connect, inference and subsequent requests; cancelled/denied access and package/grant changes are checked. Exact 6e35c8d Mac/Samsung artifacts with Moltbook 0.8.5 passed repeated Connect, AI preparation without sending and return after owner configuration; see `owner_grant_reuse_20261107`. Later changed runtime bytes require their own qualification. |
 | Recover after another device replaces the VPS installation | Authenticated return restores the sealed opaque checkpoint without new authority; recovery remains visible after failed first open. Finish exact Mac/Samsung and matching-runner recovery acceptance, including an unreachable VPS. |
 | Start the selected package/settings on the chosen VPS | One setup/custody owner replaces the managed process independently of the installing device; stale replay and failed-Start revocation have source/real-WASM evidence. Device replacement and failure recovery need matching-artifact native evidence. |
 | Show Jack's actual completed trade and continue | Package-owned last-trade locator, fill accounting and pre-dispatch recovery use the common API. Live closure/reentry and restart during a managed trade remain open; synthetic closure is not TP acceptance. |
