@@ -245,7 +245,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
           _baseUrlController.text.trim().isNotEmpty) {
         await widget.chatService.saveProviderBaseUrl(
           _provider.id,
-          _baseUrlController.text,
+          _provider == InferenceConnection.cloudflareWorkersAi
+              ? InferenceConnection.cloudflareAccountBaseUrl(
+                _baseUrlController.text,
+              )
+              : _baseUrlController.text,
         );
       }
       if (_apiKeyController.text.trim().isNotEmpty) {
@@ -561,6 +565,7 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             DropdownButtonFormField<InferenceConnection>(
               key: ValueKey<String>('capsule_analyst_provider_${_provider.id}'),
               initialValue: _provider,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Inference provider',
                 border: OutlineInputBorder(),
@@ -569,7 +574,11 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
                   .map(
                     (provider) => DropdownMenuItem<InferenceConnection>(
                       value: provider,
-                      child: Text(provider.label),
+                      child: Text(
+                        provider.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(growable: false),
@@ -621,10 +630,18 @@ class _AiDoctorChatCardState extends State<AiDoctorChatCard> {
             if (_provider.requiresBaseUrl && !_provider.isCustom) ...[
               TextField(
                 controller: _baseUrlController,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
-                  labelText: 'Inference base URL',
+                  labelText:
+                      _provider == InferenceConnection.cloudflareWorkersAi
+                          ? 'Cloudflare Account ID'
+                          : 'Inference base URL',
                   helperText:
-                      'Leave blank to keep the saved endpoint. This preset appends /v1/chat/completions.',
+                      _provider == InferenceConnection.cloudflareWorkersAi
+                          ? 'Copy Account ID from your Cloudflare dashboard. Leave blank to keep the saved account.'
+                          : 'Leave blank to keep the saved endpoint. This preset appends /v1/chat/completions.',
+                  helperMaxLines: 3,
                   border: const OutlineInputBorder(),
                 ),
               ),

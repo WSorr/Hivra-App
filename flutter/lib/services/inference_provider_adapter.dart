@@ -79,6 +79,16 @@ class InferenceConnection {
     this.requiresApiKey = true,
   });
 
+  static String cloudflareAccountBaseUrl(String accountId) {
+    final normalized = accountId.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(normalized)) {
+      throw ArgumentError(
+        'Cloudflare Account ID must contain 32 hexadecimal characters.',
+      );
+    }
+    return 'https://api.cloudflare.com/client/v4/accounts/$normalized/ai';
+  }
+
   static Uri validateBaseUrl(String value) {
     final uri = Uri.tryParse(value.trim());
     if (uri == null ||
