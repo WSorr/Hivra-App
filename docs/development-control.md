@@ -192,29 +192,37 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Keep long public-card JSON from covering the import/cancel actions on narrow
-or keyboard-reduced screens. `SettingsScreen` retains the existing dialog and
-delegates import to `SettingsService` / `CapsuleAddressService`; card validation,
-permissions and storage do not change.
+Integrate the validated 1.x work through one reviewed branch, then close the
+remaining v1 journeys in priority order. Keep one checkout writer and one PR
+under integration at a time; re-read the remote base and exact head before
+merging. A clean `main` is the integration baseline, not a claim that every
+runtime debt is accepted.
 
-Use Flutter 3.47.4's existing scrollable `AlertDialog` body and bounded multiline
-editor. Paste/Scan QR belong beside input; Cancel/Import remain in the footer.
-No new screen, widget class, state owner, dependency or storage is needed.
-Source checks cover narrow/wide layouts, Android landscape, larger text,
-keyboard insets, scrolling, validation errors and submission. Exact Mac and
-Samsung smoke reuses existing Capsules without publication, trading Start or
-VPS changes; no new test entities are authorized.
+First finish owner-granted connection reuse and inference on Mac/Samsung with
+the existing packages and Capsules. Then qualify device replacement and Start
+recovery with matching runtime artifacts when VPS access and owner authority
+are available. Jack's actual completed-trade journey needs separate live
+evidence; do not substitute placement receipts or synthetic fills. Retained
+design-only work does not become a v1 implementation requirement.
+
+The import-form repair is accepted on exact `6e35c8d` Mac/Samsung artifacts:
+long JSON, editor scrolling, Cancel/reopen and existing-card Import passed;
+Samsung's real keyboard left both footer actions accessible. No new Capsule,
+card duplicate, dependency or execution path was added. All three Mac Ledgers,
+saved cards, installed registry and execution grants retained their digests.
+The artifact-bound result is `card_import_layout_20261107` in the existing
+acceptance record below; Android landscape and larger text have widget-test
+evidence, not a physical-device claim.
 
 ## Runtime Work Still Awaiting Acceptance
 
-The import-form repair does not close prior runtime work. The common API
-contract owns behavior; the existing acceptance record owns artifact-bound
-results. Source tests, fixtures and earlier packaged runs do not qualify
-changed bytes.
+The common API contract owns behavior; the existing acceptance record owns
+artifact-bound results. Source tests, fixtures and earlier packaged runs do not
+qualify changed bytes. Accepted bounded journeys do not close unrelated runtime
+work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
-| Keep import actions accessible with long public-card JSON | Existing dialog/body/editor layout is repaired; exact Mac/Samsung acceptance of changed bytes remains open. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Reuse owner-granted connections | Existing grants cover Connect, inference and subsequent requests; cancelled/denied access and package/grant changes are checked. Complete exact Mac/Samsung acceptance of credential reuse and inference remains required. |
 | Recover after another device replaces the VPS installation | Authenticated return restores the sealed opaque checkpoint without new authority; recovery remains visible after failed first open. Finish exact Mac/Samsung and matching-runner recovery acceptance, including an unreachable VPS. |
