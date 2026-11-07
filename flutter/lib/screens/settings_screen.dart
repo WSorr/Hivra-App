@@ -169,6 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             builder:
                 (context, setDialogState) => AlertDialog(
                   title: const Text('Import peer capsule card'),
+                  scrollable: true,
                   content: SizedBox(
                     width: 560,
                     child: Column(
@@ -179,10 +180,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           'Scan the other capsule QR code or paste its shared card.',
                         ),
                         const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            TextButton(
+                              onPressed: () async {
+                                final clipboard = await Clipboard.getData(
+                                  'text/plain',
+                                );
+                                controller.text = clipboard?.text?.trim() ?? '';
+                                setDialogState(() => errorText = null);
+                              },
+                              child: const Text('Paste'),
+                            ),
+                            TextButton.icon(
+                              onPressed: () async {
+                                final scanned = await Navigator.of(
+                                  dialogContext,
+                                ).push<String>(
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) =>
+                                            const _CapsuleCardScannerScreen(),
+                                  ),
+                                );
+                                if (scanned == null || !dialogContext.mounted) {
+                                  return;
+                                }
+                                controller.text = scanned;
+                                setDialogState(() => errorText = null);
+                              },
+                              icon: const Icon(Icons.qr_code_scanner),
+                              label: const Text('Scan QR'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
                         TextField(
                           controller: controller,
-                          minLines: 8,
-                          maxLines: 16,
+                          minLines: 4,
+                          maxLines: 8,
                           decoration: InputDecoration(
                             border: const OutlineInputBorder(),
                             hintText: '{ "version": 1, ... }',
@@ -196,30 +233,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     TextButton(
                       onPressed: () => Navigator.of(dialogContext).pop(),
                       child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () async {
-                        final clipboard = await Clipboard.getData('text/plain');
-                        controller.text = clipboard?.text?.trim() ?? '';
-                        setDialogState(() => errorText = null);
-                      },
-                      child: const Text('Paste'),
-                    ),
-                    TextButton.icon(
-                      onPressed: () async {
-                        final scanned = await Navigator.of(
-                          dialogContext,
-                        ).push<String>(
-                          MaterialPageRoute(
-                            builder: (_) => const _CapsuleCardScannerScreen(),
-                          ),
-                        );
-                        if (scanned == null || !dialogContext.mounted) return;
-                        controller.text = scanned;
-                        setDialogState(() => errorText = null);
-                      },
-                      icon: const Icon(Icons.qr_code_scanner),
-                      label: const Text('Scan QR'),
                     ),
                     FilledButton(
                       onPressed: () async {

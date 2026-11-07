@@ -60,43 +60,11 @@ Future<void> main(List<String> args) async {
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(config['executor_id'])) {
       throw const FormatException('Invalid runner binding');
     }
-    final dirs = UserVisibleDataDirectoryService(
-      runtimeRootOverride: root.path,
+    final registry = WasmPluginRegistryService(
+      dataDirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
     );
-    final registry = WasmPluginRegistryService(dataDirs: dirs);
     phase = 'native_runtime';
-    final wasm = WasmPluginRuntimeService(
-      invokeJson: HivraBindings.invokeInstalledWasmJson,
-    );
-    final runtime = PluginWorkspaceRuntime(
-      registry: registry,
-      pluginHostApi: PluginHostApiService(
-        handlers: [],
-        resolveRuntimeBinding: registry.resolveRuntimeBinding,
-        resolveRuntimeInvoke:
-            (request, binding) =>
-                wasm.invoke(request: request, binding: binding),
-      ),
-      fileStore: CapsuleFileStore(dirs: dirs),
-      readActiveCapsuleRootHex: () => owner,
-      executionHost: 'vps',
-      executionIdentity: config['executor_id'] as String,
-      readCredentials: ({required owner, required pluginId}) async {
-        final stored = await _readPrivateJson(
-          File('${root.path}/credentials.json'),
-        );
-        if (stored['owner'] != owner ||
-            stored['plugin_id'] != pluginId ||
-            stored['credentials'] is! Map ||
-            stored.length != 3) {
-          throw StateError('Credentials do not belong to this workspace');
-        }
-        return jsonEncode(stored['credentials']);
-      },
-
-      // Credential provisioning is a separate host operation. A package
-      // action cannot replace the server's host-only credential binding.
-    );
+    final runtime = WorkspaceRunner.runtimeFor(root, config, registry);
     final runner = WorkspaceRunner(
       root: root,
       runtime: runtime,
@@ -160,14 +128,59 @@ class WorkspaceRunner {
     required this.binding,
   });
 
+  static PluginWorkspaceRuntime runtimeFor(
+    Directory root,
+    Map<String, dynamic> config,
+    WasmPluginRegistryService registry, {
+    bool scheduleTimers = true,
+  }) {
+    final dirs = UserVisibleDataDirectoryService(
+      runtimeRootOverride: root.path,
+    );
+    final wasm = WasmPluginRuntimeService(
+      invokeJson: HivraBindings.invokeInstalledWasmJson,
+    );
+    return PluginWorkspaceRuntime(
+      registry: registry,
+      pluginHostApi: PluginHostApiService(
+        handlers: [],
+        resolveRuntimeBinding: registry.resolveRuntimeBinding,
+        resolveRuntimeInvoke:
+            (request, binding) =>
+                wasm.invoke(request: request, binding: binding),
+      ),
+      fileStore: CapsuleFileStore(dirs: dirs),
+      readActiveCapsuleRootHex: () => config['owner'] as String,
+      scheduleTimers: scheduleTimers,
+      executionHost: 'vps',
+      executionIdentity: config['executor_id'] as String,
+      readCredentials: ({required owner, required pluginId}) async {
+        final stored = await _readPrivateJson(
+          File('${root.path}/credentials.json'),
+        );
+        if (stored['owner'] != owner ||
+            stored['plugin_id'] != pluginId ||
+            stored['credentials'] is! Map ||
+            stored.length != 3) {
+          throw StateError('Credentials do not belong to this workspace');
+        }
+        return jsonEncode(stored['credentials']);
+      },
+
+      // Credential provisioning is a separate host operation. A package
+      // action cannot replace the server's host-only credential binding.
+    );
+  }
+
   /// Installation enters the existing Registry; transport cannot manufacture
-  /// capabilities or write a competing package registry. No grant is created.
+  /// capabilities or write a competing package registry. An optional owner Start
+  /// uses the same grant/adoption owner after ending the previous installation.
   static Future<Map<String, dynamic>> setup(
     Directory root,
     Map<String, dynamic> input,
   ) async {
     if (!root.isAbsolute ||
-        input.length != 6 ||
+        input.length != (input.containsKey('checkpoint') ? 7 : 6) ||
         !input.keys.toSet().containsAll(const {
           'owner',
           'plugin_id',
@@ -186,6 +199,7 @@ class WorkspaceRunner {
         input['package'] is! String ||
         (input['package'] as String).length > 5592408 ||
         (input['credentials'] != null && input['credentials'] is! Map) ||
+        (input.containsKey('checkpoint') && input['checkpoint'] is! Map) ||
         await FileSystemEntity.type(root.path, followLinks: false) !=
             FileSystemEntityType.directory ||
         (await root.stat()).mode & 0x3f != 0) {
@@ -220,47 +234,77 @@ class WorkspaceRunner {
       }
       lease = await File(lockPath).open(mode: FileMode.append);
       await lease.lock(FileLock.exclusive);
+      final registry = WasmPluginRegistryService(
+        dataDirs: UserVisibleDataDirectoryService(
+          runtimeRootOverride: root.path,
+        ),
+      );
+      final checkpoint =
+          input['checkpoint'] == null
+              ? null
+              : Map<String, dynamic>.from(input['checkpoint'] as Map);
       final configFile = File('${root.path}/runner.json');
       Map<String, dynamic>? previous;
       bool replacing = false;
       if (await FileSystemEntity.type(configFile.path, followLinks: false) !=
           FileSystemEntityType.notFound) {
         previous = await _readPrivateJson(configFile);
-        if (previous.length != 5 ||
-            previous['package_id'] is! String ||
+        if (previous.length != 5 || previous['package_id'] is! String) {
+          throw StateError('Invalid previous installation');
+        }
+        final priorRecords = await registry.loadPlugins();
+        final priorRecord = priorRecords.singleWhere(
+          (r) => r.id == previous!['package_id'],
+        );
+        final priorRuntime = runtimeFor(
+          root,
+          previous,
+          registry,
+          scheduleTimers: false,
+        );
+        final priorGrant = await priorRuntime.readWorkspaceExecution(
+          priorRecord,
+          enforceHost: false,
+          allowRemoteRecoveryBinding: true,
+        );
+        if (checkpoint != null &&
+            priorGrant?['handoff_id'] ==
+                checkpoint['execution']?['handoff_id']) {
+          // Lost setup acknowledgement: validate the original frozen request,
+          // never restore stale source state or execute Start twice.
+          await priorRuntime.adoptWorkspaceFromLocal(
+            record: priorRecord,
+            checkpoint: checkpoint,
+          );
+          return previous;
+        }
+        replacing =
             previous['owner'] != input['owner'] ||
             previous['plugin_id'] != input['plugin_id'] ||
-            previous['executor_id'] != input['executor_id']) {
-          throw StateError('Installation already belongs to another binding');
-        }
-        replacing = previous['package_digest'] != input['package_digest'];
-        if (replacing) {
-          final files = CapsuleFileStore(
-            dirs: UserVisibleDataDirectoryService(
-              runtimeRootOverride: root.path,
-            ),
-          );
-          final raw = await files.readPluginState(
-            await files.capsuleDirForHex(input['owner'] as String),
-            input['plugin_id'] as String,
-            'workspace-execution.v1.json',
-          );
-          final grant =
-              raw == null || utf8.encode(raw).length > 8192
-                  ? null
-                  : jsonDecode(raw);
+            previous['executor_id'] != input['executor_id'] ||
+            previous['package_digest'] != input['package_digest'];
+        final rootInstall =
+            Platform.environment['HIVRA_WORKSPACE_EXECUTOR_ID'] == null;
+        if ((checkpoint != null || (rootInstall && replacing)) &&
+            priorGrant != null) {
+          // The system service is already stopped and drained by the installer.
+          // End authority through its existing owner, preserving opaque evidence.
+          await priorRuntime.returnWorkspaceToLocal(priorRecord);
+        } else if (replacing) {
           PluginWorkspaceRuntime.validateInactiveWorkspaceGrant(
-            grant,
-            input['owner'] as String,
-            input['plugin_id'] as String,
+            priorGrant,
+            previous['owner'] as String,
+            previous['plugin_id'] as String,
           );
+        }
+        if (replacing && (checkpoint != null || rootInstall)) {
+          for (final r in priorRecords.where(
+            (r) => r.pluginId != input['plugin_id'],
+          )) {
+            await registry.removePlugin(r.id);
+          }
         }
       }
-      final registry = WasmPluginRegistryService(
-        dataDirs: UserVisibleDataDirectoryService(
-          runtimeRootOverride: root.path,
-        ),
-      );
       final records = await registry.loadPlugins();
       if (records.any((r) => r.pluginId != input['plugin_id'])) {
         throw StateError('One workspace per installation');
@@ -340,7 +384,9 @@ class WorkspaceRunner {
           'credentials': credentials,
         });
       }
-      if (replacing) {
+      if (replacing &&
+          previous!['owner'] == input['owner'] &&
+          previous['plugin_id'] == input['plugin_id']) {
         final files = CapsuleFileStore(
           dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
         );
@@ -363,6 +409,18 @@ class WorkspaceRunner {
         );
       }
       await _writePrivateJson(configFile, binding);
+      if (checkpoint != null) {
+        final runtime = runtimeFor(
+          root,
+          binding,
+          registry,
+          scheduleTimers: false,
+        );
+        await runtime.adoptWorkspaceFromLocal(
+          record: record,
+          checkpoint: checkpoint,
+        );
+      }
       return binding;
     } finally {
       try {
@@ -487,12 +545,15 @@ class WorkspaceRunner {
   }
 
   Future<Map<String, dynamic>> dispatch(Map<String, dynamic> request) async {
-    if (_closing ||
-        request['owner'] != binding['owner'] ||
-        request['plugin_id'] != binding['plugin_id'] ||
-        request['package_id'] != binding['package_id'] ||
-        request['package_digest'] != binding['package_digest'] ||
-        request['executor_id'] != binding['executor_id']) {
+    if (_closing) throw StateError('Workspace runner is closing');
+    final current =
+        request['owner'] == binding['owner'] &&
+        request['plugin_id'] == binding['plugin_id'] &&
+        request['package_id'] == binding['package_id'] &&
+        request['package_digest'] == binding['package_digest'] &&
+        request['executor_id'] == binding['executor_id'];
+    final recovery = !current && request['command'] == 'return';
+    if (!current && !recovery) {
       throw StateError('Workspace request binding mismatch');
     }
     final record = await _record();
@@ -536,14 +597,52 @@ class WorkspaceRunner {
           settings: Map<String, dynamic>.from(request['settings'] as Map),
         );
       case 'return':
-        if (request.length != 6) throw const FormatException();
-        final checkpoint = await runtime.returnWorkspaceToLocal(record);
+        if (request.length != (request.containsKey('handoff_id') ? 7 : 6) ||
+            (request.containsKey('handoff_id') &&
+                (request['handoff_id'] is! String ||
+                    !RegExp(
+                      r'^[0-9a-f]{64}$',
+                    ).hasMatch(request['handoff_id'])))) {
+          throw const FormatException();
+        }
+        // SSH binds the device key to executor_id. A replaced device may
+        // retrieve only its matching sealed handoff, not control the new grant.
+        if (recovery &&
+            (!['owner', 'executor_id', 'package_digest', 'handoff_id'].every(
+                  (key) =>
+                      request[key] is String &&
+                      RegExp(r'^[0-9a-f]{64}$').hasMatch(request[key]),
+                ) ||
+                request['package_id'] is! String ||
+                request['plugin_id'] != record.pluginId)) {
+          throw const FormatException('Invalid handoff return');
+        }
+        final returnedBinding =
+            recovery
+                ? (Map<String, dynamic>.from(request)
+                  ..remove('command')
+                  ..remove('handoff_id'))
+                : binding;
+        final returning =
+            recovery
+                ? runtimeFor(
+                  root,
+                  returnedBinding,
+                  registry,
+                  scheduleTimers: false,
+                )
+                : runtime;
+        final checkpoint = await returning.returnWorkspaceToLocal(
+          record,
+          handoffId: request['handoff_id'] as String?,
+          requireSealed: recovery,
+        );
         return {
-          'binding': binding,
+          'binding': returnedBinding,
           'runner': {
             'state': 'detached',
             'started_at_ms': _startedAt,
-            'execution_controls': 3,
+            'execution_controls': 4,
           },
           'checkpoint': checkpoint,
         };
@@ -596,7 +695,7 @@ class WorkspaceRunner {
         }
         return {
           'binding': binding,
-          'runner': {'state': 'detached', 'execution_controls': 3},
+          'runner': {'state': 'detached', 'execution_controls': 4},
         };
       default:
         throw const FormatException('Unsupported workspace command');
@@ -606,7 +705,7 @@ class WorkspaceRunner {
       'runner': {
         'state': 'running',
         'started_at_ms': _startedAt,
-        'execution_controls': 3,
+        'execution_controls': 4,
       },
       'view': view,
       if (observationError != null) 'observation_error': observationError,

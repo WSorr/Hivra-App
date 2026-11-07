@@ -368,12 +368,24 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   Future<CapsuleInferenceResultV1> infer(CapsuleInferenceRequestV1 request) =>
       _enqueue(request);
 
-  /// Package authorization is checked by its canonical owner after queueing,
-  /// immediately before the existing inference transport is admitted.
+  /// The workspace checks its grant before entering this port. Reuse/open the
+  /// saved AI connection here, without a separate Analyst visit, then recheck
+  /// package authorization after queueing at the existing transport boundary.
   Future<CapsuleInferenceResultV1> inferAuthorized(
     CapsuleInferenceRequestV1 request, {
     required Future<void> Function() authorize,
-  }) => _enqueue(request, authorize: authorize);
+  }) async {
+    if (!_credentialStore.isPreferredProviderUnlocked) {
+      _validateRequest(request);
+      _requireMatchingCapsule(request.capsuleRootHex, stale: false);
+      if (request.providerPolicy == CapsuleInferenceProviderPolicyV1.explicit) {
+        await unlockProviderSession(request.providerId!);
+      } else {
+        await unlockPreferredProviderSession();
+      }
+    }
+    return _enqueue(request, authorize: authorize);
+  }
 
   Future<CapsuleInferenceResultV1> _enqueue(
     CapsuleInferenceRequestV1 request, {

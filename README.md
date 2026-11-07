@@ -124,13 +124,16 @@ explicitly approved.
   - Nostr: secp256k1
   - Other adapters (for example Matrix): ed25519
 - UI-facing capsule identity should represent the capsule root identity layer, not a transport-specific public key.
-- Recovery requires only the seed phrase and derivation version compatibility.
+- The seed phrase and compatible derivation restore identity. Restoring signed
+  history and relationships requires the authenticated Ledger backup as well.
 
 ## Capsule Lifecycle in UI
 
 ### First Launch States
 
-- **No capsules**: the user creates the first capsule (`Proto` or `Genesis`).
+- **Verified empty storage**: create the first Capsule (`Proto` or `Genesis`)
+  or explicitly recover identity/history. Unavailable/corrupt storage offers
+  retry/recovery and must not be treated as a new installation.
 - **Existing capsules**: the app opens the capsule selection screen.
 
 ### Multi-Capsule Management

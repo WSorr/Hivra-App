@@ -1,31 +1,41 @@
 # Moltbook Release Smoke Checklist
 
 Qualify the exact guarded artifact on the maintained macOS and Android runtimes.
-The current 0.8.0 migration has synthetic service evidence only. A local ZIP,
-unit suite, provider acceptance or development runner is not packaged acceptance.
+Current versions and completed native stages belong to
+`../development-control.md`. A local ZIP, unit suite, provider acceptance or
+development runner is not packaged acceptance.
 If live service/Keychain access is unavailable, record N/A with the reason under
 the existing release policy; do not describe that as live journey acceptance.
 
-Before manual smoke, ask `Hands or automatic?` and use an isolated test Capsule.
+Before manual smoke, ask `Hands or automatic?` and use the owner-approved
+Capsule/account. Reuse the existing context when selected; this checklist does
+not authorize creating extra test Capsules or backups.
 Live publication is a separate explicitly authorized stage. No live publication,
 commit, release or VPS mutation is authorized by the migration checks.
 
 ## Read And Prepare Journey
 
 - [ ] Record source, app/runner/package digests and runtime/device.
-- [ ] Install Moltbook 0.8.0 through normal package admission and open its common
+- [ ] Install the selected Moltbook release through normal package admission and open its common
       workspace. It must not expose a legacy product screen or old named methods.
 - [ ] Connect an existing Capsule-scoped Keychain token through owner permissions.
       Complete native authentication as required by the OS; never enter a system
       password into an application field. Select the Analyst connection normally.
 - [ ] Confirm network/inference destinations and permission duration. Start with
       `read_only`, or use Prepare without sending. No POST may reach Moltbook.
+- [ ] Repeat Connect with active matching access: no second Allow or protected
+      vault read, no grant revision or schedule restart. Plugin permissions
+      remains available for an intentional connection/terms change.
 - [ ] Observe publication and comment history from the actual account; close,
       reopen and restart the app, confirming fresh service reads each time.
 - [ ] Change repository/community/editorial settings, issue the owner grant and
       restart. Owner settings must survive in that grant without product history.
 - [ ] Prepare content with the Analyst-selected provider/model; inspect provenance
       and source/conversation context. AI/service failures remain visible.
+- [ ] Repeat after app restart without opening Analyst first: the same saved AI
+      connection opens under the plugin grant, with native authentication only
+      as required. Denied/expired access opens no credential port; cancelling
+      native authentication sends no inference request.
 - [ ] Confirm that only the existing permission record is written for this
       stateless package. No draft, history, publication journal or feed checkpoint.
 - [ ] Start using the same grant without a second request for unchanged access.

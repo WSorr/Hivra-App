@@ -21,5 +21,7 @@ Revocation cannot undo an already admitted service request. Exactly-once deliver
 is not promised without a service protocol that establishes it.
 
 Transport delivery and signed Capsule history retain their existing independent
-owners. Generic backup/custody may preserve legacy opaque effect bytes; it does
-not execute or reinterpret the retired journal.
+owners. Existing custody and read-only legacy full-state imports may preserve
+opaque effect bytes without executing or reinterpreting the retired journal.
+New Core-only backups exclude all such operational state; their scope belongs
+to `../specification.md`.

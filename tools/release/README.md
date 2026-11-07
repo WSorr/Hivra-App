@@ -27,8 +27,8 @@ Hivra.
   signoff rows for the exact build tag. `test` releases require exact
   packaged Manual Smoke; User Lifetime may be `PENDING` with a reason in
   Notes. `public` releases require User Lifetime `PASS` on both platforms.
-  Moltbook Smoke may be `PASS` or `N/A` when live provider or Gemini access is
-  unavailable.
+  Moltbook Smoke may be `PASS` or `N/A` when live service or connected inference
+  access is unavailable; record the reason under the release policy.
 - `publish_github_release.sh`: the only approved GitHub Release publication
   path; binds tag, source commit, metadata, artifact digests, and signoff.
   Metadata must match the requested channel and prerelease policy; public

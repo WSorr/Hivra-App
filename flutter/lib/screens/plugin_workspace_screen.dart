@@ -118,6 +118,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       },
   };
 
+  bool get _remoteSelected =>
+      _view?['host_connection']?['target'] == 'vps' ||
+      _view?['host_connection']?['selected'] == true;
+
   Future<void> _run(String action) async {
     final descriptor = (_view?['actions'] as List? ?? const []).where(
       (a) => (a as Map)['id'] == action,
@@ -129,12 +133,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
     if (_busy || _choosing) return;
     if (_observationUnavailable &&
+        !_remoteSelected &&
         const {'workspace.start'}.contains(hostAction)) {
       return;
     }
     final generation = ++_presentationGeneration;
     final preserveEdits = action == 'open' && _edited;
-    if (hostAction == 'workspace.authorize') {
+    if (hostAction == 'workspace.authorize' &&
+        !_hasAccess(Map<String, dynamic>.from(_view!['access'] as Map))) {
       setState(() => _choosing = true);
       try {
         final granted = await _authorize(
@@ -158,7 +164,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     });
     try {
       final settings = action == 'open' ? <String, dynamic>{} : _settings();
-      var view = await widget.runWorkspaceAction(action, settings);
+      final remoteStart = hostAction == 'workspace.start' && _remoteSelected;
+      // The new server process invokes the package Start after installation.
+      // Never send selected settings to the previous runner before replacement.
+      var view =
+          remoteStart
+              ? _view!
+              : await widget.runWorkspaceAction(action, settings);
       if (!mounted || generation != _presentationGeneration) return;
       if (hostAction == 'workspace.start') {
         final configure = widget.configureExecution;
@@ -166,6 +178,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           throw StateError('Scheduled execution is not available in this host');
         }
         final scope = Map<String, dynamic>.from(view['schedule'] as Map);
+        if (remoteStart) scope['start_action'] = action;
         final access = Map<String, dynamic>.from(scope['access'] as Map);
         if (!_hasAccess(access)) {
           setState(() {
@@ -318,11 +331,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         connected = true;
       } catch (_) {
         if (mounted) {
-          setState(
-            () =>
-                _error =
-                    'Saved VPS connection was not acknowledged. Check server availability; no execution Start was granted.',
-          );
+          setState(() {
+            _error =
+                'Saved VPS connection was not acknowledged. Check server availability; no execution Start was granted.';
+            _actionResultVisible = true;
+          });
         }
       } finally {
         if (mounted) setState(() => _busy = false);
@@ -468,11 +481,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       connected = true;
     } catch (_) {
       if (mounted) {
-        setState(
-          () =>
-              _error =
-                  'VPS connection was not completed. Check installer availability, login and server identity. No execution Start was granted.',
-        );
+        setState(() {
+          _error =
+              'VPS connection was not completed. Check installer availability, login and server identity. No execution Start was granted.';
+          _actionResultVisible = true;
+        });
       }
     } finally {
       password = '';
@@ -494,7 +507,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
 
   Future<void> _useOnline() async {
     if (_busy || _choosing || widget.useOnline == null) return;
-    final remote = _view?['execution']?['mode'] == 'vps';
+    final remote = _view == null || _view?['execution']?['mode'] == 'vps';
     if (remote) {
       final accepted =
           await showDialog<bool>(
@@ -503,7 +516,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                 (context) => AlertDialog(
                   title: const Text('Return execution control to this app?'),
                   content: const Text(
-                    'End all VPS execution authority and retrieve its latest workspace checkpoint. This does not undo previously accepted external effects. Local cycles require a new Start; the app must remain open.',
+                    'Retrieve this workspace after ending its VPS authority. If another device already replaced it, recover its ended handoff without changing the new runner. Previously accepted external effects remain. Local cycles require a new Start; the app must remain open.',
                   ),
                   actions: [
                     TextButton(
@@ -842,7 +855,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       approvedScope:
           scope ??
           {
-            ...?_view?['execution']?['scope'] as Map?,
+            if (_view?['execution']?['running'] == true)
+              ...?_view?['execution']?['scope'] as Map?,
             'version': 2,
             'access': access,
             'description':
@@ -1043,7 +1057,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             widget.useOnline != null &&
             view?['host_connection']?['installed'] == true);
     final health = switch (view?['host_connection']?['health']) {
-      'not_started' => 'Connected · ready to start',
+      'not_started' => 'Execution has not moved to this VPS',
+      'setup_unconfirmed' => 'Setup not confirmed',
       'running' => 'Runner is running',
       'detached' => 'Execution authority ended',
       _ => 'Checking connection',
@@ -1092,6 +1107,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               : _busy ||
                   _choosing ||
                   (_observationUnavailable &&
+                      !_remoteSelected &&
                       action['host'] == 'workspace.start')
               ? null
               : () => _run(action['id'] as String);
@@ -1164,6 +1180,24 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             : 'Retry connection',
                       ),
                     ),
+                  if (view == null &&
+                      _error != null &&
+                      !_busy &&
+                      _supportsExecution &&
+                      widget.connectVps != null)
+                    OutlinedButton(
+                      onPressed: _choosing ? null : _connectVps,
+                      child: const Text('Connect VPS'),
+                    ),
+                  if (view == null &&
+                      _error != null &&
+                      !_busy &&
+                      _supportsExecution &&
+                      widget.useOnline != null)
+                    TextButton(
+                      onPressed: _choosing ? null : _useOnline,
+                      child: const Text('Recover local access'),
+                    ),
                   if (view != null) ...[
                     panel('Current status', [
                       if (_edited) ...[
@@ -1223,6 +1257,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         ),
                       ],
                       if (actions.isNotEmpty) ...[
+                        if (_remoteSelected &&
+                            actions.any(
+                              (a) => a['host'] == 'workspace.start',
+                            )) ...[
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Start replaces the VPS runner with this package and the selected settings. Already accepted service actions remain in effect.',
+                          ),
+                        ],
                         const SizedBox(height: 22),
                         Wrap(
                           spacing: 10,
@@ -1291,6 +1334,12 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 : 'Local execution · keep this app open for scheduled cycles.',
                             style: theme.textTheme.bodyMedium,
                           ),
+                          if (view['host_connection']?['target'] != 'vps' &&
+                              view['host_connection']?['host'] != null)
+                            Text(
+                              '${view['host_connection']['selected'] == true ? 'Selected' : 'Saved'} VPS ${view['host_connection']['host']} · $health. This session is on this device.',
+                              style: theme.textTheme.bodySmall,
+                            ),
                           const SizedBox(height: 10),
                           Wrap(
                             spacing: 10,
@@ -1344,13 +1393,23 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 : execution['expires_at_ms'] == null
                                 ? ' Until you revoke access.'
                                 : ' Until ${DateTime.fromMillisecondsSinceEpoch(execution['expires_at_ms'] as int).toLocal()}.'}'
-                            '${execution['last_checked_at_ms'] == null ? '' : '\nLast successful cycle: ${DateTime.fromMillisecondsSinceEpoch(execution['last_checked_at_ms'] as int).toLocal()}'}'
+                            '${execution['last_checked_at_ms'] == null ? '' : '\nLast completed cycle: ${DateTime.fromMillisecondsSinceEpoch(execution['last_checked_at_ms'] as int).toLocal()}'}'
                             '${execution['last_error'] == null ? '' : '\n${execution['last_error']}'}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant,
                               height: 1.5,
                             ),
                           ),
+                          if (execution['last_result'] is String &&
+                              (execution['last_result'] as String)
+                                  .isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Last cycle result',
+                              style: theme.textTheme.labelLarge,
+                            ),
+                            SelectableText(execution['last_result'] as String),
+                          ],
                           const SizedBox(height: 12),
                         ],
                         Wrap(

@@ -28,9 +28,9 @@ prompts, storage behavior, or platform lifecycle. It therefore requires the
 same explicit owner, evidence, and rollback discipline as a runtime adapter
 change. It must not be smuggled into feature work or a release candidate.
 
-## 2. Current Verified Baseline
+## 2. Current Baseline
 
-Audit date: 2026-10-17.
+Matrix audit: 2026-10-17; owner-authorized Xcode pin update: 2026-11-05.
 
 The baseline below is the currently exercised development environment. It is a
 compatibility matrix, not permission to distribute a manually built artifact.
@@ -49,10 +49,10 @@ Release scripts remain the authority for embedded app version and packaging.
 | Kotlin plugin | 2.2.20 | Android embedding and keystore bridge |
 | JDK | Android Studio JBR 21 resolved through Flutter | Canonical Android build execution environment; plain shell Gradle JDK selection is noncanonical diagnostic evidence |
 | Android NDK | 28.2.13676358 | `cargo ndk` Rust FFI build |
-| Xcode | 27.1 / macOS SDK 27.0 | macOS packaging and native loading; Skia remains selected while Flutter Impeller issue #185394 is open |
+| Xcode | 27.2 (27B52) / macOS SDK 27.2 | Owner-selected T3 update; exact-artifact acceptance pending. Skia remains selected while Flutter Impeller issue #185394 is open |
 | Swift Package Manager | Flutter-generated local package | macOS Flutter plugins |
 
-Observed host evidence:
+Original matrix audit evidence (2026-10-17):
 
 - macOS `27.0.1` with Xcode `27.1` on Apple Silicon;
 - Flutter doctor resolves JBR `21.0.9` and Android SDK `36.1.0`;
@@ -252,7 +252,35 @@ Rules:
 - missing simulator runtimes are not a macOS release blocker, but block any
   future iOS test claim until repaired.
 
-Status: active. Xcode 27 packages a signed universal macOS application through
+The owner authorized replacing Xcode 27.1 (27A9275), SDK 27.0 with the installed
+Xcode 27.2 (27B52), SDK 27.2 on 2026-11-05 after the full verifier blocked
+packaging on that exact drift. This changes only the matrix pins and this
+contract; Flutter, Rust, Android, deployment targets, project format, FFI,
+signing, storage and product behavior are unchanged by the source change.
+[Apple's release](https://developer.apple.com/news/releases/?id=10292026a) and
+[release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode-27_2-release-notes)
+were checked against local `xcodebuild -version` and
+`xcrun --sdk macosx --show-sdk-version`. The documented macOS 26.6 minimum is
+satisfied by this macOS 27.0.1 host. The SDK's known 27.1 deployment-target issue
+does not apply to the unchanged 12.0/14.0 project targets; no new simulator or
+iOS claim is made.
+
+Acceptance uses `tools/toolchain/verify_environment.sh --self-test`, `--static`
+and `--full`, the existing review gates, and the guarded
+`tools/release/macos_release.sh --version v1.0.5-test4 --channel test` and
+`tools/release/android_release.sh --version v1.0.5-test4 --channel test` paths
+with a new matching canonical CI runner. The exact packages must retain their
+native slices and pass cold-start, Keychain/reopen and the selected Jack
+navigation/Start journey on the existing owner-approved contexts; they do not
+inherit acceptance from the preceding Xcode build. Pending checks and resulting
+artifact hashes use the existing Jack acceptance record, not another test
+Capsule or report. Rollback restores the three prior pins (27.1 / 27A9275 / 27.0),
+selects an installed matching Xcode through `DEVELOPER_DIR`, and rebuilds with
+the matching runner; the old Xcode is not currently installed on this Mac.
+
+Self-test, static/full local toolchain verification and review gates pass with
+the new pins. Status: active; 27.2 exact-artifact acceptance is pending. The preceding
+Xcode 27 baseline packaged a signed universal macOS application through
 one Swift Package Manager plugin path. The packaged app explicitly uses Skia
 because Flutter's open P1 issue #185394 crashes the macOS Impeller raster
 thread; the exact failure was reproduced before the opt-out and rejected by

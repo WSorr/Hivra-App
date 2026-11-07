@@ -207,8 +207,12 @@ they use the same inference runtime.
 
 ## 6. Credential And Session Contract
 
-Inference secrets stay in platform Secure Storage under the host AI owner. A
-user explicitly unlocks the selected provider into one process-memory lease.
+Inference secrets stay in platform Secure Storage under the host AI owner. An
+interactive AI action or an owner-authorized plugin request opens the selected
+provider into the same process-memory lease. The workspace checks its current
+inference grant before entering the credential port; native Secure Storage may
+authenticate the first protected read. An already unlocked connection is reused
+without a separate visit to Analyst or a repeated product approval.
 Connection names, protocols, base URLs, preferred connection ID and model
 choices are non-secret host configuration stored outside Secure Storage by the same owner, in the existing
 provider preference file. Analyst saves and restores the model together with
@@ -221,9 +225,9 @@ also binds its connection, destination and credential; removal, lock or a change
 lease during authorization fails before dispatch.
 No automatic model or provider fallback is performed on failure.
 
-One explicit unlock performs at most one protected credential read after
-configuration migration; a legacy Keychain-stored provider id is read once
-and then removed without enumerating unrelated Keychain records.
+Successfully loaded protected values are reused for the app process. A legacy
+Keychain-stored provider id is read once during configuration migration and
+then removed without enumerating unrelated Keychain records.
 
 - The lease may be reused by Capsule Analyst and authorized
   drones while the app process remains open.
@@ -231,8 +235,11 @@ and then removed without enumerating unrelated Keychain records.
 - Switching Capsules cannot transfer request context or a late proposal.
 - WASM and provider-effect adapters never receive the inference credential.
 - Locking or closing the app clears the in-memory lease, not the saved secret.
-- A locked automatic cycle stops before inference without opening an operating
-  system password dialog and without consuming its input checkpoint.
+- A plugin without current inference permission never enters the credential
+  port. An authorized cycle may open the saved connection through native
+  authentication, then rechecks permission at queued provider dispatch. A
+  cancelled/failed unlock sends no inference request. A changed/locked lease
+  while queued still refuses dispatch; no automatic replay is added.
 - v1 makes no app-closed/background AI execution promise.
 
 The process lease prevents repeated Keychain reads; it is not a global
@@ -373,7 +380,7 @@ added.
 
 ### 9.5 Moltbook Common Inference
 
-Moltbook 0.8.0 uses common workspace `ai.infer`. Its former
+Moltbook uses common workspace `ai.infer`. Its former
 `MoltbookPublicBulletinAiService`, host prompts, durable feed checkpoint,
 approval/delegation controller and publication-effect service are removed.
 The runtime continues to own the preferred connection, process-scoped secret

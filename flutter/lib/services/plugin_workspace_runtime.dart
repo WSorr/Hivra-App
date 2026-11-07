@@ -298,6 +298,7 @@ class PluginWorkspaceRuntime {
     }
 
     Future<Map<String, String>> secrets(Map<String, dynamic> request) async {
+      await accessFor(request);
       final alias = request['credential'] as String;
       final fields = (control?['credentials'] as Map?)?[alias];
       if (fields is! Map) {
@@ -378,6 +379,9 @@ class PluginWorkspaceRuntime {
           } else {
             var admitted = false;
             try {
+              // A current grant is required before the AI port can open its
+              // saved credentials. Queue waiting still rechecks at dispatch.
+              await accessFor(request);
               result = await infer!(
                 {...request, 'plugin_id': pluginId},
                 () async {
@@ -499,7 +503,11 @@ class PluginWorkspaceRuntime {
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(releaseToExecutorId))) {
       throw StateError('Invalid VPS execution target');
     }
-    final previous = await _readExecution(record, owner);
+    final previous = await _readExecution(
+      record,
+      owner,
+      enforceHost: releaseToExecutorId == null,
+    );
     if (settings.isEmpty && previous?['settings'] is Map) {
       settings = Map<String, dynamic>.from(previous!['settings'] as Map);
     }
@@ -596,7 +604,11 @@ class PluginWorkspaceRuntime {
     await _serialize(
       '$owner::${record.pluginId}::execution',
       () => _withWorkspaceLease(owner, record, () async {
-        final current = await _readExecution(record, owner);
+        final current = await _readExecution(
+          record,
+          owner,
+          enforceHost: releaseToExecutorId == null,
+        );
         if (current?['revision'] != previous?['revision']) {
           throw StateError('Execution authority changed during confirmation');
         }
@@ -627,7 +639,7 @@ class PluginWorkspaceRuntime {
         );
       }, authorityOnly: true),
     );
-    _armScheduledExecution(record, owner, control);
+    _armScheduledExecution(record, owner, control, runImmediately: enabled);
     if (releaseToExecutorId != null) {
       stopWorkspaceScheduling(pluginId: record.pluginId);
       // The target has not acknowledged adoption yet. A source-side snapshot
@@ -657,9 +669,16 @@ class PluginWorkspaceRuntime {
       settings: Map<String, dynamic>.from(control['settings'] as Map),
     );
     final latest = await _readExecution(record, owner);
-    if (latest != null) {
+    if (latest != null &&
+        latest['revision'] == control['revision'] &&
+        _isStillOwnedBy(owner)) {
       final observed = {
         'last_checked_at_ms': DateTime.now().millisecondsSinceEpoch,
+        'last_result': ['message', 'details']
+            .map((key) => view[key])
+            .whereType<String>()
+            .where((text) => text.isNotEmpty)
+            .join('\n\n'),
       };
       _cycleObservations['$owner::${record.pluginId}'] = observed;
       view['execution'] = _executionPresentation(latest, observed);
@@ -719,8 +738,8 @@ class PluginWorkspaceRuntime {
         (control['scope']['action'] != null &&
             !binding.capabilities.contains('workspace.schedule'))) {
       // A replaced package may not execute a stale local grant. A VPS grant
-      // and its sealed return receipt remain readable only for authenticated
-      // retirement. The original digest and opaque state are not rewritten;
+      // and its sealed return receipt remain readable for authenticated
+      // retirement or a fresh authorized handoff. Opaque state is not rewritten;
       // ordinary execution still requires the current package binding.
       return null;
     }
@@ -855,84 +874,115 @@ class PluginWorkspaceRuntime {
       throw StateError('Checkpoint belongs to another VPS');
     }
     final key = '$owner::${record.pluginId}';
-    await _serialize(
-      key,
-      () => _withWorkspaceLease(
-        owner,
-        record,
-        () => _serialize(
-          '$key::execution',
-          () => _withWorkspaceLease(owner, record, () async {
-            final binding = await registry.resolveRuntimeBinding(
-              record.pluginId!,
-            );
-            if (binding.packageId != record.id ||
-                binding.packageDigestHex != checkpoint['package_digest'] ||
-                !binding.capabilities.contains('workspace.schedule') ||
-                !_isStillOwnedBy(owner)) {
-              throw StateError('Handoff package or Capsule changed');
-            }
-            final previous = await _readExecution(
-              record,
-              owner,
-              enforceHost: false,
-            );
-            if (previous != null) {
-              if (previous['handoff_id'] == incoming['handoff_id'] &&
-                  previous['handoff_digest'] == digest &&
-                  previous['executor'] == 'vps') {
-                if ((!workspaceExecutionEnabled(incoming) &&
-                        workspaceExecutionEnabled(previous)) ||
-                    (incoming['revoked'] == true &&
-                        previous['revoked'] != true)) {
-                  final directory = await _fileStore.capsuleDirForHex(owner);
-                  await _fileStore.writePluginState(
-                    directory,
-                    record.pluginId!,
-                    _executionFile,
-                    jsonEncode({
-                      ...previous,
-                      workspaceExecutionFlag(previous): false,
-                      if (incoming['revoked'] == true) 'revoked': true,
-                      'revision': (previous['revision'] as int) + 1,
-                    }),
+    var newlyAdopted = false;
+    try {
+      await _serialize(
+        key,
+        () => _withWorkspaceLease(owner, record, () async {
+          await _serialize(
+            '$key::execution',
+            () => _withWorkspaceLease(owner, record, () async {
+              final binding = await registry.resolveRuntimeBinding(
+                record.pluginId!,
+              );
+              if (binding.packageId != record.id ||
+                  binding.packageDigestHex != checkpoint['package_digest'] ||
+                  !binding.capabilities.contains('workspace.schedule') ||
+                  !_isStillOwnedBy(owner)) {
+                throw StateError('Handoff package or Capsule changed');
+              }
+              final previous = await _readExecution(
+                record,
+                owner,
+                enforceHost: false,
+                allowRemoteRecoveryBinding: true,
+              );
+              if (previous != null) {
+                if (previous['handoff_id'] == incoming['handoff_id'] &&
+                    previous['handoff_digest'] == digest &&
+                    previous['executor'] == 'vps') {
+                  if ((!workspaceExecutionEnabled(incoming) &&
+                          workspaceExecutionEnabled(previous)) ||
+                      (incoming['revoked'] == true &&
+                          previous['revoked'] != true)) {
+                    final directory = await _fileStore.capsuleDirForHex(owner);
+                    await _fileStore.writePluginState(
+                      directory,
+                      record.pluginId!,
+                      _executionFile,
+                      jsonEncode({
+                        ...previous,
+                        workspaceExecutionFlag(previous): false,
+                        if (incoming['revoked'] == true) 'revoked': true,
+                        'revision': (previous['revision'] as int) + 1,
+                      }),
+                    );
+                  }
+                  return;
+                }
+                if (previous['executor'] != 'local' ||
+                    workspaceExecutionIsActive(previous) ||
+                    workspaceExecutionEnabled(previous) ||
+                    previous['handoff_id'] == incoming['handoff_id']) {
+                  throw StateError(
+                    'VPS already owns another workspace checkpoint',
                   );
                 }
-                return;
               }
-              if (previous['executor'] != 'local' ||
-                  workspaceExecutionIsActive(previous) ||
-                  workspaceExecutionEnabled(previous) ||
-                  previous['handoff_id'] == incoming['handoff_id']) {
-                throw StateError(
-                  'VPS already owns another workspace checkpoint',
-                );
-              }
-            }
-            final directory = await _fileStore.capsuleDirForHex(
+              final directory = await _fileStore.capsuleDirForHex(
+                owner,
+                create: true,
+              );
+              final preserveWorkspace =
+                  await _fileStore.readPluginState(
+                    directory,
+                    record.pluginId!,
+                    'workspace.v1.json',
+                  ) !=
+                  null;
+              await _fileStore.restorePluginCheckpoint(
+                directory,
+                record.pluginId!,
+                {
+                  if (checkpoint['workspace'] != null && !preserveWorkspace)
+                    'workspace.v1.json': checkpoint['workspace'] as String,
+                  if (checkpoint['effects'] != null && !preserveWorkspace)
+                    'external_effects.v1.json': checkpoint['effects'] as String,
+                  _executionFile: jsonEncode({
+                    ...incoming,
+                    'package_id': record.id,
+                    'handoff_digest': digest,
+                  }),
+                },
+                replaceSealed: previous != null,
+              );
+              newlyAdopted = true;
+            }, authorityOnly: true),
+          );
+          // Setup and resumption share custody and package execution. A replay
+          // acknowledges the original grant without repeating its Start.
+          final startAction = (incoming['scope'] as Map?)?['start_action'];
+          if (newlyAdopted && startAction is String) {
+            await _runWorkspaceOwned(
               owner,
-              create: true,
+              record,
+              startAction,
+              Map<String, dynamic>.from(incoming['settings'] as Map),
             );
-            await _fileStore.restorePluginCheckpoint(
-              directory,
-              record.pluginId!,
-              {
-                if (checkpoint['workspace'] != null)
-                  'workspace.v1.json': checkpoint['workspace'] as String,
-                if (checkpoint['effects'] != null)
-                  'external_effects.v1.json': checkpoint['effects'] as String,
-                _executionFile: jsonEncode({
-                  ...incoming,
-                  'package_id': record.id,
-                  'handoff_digest': digest,
-                }),
-              },
-              replaceSealed: previous != null,
-            );
-          }, authorityOnly: true),
-        ),
-      ),
-    );
+          }
+        }),
+      );
+    } catch (_) {
+      if (newlyAdopted) {
+        await setWorkspaceExecution(
+          record: record,
+          enabled: false,
+          revoke: true,
+          expiresAtMs: null,
+        );
+      }
+      rethrow;
+    }
     await resumeWorkspaceScheduling(record);
   }
 
@@ -982,11 +1032,17 @@ class PluginWorkspaceRuntime {
   /// End all remote authority before returning opaque state. Unlike Stop,
   /// this also ends reducing exits and is durable before draining actions.
   Future<Map<String, dynamic>> returnWorkspaceToLocal(
-    WasmPluginRecord record,
-  ) async {
+    WasmPluginRecord record, {
+    String? handoffId,
+    bool requireSealed = false,
+  }) async {
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (executionHost != 'vps' || owner == null) {
       throw StateError('A VPS executor is required');
+    }
+    if (requireSealed &&
+        !await (await _fileStore.capsuleDirForHex(owner)).exists()) {
+      throw StateError('No retained workspace to recover');
     }
     final key = '$owner::${record.pluginId}';
     await _serialize(
@@ -999,6 +1055,13 @@ class PluginWorkspaceRuntime {
           allowRemoteRecoveryBinding: true,
         );
         if (control == null) throw StateError('No workspace to return');
+        if ((handoffId != null && control['handoff_id'] != handoffId) ||
+            (requireSealed &&
+                (control['executor'] != 'local' ||
+                    control['expires_at_ms'] != 0 ||
+                    workspaceExecutionEnabled(control)))) {
+          throw StateError('The assigned handoff has not been returned');
+        }
         if (control['executor'] == 'vps' &&
             control['executor_id'] != executionIdentity) {
           throw StateError('Workspace belongs to another executor');
@@ -1019,7 +1082,7 @@ class PluginWorkspaceRuntime {
             jsonEncode(sealed),
           );
         }
-        stopWorkspaceScheduling(pluginId: record.pluginId);
+        _clearSchedule(key);
       }, authorityOnly: true),
     );
     return _serialize(
@@ -1032,6 +1095,7 @@ class PluginWorkspaceRuntime {
           allowRemoteRecoveryBinding: true,
         );
         if (control == null ||
+            (handoffId != null && control['handoff_id'] != handoffId) ||
             control['executor'] != 'local' ||
             control['expires_at_ms'] != 0 ||
             workspaceExecutionEnabled(control)) {
@@ -1250,14 +1314,16 @@ class PluginWorkspaceRuntime {
     'revision': control['revision'],
     'expires_at_ms': control['expires_at_ms'],
     'last_checked_at_ms': observation?['last_checked_at_ms'],
+    'last_result': observation?['last_result'],
     'last_error': observation?['last_error'],
   };
 
   void _armScheduledExecution(
     WasmPluginRecord record,
     String owner,
-    Map<String, dynamic> control,
-  ) {
+    Map<String, dynamic> control, {
+    bool runImmediately = false,
+  }) {
     if (_schedulingClosed ||
         !scheduleTimers ||
         (control['executor'] ?? 'local') != executionHost) {
@@ -1283,9 +1349,11 @@ class PluginWorkspaceRuntime {
     _scheduledBindings[key] = binding;
     _scheduledGenerations[key] = generation;
     _scheduledHosts[key] = this;
-    void arm() {
+    void arm({bool immediately = false}) {
       _scheduledTimers[key] = Timer(
-        Duration(seconds: control['scope']['interval_seconds']),
+        immediately
+            ? Duration.zero
+            : Duration(seconds: control['scope']['interval_seconds']),
         () async {
           if (!identical(_scheduledGenerations[key], generation)) return;
           if (!_isStillOwnedBy(owner)) {
@@ -1328,7 +1396,9 @@ class PluginWorkspaceRuntime {
       );
     }
 
-    arm();
+    // Explicit Start wakes the package now. Reopening/resuming only restores
+    // the interval; service history and cooldowns remain package concerns.
+    arm(immediately: runImmediately);
   }
 
   static void _clearSchedule(String key) {

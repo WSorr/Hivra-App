@@ -8,6 +8,7 @@ import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
   int writes = 0;
+  int reads = 0;
   bool failWrite = false;
   Future<void> Function()? beforeRead;
 
@@ -41,6 +42,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    reads++;
     await beforeRead?.call();
     return values[key];
   }
@@ -122,6 +124,34 @@ void main() {
     expect(await _load(vault, capsuleA, pluginA, 'account-a'), isNull);
     expect(await _load(vault, capsuleB, pluginA, 'account-b'), 'key-b');
   });
+
+  test(
+    'one vault unlock serves both plugin pickers and dispatch until restart',
+    () async {
+      await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
+      await _save(vault, capsuleA, pluginB, 'account-b', 'key-b');
+      vault = CapsuleScopedSecretVault(secureStorage: storage);
+      final before = storage.reads;
+      final references = await vault.listReferences(capsuleA);
+      expect(storage.reads - before, 1);
+      storage.beforeRead =
+          () async => throw StateError('Unexpected Keychain prompt');
+      expect(await vault.listReferences(capsuleA), references);
+      expect(await vault.listReferences(capsuleB), isEmpty);
+      for (final reference in references) {
+        expect(
+          await vault.resolveReferences(capsuleA, {'key': reference['id']!}),
+          contains('key'),
+        );
+      }
+      await vault.deletePlugin(pluginA, capsuleHexes: {capsuleA});
+      expect(await vault.listReferences(capsuleA), hasLength(1));
+      storage.beforeRead = null;
+      final restarted = CapsuleScopedSecretVault(secureStorage: storage);
+      expect(await restarted.listReferences(capsuleA), hasLength(1));
+      expect(storage.reads - before, 2);
+    },
+  );
 
   test('plugin removal is limited to capsules owned by this runtime', () async {
     await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');

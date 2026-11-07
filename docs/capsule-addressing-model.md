@@ -146,6 +146,36 @@ Current lifecycle:
 - endpoint rotation/update is not yet an implemented protocol and must not be
   inferred from an unrelated transport event.
 
+`CapsuleAddressService` owns both the contact-card file and the transient peer
+routing projection. Chat delivery and pair-attestation exchange use the same
+selection order for a root key:
+
+1. An explicitly trusted card.
+2. An active relationship without a pending remote break.
+3. An incoming invitation, only as a transient fallback.
+
+Observed transport aliases remain available for incoming identity resolution.
+A legacy relationship without a root key retains its direct transport route;
+a root key is never used as its own transport endpoint. Routing does not grant
+a relationship, pair attestation or permission. Core and the existing pair
+checks retain those decisions; an invitation fallback is not promoted to a
+trusted card.
+
+Card import, accepted-invitation/local-key upsert, removal and Capsule cleanup
+converge on this service's read/modify/write path. Persistence derives local
+keys but delegates card encoding and writes. Synchronizing unchanged keys does
+not downgrade an existing signed card. Cleanup retains recognition of legacy
+hex and Bech32 aliases.
+
+Operations on the same file are serialized across service instances in the
+application isolate, then committed by the existing atomic file writer. This
+reuses the Future-tail mechanism already used by `CapsuleIndexStore`, rather
+than introducing a storage service or mutex dependency; see Dart's
+[`Future.then`](https://api.dart.dev/dart-async/Future/then.html) completion/error
+semantics. A failed operation releases the queue. Invalid JSON is not replaced
+by a mutation; optional local-card synchronization cannot block Core activation.
+This is not a cross-process or cross-isolate file lock.
+
 ### 4.3 Encrypted Endpoint Update
 
 After first contact exists, capsules may exchange richer endpoint metadata privately.

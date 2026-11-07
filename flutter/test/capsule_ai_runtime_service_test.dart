@@ -99,6 +99,73 @@ void main() {
   });
 
   test(
+    'authorized inference unlocks the saved connection once without Analyst',
+    () async {
+      final store = _SessionCredentialStore(unlocked: false);
+      final adapter = _RecordingAdapter();
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) => adapter,
+      );
+      var checks = 0;
+      for (var cycle = 0; cycle < 2; cycle++) {
+        final result = await runtime.inferAuthorized(
+          _request(),
+          authorize: () async {
+            checks++;
+          },
+        );
+        expect(result.proposalText, 'Explained');
+      }
+      expect(store.unlocks, 1);
+      expect(checks, 2);
+      expect(adapter.callCount, 2);
+    },
+  );
+
+  test(
+    'authorized inference for a different Capsule cannot unlock a secret',
+    () async {
+      final store = _SessionCredentialStore(unlocked: false);
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleB,
+        adapterFactory: (_) => throw StateError('Must not create an adapter'),
+      );
+      await expectLater(
+        runtime.inferAuthorized(_request(), authorize: () async {}),
+        throwsA(_failure(CapsuleInferenceFailureCode.invalidRequest)),
+      );
+      expect(store.unlocks, 0);
+    },
+  );
+
+  test(
+    'cancelled authorized unlock never creates a provider request',
+    () async {
+      final store = _SessionCredentialStore(unlocked: false)
+        ..beforeUnlock =
+            () async => throw StateError('Native authentication cancelled');
+      var adapters = 0;
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) {
+          adapters++;
+          return _RecordingAdapter();
+        },
+      );
+      await expectLater(
+        runtime.inferAuthorized(_request(), authorize: () async {}),
+        throwsStateError,
+      );
+      expect(adapters, 0);
+      expect(store.unlocked, isFalse);
+    },
+  );
+
+  test(
     'Cloudflare uses the shared runtime lease and fails closed after provider switching',
     () async {
       const provider = InferenceConnection.cloudflareWorkersAi;
@@ -618,6 +685,8 @@ Matcher _failure(CapsuleInferenceFailureCode code) {
 
 class _SessionCredentialStore extends AiDoctorCredentialStore {
   bool unlocked;
+  int unlocks = 0;
+  Future<void> Function()? beforeUnlock;
   InferenceConnection preferredProvider = InferenceConnection.gemini;
   final List<String> configuration = <String>[];
   final Map<InferenceConnection, String> models = {};
@@ -640,6 +709,8 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
 
   @override
   Future<InferenceConnection> unlockPreferredProviderSession() async {
+    unlocks++;
+    await beforeUnlock?.call();
     unlocked = true;
     return preferredProvider;
   }

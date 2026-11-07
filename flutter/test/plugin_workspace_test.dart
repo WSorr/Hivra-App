@@ -3,19 +3,940 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/screens/plugin_workspace_screen.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
+import 'package:hivra_app/services/capsule_contact_label_store.dart';
+import 'package:hivra_app/services/capsule_passive_receive_coordinator.dart';
+import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
+import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
+import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/plugin_capability_dispatcher.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
+import 'package:hivra_app/services/plugin_runtime_module_service.dart';
+import 'package:hivra_app/services/plugin_workspace_remote_service.dart';
 import 'package:hivra_app/services/plugin_workspace_runtime.dart';
+import 'package:hivra_app/services/ui_event_log_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
+import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
+
+import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  testWidgets(
+    'failed first open keeps confirmed return reachable and never starts execution',
+    (tester) async {
+      var returned = false;
+      final actions = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
+              if (!returned) throw StateError('Previous installation replaced');
+              return presentation();
+            },
+            useOnline: () async {
+              returned = true;
+            },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+            }) async {
+              fail('Cancelling reconnection must not change the VPS');
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect VPS'));
+      await tester.pumpAndSettle();
+      expect(find.text('Connect your VPS'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(actions, ['open']);
+      await tester.tap(find.text('Recover local access'));
+      await tester.pumpAndSettle();
+      expect(returned, isFalse);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(returned, isFalse);
+      await tester.tap(find.text('Recover local access'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Return to online'));
+      await tester.pumpAndSettle();
+      expect(returned, isTrue);
+      expect(find.text('Unrelated application'), findsOneWidget);
+      expect(actions, ['open', 'open']);
+      expect(find.text('Recover local access'), findsNothing);
+    },
+  );
+
+  test(
+    'old device returns only its sealed handoff through the normal module',
+    () async {
+      final f = await Fixture.create();
+      final serverFiles = await Fixture.create();
+      try {
+        await f.enable();
+        final local = f.runtime();
+        final checkpoint = await local.releaseWorkspaceToVps(
+          f.registry.record,
+          executorId: 'e' * 64,
+        );
+        final directory = await serverFiles.files.capsuleDirForHex(
+          f.owner,
+          create: true,
+        );
+        await serverFiles.files.restorePluginCheckpoint(
+          directory,
+          f.registry.record.pluginId!,
+          {
+            'workspace-execution.v1.json': jsonEncode(checkpoint['execution']),
+            if (checkpoint['workspace'] != null)
+              'workspace.v1.json': checkpoint['workspace'] as String,
+          },
+        );
+        final root =
+            await UserVisibleDataDirectoryService(
+              homeOverride: serverFiles.home.path,
+            ).rootDirectory();
+        final oldBinding = {
+          'owner': f.owner,
+          'plugin_id': f.registry.record.pluginId,
+          'package_id': 'old-server-package',
+          'package_digest': f.registry.digest,
+          'executor_id': 'e' * 64,
+        };
+        final newBinding = {
+          ...oldBinding,
+          'owner': 'c' * 64,
+          'package_id': serverFiles.registry.record.id,
+          'executor_id': 'f' * 64,
+        };
+        serverFiles.owner = newBinding['owner']!;
+        await serverFiles.enable();
+        final currentDirectory = await serverFiles.files.capsuleDirForHex(
+          serverFiles.owner,
+        );
+        final currentGrant = await serverFiles.files.readPluginState(
+          currentDirectory,
+          serverFiles.registry.record.pluginId!,
+          'workspace-execution.v1.json',
+        );
+        final runner = WorkspaceRunner(
+          root: root,
+          registry: serverFiles.registry,
+          binding: newBinding,
+          runtime: WorkspaceRunner.runtimeFor(
+            root,
+            newBinding,
+            serverFiles.registry,
+            scheduleTimers: false,
+          ),
+        );
+        await expectLater(
+          runner.dispatch({...oldBinding, 'command': 'status'}),
+          throwsStateError,
+        );
+        final request = {
+          ...oldBinding,
+          'command': 'return',
+          'handoff_id': checkpoint['execution']['handoff_id'],
+        };
+        // A stale device cannot end an active grant, even with its handoff ID.
+        await expectLater(runner.dispatch(request), throwsStateError);
+        final prior = WorkspaceRunner.runtimeFor(
+          root,
+          oldBinding,
+          serverFiles.registry,
+          scheduleTimers: false,
+        );
+        await prior.returnWorkspaceToLocal(serverFiles.registry.record);
+        final sealed = await serverFiles.files.readPluginState(
+          directory,
+          f.registry.record.pluginId!,
+          'workspace-execution.v1.json',
+        );
+        await expectLater(
+          runner.dispatch({...request, 'handoff_id': '9' * 64}),
+          throwsStateError,
+        );
+        await expectLater(
+          runner.dispatch({...request}..remove('handoff_id')),
+          throwsFormatException,
+        );
+        await expectLater(
+          runner.dispatch({...request, 'owner': '9' * 64}),
+          throwsStateError,
+        );
+        expect(
+          await (await serverFiles.files.capsuleDirForHex('9' * 64)).exists(),
+          isFalse,
+        );
+        final c = {
+          ...oldBinding,
+          'host': 'server.example',
+          'port': 22,
+          'fingerprint': 'SHA256:${'A' * 43}',
+          'selected': true,
+        };
+        final dir = await f.files.capsuleDirForHex(f.owner);
+        await f.files.writePluginState(
+          dir,
+          f.registry.record.pluginId!,
+          PluginWorkspaceRemoteService.connectionFile,
+          jsonEncode(c),
+        );
+        final calls = <String>[];
+        var removeDuringReturn = false;
+        final unused = UnusedWorkspacePorts();
+        final remote = PluginWorkspaceRemoteService(
+          files: f.files,
+          vault: unused,
+          registry: f.registry,
+          requestTransport: (_, command, payload) async {
+            expect(command, 'request');
+            final input = Map<String, dynamic>.from(
+              jsonDecode(utf8.decode(payload)) as Map,
+            );
+            calls.add(input['command'] as String);
+            final result = await runner.dispatch(input);
+            if (removeDuringReturn && input['command'] == 'return') {
+              f.registry.installed = false;
+            }
+            return jsonEncode({'ok': true, 'result': result});
+          },
+        );
+        final module = PluginRuntimeModule(
+          registry: f.registry,
+          sourceCatalog: const WasmPluginSourceCatalogService(),
+          manualChecks: unused,
+          pluginHostApi: local.pluginHostApi,
+          attestationExchange: unused,
+          chatDelivery: unused,
+          passiveReceive: unused,
+          contactLabels: unused,
+          uiLog: unused,
+          fileStore: f.files,
+          secretVault: unused,
+          readActiveCapsuleRootHex: () => f.owner,
+          workspaceRemote: remote,
+        );
+        await expectLater(
+          module.runWorkspaceAction(record: f.registry.record, action: 'open'),
+          throwsStateError,
+        );
+        removeDuringReturn = true;
+        await expectLater(
+          module.useWorkspaceOnline(f.registry.record),
+          throwsStateError,
+        );
+        f.registry.installed = true;
+        removeDuringReturn = false;
+        expect(
+          (await local.readWorkspaceExecution(
+            f.registry.record,
+            enforceHost: false,
+          ))!['executor'],
+          'vps',
+        );
+        await module.useWorkspaceOnline(f.registry.record);
+        final reopened = await module.runWorkspaceAction(
+          record: f.registry.record,
+          action: 'open',
+        );
+        expect(reopened['host_connection']['target'], 'local');
+        expect(reopened['execution']['active'], isFalse);
+        expect(reopened['execution']['running'], isFalse);
+        expect(
+          (await remote.connection(
+            f.owner,
+            f.registry.record.pluginId!,
+          ))!['selected'],
+          isFalse,
+        );
+        expect(calls, ['adopt', 'return', 'return']);
+        expect(f.sends, 0);
+        expect(
+          await serverFiles.files.readPluginState(
+            directory,
+            f.registry.record.pluginId!,
+            'workspace-execution.v1.json',
+          ),
+          sealed,
+        );
+        expect(
+          await serverFiles.files.readPluginState(
+            currentDirectory,
+            serverFiles.registry.record.pluginId!,
+            'workspace-execution.v1.json',
+          ),
+          currentGrant,
+        );
+        await module.useWorkspaceOnline(f.registry.record);
+        expect(calls, ['adopt', 'return', 'return']);
+
+        // A runtime update may install a new package while this owner's old
+        // sealed receipt still names the previous digest. A fresh authorized
+        // Start must retain those bytes, not treat the destination as empty.
+        serverFiles.registry.digest = 'd' * 64;
+        final retained = '{"package_owned":{"unresolved":"keep"}}';
+        await serverFiles.files.writePluginState(
+          directory,
+          f.registry.record.pluginId!,
+          'workspace.v1.json',
+          retained,
+        );
+        serverFiles.owner = f.owner;
+        final nextRuntime = serverFiles.runtime(
+          executionHost: 'vps',
+          executionIdentity: oldBinding['executor_id'],
+        );
+        final nextCheckpoint = {
+          ...checkpoint,
+          'package_digest': serverFiles.registry.digest,
+          'execution': {
+            ...checkpoint['execution'] as Map,
+            'package_digest': serverFiles.registry.digest,
+            'handoff_id': '8' * 64,
+            'scope': {
+              ...checkpoint['execution']['scope'] as Map,
+              'start_action': 'begin_owner_workflow',
+            },
+          },
+          'workspace': '{"new_shape":["stale device copy"]}',
+        };
+        final starting = Completer<void>(), releaseStart = Completer<void>();
+        serverFiles.onInvoke = (action) async {
+          if (action == 'begin_owner_workflow') {
+            starting.complete();
+            await releaseStart.future;
+          }
+        };
+        final firstAdoption = nextRuntime.adoptWorkspaceFromLocal(
+          record: serverFiles.registry.record,
+          checkpoint: nextCheckpoint,
+        );
+        await starting.future;
+        var replayAcknowledged = false;
+        final replay = nextRuntime
+            .adoptWorkspaceFromLocal(
+              record: serverFiles.registry.record,
+              checkpoint: nextCheckpoint,
+            )
+            .then((_) => replayAcknowledged = true);
+        await Future<void>.delayed(Duration.zero);
+        expect(replayAcknowledged, isFalse);
+        releaseStart.complete();
+        await Future.wait([firstAdoption, replay]);
+        expect(
+          serverFiles.actions.where((a) => a == 'begin_owner_workflow'),
+          hasLength(1),
+        );
+        expect(
+          await serverFiles.files.readPluginState(
+            directory,
+            f.registry.record.pluginId!,
+            'workspace.v1.json',
+          ),
+          retained,
+        );
+        final adopted = await nextRuntime.readWorkspaceExecution(
+          serverFiles.registry.record,
+        );
+        expect(adopted!['handoff_id'], '8' * 64);
+        expect(adopted['package_digest'], serverFiles.registry.digest);
+        await nextRuntime.returnWorkspaceToLocal(serverFiles.registry.record);
+        serverFiles.onInvoke = (action) async {
+          if (action == 'begin_owner_workflow') {
+            throw StateError('Start failed');
+          }
+        };
+        final failedCheckpoint = {
+          ...nextCheckpoint,
+          'execution': {
+            ...nextCheckpoint['execution'] as Map,
+            'handoff_id': '9' * 64,
+          },
+        };
+        await expectLater(
+          nextRuntime.adoptWorkspaceFromLocal(
+            record: serverFiles.registry.record,
+            checkpoint: failedCheckpoint,
+          ),
+          throwsStateError,
+        );
+        final failed = await nextRuntime.readWorkspaceExecution(
+          serverFiles.registry.record,
+        );
+        expect(failed!['revoked'], isTrue);
+        expect(failed['enabled'], isFalse);
+        await nextRuntime.adoptWorkspaceFromLocal(
+          record: serverFiles.registry.record,
+          checkpoint: failedCheckpoint,
+        );
+        expect(
+          serverFiles.actions.where((a) => a == 'begin_owner_workflow'),
+          hasLength(2),
+        );
+      } finally {
+        await f.close();
+        await serverFiles.close();
+      }
+    },
+  );
+
+  test(
+    'Start wakes the package immediately; observation never starts a second cycle',
+    () async {
+      final f = await Fixture.create();
+      final runtime = f.runtime(scheduleTimers: true);
+      addTearDown(() async {
+        runtime.stopWorkspaceScheduling(permanently: true);
+        await f.close();
+      });
+      final permissions =
+          {...f.schedule}
+            ..remove('action')
+            ..remove('interval_seconds');
+      await runtime.setWorkspaceExecution(
+        record: f.registry.record,
+        enabled: true,
+        expiresAtMs: null,
+        approvedScope: permissions,
+        credentialBindings: {
+          'default': {'token': 'ref-token'},
+        },
+      );
+      expect(f.sends, 0);
+      final finished = Completer<void>();
+      f.onInvoke = (action) async {
+        if (action == 'finish_custom_operation') finished.complete();
+      };
+      await runtime.setWorkspaceExecution(
+        record: f.registry.record,
+        enabled: true,
+        expiresAtMs: null,
+        expectedRevision: 1,
+        approvedScope: {...f.schedule, 'interval_seconds': 1800},
+      );
+      await finished.future.timeout(const Duration(seconds: 2));
+      final observed = await runtime.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      expect(observed['execution']['last_result'], 'response');
+      expect(f.sends, 1);
+      runtime.stopWorkspaceScheduling();
+      await runtime.resumeWorkspaceScheduling(f.registry.record);
+      await runtime.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      // Give a zero-delay wake an opportunity to run: restoration must retain
+      // the interval rather than treating process/UI recovery as a new Start.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(f.actions.where((action) => action == 'run'), hasLength(1));
+      expect(f.sends, 1);
+      expect(
+        (await runtime.readWorkspaceExecution(f.registry.record))!['revision'],
+        2,
+      );
+    },
+  );
+
+  test(
+    'immediate Start still checks revocation and package replacement before dispatch',
+    () async {
+      for (final replace in [false, true]) {
+        final f = await Fixture.create();
+        final runtime = f.runtime(scheduleTimers: true);
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        f.onInvoke = (action) async {
+          if (action == 'run') {
+            entered.complete();
+            await release.future;
+          }
+        };
+        try {
+          await runtime.setWorkspaceExecution(
+            record: f.registry.record,
+            enabled: true,
+            expiresAtMs: null,
+            approvedScope: f.schedule,
+            credentialBindings: {
+              'default': {'token': 'ref-token'},
+            },
+          );
+          await entered.future.timeout(const Duration(seconds: 2));
+          Future<Map<String, dynamic>>? stopped;
+          if (replace) {
+            f.registry.digest = 'c' * 64;
+          } else {
+            stopped = runtime.setWorkspaceExecution(
+              record: f.registry.record,
+              enabled: false,
+              revoke: true,
+              expiresAtMs: null,
+            );
+            for (var i = 0; i < 100; i++) {
+              if ((await runtime.readWorkspaceExecution(
+                    f.registry.record,
+                  ))?['revoked'] ==
+                  true) {
+                break;
+              }
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+            expect(
+              (await runtime.readWorkspaceExecution(
+                f.registry.record,
+              ))?['revoked'],
+              true,
+            );
+          }
+          release.complete();
+          await stopped;
+          // The serialized read waits for the interrupted first cycle to end.
+          await runtime.runWorkspaceAction(
+            record: f.registry.record,
+            action: 'open',
+          );
+          expect(f.sends, 0);
+        } finally {
+          if (!release.isCompleted) release.complete();
+          runtime.stopWorkspaceScheduling(permanently: true);
+          await f.close();
+        }
+      }
+    },
+  );
+
+  test(
+    'remote Start uses one setup with the new selection; revoked Start sends no setup',
+    () async {
+      for (final fault in ['none', 'secret', 'stale']) {
+        final revoke = fault != 'none';
+        final f = await Fixture.create();
+        try {
+          final bytes = utf8.encode('synthetic package transport');
+          final package = File('${f.home.path}/package.zip');
+          await package.writeAsBytes(bytes);
+          f.registry.packagePath = package.path;
+          f.registry.digest = sha256.convert(bytes).toString();
+          await f.enable();
+          await f.changeGrant((g) {
+            g['executor'] = 'vps';
+            g['executor_id'] = 'e' * 64;
+            g['handoff_id'] = 'd' * 64;
+          });
+          final dir = await f.files.capsuleDirForHex(f.owner);
+          final connection = {
+            'owner': f.owner,
+            'plugin_id': f.registry.record.pluginId,
+            'executor_id': 'f' * 64,
+            'host': 'server.example',
+            'port': 22,
+            'fingerprint': 'SHA256:${'A' * 43}',
+            'selected': true,
+            'package_id': 'previous-server-package',
+            'package_digest': 'c' * 64,
+          };
+          await f.files.writePluginState(
+            dir,
+            f.registry.record.pluginId!,
+            PluginWorkspaceRemoteService.connectionFile,
+            jsonEncode(connection),
+          );
+          final calls = <String>[];
+          final binding = {...connection}..removeWhere(
+            (key, _) =>
+                ![
+                  'owner',
+                  'plugin_id',
+                  'executor_id',
+                  'package_id',
+                  'package_digest',
+                ].contains(key),
+          );
+          binding['package_id'] = 'new-server-package';
+          binding['package_digest'] = f.registry.digest;
+          final unused = UnusedWorkspacePorts();
+          if (fault == 'secret') {
+            unused.beforeResolve =
+                () => f.changeGrant((g) {
+                  g['enabled'] = false;
+                  g['revision']++;
+                });
+          }
+          final remote = PluginWorkspaceRemoteService(
+            files: f.files,
+            vault: unused,
+            registry: f.registry,
+            requestTransport: (c, command, payload) async {
+              final body = jsonDecode(utf8.decode(payload)) as Map;
+              calls.add(
+                command == 'request' ? body['command'] as String : command,
+              );
+              if (command == 'setup') {
+                expect(body['checkpoint']['execution']['settings'], {
+                  'selection': 'new-choice',
+                });
+                expect(
+                  body['checkpoint']['execution']['executor_id'],
+                  'f' * 64,
+                );
+                return jsonEncode(binding);
+              }
+              return jsonEncode({
+                'ok': true,
+                'result': {
+                  'binding': binding,
+                  'runner': {'state': 'running', 'execution_controls': 4},
+                  'view': {
+                    ...presentation(),
+                    'execution': {
+                      'mode': 'vps',
+                      'active': true,
+                      'running': true,
+                    },
+                  },
+                },
+              });
+            },
+          );
+          await remote.connect(
+            owner: f.owner,
+            record: f.registry.record,
+            host: 'server.example',
+            port: 22,
+            password: '',
+            trustPeer:
+                (_) async => throw StateError('Saved pin must not be replaced'),
+            stillOwned: () => true,
+          );
+          expect(
+            calls,
+            isEmpty,
+            reason: 'Selecting a saved VPS must not control its prior runner',
+          );
+          final module = PluginRuntimeModule(
+            registry: f.registry,
+            sourceCatalog: const WasmPluginSourceCatalogService(),
+            manualChecks: unused,
+            pluginHostApi: f.runtime().pluginHostApi,
+            attestationExchange: unused,
+            chatDelivery: unused,
+            passiveReceive: unused,
+            contactLabels: unused,
+            uiLog: unused,
+            fileStore: f.files,
+            secretVault: unused,
+            readActiveCapsuleRootHex: () => f.owner,
+            workspaceRemote: remote,
+          );
+          if (fault == 'stale') {
+            await f.changeGrant((g) {
+              g['enabled'] = false;
+              g['revision']++;
+            });
+          }
+          final operation = module.setWorkspaceExecution(
+            record: f.registry.record,
+            enabled: true,
+            expiresAtMs: null,
+            expectedRevision: 1,
+            approvedScope: {
+              ...f.schedule,
+              'start_action': 'begin_owner_workflow',
+            },
+            settings: const {'selection': 'new-choice'},
+          );
+          if (revoke) {
+            await expectLater(operation, throwsStateError);
+            expect(calls, isEmpty);
+          } else {
+            final view = await operation;
+            expect(view['host_connection']['target'], 'vps');
+            expect(calls.first, 'setup');
+            expect(calls, isNot(contains('action')));
+            expect(calls, isNot(contains('execution')));
+          }
+          expect(f.sends, 0);
+        } finally {
+          await f.close();
+        }
+      }
+    },
+  );
+
+  testWidgets(
+    'remote Start replaces execution with the selected settings without sending Start to the old runner',
+    (tester) async {
+      final actions = <String>[];
+      Map<String, dynamic>? selected;
+      final access = permission('https://one.example');
+      final scope = {
+        'version': 2,
+        'action': 'run',
+        'interval_seconds': 60,
+        'description': 'Owner workflow',
+        'access': access,
+      };
+      Map<String, dynamic> view() => {
+        ...presentation(),
+        'fields': [
+          {
+            'id': 'selection',
+            'type': 'text',
+            'label': 'Selection',
+            'value': 'old-choice',
+          },
+        ],
+        'actions': [
+          {'id': 'start', 'label': 'Start', 'host': 'workspace.start'},
+        ],
+        'schedule': scope,
+        'execution': {
+          'mode': 'vps',
+          'enabled': true,
+          'active': true,
+          'running': true,
+          'revision': 1,
+          'expires_at_ms': null,
+          'access': access,
+          'credentials': {
+            'default': {'token': 'ref-token'},
+          },
+        },
+        'host_connection': {
+          'target': 'vps',
+          'selected': true,
+          'host': 'server.example',
+        },
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              actions.add(action);
+              if (actions.length > 1) {
+                throw const SocketException('Old executor unavailable');
+              }
+              return view();
+            },
+            configureExecution: ({
+              required enabled,
+              required expiresAtMs,
+              expectedRevision,
+              revoke = false,
+              approvedScope,
+              credentialBindings,
+              settings = const {},
+            }) async {
+              selected = settings;
+              return view();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'new-choice');
+      await tester.pump(const Duration(seconds: 61));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+      expect(actions, ['open', 'open']);
+      expect(selected, {'selection': 'new-choice'});
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'scheduled package result remains visible beside fresh observations',
+    (tester) async {
+      var opens = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction:
+                (_, _) async => {
+                  ...presentation(),
+                  'message': 'Fresh observation ${++opens}',
+                  'execution': {
+                    'active': true,
+                    'enabled': true,
+                    'running': true,
+                    'last_checked_at_ms': 1793750978108,
+                    'last_result':
+                        'Stopped: provider rejected content; nothing sent',
+                  },
+                },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Last cycle result'));
+      expect(
+        find.text('Stopped: provider rejected content; nothing sent'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Last completed cycle:'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pumpAndSettle();
+      expect(opens, greaterThan(1));
+      expect(
+        find.text('Stopped: provider rejected content; nothing sent'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Last successful cycle:'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  test(
+    'selected but unacknowledged VPS cannot relabel local execution',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      final directory = await f.files.capsuleDirForHex('a' * 64);
+      await f.files.writePluginState(
+        directory,
+        f.registry.record.pluginId!,
+        PluginWorkspaceRemoteService.connectionFile,
+        jsonEncode({
+          'owner': 'a' * 64,
+          'plugin_id': f.registry.record.pluginId,
+          'host': 'server.example',
+          'port': 22,
+          'fingerprint': 'SHA256:${'A' * 43}',
+          'executor_id': 'e' * 64,
+          'package_id': null,
+          'package_digest': null,
+          'selected': true,
+        }),
+      );
+      final unused = UnusedWorkspacePorts();
+      final module = PluginRuntimeModule(
+        registry: f.registry,
+        sourceCatalog: const WasmPluginSourceCatalogService(),
+        manualChecks: unused,
+        pluginHostApi: f.runtime().pluginHostApi,
+        attestationExchange: unused,
+        chatDelivery: unused,
+        passiveReceive: unused,
+        contactLabels: unused,
+        uiLog: unused,
+        fileStore: f.files,
+        secretVault: unused,
+        readActiveCapsuleRootHex: () => f.owner,
+      );
+      final view = await module.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      expect(view['execution']['mode'], 'local');
+      expect(view['execution']['running'], isTrue);
+      expect(view['host_connection']['target'], 'local');
+      expect(view['host_connection']['selected'], isTrue);
+      expect(view['host_connection']['health'], 'setup_unconfirmed');
+      expect(f.sends, 0);
+    },
+  );
+
+  testWidgets(
+    'failed VPS connection retains the local workflow without relabelling execution',
+    (tester) async {
+      var opens = 0, connections = 0;
+      final busy = StateError('Synthetic connection failure');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, settings) async {
+              opens++;
+              return {
+                ...presentation(),
+                'execution': {'mode': 'local', 'running': true, 'active': true},
+                'host_connection': {
+                  'target': 'local',
+                  'selected': true,
+                  'host': 'server.example',
+                  'port': 22,
+                  'installed': false,
+                  'health': 'setup_unconfirmed',
+                },
+              };
+            },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+            }) async {
+              connections++;
+              throw busy;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('On this device · keep the app open'), findsOneWidget);
+      expect(find.textContaining('VPS execution ·'), findsNothing);
+      expect(find.textContaining('Setup not confirmed'), findsOneWidget);
+      final connect = find.text('Connect VPS');
+      await tester.ensureVisible(connect);
+      await tester.tap(connect);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate((w) => w is TextField && w.obscureText),
+        'synthetic-test-password',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connect securely'));
+      await tester.pumpAndSettle();
+      expect(connections, 1);
+      expect(
+        find.textContaining('VPS connection was not completed'),
+        findsOneWidget,
+      );
+      final observedOpens = opens;
+      await tester.pump(const Duration(seconds: 61));
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('VPS connection was not completed'),
+        findsOneWidget,
+      );
+      expect(opens, observedOpens);
+      expect(find.textContaining('VPS execution ·'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets(
     'scheduled observation preserves owner draft edits until an explicit package action',
     (tester) async {
@@ -229,6 +1150,16 @@ void main() {
       ]) {
         final f = await Fixture.create();
         addTearDown(f.close);
+        f.credential = 'default';
+        f.auth = {
+          'headers': {
+            'Authorization': {'field': 'token', 'prefix': 'Bearer '},
+          },
+        };
+        var credentialReads = 0;
+        f.onReadSecrets = () async {
+          credentialReads++;
+        };
         if (fault != 'absent') await f.enable();
         if (fault == 'origin') f.url = 'https://elsewhere.example/action';
         if (fault == 'method') f.method = 'DELETE';
@@ -248,6 +1179,7 @@ void main() {
           action: 'run',
         );
         expect(f.sends, 0, reason: fault);
+        expect(credentialReads, 0, reason: fault);
         expect(f.received.single['outcome'], 'not_dispatched', reason: fault);
       }
     },
@@ -732,6 +1664,28 @@ void main() {
       );
     }
   });
+
+  test(
+    'missing inference permission never opens the provider credential port',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      f.requestKind = 'ai.infer';
+      await f.enable();
+      var credentialOpens = 0;
+      f.infer = (request, authorize) async {
+        credentialOpens++;
+        await authorize();
+        return {'outcome': 'response', 'text': 'Must not reach inference'};
+      };
+      await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'run',
+      );
+      expect(credentialOpens, 0);
+      expect(f.received.single['outcome'], 'not_dispatched');
+    },
+  );
   testWidgets(
     'explicit package results and failures survive polling and app resume until reopening',
     (tester) async {
@@ -1016,8 +1970,21 @@ void main() {
     'one owner grant connects Keychain references and Start reuses it',
     (tester) async {
       final access = permission('https://one.example');
-      var grants = 0, starts = 0, opens = 0;
-      Map<String, dynamic>? execution;
+      var grants = 0, starts = 0, opens = 0, secretPickers = 0, connections = 0;
+      Map<String, dynamic>? execution = {
+        'enabled': false,
+        'active': false,
+        'running': false,
+        'revoked': true,
+        'revision': 7,
+        'scope': {
+          'version': 2,
+          'action': 'old_cycle',
+          'interval_seconds': 60,
+          'description': 'Previous workflow',
+          'access': access,
+        },
+      };
       Map<String, Map<String, String>>? selected;
       Map<String, dynamic> view() => {
         ...presentation(),
@@ -1039,10 +2006,12 @@ void main() {
         MaterialApp(
           home: PluginWorkspaceScreen(
             capabilities: const ['workspace.schedule', 'credentials.use'],
-            listSecrets:
-                () async => [
-                  {'id': 'ref-token', 'label': 'Service / account / token'},
-                ],
+            listSecrets: () async {
+              secretPickers++;
+              return [
+                {'id': 'ref-token', 'label': 'Service / account / token'},
+              ];
+            },
             configureExecution: ({
               required enabled,
               required expiresAtMs,
@@ -1066,6 +2035,7 @@ void main() {
               return view();
             },
             runWorkspaceAction: (action, settings) async {
+              if (action == 'link') connections++;
               if (action == 'start') starts++;
               if (action == 'open') opens++;
               return view();
@@ -1093,6 +2063,13 @@ void main() {
         'default': {'token': 'ref-token'},
       });
       expect(grants, 1);
+      expect(execution!['running'], isFalse);
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+      expect(connections, 2);
+      expect(secretPickers, 1);
+      expect(grants, 1);
+      expect(find.text('Allow'), findsNothing);
       await tester.tap(find.text('Start'));
       await tester.pumpAndSettle();
       expect(starts, 1);
@@ -1571,11 +2548,36 @@ Map<String, dynamic> presentation() => {
   'confirmation': null,
 };
 
+class UnusedWorkspacePorts
+    implements
+        ManualConsensusCheckService,
+        ConsensusAttestationExchangeService,
+        CapsuleChatDeliveryService,
+        CapsulePassiveReceivePort,
+        CapsuleContactLabelStore,
+        CapsuleScopedSecretVault,
+        UiEventLogService {
+  Future<void> Function()? beforeResolve;
+  @override
+  Future<Map<String, String>> resolveReferences(
+    String owner,
+    Map<String, String> references,
+  ) async {
+    await beforeResolve?.call();
+    return references.map((key, _) => MapEntry(key, 'synthetic-$key'));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw StateError('Unrelated port invoked: ${invocation.memberName}');
+}
+
 class Registry extends WasmPluginRegistryService {
   bool installed = true;
   bool network = true;
   bool persistent = true, scheduled = true;
   String digest = 'b' * 64;
+  String? packagePath;
   final record = const WasmPluginRecord(
     id: 'package',
     displayName: 'Unrelated application',
@@ -1611,6 +2613,7 @@ class Registry extends WasmPluginRegistryService {
             packageVersion: '1.0.0',
             packageKind: 'zip',
             packageDigestHex: digest,
+            packageFilePath: packagePath,
             contractKind: pluginWorkspaceContractKind,
             capabilities:
                 record.capabilities
@@ -1685,12 +2688,18 @@ class Fixture {
     if (auth != null) 'auth': auth,
     ...extraRequest,
   };
-  PluginWorkspaceRuntime runtime() => PluginWorkspaceRuntime(
+  PluginWorkspaceRuntime runtime({
+    bool scheduleTimers = false,
+    String executionHost = 'local',
+    String? executionIdentity,
+  }) => PluginWorkspaceRuntime(
     registry: registry,
     infer: infer,
     fileStore: files,
     readActiveCapsuleRootHex: () => owner,
-    scheduleTimers: false,
+    scheduleTimers: scheduleTimers,
+    executionHost: executionHost,
+    executionIdentity: executionIdentity,
     readCredentials: ({required owner, required pluginId}) async {
       await onReadSecrets?.call();
       return secrets;

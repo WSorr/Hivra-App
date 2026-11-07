@@ -113,21 +113,6 @@ class LedgerViewSupport {
     return 'Unknown';
   }
 
-  DateTime eventTime(dynamic ts) {
-    if (ts is! num) return DateTime.now();
-
-    final raw = ts.toInt();
-    if (raw <= 0) return DateTime.now();
-
-    final millis = raw < 100000000000 ? raw * 1000 : raw;
-
-    try {
-      return DateTime.fromMillisecondsSinceEpoch(millis);
-    } catch (_) {
-      return DateTime.now();
-    }
-  }
-
   Uint8List payloadBytes(dynamic payload) {
     if (payload is List) {
       final out = <int>[];
@@ -157,16 +142,6 @@ class LedgerViewSupport {
       }
     }
     return Uint8List(0);
-  }
-
-  Uint8List bytes32(dynamic value) {
-    if (value is List && value.length == 32) {
-      return Uint8List.fromList(
-        value.whereType<num>().map((v) => v.toInt()).toList(),
-      );
-    }
-    final bytes = payloadBytes(value);
-    return bytes.length == 32 ? bytes : Uint8List(32);
   }
 
   bool eq32(Uint8List a, Uint8List b) {
@@ -199,36 +174,5 @@ class LedgerViewSupport {
       default:
         return StarterKind.juice;
     }
-  }
-
-  String? relationshipKeyFromEstablishedPayload(
-    Uint8List payload, {
-    String Function(Uint8List bytes)? encode32,
-  }) {
-    if (payload.length < 97) return null;
-    final encode = encode32 ?? (Uint8List bytes) => base64.encode(bytes);
-    final peer = encode(Uint8List.fromList(payload.sublist(0, 32)));
-    final ownStarter = encode(Uint8List.fromList(payload.sublist(32, 64)));
-    return '$peer:$ownStarter';
-  }
-
-  String? relationshipPeerFromEstablishedPayload(
-    Uint8List payload, {
-    String Function(Uint8List bytes)? encode32,
-  }) {
-    if (payload.length < 97) return null;
-    final encode = encode32 ?? (Uint8List bytes) => base64.encode(bytes);
-    return encode(Uint8List.fromList(payload.sublist(0, 32)));
-  }
-
-  String? relationshipKeyFromBrokenPayload(
-    Uint8List payload, {
-    String Function(Uint8List bytes)? encode32,
-  }) {
-    if (payload.length < 64) return null;
-    final encode = encode32 ?? (Uint8List bytes) => base64.encode(bytes);
-    final peer = encode(Uint8List.fromList(payload.sublist(0, 32)));
-    final ownStarter = encode(Uint8List.fromList(payload.sublist(32, 64)));
-    return '$peer:$ownStarter';
   }
 }

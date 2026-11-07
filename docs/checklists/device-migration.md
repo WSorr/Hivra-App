@@ -7,17 +7,24 @@ Use this checklist when validating restore, recovery, and first launch on a diff
 - [ ] Install the app on a machine that does not already contain local capsule state.
 - [ ] Confirm app launches to expected first-run or selection flow.
 
-## Restore by Seed
+## Identity From Seed
 
-- [ ] Restore capsule using seed phrase.
-- [ ] Derived pubkey matches the expected capsule identity.
-- [ ] Restored capsule opens with correct local ledger after import/bootstrap.
+- [ ] Derive Capsule identity using the seed phrase and compatible derivation.
+- [ ] Derived pubkey matches the expected Capsule identity.
+- [ ] Do not present seed-only identity recovery as restoration of unavailable
+      signed history or relationships; use the authenticated Ledger backup below.
 
 ## Restore by Backup
 
-- [ ] Import backup JSON.
+- [ ] Import an authenticated backup using the matching seed; reject wrong-seed
+      and modified envelopes without changing existing Capsule data.
 - [ ] Imported capsule dir is created under the correct pubkey.
-- [ ] Index entry and local seed storage match the restored capsule.
+- [ ] Index entry and local seed storage match the restored Capsule.
+- [ ] New Core-only v3 backups restore Ledger/history/relationships and Capsule
+      type/network metadata, with no application content, installed ZIPs,
+      checkpoints or service credentials. Reinstall/reconnect normally.
+- [ ] Distinguish read-only legacy full-state import from the new export scope;
+      the maintained format belongs to `../specification.md`.
 
 ## Launch Receive Safety
 
@@ -25,6 +32,9 @@ Use this checklist when validating restore, recovery, and first launch on a diff
 - [ ] Old resolved invitations do not reappear as pending.
 - [ ] Existing relationships remain visible after first launch receive.
 - [ ] Existing starters remain visible after first launch receive.
+- [ ] Reacquire operational pair attestations through the existing peer exchange.
+      An unavailable peer may block a pair action without erasing relationship
+      truth or silently granting authority.
 
 ## Cross-Device Truth
 

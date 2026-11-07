@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:bech32/bech32.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ffi/capsule_runtime_bootstrap_runtime.dart';
 import '../models/plugin_host_api_models.dart';
 import '../ffi/capsule_persistence_bindings.dart';
+import '../utils/hivra_id_format.dart';
 import 'atomic_file_write_service.dart';
+import 'capsule_address_service.dart';
 import 'capsule_backup_codec.dart';
 import 'capsule_file_store.dart';
 import 'capsule_identity_reconciler_service.dart';
@@ -21,122 +22,11 @@ import 'user_visible_data_directory_service.dart';
 import 'wasm_plugin_registry_service.dart';
 
 @visibleForTesting
-bool shouldRemoveCapsuleContactCardEntry({
-  required String entryKey,
-  required Object? entryValue,
-  required String deleteKeyHex,
-}) {
-  final normalizedDeleteKey = _normalizeHex32ForCleanup(deleteKeyHex);
-  if (normalizedDeleteKey == null) return false;
-
-  final normalizedEntryKey = _normalizeHex32ForCleanup(entryKey);
-  if (normalizedEntryKey == normalizedDeleteKey) return true;
-  final entryRootKeyHex = _decodeBech32Hex32ForCleanup(
-    entryKey,
-    expectedHrp: 'h',
-  );
-  if (entryRootKeyHex == normalizedDeleteKey) return true;
-  final entryNpubHex = _decodeBech32Hex32ForCleanup(
-    entryKey,
-    expectedHrp: 'npub',
-  );
-  if (entryNpubHex == normalizedDeleteKey) return true;
-
-  if (entryValue is! Map) return false;
-  final map = Map<String, dynamic>.from(entryValue);
-
-  final rootHex = _normalizeHex32ForCleanup(map['rootHex']?.toString());
-  if (rootHex == normalizedDeleteKey) return true;
-  final rootKeyHex = _decodeBech32Hex32ForCleanup(
-    map['rootKey']?.toString(),
-    expectedHrp: 'h',
-  );
-  if (rootKeyHex == normalizedDeleteKey) return true;
-
-  final transports = map['transports'];
-  if (transports is! Map) return false;
-  final nostr = transports['nostr'];
-  if (nostr is! Map) return false;
-  final nostrMap = Map<String, dynamic>.from(nostr);
-  final nostrHex = _normalizeHex32ForCleanup(nostrMap['hex']?.toString());
-  if (nostrHex == normalizedDeleteKey) return true;
-  final nostrNpubHex = _decodeBech32Hex32ForCleanup(
-    nostrMap['npub']?.toString(),
-    expectedHrp: 'npub',
-  );
-  if (nostrNpubHex == normalizedDeleteKey) return true;
-  return false;
-}
-
-@visibleForTesting
 bool requiresCapsuleIdentityReconciliation(CapsulesIndex index) {
   if (index.capsules.length < 2) return false;
   return index.capsules.values.any(
     (entry) => entry.identityMode != 'root_owner',
   );
-}
-
-String? _decodeBech32Hex32ForCleanup(
-  String? value, {
-  required String expectedHrp,
-}) {
-  if (value == null) return null;
-  final input = value.trim();
-  if (input.isEmpty) return null;
-  try {
-    final decoded = bech32.decode(input);
-    if (decoded.hrp != expectedHrp) return null;
-    final bytes = _convertBitsForCleanup(decoded.data, 5, 8, false);
-    if (bytes == null || bytes.length != 32) return null;
-    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-  } catch (_) {
-    return null;
-  }
-}
-
-List<int>? _convertBitsForCleanup(
-  List<int> data,
-  int fromBits,
-  int toBits,
-  bool pad,
-) {
-  var acc = 0;
-  var bits = 0;
-  final result = <int>[];
-  final maxValue = (1 << toBits) - 1;
-
-  for (final value in data) {
-    if (value < 0 || (value >> fromBits) != 0) return null;
-    acc = (acc << fromBits) | value;
-    bits += fromBits;
-    while (bits >= toBits) {
-      bits -= toBits;
-      result.add((acc >> bits) & maxValue);
-    }
-  }
-
-  if (pad) {
-    if (bits > 0) {
-      result.add((acc << (toBits - bits)) & maxValue);
-    }
-  } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxValue) != 0) {
-    return null;
-  }
-
-  return result;
-}
-
-String? _normalizeHex32ForCleanup(String? value) {
-  if (value == null) return null;
-  final normalized = value
-      .trim()
-      .toLowerCase()
-      .replaceAll(':', '')
-      .replaceAll('-', '')
-      .replaceAll(' ', '');
-  final hex32 = RegExp(r'^[0-9a-f]{64}$');
-  if (!hex32.hasMatch(normalized)) return null;
-  return normalized;
 }
 
 class CapsulePersistenceService {
@@ -159,7 +49,8 @@ class CapsulePersistenceService {
        _indexStore = CapsuleIndexStore(dirs: dirs),
        _seedStore = seedStore ?? CapsuleSeedStore(dirs: dirs),
        _userVisibleDirs = dirs,
-       _pluginRegistry = WasmPluginRegistryService(dataDirs: dirs) {
+       _pluginRegistry = WasmPluginRegistryService(dataDirs: dirs),
+       _addressBook = CapsuleAddressService(dirs: dirs) {
     _runtimeBootstrapService = CapsuleRuntimeBootstrapService(
       _fileStore,
       _seedStore,
@@ -177,6 +68,7 @@ class CapsulePersistenceService {
   final CapsuleScopedSecretVault _secretVault = CapsuleScopedSecretVault();
   final UserVisibleDataDirectoryService _userVisibleDirs;
   final WasmPluginRegistryService _pluginRegistry;
+  final CapsuleAddressService _addressBook;
   Future<void> _backupImportTail = Future<void>.value();
   final AtomicFileWriteService _atomicWrites = const AtomicFileWriteService();
   late final CapsuleRuntimeBootstrapService _runtimeBootstrapService;
@@ -343,22 +235,6 @@ class CapsulePersistenceService {
     return true;
   }
 
-  Future<String?> exportBackupEnvelope(CapsulePersistenceBindings hivra) async {
-    final ledger = hivra.exportLedger();
-    if (ledger == null || ledger.isEmpty) return null;
-    final state = await _readStateForCurrentCapsule(hivra);
-    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
-      ledgerJson: ledger,
-      isGenesis: state?['isGenesis'] == true,
-      isNeste: state?['isNeste'] != false,
-    );
-
-    final dir = await _currentCapsuleDir(hivra, create: true);
-    await _fileStore.writeBackup(dir, backupJson);
-    await _touchRuntimeCapsuleMetadata(hivra);
-    return _fileStore.backupPath(dir);
-  }
-
   Future<String?> exportBackupEnvelopeToPath(
     CapsulePersistenceBindings hivra,
     String targetPath,
@@ -440,14 +316,6 @@ class CapsulePersistenceService {
       backupJson: backupJson,
       coreProjectionJson: coreProjectionJson,
     );
-  }
-
-  Future<void> clearPersistedData(
-    CapsulePersistenceBindings hivra, {
-    bool includeBackup = false,
-  }) async {
-    final dir = await _currentCapsuleDir(hivra);
-    await _fileStore.clearPersisted(dir, includeBackup: includeBackup);
   }
 
   Future<String?> resolveActiveCapsuleHex(
@@ -552,48 +420,6 @@ class CapsulePersistenceService {
     await _setActiveCapsule(activeHex);
     await _syncLocalCapsuleContactCards(hivra, onlyPubKeyHex: activeHex);
     return true;
-  }
-
-  Future<String?> diagnoseActiveCapsuleBootstrap(
-    CapsulePersistenceBindings hivra,
-  ) async {
-    final activeHex = await resolveActiveCapsuleHex(hivra);
-    if (activeHex == null || activeHex.isEmpty) {
-      return 'No active capsule selected';
-    }
-
-    final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
-    if (bootstrap == null) {
-      return 'No bootstrap data for capsule $activeHex';
-    }
-
-    if (!hivra.saveSeed(bootstrap.seed)) {
-      return 'Failed to save seed for capsule $activeHex';
-    }
-
-    if (!hivra.createCapsule(
-      bootstrap.seed,
-      isGenesis: bootstrap.isGenesis,
-      isNeste: bootstrap.isNeste,
-      ownerMode: _ownerModeCode(bootstrap.identityMode),
-    )) {
-      return 'Failed to create runtime capsule for $activeHex';
-    }
-
-    final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
-    final runtimeHex =
-        runtimePubKey != null && runtimePubKey.length == 32
-            ? _bytesToHex(runtimePubKey)
-            : null;
-    if (runtimeHex != activeHex) {
-      return 'Seed/pubkey mismatch: expected $activeHex, got ${runtimeHex ?? 'none'}';
-    }
-
-    if (!_importBootstrapLedgerCandidates(hivra, bootstrap)) {
-      return 'Failed to import ledger for capsule $activeHex';
-    }
-
-    return null;
   }
 
   Future<CapsuleBootstrapReport> diagnoseBootstrapReport(
@@ -827,22 +653,6 @@ class CapsulePersistenceService {
     );
   }
 
-  Future<void> deleteActiveCapsule(CapsulePersistenceBindings hivra) async {
-    final pubKeyHex = await resolveActiveCapsuleHex(hivra);
-    if (pubKeyHex == null || pubKeyHex.isEmpty) return;
-    await deleteCapsule(pubKeyHex, deleteLocalData: true, hivra: hivra);
-  }
-
-  Future<String> getCurrentBackupPath(CapsulePersistenceBindings hivra) async {
-    final dir = await _currentCapsuleDir(hivra, create: true);
-    return _fileStore.backupPath(dir);
-  }
-
-  Future<String> getCurrentLedgerPath(CapsulePersistenceBindings hivra) async {
-    final dir = await _currentCapsuleDir(hivra, create: true);
-    return _fileStore.ledgerPath(dir);
-  }
-
   Future<List<CapsuleIndexEntry>> listCapsules({
     CapsulePersistenceBindings? hivra,
   }) async {
@@ -893,24 +703,13 @@ class CapsulePersistenceService {
       return _hexToBytes(pubKeyHex);
     }
 
-    final root = await _userVisibleDirs.rootDirectory();
-    final cardsFile = File('${root.path}/capsule_contact_cards.json');
-    if (!await cardsFile.exists()) return null;
-    final cards = await _readContactCards(cardsFile);
-    final normalizedRoot = pubKeyHex.trim().toLowerCase();
-    final rawCard = cards[normalizedRoot];
-    if (rawCard is! Map) return null;
-    final card = Map<String, dynamic>.from(rawCard);
-    if (card['rootHex']?.toString().trim().toLowerCase() != normalizedRoot) {
+    try {
+      return await _addressBook.resolveNostrRecipient(
+        HivraIdFormat.formatCapsuleKeyBytes(_hexToBytes(pubKeyHex)),
+      );
+    } catch (_) {
       return null;
     }
-    final transports = card['transports'];
-    if (transports is! Map) return null;
-    final nostr = transports['nostr'];
-    if (nostr is! Map) return null;
-    final transportHex = nostr['hex']?.toString().trim().toLowerCase() ?? '';
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(transportHex)) return null;
-    return _hexToBytes(transportHex);
   }
 
   Future<String?> loadCapsuleLedgerOwnerHex(String pubKeyHex) async {
@@ -928,18 +727,18 @@ class CapsulePersistenceService {
         currentLegacy != null &&
         currentLegacy.length == 32 &&
         _bytesToHex(currentLegacy) == pubKeyHex) {
-      return _encodeCapsuleKey(currentRoot);
+      return HivraIdFormat.formatCapsuleKeyBytes(currentRoot);
     }
 
     final seed = await _loadSeedForCapsule(pubKeyHex);
     if (seed != null) {
       final rootPubKey = hivra.seedRootPublicKey(seed);
       if (rootPubKey != null && rootPubKey.length == 32) {
-        return _encodeCapsuleKey(rootPubKey);
+        return HivraIdFormat.formatCapsuleKeyBytes(rootPubKey);
       }
     }
 
-    return _encodeCapsuleKey(_hexToBytes(pubKeyHex));
+    return HivraIdFormat.formatCapsuleKeyBytes(_hexToBytes(pubKeyHex));
   }
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
@@ -1598,10 +1397,11 @@ class CapsulePersistenceService {
       File('${capsulesDir.path}/capsules_index.json'),
       pubKeyHex,
     );
-    await _removeCapsuleFromContactCards(
-      File('${root.path}/capsule_contact_cards.json'),
-      pubKeyHex,
-    );
+    try {
+      await CapsuleAddressService(
+        dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
+      ).removeCapsuleReferences(pubKeyHex);
+    } catch (_) {}
   }
 
   Future<void> _removeCapsuleFromIndexFile(
@@ -1625,35 +1425,6 @@ class CapsulePersistenceService {
         root['active'] = null;
       }
       await _atomicWrites.writeString(indexFile, jsonEncode(root));
-    } catch (_) {}
-  }
-
-  Future<void> _removeCapsuleFromContactCards(
-    File cardsFile,
-    String pubKeyHex,
-  ) async {
-    if (!await cardsFile.exists()) return;
-    try {
-      final raw = await cardsFile.readAsString();
-      final cards = _parseJsonMap(raw);
-      if (cards == null) return;
-      final keysToRemove = <String>[];
-      for (final entry in cards.entries) {
-        if (shouldRemoveCapsuleContactCardEntry(
-          entryKey: entry.key,
-          entryValue: entry.value,
-          deleteKeyHex: pubKeyHex,
-        )) {
-          keysToRemove.add(entry.key);
-        }
-      }
-      for (final key in keysToRemove) {
-        cards.remove(key);
-      }
-      await _atomicWrites.writeString(
-        cardsFile,
-        const JsonEncoder.withIndent('  ').convert(cards),
-      );
     } catch (_) {}
   }
 
@@ -1785,10 +1556,6 @@ class CapsulePersistenceService {
     final index = await _readIndex();
     if (index.capsules.isEmpty) return;
 
-    final cardsFile = await _contactCardsFile();
-    final cards = await _readContactCards(cardsFile);
-    var changed = false;
-
     final entries =
         onlyPubKeyHex == null
             ? index.capsules.values
@@ -1808,57 +1575,17 @@ class CapsulePersistenceService {
         continue;
       }
 
-      final rootBytes = Uint8List.fromList(root);
-      final nostrBytes = Uint8List.fromList(nostr);
-      final rootHex = _bytesToHex(rootBytes);
-      final expected = <String, dynamic>{
-        'version': 1,
-        'rootKey': _encodeCapsuleKey(rootBytes),
-        'rootHex': rootHex,
-        'transports': {
-          'nostr': {
-            'npub': _encodeBech32Key('npub', nostrBytes),
-            'hex': _bytesToHex(nostrBytes),
-          },
-        },
-      };
-
-      final existing = cards[rootHex];
-      if (_normalizedJson(existing) != _normalizedJson(expected)) {
-        cards[rootHex] = expected;
-        changed = true;
+      try {
+        await _addressBook.upsertTrustedCardFromKeys(
+          rootPubkey: Uint8List.fromList(root),
+          nostrPubkey: Uint8List.fromList(nostr),
+        );
+      } on FormatException {
+        // Optional routing metadata cannot block Core activation or erase a
+        // damaged contact book. Explicit card operations still report it.
+        return;
       }
     }
-
-    if (!changed) return;
-    await _atomicWrites.writeString(
-      cardsFile,
-      const JsonEncoder.withIndent('  ').convert(cards),
-    );
-  }
-
-  Future<File> _contactCardsFile() async {
-    final root = await _userVisibleDirs.rootDirectory(create: true);
-    final file = File('${root.path}/capsule_contact_cards.json');
-    if (!await file.exists()) {
-      await _atomicWrites.writeString(file, '{}');
-    }
-    return file;
-  }
-
-  Future<Map<String, dynamic>> _readContactCards(File file) async {
-    try {
-      final raw = await file.readAsString();
-      return _parseJsonMap(raw) ?? <String, dynamic>{};
-    } catch (_) {
-      return <String, dynamic>{};
-    }
-  }
-
-  String _normalizedJson(Object? value) {
-    if (value is Map<String, dynamic>) return jsonEncode(value);
-    if (value is Map) return jsonEncode(Map<String, dynamic>.from(value));
-    return '';
   }
 
   bool _sameIndexState(CapsulesIndex a, CapsulesIndex b) {
@@ -2040,44 +1767,6 @@ class CapsulePersistenceService {
     if (!hivra.setApplicationStorageRoot(root.absolute.path)) {
       throw StateError('Failed to initialize native application storage root');
     }
-  }
-
-  String _encodeCapsuleKey(Uint8List bytes) {
-    return _encodeBech32Key('h', bytes);
-  }
-
-  String _encodeBech32Key(String hrp, Uint8List bytes) {
-    final words = _convertBits(bytes, 8, 5, true);
-    return bech32.encode(Bech32(hrp, words));
-  }
-
-  List<int> _convertBits(List<int> data, int from, int to, bool pad) {
-    var acc = 0;
-    var bits = 0;
-    final result = <int>[];
-    final maxValue = (1 << to) - 1;
-
-    for (final value in data) {
-      if (value < 0 || (value >> from) != 0) {
-        throw ArgumentError('Invalid key byte for bech32 conversion');
-      }
-      acc = (acc << from) | value;
-      bits += from;
-      while (bits >= to) {
-        bits -= to;
-        result.add((acc >> bits) & maxValue);
-      }
-    }
-
-    if (pad) {
-      if (bits > 0) {
-        result.add((acc << (to - bits)) & maxValue);
-      }
-    } else if (bits >= from || ((acc << (to - bits)) & maxValue) != 0) {
-      throw ArgumentError('Invalid bech32 padding');
-    }
-
-    return result;
   }
 
   String? _extractOwnerHex(String ledgerJson) {

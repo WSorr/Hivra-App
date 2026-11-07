@@ -6,8 +6,9 @@ Flutter client for Hivra Protocol v1.0.
 
 ### First Launch
 
-- If no capsules exist, the user must create the first capsule (`Proto` or `Genesis`).
-- If at least one capsule exists, show the capsule selection screen.
+- With verified empty storage, offer Capsule creation or explicit recovery.
+- Unavailable/corrupt storage offers retry/recovery; it is not a new installation.
+- Existing Capsules use the selector; a single Capsule may activate automatically.
 
 ### Capsule Selection Screen
 
@@ -32,5 +33,8 @@ flutter run -d macos
 
 ## Notes
 
-- Current development target is macOS.
-- iOS project files can stay in the repo, but they are not required for local macOS runs.
+- Maintained release targets are macOS and Android. Exact toolchains and
+  acceptance limits belong to `../toolchains/hivra-baseline.conf` and
+  `../docs/development-control.md`.
+- iOS project files do not establish a supported release/acceptance target.
+- Source runs are development checks, not exact packaged release evidence.

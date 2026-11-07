@@ -130,31 +130,6 @@ class CapsuleChatDeferredInboxStore {
     }
   }
 
-  Future<void> upsertMany({
-    required String capsuleHex,
-    required Iterable<CapsuleChatDeferredInboxItem> items,
-    required DateTime now,
-  }) async {
-    final normalized = capsuleHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return;
-    final existing = <String, CapsuleChatDeferredInboxItem>{
-      for (final item in await load(normalized)) item.id: item,
-    };
-    final nowUtc = now.toUtc();
-    for (final item in items) {
-      if (item.capsuleHex != normalized) continue;
-      final previous = existing[item.id];
-      existing[item.id] =
-          previous == null
-              ? item
-              : previous.copyWith(
-                lastSeenAt: nowUtc,
-                attempts: previous.attempts + 1,
-              );
-    }
-    await _write(normalized, _pruned(existing.values, nowUtc));
-  }
-
   Future<void> replaceAll({
     required String capsuleHex,
     required Iterable<CapsuleChatDeferredInboxItem> items,

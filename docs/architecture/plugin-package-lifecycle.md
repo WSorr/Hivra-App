@@ -55,17 +55,22 @@ is recovery work and cannot roll back or invalidate the committed record.
   `removalPending`. This host-owned status denies runtime binding and replacement;
   it is not plugin-private state and does not create a second registry.
 - With admission closed, the application module stops scheduling, drains admitted
-  actions and clears Capsule-scoped secrets and private plugin state. Cleanup
-  runs outside the registry mutation lock so final action checks can finish.
-  Concurrent requests for the same removal share one in-process operation.
-  The canonical effect journal and ended execution grant remain retained by
-  their existing owners.
+  actions and clears Capsule-scoped secrets. Common-workspace checkpoints and
+  `data-` storage are retained by default; the owner may explicitly select saved-
+  data deletion, accepting loss of pending recovery information. Other private
+  plugin files are cleared. Cleanup runs outside the registry mutation lock so
+  final action checks can finish. Concurrent requests for the same removal share
+  one in-process operation. The ended execution grant and legacy opaque
+  `external_effects.v1.json` bytes remain retained for custody/compatibility;
+  they are not an active common-HTTP effect controller.
 - Only successful cleanup removes the registry record and then its package file.
   A cleanup or final registry-write failure retains the non-executable pending
   record. After restart, the installed-package card offers **Retry removal**;
   retry uses the same removal path and skips completed VPS retirement.
 - Pending cleanup survives missing package bytes and cannot be bypassed by
-  installation or backup recovery. Backup export requires completed removals.
+  installation or legacy full-state archive recovery. New Core-only backup
+  export/recovery does not load packages or depend on completed removals; its
+  scope is defined in `../specification.md`.
 - The UI displays pending cleanup and a safe failure; it does not report success
   before the module completes or display raw provider/Keychain exceptions.
 

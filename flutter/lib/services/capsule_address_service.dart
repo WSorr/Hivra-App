@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -6,6 +7,8 @@ import 'package:bech32/bech32.dart';
 import 'package:crypto/crypto.dart';
 
 import '../ffi/capsule_address_runtime.dart';
+import '../models/invitation.dart';
+import '../models/relationship.dart';
 import '../utils/hivra_id_format.dart';
 import 'atomic_file_write_service.dart';
 import 'user_visible_data_directory_service.dart';
@@ -149,6 +152,7 @@ class CapsuleAddressCard {
 }
 
 class CapsuleAddressService {
+  static final Map<String, Future<void>> _cardOperations = {};
   final UserVisibleDataDirectoryService _dirs;
   final CapsuleAddressRuntime? _runtime;
   final AtomicFileWriteService _atomicWrites;
@@ -160,6 +164,68 @@ class CapsuleAddressService {
   }) : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
        _runtime = runtime,
        _atomicWrites = atomicWrites;
+
+  /// One transient routing projection for Chat and pair attestations.
+  /// Explicit trusted cards take precedence over relationship and invitation
+  /// observations. Fallback evidence is never persisted as a trusted card.
+  PeerIdentityIndex peerIdentityIndex({
+    required Iterable<Relationship> relationships,
+    required Iterable<Invitation> invitations,
+    required Iterable<CapsuleAddressCard> cards,
+  }) {
+    final transportPeers = <String>{};
+    final transportToRoot = <String, String>{};
+    final rootToTransport = <String, String>{};
+    String? hexKey(String value) {
+      final bytes = _decodeHex32(value.trim().toLowerCase());
+      return bytes == null ? null : _toHex(bytes);
+    }
+
+    String? base64Key(String value) {
+      try {
+        final bytes = base64.decode(value);
+        return bytes.length == 32 ? _toHex(Uint8List.fromList(bytes)) : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    void remember(String? root, String? transport) {
+      if (root == null || transport == null || root == transport) return;
+      transportPeers.add(transport);
+      transportToRoot.putIfAbsent(transport, () => root);
+      rootToTransport.putIfAbsent(root, () => transport);
+    }
+
+    for (final card in cards) {
+      remember(hexKey(card.rootHex), hexKey(card.nostrHex));
+    }
+    for (final relationship in relationships) {
+      if (!relationship.isActive || relationship.hasPendingRemoteBreak) {
+        continue;
+      }
+      final transport = base64Key(relationship.peerPubkey);
+      final root = relationship.peerRootPubkey;
+      if (root == null || root.isEmpty) {
+        if (transport != null) transportPeers.add(transport);
+      } else {
+        remember(base64Key(root), transport);
+      }
+    }
+    for (final invitation in invitations) {
+      if (invitation.isIncoming) {
+        remember(
+          base64Key(invitation.fromRootPubkey ?? ''),
+          base64Key(invitation.fromPubkey),
+        );
+      }
+    }
+    return PeerIdentityIndex(
+      transportPeers: transportPeers,
+      transportToRoot: transportToRoot,
+      rootToTransport: rootToTransport,
+    );
+  }
 
   Future<CapsuleAddressCard?> buildOwnCard() async {
     final root = _runtime?.capsuleRootPublicKey();
@@ -288,9 +354,9 @@ class CapsuleAddressService {
       }
     }
 
-    final cards = await _readCards();
-    cards[card.rootHex] = card.toJson();
-    await _writeCards(cards);
+    await _withCards((cards) {
+      cards[card.rootHex] = card.toJson();
+    }, write: true);
   }
 
   /// Imports either the legacy shareable JSON card or the canonical QR
@@ -374,21 +440,29 @@ class CapsuleAddressService {
       signatureHex: normalizedSignature,
     );
 
-    final cards = await _readCards();
-    cards[card.rootHex] = card.toJson();
-    await _writeCards(cards);
-    return true;
+    return _withCards((cards) {
+      final existing = _coerceJsonMap(cards[card.rootHex]);
+      final previous =
+          existing == null ? null : CapsuleAddressCard.fromJsonMap(existing);
+      // Synchronizing the same local or accepted-invitation keys must not
+      // discard an existing proof.
+      if (!signed &&
+          previous?.version == 2 &&
+          previous?.nostrHex == card.nostrHex) {
+        return true;
+      }
+      cards[card.rootHex] = card.toJson();
+      return true;
+    }, write: true);
   }
 
   Future<bool> removeTrustedCard(String rootKey) async {
     final rootBytes = decodeRootKey(rootKey);
     if (rootBytes == null) return false;
-    final cards = await _readCards();
-    final removed = cards.remove(_toHex(rootBytes)) != null;
-    if (removed) {
-      await _writeCards(cards);
-    }
-    return removed;
+    return _withCards(
+      (cards) => cards.remove(_toHex(rootBytes)) != null,
+      write: true,
+    );
   }
 
   Future<Uint8List?> resolveTransportEndpoint(
@@ -521,7 +595,12 @@ class CapsuleAddressService {
   String _toHex(Uint8List bytes) =>
       bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 
-  List<int>? _convertBits(List<int> data, int fromBits, int toBits, bool pad) {
+  static List<int>? _convertBits(
+    List<int> data,
+    int fromBits,
+    int toBits,
+    bool pad,
+  ) {
     var acc = 0;
     var bits = 0;
     final result = <int>[];
@@ -550,25 +629,56 @@ class CapsuleAddressService {
 
   Future<File> _cardsFile() async {
     final root = await _dirs.rootDirectory(create: true);
-    final file = File('${root.path}/capsule_contact_cards.json');
-    if (!await file.exists()) {
-      await _atomicWrites.writeString(file, '{}');
-    }
-    return file;
+    return File('${root.path}/capsule_contact_cards.json');
   }
 
-  Future<Map<String, dynamic>> _readCards() async {
-    final file = await _cardsFile();
-    final raw = await file.readAsString();
-    return _parseJsonMap(raw) ?? <String, dynamic>{};
-  }
+  Future<Map<String, dynamic>> _readCards() => _withCards((cards) => cards);
 
-  Future<void> _writeCards(Map<String, dynamic> cards) async {
+  /// Every read/modify/write uses this queue, shared by instances for the same
+  /// file in this isolate. Atomic replacement alone does not protect a stale
+  /// read from a concurrent import or Capsule cleanup.
+  Future<T> _withCards<T>(
+    T Function(Map<String, dynamic> cards) action, {
+    bool write = false,
+  }) async {
     final file = await _cardsFile();
-    await _atomicWrites.writeString(
-      file,
-      const JsonEncoder.withIndent('  ').convert(cards),
+    final path = file.absolute.path;
+    final previous = _cardOperations[path] ?? Future<void>.value();
+    final operation = previous.then((_) async {
+      final cards =
+          await file.exists()
+              ? _parseJsonMap(await file.readAsString()) ?? <String, dynamic>{}
+              : <String, dynamic>{};
+      final before = write ? jsonEncode(cards) : null;
+      final result = action(cards);
+      if (write && before != jsonEncode(cards)) {
+        await _atomicWrites.writeString(
+          file,
+          const JsonEncoder.withIndent('  ').convert(cards),
+        );
+      }
+      return result;
+    });
+    final tail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
     );
+    _cardOperations[path] = tail;
+    return operation.whenComplete(() {
+      if (identical(_cardOperations[path], tail)) _cardOperations.remove(path);
+    });
+  }
+
+  Future<void> removeCapsuleReferences(String capsuleHex) {
+    return _withCards((cards) {
+      cards.removeWhere(
+        (key, value) => shouldRemoveCapsuleContactCardEntry(
+          entryKey: key,
+          entryValue: value,
+          deleteKeyHex: capsuleHex,
+        ),
+      );
+    }, write: true);
   }
 
   Map<String, dynamic>? _parseJsonMap(String rawJson) {
@@ -589,4 +699,114 @@ class CapsuleAddressService {
     if (value is Map) return Map<String, dynamic>.from(value);
     return null;
   }
+}
+
+class PeerIdentityIndex {
+  final Set<String> _transportPeers;
+  final Map<String, String> _transportToRoot;
+  final Map<String, String> _rootToTransport;
+
+  const PeerIdentityIndex({
+    required Set<String> transportPeers,
+    required Map<String, String> transportToRoot,
+    required Map<String, String> rootToTransport,
+  }) : _transportPeers = transportPeers,
+       _transportToRoot = transportToRoot,
+       _rootToTransport = rootToTransport;
+
+  String? resolveTransportForSend(String peerHex) {
+    final normalized = peerHex.trim().toLowerCase();
+    if (!_isHex64(normalized)) return null;
+    final mappedTransport = _rootToTransport[normalized];
+    if (mappedTransport != null) return mappedTransport;
+    if (_transportPeers.contains(normalized)) return normalized;
+    return null;
+  }
+
+  String resolveConsensusForIncoming(String transportPeerHex) {
+    final normalized = transportPeerHex.trim().toLowerCase();
+    if (!_isHex64(normalized)) return normalized;
+    return _transportToRoot[normalized] ?? normalized;
+  }
+
+  static bool _isHex64(String value) =>
+      RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
+}
+
+bool shouldRemoveCapsuleContactCardEntry({
+  required String entryKey,
+  required Object? entryValue,
+  required String deleteKeyHex,
+}) {
+  final normalizedDeleteKey = _normalizeHex32ForCleanup(deleteKeyHex);
+  if (normalizedDeleteKey == null) return false;
+
+  final normalizedEntryKey = _normalizeHex32ForCleanup(entryKey);
+  if (normalizedEntryKey == normalizedDeleteKey) return true;
+  final entryRootKeyHex = _decodeBech32Hex32ForCleanup(
+    entryKey,
+    expectedHrp: 'h',
+  );
+  if (entryRootKeyHex == normalizedDeleteKey) return true;
+  final entryNpubHex = _decodeBech32Hex32ForCleanup(
+    entryKey,
+    expectedHrp: 'npub',
+  );
+  if (entryNpubHex == normalizedDeleteKey) return true;
+
+  if (entryValue is! Map) return false;
+  final map = Map<String, dynamic>.from(entryValue);
+
+  final rootHex = _normalizeHex32ForCleanup(map['rootHex']?.toString());
+  if (rootHex == normalizedDeleteKey) return true;
+  final rootKeyHex = _decodeBech32Hex32ForCleanup(
+    map['rootKey']?.toString(),
+    expectedHrp: 'h',
+  );
+  if (rootKeyHex == normalizedDeleteKey) return true;
+
+  final transports = map['transports'];
+  if (transports is! Map) return false;
+  final nostr = transports['nostr'];
+  if (nostr is! Map) return false;
+  final nostrMap = Map<String, dynamic>.from(nostr);
+  final nostrHex = _normalizeHex32ForCleanup(nostrMap['hex']?.toString());
+  if (nostrHex == normalizedDeleteKey) return true;
+  final nostrNpubHex = _decodeBech32Hex32ForCleanup(
+    nostrMap['npub']?.toString(),
+    expectedHrp: 'npub',
+  );
+  if (nostrNpubHex == normalizedDeleteKey) return true;
+  return false;
+}
+
+String? _decodeBech32Hex32ForCleanup(
+  String? value, {
+  required String expectedHrp,
+}) {
+  if (value == null) return null;
+  final input = value.trim();
+  if (input.isEmpty) return null;
+  try {
+    final decoded = bech32.decode(input);
+    if (decoded.hrp != expectedHrp) return null;
+    final bytes = CapsuleAddressService._convertBits(decoded.data, 5, 8, false);
+    if (bytes == null || bytes.length != 32) return null;
+    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+  } catch (_) {
+    return null;
+  }
+}
+
+String? _normalizeHex32ForCleanup(String? value) {
+  if (value == null) return null;
+  final normalized = value
+      .trim()
+      .toLowerCase()
+      .replaceAll(':', '')
+      .replaceAll('-', '')
+      .replaceAll(' ', '');
+  final hex32 = RegExp(r'^[0-9a-f]{64}$');
+  if (!hex32.hasMatch(normalized)) return null;
+  return normalized;
 }

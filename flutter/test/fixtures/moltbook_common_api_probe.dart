@@ -50,7 +50,15 @@ Future<void> main(List<String> args) async {
       await authorize();
       ai++;
       if (request['id'] == 'solve') {
-        return {'outcome': 'response', 'text': '15.00'};
+        return {
+          'outcome': 'response',
+          'text': jsonEncode({
+            'left': 20,
+            'right': 5,
+            'operation': 'subtract',
+            'answer': '999.00',
+          }),
+        };
       }
       final input = request['input'] as Map;
       if (input['account'] != 'owner') {
@@ -65,13 +73,15 @@ Future<void> main(List<String> args) async {
               ? {
                 'kind': 'reply',
                 'parent_id': 'question',
-                'content': 'A concrete answer to the service conversation.',
+                'content':
+                    'Your Capsule stays yours when you replace a provider.',
               }
               : {
                 'kind': 'news',
-                'title': 'Public Capsule capability',
+                'sources': [0],
+                'title': 'Choose from all eligible capabilities',
                 'content':
-                    'An original factual description of the public change.',
+                    'The selector now shows every eligible capability, so owners can choose the one they need without a manual import.',
               },
         ),
       };
@@ -97,13 +107,27 @@ Future<void> main(List<String> args) async {
           data = {
             'success': true,
             'agent': {'id': 'me', 'name': 'owner'},
-            'recentPosts': posts,
+            'recentPosts':
+                posts
+                    .map(
+                      (post) => {
+                        'id': post['id'],
+                        'title': post['title'],
+                        'content_preview': 'truncated source text',
+                      },
+                    )
+                    .toList(),
             'recentComments':
                 comments
                     .where((c) => (c['author'] as Map)['id'] == 'me')
                     .toList(),
             'extra_service_metadata': profilePadding,
           };
+        } else if (path.endsWith('/posts') && method == 'GET') {
+          if (uri.queryParameters['author'] != 'owner') {
+            throw StateError('Publication listing must be account-filtered');
+          }
+          data = {'success': true, 'posts': posts};
         } else if (path.endsWith('/home')) {
           data = {
             'success': true,
@@ -115,15 +139,27 @@ Future<void> main(List<String> args) async {
                     : [],
           };
         } else if (uri.host == 'api.github.com') {
-          data = [
-            {
-              'sha': 'b' * 40,
-              'commit': {
-                'message': 'A new public product capability',
-                'author': {'date': '2026-11-01T09:00:00Z'},
-              },
-            },
-          ];
+          data =
+              path.endsWith('/commits')
+                  ? [
+                    {
+                      'sha': 'b' * 40,
+                      'commit': {
+                        'message': 'Show all eligible capabilities',
+                        'author': {'date': '2026-11-01T09:00:00Z'},
+                      },
+                    },
+                  ]
+                  : {
+                    'sha': 'b' * 40,
+                    'files': [
+                      {
+                        'filename': 'selector.dart',
+                        'status': 'modified',
+                        'patch': '-limit(10)\n+allEligible()',
+                      },
+                    ],
+                  };
         } else if (path.endsWith('/comments') && method == 'GET') {
           data = {
             'success': true,

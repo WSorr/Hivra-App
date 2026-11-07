@@ -16,10 +16,11 @@ This project now supports loading plugin packages from an external source catalo
 - Published source catalog URL:
   - `https://raw.githubusercontent.com/WSorr/hivra-plugins/refs/heads/main/catalog/plugin_catalog.json`
 
-If a local catalog exists, app uses it as the explicit user/developer source.
-If it does not exist, app loads the published source catalog. If published
-sources are not reachable (for example private GitHub repo), app falls back to
-the local catalog path and surfaces a clear error if it is missing too.
+A valid local catalog is the explicit user/developer override. If it is absent
+or malformed, the app tries the published raw GitHub URL, then the secondary
+GitHub raw URL. Both remote responses must pass catalog trust verification.
+If both fail, Discovery shows an error; it does not invent an empty catalog or
+restore an earlier remote snapshot.
 
 ## Integrity checks
 
@@ -95,7 +96,10 @@ This script:
 runtime packages and catalogs are mutable application state and therefore do
 not belong in the user Documents/iCloud boundary.
 
-Then open `WASM Plugins` screen and install from `Source Catalog`.
+Then open Plugins → Discover plugins. For ordinary owner installation, use
+the published catalog directly; local synchronization is a developer workflow.
+Compatible Capsule versions and the current published set belong to
+`../development-control.md`.
 
 ## Release readiness
 

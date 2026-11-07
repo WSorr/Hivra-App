@@ -36,6 +36,11 @@ cleans that plugin's vault entries.
 ## Lifecycle
 
 - Save and replacement are serialized through one process-wide vault owner.
+- The same owner reuses the successfully loaded vault in process memory for
+  reference lists and authorized resolution. Opening another plugin's picker
+  does not clear it or cause another protected read. Writes and deletion update
+  that same cache; a new process reads Secure Storage again. This is secret
+  custody, not a package permission: each dispatch still requires its grant.
 - A malformed stored vault fails closed and is never replaced with defaults.
 - Deleting a Capsule removes every secret under its root before local Capsule
   artifacts and seed are removed.
@@ -49,3 +54,14 @@ cleans that plugin's vault entries.
 The vault does not interpret provider credentials or return stored values to UI. A
 provider-specific connection service may request one exact secret only after
 capturing the active Capsule root.
+
+## Current Removal Ordering Limit
+
+`PluginRuntimeModuleService` closes admission, then clears eligible private files
+before calling vault deletion. If native vault cleanup fails, package removal
+stays pending and non-executable, but some private files may already be gone.
+The default-retained common checkpoint/`data-` files are excluded from that
+cleanup unless the owner selected saved-data deletion. This is a current limit
+against the secret-first ordering above, not proof of atomic data/secret deletion
+or permission to discard unresolved evidence. Registry retry remains the existing
+recovery path; no second cleanup owner is introduced.

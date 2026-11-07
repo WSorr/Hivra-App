@@ -3,9 +3,9 @@
 Status: accepted product brief; implementation authorized on 2026-09-30.
 Current implementation state belongs to `../development-control.md`.
 The target Capsule/package ownership boundary and migration acceptance belong
-to `plugin_host_api_v1.md`, under Unified Capability API. Existing host trading
-checks and journal references below describe v1 mechanisms pending that
-replacement, not permanent requirements for the common API.
+to `plugin_host_api_v1.md`, under Unified Capability API. Jack now uses that
+common path; the former host trading checks, service adapter and effect journal
+are retired. Product rules below belong to the package, not a host fallback.
 Live exchange effects, VPS mutation, commit, push, and release require their
 own authorization. Trading 1.x was retired; this is not a compatibility plan
 for it.
@@ -68,7 +68,10 @@ quality is measured separately from actual closed-trade outcomes.
 5. After initial setup, the primary controls are the chosen instrument, margin
    per entry, and Start/Stop. Start, stop, or update with one user action each
    in either mode; do not expose a whitelist, scanner, runner ID, or session
-   hash as a prerequisite.
+   hash as a prerequisite. On VPS, Start replaces the previous managed runner
+   with this package and the selected instrument/settings, independent of which
+   authorized device installed it. Previous exchange orders are not cancelled;
+   the package retains unresolved identities and reconciles its selected scope.
    Keep advanced strategy settings and calculation evidence in optional,
    collapsed sections. Keep the execution mode, connected account, endpoint,
    current trading status, and actionable failures visible without expanding
@@ -186,8 +189,8 @@ quality is measured separately from actual closed-trade outcomes.
   (for example after later entry fills), prepare a new exit for the observed
   remainder. An open, partially filled or unverified previous exit cannot
   authorize a second one. Jack admits the replacement only after an exact
-  terminal provider read, not merely an acceptance receipt. The current v1
-  host journal also checks that condition until replaced.
+  terminal provider read, not merely an acceptance receipt. This decision and
+  its necessary unresolved identity belong to the package checkpoint.
 - The user chooses one stop-loss percentage of their entry margin, not a
   percentage move in market price. After a fill, derive the protective stop
   trigger from the actual average fill price and filled quantity. For a
@@ -203,12 +206,22 @@ quality is measured separately from actual closed-trade outcomes.
   completed trade. TP/SL closure does not require a new user session while
   the existing trading authority remains valid. Restart resumes reconciliation
   of the current lifecycle before evaluating another entry.
+- Show the last managed trade's result from actual exchange fills, not from an
+  empty position list. Bind exact entry/closing order IDs and position identity,
+  require complete matching quantities, and recheck positions/open orders before
+  calling it a full TP or SL. Show average execution prices, quantity, signed
+  trading fees/rebates and realized PnL; funding remains explicitly excluded from
+  a fills-only result. A different or mixed closure is labelled as such, and
+  missing or bounded/truncated evidence remains unconfirmed. Retain only one
+  owned-trade locator through the existing opaque checkpoint; reacquire fills
+  and result observations on open/refresh. Unavailable past-result history must
+  not prevent management of a current position or new authorized cycles.
 - Keep only the private decisions and pending operation identifiers necessary
   to continue safely. Exchange account history belongs to the exchange, not a
-  host mirror. Current v1 retains completed groups in its effect journal and
-  couples completion to `retired_entry`; replacing that mechanism must preserve
-  unresolved intent and existing order identity. The minimal checkpoint and
-  retirement condition are defined in `plugin_host_api_v1.md`.
+  host mirror. The package checkpoint preserves unresolved intent and existing
+  order identity; no mandatory host effect archive or `retired_entry`-selected
+  continuation remains. The host treats that checkpoint as opaque bytes; its
+  boundary is defined in `plugin_host_api_v1.md`.
 - Each candidate carries symbol, timeframe, side, line price, first-known time,
   placement time, invalidation condition, and stable zone identity. Its
   decision must be reproducible from the exact exchange candle input and
@@ -232,9 +245,9 @@ quality is measured separately from actual closed-trade outcomes.
 - The host owns installation, Capsule selection, protected credential use,
   access enforcement, technical network/crypto execution and optional opaque
   storage. The package owns exchange API requests, response parsing and all
-  trading preflight/recovery. Existing BingX host normalization and effect
-  handling are the implementation to replace through the common API, not a
-  required adapter for each future exchange. Core and Ledger do not gain
+  trading preflight/recovery. The old BingX host normalization and effect
+  handling have been removed; a future exchange using supported primitives
+  does not require another host adapter. Core and Ledger gain no
   Trading-specific types.
 - Use the existing bounded WASM input/output execution model. Each invocation
   receives market and provider snapshots, user settings, explicit observation
@@ -270,10 +283,10 @@ quality is measured separately from actual closed-trade outcomes.
   request, and result across retry/restart. Before any retry after uncertainty,
   query the provider for that exact operation. Missing evidence is `unknown`,
   not permission to submit another order.
-- Confirmed pre-dispatch failure offers fresh zone/account calculation and a
-  new explicitly confirmed plan, without deleting its historical journal entry.
-  Identity binds the complete immutable plan, not just the zone. Unknown or
-  dispatched entries cannot be replaced through this recovery action.
+- Confirmed pre-dispatch failure permits fresh zone/account calculation through
+  the package workflow under the active owner grant, without losing unresolved
+  identity evidence. Identity binds the complete immutable plan, not just the
+  zone. Unknown or dispatched entries cannot be replaced as though unsent.
 - One managed installation per MVP VPS/account. Provisioning must not alter
   unrelated services such as an existing website or VPN. Updates replace
   atomically;
@@ -299,9 +312,10 @@ candidates for a small test account.
 
 These trading rules belong to Jack. The unified host enforces access and full
 revocation, not an independent trading-risk policy. An owner-authorized Start
-may cover the complete autonomous cycle without per-order approvals. Existing
-v1 host financial checks remain enforced until the common-API migration;
-changed authorization guarantees must be explicit to the owner.
+may cover the complete autonomous cycle without per-order approvals. The common
+API grants network/credential access, not a host-enforced loss budget or
+independent strategy check. These changed authorization guarantees must remain
+visible to the owner; service constraints and trading decisions stay in Jack.
 
 ## Acceptance Evidence
 

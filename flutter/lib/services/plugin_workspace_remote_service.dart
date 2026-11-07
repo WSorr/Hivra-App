@@ -123,13 +123,13 @@ class PluginWorkspaceRemoteService {
       throw StateError('Return to online mode before connecting another VPS');
     }
     if (password.isEmpty) {
-      if (previous == null || previous['package_id'] == null) {
-        throw StateError('Install your VPS before using its saved key');
+      if (previous == null) {
+        throw StateError('Connect this VPS with its owner credentials first');
       }
       if (!stillOwned()) throw StateError('Capsule changed');
-      final updated = await ensurePackage(owner, record);
-      if (!stillOwned()) throw StateError('Capsule changed');
-      await _save({...updated, 'selected': true});
+      // Selecting a saved server does not inspect or control its old runner.
+      // The owner's later Start performs the one authoritative replacement.
+      await _save({...previous, 'selected': true});
       return;
     }
     // First installation or explicit repair needs the bundled native runtime.
@@ -207,6 +207,18 @@ class PluginWorkspaceRemoteService {
                 'selected': true,
               };
       validateConnection(c, owner, record.pluginId!);
+      final existing = await _execute(
+        client,
+        'if [ -f /var/lib/hivra-workspace/runner.json ]; then cat /var/lib/hivra-workspace/runner.json; else printf "{}"; fi',
+        const [],
+      );
+      // Root-authenticated setup prepares this owner's chosen installation.
+      // The server ends the old grant; device identity is not server ownership.
+      if (_json(existing).isNotEmpty &&
+          _json(existing)['package_digest'] is! String) {
+        throw StateError('Invalid VPS installation binding');
+      }
+      if (!stillOwned()) throw StateError('Capsule changed');
       // Persist key/pin before installation: a lost acknowledgement can be
       // recovered using the same identity, not by creating another runner.
       await vault.saveSecret(
@@ -218,20 +230,6 @@ class PluginWorkspaceRemoteService {
         secretValue: pem,
       );
       await _save(c);
-      final existing = await _execute(
-        client,
-        'if [ -f /var/lib/hivra-workspace/runner.json ]; then cat /var/lib/hivra-workspace/runner.json; else printf "{}"; fi',
-        const [],
-      );
-      final binding = _json(existing);
-      if (binding.isNotEmpty &&
-          (binding['owner'] != owner ||
-              binding['plugin_id'] != record.pluginId ||
-              binding['executor_id'] != c['executor_id'])) {
-        throw StateError(
-          'This VPS installation belongs to another Capsule or package',
-        );
-      }
       final input = await _setupInput(c, record);
       if (!stillOwned()) throw StateError('Capsule or package changed');
       final public =
@@ -323,6 +321,8 @@ class PluginWorkspaceRemoteService {
     String owner,
     WasmPluginRecord record, {
     Map<String, Map<String, String>>? credentialBindings,
+    Map<String, dynamic>? checkpoint,
+    required Future<void> Function() authorize,
   }) async {
     final c = await connection(owner, record.pluginId!);
     if (c == null) throw StateError('Connect your VPS first');
@@ -331,6 +331,8 @@ class PluginWorkspaceRemoteService {
       record,
       credentialBindings: credentialBindings,
     );
+    if (checkpoint != null) input['checkpoint'] = checkpoint;
+    await authorize();
     final result = _json(
       await _exchange(c, 'setup', utf8.encode('${jsonEncode(input)}\n')),
     );
@@ -678,15 +680,16 @@ if [ "\${SSH_ORIGINAL_COMMAND:-}" = uninstall ] && [ ! -f /var/lib/hivra-workspa
   cat "\$receipt"
   exit 0
 fi
-grep -Fq '"executor_id":"'"\$1"'"' /var/lib/hivra-workspace/runner.json
 case "\${SSH_ORIGINAL_COMMAND:-}" in
-  request) exec runuser -u hivra-workspace -- env HIVRA_WORKSPACE_EXECUTOR_ID="\$1" /opt/hivra-workspace/current/bin/hivra-workspace-runner request /var/lib/hivra-workspace ;;
+  request)
+    exec runuser -u hivra-workspace -- env HIVRA_WORKSPACE_EXECUTOR_ID="\$1" /opt/hivra-workspace/current/bin/hivra-workspace-runner request /var/lib/hivra-workspace ;;
   setup)
     systemctl stop hivra-workspace-runner.service
     trap 'systemctl start hivra-workspace-runner.service' EXIT
     runuser -u hivra-workspace -- env HIVRA_WORKSPACE_EXECUTOR_ID="\$1" /opt/hivra-workspace/current/bin/hivra-workspace-runner setup /var/lib/hivra-workspace
     ;;
   uninstall)
+    grep -Fq '"executor_id":"'"\$1"'"' /var/lib/hivra-workspace/runner.json
     [ ! -L /opt/hivra-workspace/uninstall.next ]
     runuser -u hivra-workspace -- env HIVRA_WORKSPACE_EXECUTOR_ID="\$1" HIVRA_WORKSPACE_COMMAND=forget /opt/hivra-workspace/current/bin/hivra-workspace-runner request /var/lib/hivra-workspace > /opt/hivra-workspace/uninstall.next
     systemctl stop hivra-workspace-runner.service
@@ -706,7 +709,7 @@ install -d -m 700 /root/.ssh
 touch /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 [ ! -L /root/.ssh/authorized_keys.hivra.next ]
-awk '\$0 !~ / hivra-workspace-[0-9a-f]+\$/ { print }' /root/.ssh/authorized_keys > /root/.ssh/authorized_keys.hivra.next
+awk '\$NF != "hivra-workspace-${setup['executor_id']}" { print }' /root/.ssh/authorized_keys > /root/.ssh/authorized_keys.hivra.next
 printf '%s\\n' '$keyLine' >> /root/.ssh/authorized_keys.hivra.next
 chmod 600 /root/.ssh/authorized_keys.hivra.next
 mv /root/.ssh/authorized_keys.hivra.next /root/.ssh/authorized_keys

@@ -24,7 +24,9 @@ The following product foundations are implemented and retained:
   delivery, durable inbox, and acknowledgement boundaries;
 - Core-owned Starter-kind and invitation identity projections consumed by the
   Flutter runtime without product-side Ledger payload decoding;
-- Moltbook proposal, publication, reply, receipt, and restart lifecycle;
+- Moltbook stateless service-history, proposal, publication/reply and receipt
+  workflow; read-and-prepare acceptance and live-write limits are recorded in
+  `development-control.md`;
 - package-owned Moltbook and Jack workflows through the common technical host;
 - guarded repository integration and exact-artifact release signoff.
 
@@ -62,7 +64,9 @@ implementation decision. No later V2 pass is selected.
   plugins. The common API target and bounded Jack replacement are defined in
   `plugins/plugin_host_api_v1.md`; the current decision belongs to
   `development-control.md`.
-- Plugin UI activation is hardcoded in the application shell.
+- Common workspaces activate by installed contract/capabilities. Chat retains
+  a specialized host workspace and relationship-delivery binding; that remaining
+  dependency is part of host/package convergence, not a generic-workspace gap.
 - Several 1.x FFI and screen surfaces remain measured compatibility boundaries
   in `architecture/ownership-registry.v1.json`.
 - Crypto-agility migration is specified but no post-quantum 1.x runtime is

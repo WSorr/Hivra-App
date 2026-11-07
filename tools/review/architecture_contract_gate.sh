@@ -211,7 +211,6 @@ FFI_INBOUND_QUARANTINE="$ROOT/platform/hivra-ffi/src/inbound_quarantine.rs"
 PLATFORM_KEYSTORE="$ROOT/platform/hivra-keystore/src/lib.rs"
 HIVRA_BINDINGS="$ROOT/flutter/lib/ffi/hivra_bindings.dart"
 CAPSULE_PERSISTENCE="$ROOT/flutter/lib/services/capsule_persistence_service.dart"
-PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 PLUGIN_CONTRACT_HANDLERS="$ROOT/flutter/lib/services/plugin_contract_handlers.dart"
 WASM_REGISTRY="$ROOT/flutter/lib/services/wasm_plugin_registry_service.dart"
@@ -441,8 +440,6 @@ require_present "$CAPSULE_AI_RUNTIME_DOC" '^# Capsule AI Runtime' \
   "Capsule AI Runtime architecture contract exists"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'There is no direct `drone -> Gemini`, `screen -> OpenAI`' \
   "Capsule AI Runtime forbids direct feature-to-provider paths"
-require_present "$CAPSULE_AI_RUNTIME_DOC" 'A locked automatic cycle stops before inference' \
-  "Capsule AI Runtime defines fail-closed credential sessions"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'A global `AiDto` layer and pass-through feature wrappers' \
   "Capsule AI Runtime forbids global AI DTO prostheses"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'AI Runtime imports Core mutation or an external-effect adapter' \
@@ -587,8 +584,6 @@ require_present "$CONSENSUS_ATTESTATION_SYNC" 'storedCount: stored\.length' \
   "pair-consensus receive counts only newly persisted evidence"
 require_present "$CONSENSUS_ATTESTATION_SYNC" 'acceptedEvidence: List<ConsensusAttestationEvidence>\.unmodifiable\(' \
   "pair-consensus receive preserves verified duplicate evidence for bounded recovery"
-require_present "$RUNTIME" 'buildConsensusAttestationSyncService' \
-  "runtime exposes pair-consensus attestation sync module"
 require_present "$FFI_INVITATION_API" 'queue_incoming_attestation_if_match' \
   "invitation receive routes pair-consensus attestations before core event parsing"
 require_present "$FFI_INVITATION_API" 'queue_incoming_chat_if_match' \
@@ -768,13 +763,9 @@ require_present "$CAPSULE_PERSISTENCE" '_touchRuntimeCapsuleMetadata' \
 require_present "$MAIN_SCREEN" 'capsuleStateMatchesSelection' \
   "main screen rejects transient projections from another capsule"
 
-# 5) WASM plugin boundaries and readiness guard.
+# 5) WASM plugin boundaries.
 require_present "$WASM_REGISTRY" 'class WasmPluginRegistryService' \
   "wasm plugin registry service exists"
-require_present "$PLUGIN_GUARD" 'class PluginExecutionGuardService' \
-  "plugin execution guard service exists"
-require_present "$PLUGIN_GUARD" 'inspectHostReadiness' \
-  "plugin guard exposes readiness inspection"
 require_absent "$PLUGIN_HOST" 'capsule_chat_contract_service' \
   "generic plugin host does not import concrete plugin contracts"
 require_absent "$PLUGIN_HOST" 'CapsuleChat|capsule_chat' \

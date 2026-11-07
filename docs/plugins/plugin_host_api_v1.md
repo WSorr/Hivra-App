@@ -24,9 +24,9 @@ current limits; package policy does not become universal host policy.
 
 The maintained 1.x workspace implements the common operations below using the
 existing bounded JSON ABI. Protocol 2 is a capability protocol version, not
-activation of Hivra 2.0. Jack 0.2.0 uses this path. The old Jack provider adapter,
+activation of Hivra 2.0. Jack uses this path. The old Jack provider adapter,
 host financial preflight, normalization and host-selected continuations are
-removed. Moltbook 0.8.0 uses the common path without a storage capability.
+removed. Moltbook uses the common path without a storage capability.
 Chat retains its relationship-scoped specialized contract.
 
 Workspace activation admits only the supported common capability set. Retired
@@ -71,8 +71,8 @@ owner action or authorized scheduled wake
 
 For network operations the package supplies the destination, method, parameters
 or body, scoped credential reference and its own correlation/continuation data.
-The host checks that the installed package may use that destination and
-credential, applies authentication within dispatch, and returns bounded HTTP
+The host checks current package access before opening a protected credential,
+rechecks authority at dispatch, applies authentication there, and returns bounded HTTP
 status/body or a transport failure. It must distinguish a proven non-dispatch
 from an uncertain outcome; it does not invent a provider receipt or silently
 retry a possibly delivered mutation. Provider status and business errors are
@@ -108,6 +108,42 @@ revocation blocks new dispatches in the revoked scope without service keys or
 service availability; it cannot undo an admitted request or an exchange order.
 The existing local/VPS custody mechanism prevents two scheduled executors for
 the same grant. Package-defined scheduling needs no host trading state machine.
+
+Selecting a VPS address is not execution handoff. The host presents the actual
+executor from the current grant; a selected but unacknowledged VPS leaves local
+execution labelled local and setup explicitly unconfirmed. Root-authenticated
+installation prepares the owner's chosen server installation. An explicit Start
+replaces its one managed runner with the current package and selected settings;
+the device that installed the previous runner is not a server owner. Existing
+server-authorized SSH keys may request a new Start, while ordinary observation,
+Stop and removal remain bound to the current installation.
+
+A replaced device may use the same authenticated `return` command with its
+original `handoff_id` to retrieve that Capsule/package's already sealed
+checkpoint. It cannot end or observe the replacement's active grant. The
+existing custody owner verifies the handoff in both return phases; restoration
+uses the same local checkpoint path and leaves execution expired and stopped.
+If first open fails, the workspace shell keeps **Recover local access** visible
+beside Retry and the existing VPS connection form, so runtime access can also
+be restored when first open fails. No package evaluation, service request or renewed grant is needed
+to retrieve the opaque checkpoint. An unreachable server or a missing/replaced
+handoff remains an explicit failure; no local fallback or history archive is
+created. This recovery requires the corresponding Capsule and VPS runtime
+update; earlier forced SSH commands reject requests from a replaced device.
+
+The existing setup path stops/drains the service, seals its old grant through
+the canonical authority owner, installs the current package and adopts only the
+new owner Start. Where the server already has that Capsule/package checkpoint,
+it retains those opaque bytes instead of restoring a stale device copy. The
+package receives its own `workspace.start` action ID (carried as
+`scope.start_action`) with the new settings; service interpretation and recovery
+remain package-owned. Setup and resumption of an unacknowledged handoff converge in the same custody
+owner before package Start and scheduling. Replaying the same acknowledgement
+does not invoke Start again or overwrite progressed state. Failed package Start revokes its new
+grant; no previous execution resumes as a fallback. Native execution controls 4
+provide this replacement ability; older runners need the normal runtime update.
+Already accepted service actions are not cancelled by process replacement. The
+UI states this consequence before Start; no per-step product approval is added.
 
 ### Owner-Granted Connections: Accepted Product Model
 
@@ -163,7 +199,7 @@ action-scoped access bypass or second Start approval for unchanged access.
 A changed destination, method or credential connection requires the owner's
 updated grant. Full revocation is available for stateless and scheduled plugins.
 
-Moltbook 0.8.0 implements this path without a host controller or product stores.
+Moltbook implements this path without a host controller or product stores.
 Its service-history and stateless recovery contract belongs to
 `moltbook_engagement_lifecycle_v1.md`. The host reads no prior product checkpoint
 for a package lacking `state.plugin.read_write`.
@@ -264,17 +300,35 @@ owner, package ID/digest, executor and exact network scope in the existing
 Local dispatch resolves them through the existing Capsule-scoped vault. An
 owner-selected remote executor receives a version-3 protected provisioning
 payload (`connections: {alias: {field: value}}`) through the existing custody
-path. The updated runner advertises `execution_controls: 3`; older runners
-are refused for permission changes and package actions. Rebinding credentials
+path. Controls 3 support explicit permission terms; controls 4 add replacement
+on owner Start. Older runners are refused for the unsupported change. Rebinding credentials
 requires returning authority locally first.
 
-A `workspace.authorize` presentation action opens owner permissions before
-running the package's ordinary connection action. Package actions cannot carry
-independent `access`. Start uses `schedule: {version: 2, action,
+A `workspace.authorize` presentation action reuses active matching access before
+running the package's ordinary connection action. Absent or broader access opens
+the existing owner permission form; **Plugin permissions** remains the explicit
+way to change an existing connection or its terms. Reusing Connect neither
+issues another grant nor restarts a schedule. Package actions cannot carry
+independent `access`. Connecting after Stop/revocation does not inherit the ended
+schedule; an explicit permissions edit may retain an already running workflow.
+Start uses `schedule: {version: 2, action,
 interval_seconds, description, access}`; it reuses an active matching grant,
 including its expiry and secret connections. It asks for permission only when
 required access is absent or broader. Permissions need no schedule; `running`
 means a scheduled workflow, while `enabled` means the owner's access is enabled.
+In the local source, explicit Start schedules its first wake immediately; the
+configured interval separates subsequent completed cycles. Reopening a workspace
+or restoring an existing scheduler retains the interval and does not add an
+extra immediate action. Merely connecting credentials without a schedule runs
+no cycle. Every wake uses the same package/grant-checked executor; service
+publication history and rate limits remain package-owned. Published test3 still
+waits one interval before its first wake.
+The current executor also exposes the completed package cycle's message/details
+as `execution.last_result`, alongside its check timestamp, across foreground
+observation refreshes. This is an in-memory presentation only: grant changes,
+package replacement and process shutdown invalidate it. Completion is not a
+claim that a provider accepted an effect; the package's result retains that
+distinction. No service history or effect journal is persisted by this projection.
 The owner may choose a deadline or authorize until revocation. `workspace.stop`
 fully revokes host dispatch. A package may expose an ordinary partial-Stop
 workflow without revoking access to its remaining operations.
@@ -331,8 +385,12 @@ transport admission; `unknown` means the host cannot prove non-delivery;
 `response` means an HTTP response, including service errors. Only the package
 interprets that response as success, rejection, partial completion or a receipt.
 The host never retries. Inference uses the existing owner-selected Capsule AI
-connection and queue. The package supplies instructions and input; the same
-package/grant is rechecked at actual adapter dispatch after queue waiting.
+connection and queue. A current inference grant is checked before opening that
+connection's protected credentials; no separate Analyst action is required.
+The process lease and native authentication behavior belong to
+`../architecture/capsule-ai-runtime.md`. The package supplies instructions and
+input; the same package/grant is rechecked at actual adapter dispatch after
+queue waiting.
 The result includes `text`, `provider_id`, `provider_label` and `model`. Unavailable inference is reported without a fallback product controller.
 
 Resource bounds: state 32 KiB, transient context 16 KiB, view 64 KiB; HTTP body
@@ -361,7 +419,7 @@ dispatch deny access without asking the host to parse Jack's private state.
 The owner ended the old local test sessions and explicitly excluded migration
 of their trading history from this pass. There is no old-journal importer,
 old-ID mapping, old-checkpoint upgrade, or legacy named-request execution
-fallback. Jack 0.2.0 requires a fresh workspace session; an old local test
+fallback. The protocol-2 replacement requires a fresh workspace session; an old local test
 workspace uses normal package removal with explicit saved-data deletion and
 reinstall. Incompatible state is rejected before
 persistence. Existing local files are not deleted by this source change. Future migration of real owner
@@ -369,9 +427,10 @@ sessions must explicitly define which unresolved identities require retention
 before replacing their execution path. New protocol-2 sessions retain their
 own pending intent across ordinary restart.
 
-The common API also supplies HTTP/authentication and inference primitives for
-other packages. It does not claim Moltbook's old host workflow has migrated.
-No live trading, VPS changes or production qualification are part of this pass.
+The same HTTP/authentication and inference primitives support Moltbook's
+package-owned workflow; its old host controller is removed. Current release
+versions and native/live acceptance limits belong to `../development-control.md`;
+this contract does not qualify product execution.
 
 ## Implemented v1 Contracts
 
@@ -486,11 +545,12 @@ The packed evaluate result is `(output_ptr << 32) | output_len`.
   host accepts the canonical result only when its peer, client message id,
   creation timestamp, and bounded canonical message text remain bound to the
   exact request; it never fills missing semantic fields from host input.
-- Moltbook draft, planning, reply, and delegated-reply methods require their
-  corresponding `content.*` capabilities. WASM output is proposal or bounded
-  authorization evidence, not a network publication receipt.
-- Host fallback is retained only for explicitly allowed compatibility methods.
-  It is not a second WASM evaluator and must not duplicate plugin semantics.
+- Common-workspace packages request the technical operations listed above.
+  Moltbook has no named host methods: its content preparation, publication,
+  verification and reconciliation live in WASM. Retired `content.*` names are
+  metadata-only compatibility and cannot authorize invocation.
+- Both maintained contract families require the installed WASM runtime; neither
+  falls back to host-owned product semantics.
 
 ## Consensus Scopes
 

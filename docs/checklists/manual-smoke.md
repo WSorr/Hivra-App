@@ -29,8 +29,11 @@ After completing this checklist, record the result in:
 docs/checklists/release-manual-signoff-log.md
 ```
 
-For Android, use the local macOS emulator environment defined in
-`release-android.md`; a connected tablet is not required.
+Use the approved Capsule/data scope; this checklist does not itself authorize
+extra test Capsules, backups, emulators or changes to working owner data. Record
+which stages are actually in scope under the existing release policy. For
+Android, follow the required matrix in `release-android.md`; a connected tablet
+is not required and physical-device evidence must name its actual API/ABI.
 
 ## Capsule Basics
 
@@ -47,10 +50,19 @@ For Android, use the local macOS emulator environment defined in
       selected for authenticated recovery. Capsule selector Export Backup uses
       the same save flow.
 - [ ] Confirm saved/shared names contain the public Capsule ID and UTC date.
-- [ ] Recover v3 into empty isolated data; reopen and restart Chat and a replaced
-      package with a different private state shape. Verify opaque state, packages
-      and durable receipts survive, no vault credentials are exported, no prior
-      execution lease resumes, and an existing Capsule/package conflict is untouched.
+- [ ] Confirm the new v3 payload contains Core Ledger/type/network metadata only:
+      no Chat content, operational pair attestations, contact labels, delivery
+      queues, opaque package state, installed ZIPs or vault credentials.
+- [ ] Recover that backup into an approved empty destination; confirm identity,
+      signed history and relationships, including restart. Reinstall/reconnect
+      packages normally; no previous execution lease or application data resumes.
+      Existing destination Capsule data must remain untouched on conflict.
+- [ ] Separately verify local Chat and package-state retention across ordinary
+      restart and package replacement with a different private state shape.
+      This is local continuity, not new-backup recovery.
+- [ ] Exercise an existing legacy full-state v3 fixture only when that read-only
+      compatibility path is in scope. Do not generate a new full-state export or
+      treat its retained operational data as a promise for Core-only backups.
 - [ ] Recover with the matching seed and encrypted backup; confirm owner and
       Ledger history match the source Capsule.
 - [ ] Confirm a wrong seed or modified ciphertext fails without importing any

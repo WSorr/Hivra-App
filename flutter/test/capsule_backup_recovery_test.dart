@@ -219,9 +219,20 @@ void main() {
       final path = '${stand.path}/core.json';
       await exporter.exportCapsuleBackupToPath(owner, path);
       final raw = await File(path).readAsString();
-      expect(raw.length, (await File(baseline).readAsString()).length);
       expect(raw.length, lessThan(4096));
       final opened = (await CapsuleBackupCodec.tryDecodeBackup(raw, seed))!;
+      final before =
+          (await CapsuleBackupCodec.tryDecodeBackup(
+            await File(baseline).readAsString(),
+            seed,
+          ))!;
+      // Export timestamps may vary in fractional precision; Core contents and
+      // the size budget, rather than ciphertext length equality, are invariant.
+      expect(jsonDecode(opened.ledgerJson), jsonDecode(before.ledgerJson));
+      expect(
+        [opened.isGenesis, opened.isNeste],
+        [before.isGenesis, before.isNeste],
+      );
       expect(opened.files, isEmpty);
       expect(opened.packages, isEmpty);
       expect(await chat.length(), 256 * 1024 * 1024);
@@ -331,6 +342,23 @@ void main() {
       expect(dstSecure.readCounts.keys, everyElement('hivra.seed.$legacy'));
     },
   );
+  test('corrupt contact cards do not block Core activation', () async {
+    final index = CapsuleIndexStore(dirs: dstDirs);
+    await index.upsert(owner, identityMode: 'root_owner');
+    bindings.nostrKey = Uint8List.fromList(List.filled(32, 0xbb));
+    final cards = File(
+      '${(await dstDirs.rootDirectory(create: true)).path}/capsule_contact_cards.json',
+    );
+    await cards.writeAsString('{broken contact book');
+    await importer.persistAfterCreate(
+      hivra: bindings,
+      seed: seed,
+      isGenesis: false,
+      isNeste: true,
+    );
+    expect((await index.read()).activePubKeyHex, owner);
+    expect(await cards.readAsString(), '{broken contact book');
+  });
   test(
     'read-only legacy v3 recovery retains archived app state and packages',
     () async {

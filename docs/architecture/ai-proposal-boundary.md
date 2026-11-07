@@ -24,10 +24,10 @@ explicitly disclosed bounded input
   -> untrusted proposal
   -> drone-owned deterministic validation and decision
   -> canonical capability intent or external-effect request
-  -> approval/autonomy policy
-  -> existing durable effect lifecycle
-  -> capability-scoped adapter
-  -> verified receipt or visible failure
+  -> existing owner grant and package decision
+  -> common technical dispatch or canonical Capsule delivery
+  -> service evidence returned to the capability owner
+  -> verified result, honest uncertainty or visible failure
 ```
 
 Inference ends before authority begins. AI prose, structured output, tool-call
@@ -43,8 +43,9 @@ The boundary uses the existing two lanes:
   existing capability command, signed fact, ledger append, and canonical
   projector.
 - A provider, exchange, wallet, transport, or publication action enters the
-  Effect Lane only after the capability owner creates a canonical effect
-  request with a stable operation id.
+  Effect Lane only after the capability owner constructs its permitted request.
+  Unresolved identities and restart recovery follow that capability's declared
+  contract; a permanent host effect journal is not a universal requirement.
 
 AI output is never a ledger fact, receipt, approval, capability grant, policy,
 or proof that an effect occurred.
@@ -70,10 +71,13 @@ Capsule AI Runtime is the sole host owner of:
 - explicit disclosure and redaction before inference;
 - inference-provider credential access;
 - inference scheduling, provider dispatch, and request budgets;
-- schema, size, encoding, and safety validation.
+- technical envelope, size, encoding and provider-evidence validation.
 
-The capability host and originating feature retain capability grants, approval
-policy, deterministic decisions, and normal effect lifecycle composition.
+The package validates its private proposal schema and product semantics; the
+shared inference runtime does not become a second editorial/strategy owner.
+
+The host retains capability grants and dispatch enforcement. The originating
+package retains deterministic decisions, workflow and recovery policy.
 Neither side moves provider business policy into Core or generic UI.
 Editorial choices, compatible provider/model selection and local autonomy
 budgets express owner/capability policy. Their current values must not become
@@ -81,19 +85,16 @@ universal host restrictions without a concrete protected property. External
 service limits remain external constraints, not evidence for unrelated local
 limits. Changing a model does not change the capability's authority.
 
-Inference credentials have one process-scoped host owner. A user action may
-unlock the configured provider into host memory for the current foreground app
-session. Feature modules reuse that session lease; they do not reread Keychain,
-copy the credential, or pass it into WASM. Closing the app or explicitly
-locking the lease clears the in-memory credential. A locked automatic cycle
-must stop before inference without opening an operating-system credential
-dialog, creating an effect, or consuming its input checkpoint.
+Inference credentials have one process-scoped host owner. Their access and
+lease lifecycle belong to `capsule-ai-runtime.md`. Feature modules and WASM
+receive no credential; an unlocked lease grants no capability authority.
 
 ### 3.4 Adapters
 
 An inference adapter can call only its configured inference origin. It has no
-reference to capability adapters or effect executors. A capability adapter can
-execute only its pinned provider contract and receives no raw AI response.
+reference to capability effects. Common network dispatch accepts only requests
+within the package's owner grant; the package interprets AI output before
+constructing those requests. The host has no per-service product adapter.
 
 The application composition root may connect both adapter families, but
 neither may call the other.
@@ -105,15 +106,16 @@ The architecture defines semantic classes, not one shared `AiAgentDto`:
 1. **Disclosure envelope**: host-owned, previewable, bounded input selected for
    one inference request. It records provider/model, disclosed sections, size,
    and a canonical hash where the feature requires evidence.
-2. **Proposal**: drone-owned untrusted value. It is parsed with an exact schema
-   and contains no executable callback, URL, credential, capability, or effect
-   state.
+2. **Proposal**: drone-owned untrusted value parsed under the package's contract.
+   Content links and remote identifiers remain data; no callback, credential,
+   host grant or effect state becomes executable merely by appearing in output.
 3. **Capability decision**: deterministic output owned by the drone or feature
    policy. It is reproducible without trusting AI prose.
-4. **Effect request**: the existing capability-specific request entering
-   Runtime External Effects or Delivery. Its operation id and canonical payload
-   are created by trusted code, never supplied by inference.
-5. **Receipt**: adapter evidence reconciled by the existing lifecycle owner.
+4. **Effect request**: the package-constructed common capability request or
+   canonical Capsule delivery. Required operation identity is created by the
+   capability owner, never granted by inference.
+5. **Receipt**: service evidence interpreted by the package, or canonical
+   Capsule transport evidence interpreted by the existing delivery owner.
 
 Types stay with the contract that owns their invariants. Sharing a base class
 is forbidden unless lifecycle and semantics are genuinely identical.
@@ -140,14 +142,16 @@ Even under that assumption, hostile input MUST NOT be able to:
 
 Prompts may instruct the model to ignore hostile text, but prompts are defense
 in depth only. The invariant is enforced by absent references, exact schemas,
-capability-scoped ports, deterministic policy, and the durable effect
-lifecycle.
+capability-scoped ports, owner-grant enforcement and package-owned validation.
+Whether a capability retains a checkpoint is an explicit recovery choice, not
+a second host approval requirement.
 
 ## 6. Validation Rules
 
 Before a proposal reaches domain policy:
 
-- parse one exact versioned schema and reject unknown fields;
+- enforce the originating capability's proposal schema and required fields;
+  unknown fields cannot acquire host authority or select another execution path;
 - enforce byte/character, list, nesting, and item-count limits;
 - reject unsupported links, effect markers, control characters, invisible
   direction/zero-width controls, and executable encodings where the contract
@@ -183,12 +187,14 @@ repeated manual confirmation; the host still checks its scope at execution.
 The user may delegate a narrow class of actions to one deterministic local
 policy. The policy, not the AI, decides whether a proposal is eligible.
 
-Every delegated capability requires all of the following before release:
+Every delegated capability requires:
 
-- explicit action, topic, target, account, time, and rate bounds;
-- deterministic allow/block reason codes and canonical policy version;
-- per-Capsule and per-plugin kill switch;
-- stable operation ids, durable queue, reconciliation, and receipt evidence;
+- explicit owner access covering its destinations, methods, credentials and
+  inference; duration may be until revocation rather than a forced deadline;
+- package-owned eligibility, workflow and visible failure/uncertainty;
+- effective host revocation for the requesting Capsule/package;
+- a declared retention/recovery contract: preserve necessary unresolved intent
+  where required, or expose the limitations of service-only reconstruction;
 - unattended restart, revocation, timeout, replay, and duplicate tests;
 - hostile-input and compromised-model tests proving the invariant in section 5;
 - return to Assisted mode when authority is ambiguous or the action exceeds
@@ -223,19 +229,23 @@ effect specification.
 Every AI-enabled capability must prove:
 
 1. The inference service has no direct effect-adapter or Core-mutation path.
-2. Unknown proposal and effect fields fail closed.
+2. Proposal validation stays with the capability; unknown request operations,
+   authority fields and unsupported effect shapes cannot broaden dispatch.
 3. Hidden controls, oversized content, malformed JSON, and hostile remote text
    cannot alter capability scope.
 4. Credentials are resolved only by the originating Capsule/plugin/provider/
    account scope after an effect is authorized.
 5. Capsule switching and stale async completion cannot transfer a proposal or
    effect to another owner.
-6. Duplicate clicks, retries, timeout-after-acceptance, restart, and missing
-   receipts produce at most one semantic effect.
+6. Duplicate clicks, retries, timeout-after-acceptance, restart and missing
+   receipts obey the declared recovery contract. No unsupported exactly-once
+   guarantee is inferred from an empty service read; Moltbook's stateless limit
+   remains explicit.
 7. The UI distinguishes proposal, prepared decision, approved operation,
    delivery, unresolved state, and verified success.
-8. Removing a plugin or Capsule deletes its private proposal/effect state and
-   scoped credentials according to their existing lifecycle contracts.
+8. Removal clears scoped credentials and follows the canonical package/Capsule
+   lifecycle. Common-workspace saved data is retained by default on plugin
+   removal; explicit deletion accepts loss of pending recovery evidence.
 
 ## 10. Rejection Rules
 

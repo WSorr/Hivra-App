@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
 import '../models/consensus_models.dart';
 import '../models/invitation.dart';
@@ -272,40 +270,13 @@ class ConsensusAttestationExchangeService {
   }
 
   Future<String?> _resolvePeerTransportHex(String peerRootHex) async {
-    final rootToTransport = <String, String>{};
-    for (final relationship in _loadRelationships()) {
-      if (!relationship.isActive || relationship.hasPendingRemoteBreak) {
-        continue;
-      }
-      final peerRoot = relationship.peerRootPubkey;
-      if (peerRoot == null || peerRoot.isEmpty) continue;
-      final rootHex = _decodeB64ToHex32(peerRoot);
-      if (rootHex == null || rootHex != peerRootHex) continue;
-      final transportHex = _decodeB64ToHex32(relationship.peerPubkey);
-      if (transportHex != null && transportHex != rootHex) {
-        rootToTransport.putIfAbsent(rootHex, () => transportHex);
-      }
-    }
-
-    final cards = await _safeTrustedCards();
-    for (final card in cards) {
-      if (_normalizeHex64(card.rootHex) != peerRootHex) continue;
-      final transportHex = _normalizeHex64(card.nostrHex);
-      if (transportHex != null && transportHex != peerRootHex) {
-        rootToTransport[peerRootHex] = transportHex;
-      }
-    }
-
-    for (final invitation in _loadInvitations()) {
-      if (!invitation.isIncoming) continue;
-      final senderRoot = _decodeB64ToHex32(invitation.fromRootPubkey ?? '');
-      if (senderRoot != peerRootHex) continue;
-      final senderTransport = _decodeB64ToHex32(invitation.fromPubkey);
-      if (senderTransport != null && senderTransport != peerRootHex) {
-        rootToTransport[peerRootHex] = senderTransport;
-      }
-    }
-    return rootToTransport[peerRootHex];
+    return const CapsuleAddressService()
+        .peerIdentityIndex(
+          relationships: _loadRelationships(),
+          invitations: _loadInvitations(),
+          cards: await _safeTrustedCards(),
+        )
+        .resolveTransportForSend(peerRootHex);
   }
 
   Future<List<CapsuleAddressCard>> _safeTrustedCards() async {
@@ -316,27 +287,9 @@ class ConsensusAttestationExchangeService {
     }
   }
 
-  String? _decodeB64ToHex32(String value) {
-    try {
-      final bytes = base64.decode(value);
-      if (bytes.length != 32) return null;
-      return _hex(Uint8List.fromList(bytes));
-    } catch (_) {
-      return null;
-    }
-  }
-
   String? _normalizeHex64(String value) {
     final normalized = value.trim().toLowerCase();
     return RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized) ? normalized : null;
-  }
-
-  String _hex(Uint8List bytes) {
-    final out = StringBuffer();
-    for (final byte in bytes) {
-      out.write(byte.toRadixString(16).padLeft(2, '0'));
-    }
-    return out.toString();
   }
 }
 
