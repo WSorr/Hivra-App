@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-07
+Status date: 2026-11-08
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -192,27 +192,50 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Restore the existing stopped workspace through the normal VPS connection form
-when the server's SSH identity has changed. If an old device still holds an
-active grant but cannot open the workspace, its existing revocation control
-must remain reachable. Persist local revocation before attempting remote stop;
-report an unacknowledged remote stop without pretending the server stopped.
-Keep one control and the existing custody owner, not a second offline lifecycle.
-The owner may verify the presented fingerprint during root-authenticated
-recovery; successful root login updates
-the existing connection pin. Ordinary saved-key access must continue to reject
-a different identity. Rejection, failed authentication or a changed Capsule
-must not save the new pin. Retain the executor identity, local opaque checkpoint
-and revoked execution permission. Do not grant Start or create a parallel
-connection, recovery store or SSH bypass.
+Repair Jack's last-trade accounting against the actual BingX execution response.
+The retained owned-trade locator and fresh, matched provider evidence own the
+result. The package must read UTC fill time, base quantity and signed commission
+from the fields the service returns, rather than require absent fill IDs or a
+realized-PnL field. For supported linear USDT contracts, calculate trading PnL
+from complete matched entry/closing fills and show fees/rebates separately.
+Missing quantities, indistinguishable duplicate executions, invalid times,
+wrong account/order/position or non-USDT fees must remain unconfirmed. A partial
+exit must not become full TP. Retain the existing final position/open-order
+checks and current-management continuation after an unavailable old result.
 
-Qualification requires identity-dialog accept/cancel and failed-open revocation
-tests, durable revoked handoff across reopen with opaque evidence preserved,
-and an exact packaged restore of only Hivra runtime on the owner's existing
-VPS. Check saved-key access after reconnect/restart, the stopped grant and preservation of
-the local checkpoint. Website, Amnezia, service orders and trading Start remain
-outside the authorized mutation scope. A running unit alone does not establish
-checkpoint recovery or Jack's trade acceptance.
+Keep service rows and calculated results transient. Do not add a history store,
+checkpoint migration, host service adapter, API primitive or alternative effect
+path. Qualification needs regressions using the observed response shape, the
+canonical replacement package and read-only reconstruction through the installed
+plugin. It does not authorize a new trade, package installation, release or VPS
+update. Live new-cycle TP/closure and reentry remain separate evidence.
+
+The 0.2.4 source repair passes 100 Jack tests, package/host review and the
+existing actual-WASM probe for partial/full reducing fills, reopen and executor
+replacement/removal. The host probe now uses the observed service response
+shape. These are source and synthetic-provider results; canonical CI bytes and
+installed read-only reconstruction of the retained trade remain unqualified.
+
+Owner Start/device replacement is accepted on the exact main-equivalent
+Mac/Samsung artifacts for MNT-USDT 1m, 1 USDT / 20%. Each owner Start replaced
+the managed process, ended the prior executor and completed package cycles;
+Samsung continued with its app process stopped, then reopened saved access and
+returned to the same Capsule without root setup. The pre-existing MNT position
+and its orders were unchanged. Results belong to
+`vps_start_replacement_20261105.current_main_start_acceptance_20261108` in the
+existing acceptance record. Failed/stale Start retains source/real-WASM evidence;
+no working owner data was fault-injected. This does not qualify a new entry fill
+or completed trade.
+
+Stopped recovery after server-identity/device replacement is merged in PR #427
+and accepted on exact Mac/Samsung artifacts with the same source tree as main
+`cdee304`. Owner-verified root repair, saved-key cold reopen, sealed-checkpoint
+return, failed-open local revocation and unavailable-network controls passed;
+Samsung reopened the saved VPS after the owner restored VPN. Permissions stayed
+revoked and opaque checkpoints were retained. Results belong to
+`vps_start_replacement_20261105.stopped_recovery_20261107.identity_recovery.android_offline_revocation_20261107`
+in the existing acceptance record below. This closes stopped recovery, not
+financial Start or Jack's completed-trade journey.
 
 The registry corruption repair is merged and accepted for source faults and
 exact Mac/Samsung healthy-inventory smoke in `registry_corruption_20261107` of
@@ -238,9 +261,7 @@ work.
 | --- | --- |
 | Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
-| Recover after another device replaces the VPS installation | Authenticated return restores the sealed opaque checkpoint without new authority; recovery remains visible after failed first open. Finish exact Mac/Samsung and matching-runner recovery acceptance, including an unreachable VPS. |
-| Start the selected package/settings on the chosen VPS | One setup/custody owner replaces the managed process independently of the installing device; stale replay and failed-Start revocation have source/real-WASM evidence. Device replacement and failure recovery need matching-artifact native evidence. |
-| Show Jack's actual completed trade and continue | Package-owned last-trade locator, fill accounting and pre-dispatch recovery use the common API. Live closure/reentry and restart during a managed trade remain open; synthetic closure is not TP acceptance. |
+| Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. A live read confirmed unsupported fill-field assumptions; 0.2.4 repairs them in the package, with source/actual-WASM evidence. Canonical CI bytes and exact installed read-only reconstruction remain pending. Live closure/reentry and restart during a managed trade remain open; synthetic closure is not TP acceptance. |
 
 These source repairs are not qualified by the published test3 artifacts.
 Moltbook's independent Discovery update on Mac and Samsung qualified package
