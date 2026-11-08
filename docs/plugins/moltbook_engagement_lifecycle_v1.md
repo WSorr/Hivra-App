@@ -89,6 +89,17 @@ service; the package observes history and interprets service rejections without
 blind retries. Generic first-wake behavior and its delivery status have one
 owner in `plugin_host_api_v1.md`.
 
+Temporary HTTP 502/503/504 responses to GET may repeat that exact read at most
+twice, using the existing bounded `runtime.wait` capability. Retry-After delays
+are respected when representable within the existing wait bound; longer or
+unreadable delays end the cycle visibly. Rate limits, invalid successful JSON,
+AI and POST requests do not enter this retry path. The package reports the
+service operation and HTTP status without showing raw HTML/proxy bodies.
+An incomplete cycle does not claim that the owner's schedule stopped or that a
+publication succeeded. The current shell shows existing schedule/last-result
+metadata with the package's controls before configuration; it neither parses
+service responses nor stores a second result history.
+
 ## Stateless Recovery And Limits
 
 Profile history is the service's recent window, not a complete account archive.

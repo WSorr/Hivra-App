@@ -192,27 +192,38 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Restore the existing stopped workspace through the normal VPS connection form
-when the server's SSH identity has changed. If an old device still holds an
-active grant but cannot open the workspace, its existing revocation control
-must remain reachable. Persist local revocation before attempting remote stop;
-report an unacknowledged remote stop without pretending the server stopped.
-Keep one control and the existing custody owner, not a second offline lifecycle.
-The owner may verify the presented fingerprint during root-authenticated
-recovery; successful root login updates
-the existing connection pin. Ordinary saved-key access must continue to reject
-a different identity. Rejection, failed authentication or a changed Capsule
-must not save the new pin. Retain the executor identity, local opaque checkpoint
-and revoked execution permission. Do not grant Start or create a parallel
-connection, recovery store or SSH bypass.
+Make Moltbook's automatic workflow understandable and usable on the existing
+Samsung Capsule. Keep schedule state, its last result and the package's controls
+ahead of configuration; permission/scheduling facts retain the existing runtime
+owner and publication/reply decisions remain in the package. Remove the lower
+copy of the same status. A successful foreground history read must not hide a
+failed automatic cycle, and an enabled schedule must not be labelled a
+successful publication or guaranteed Android background execution.
 
-Qualification requires identity-dialog accept/cancel and failed-open revocation
-tests, durable revoked handoff across reopen with opaque evidence preserved,
-and an exact packaged restore of only Hivra runtime on the owner's existing
-VPS. Check saved-key access after reconnect/restart, the stopped grant and preservation of
-the local checkpoint. Website, Amnezia, service orders and trading Start remain
-outside the authorized mutation scope. A running unit alone does not establish
-checkpoint recovery or Jack's trade acceptance.
+Repair the observed non-JSON gateway failure inside Moltbook: distinguish the
+service operation and HTTP status, bound retries to the exact failed GET and
+never replay POST or inference. Reuse runtime.wait and transient continuation
+context. Keep service history authoritative, state null and the accepted
+stateless delivery limits; add no host adapter, API operation, store or fallback
+source. Preserve the existing Capsule/Ledger, saved credentials and unrelated
+Jack runner. Qualification needs bounded read/write-failure regressions,
+replacement/removal boundaries and a canonical installed Samsung cycle with a
+visible confirmed result. Source tests and a successful Start alone do not
+qualify publication. No commit, release or VPS mutation is implied.
+
+The canonical Moltbook 0.8.6 package and Capsule `5673149` APK are installed in
+the same Samsung Capsule, with Ledger v13 and saved credentials retained.
+Owner Start completed a cycle at 15:22:07 MSK on 2026-11-08: all five recent
+GitHub source commits were already represented in verified service posts, so
+the package sent no duplicate. Independent public reads confirmed those source
+matches. Schedule state, last result and Run/Stop controls were visible before
+configuration and survived workspace return/reopen. The owner-authorized local
+schedule remains enabled; the app must stay open. Results belong to
+`owner_grant_reuse_20261107.moltbook_samsung_start_20261108.source_repair` in the
+existing acceptance record. This qualifies the repaired Samsung cycle and
+presentation, not a new 0.8.6 publication/challenge or native injected gateway
+failure; those paths retain regression-test evidence. No new Capsule, API,
+store, Jack action or VPS mutation was introduced.
 
 The registry corruption repair is merged and accepted for source faults and
 exact Mac/Samsung healthy-inventory smoke in `registry_corruption_20261107` of
