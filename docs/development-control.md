@@ -211,9 +211,18 @@ Qualification requires listing/gap/restart regressions, the canonical replacemen
 WASM, complete fresh native reads on Mac/Samsung, preserved pending-order identity,
 return and restart. Initial native reproduction retained Ledger v121/v13, left
 both schedules off and restored MNT 1m through successful read-only refreshes.
-No Start, exchange mutation or VPS update is authorized. The 0.2.5 source repair
-is awaiting canonical installed acceptance; the historical 0.2.4 SL evidence below
-remains valid for its stated scope.
+No Start, exchange mutation or VPS update is authorized. Canonical 0.2.5 passes
+102 package tests, both repository CIs and the existing actual-WASM replacement
+probe. It is installed without rebuilding Capsule on both existing devices.
+Samsung completed the fresh all-frame read in about five minutes, retained the
+same unfilled order and saved access, and passed cold restart and return with
+Ledger v13. Mac completed the launch-bounded daily history, but two full reads,
+including one after cooldown with Samsung idle, ended in provider rejection
+`100410` on later pages. An isolated public GET succeeded; that does not explain
+or qualify the full native sequence. Mac's fresh 1m read and cold reopen passed.
+Full Mac all-frame acceptance remains open; the historical 0.2.4 SL evidence below
+remains valid for its stated scope. Results belong to `jack_market_history_20261108`
+in the existing acceptance record.
 
 The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
 existing actual-WASM probe for partial/full reducing fills, reopen and executor
@@ -305,8 +314,9 @@ is still open.
 
 The original Discovery delivery qualified install/open/return and restart on
 its recorded Mac/Samsung bytes. It did not qualify full trading outcomes,
-continuous operation or later host changes. The six-frame Android market-history
-request met provider rejection `100410`; a successful 1m read does not close it.
+continuous operation or later host changes. The current all-frame market-history
+qualification is recorded in the selected outcome above; a successful 1m read
+alone does not close it.
 Native Intel, a separate macOS account, long-term migration and complete User
 Lifetime qualification remain unconfirmed. They do not expand the required
 runtime matrix defined above.
