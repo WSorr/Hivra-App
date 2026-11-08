@@ -461,7 +461,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                     (context) => AlertDialog(
                       title: const Text('Confirm server identity'),
                       content: SelectableText(
-                        '$host:$port\n$fingerprint\n\nCompare this fingerprint with your VPS provider or a trusted SSH connection. A different fingerprint will be refused on future connections.',
+                        '$host:$port\n$fingerprint\n\nCompare this fingerprint with your VPS provider or a trusted SSH connection before sending the root password. After successful root login, this becomes the saved server identity. If it changes again, ordinary access is blocked until you confirm the new identity during VPS recovery.',
                       ),
                       actions: [
                         TextButton(
@@ -1031,6 +1031,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final execution = view?['execution'];
+    final revokeControl =
+        widget.configureExecution != null &&
+                (_observationUnavailable || execution?['active'] == true)
+            ? OutlinedButton(
+              onPressed: _choosing ? null : () => _stopExecution(revoke: true),
+              style: OutlinedButton.styleFrom(foregroundColor: colors.error),
+              child: const Text('Revoke plugin permissions'),
+            )
+            : null;
     final message =
         _busy
             ? 'Working... Complete any system permission prompt to continue.'
@@ -1171,6 +1180,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         style: TextStyle(color: colors.error),
                       ),
                     ),
+                  if (_observationUnavailable && revokeControl != null)
+                    revokeControl,
                   if ((view == null || _observationUnavailable) && !_busy)
                     OutlinedButton(
                       onPressed: _choosing ? null : () => _run('open'),
@@ -1442,19 +1453,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                         },
                                 child: const Text('Plugin permissions'),
                               ),
-                            if (widget.configureExecution != null &&
-                                execution is Map &&
-                                execution['active'] == true)
-                              OutlinedButton(
-                                onPressed:
-                                    _choosing
-                                        ? null
-                                        : () => _stopExecution(revoke: true),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: colors.error,
-                                ),
-                                child: const Text('Revoke plugin permissions'),
-                              ),
+                            if (!_observationUnavailable &&
+                                revokeControl != null)
+                              revokeControl,
                           ],
                         ),
                       ], icon: Icons.shield_outlined),
