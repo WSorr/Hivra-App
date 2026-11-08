@@ -1041,6 +1041,8 @@ void main() {
   testWidgets(
     'scheduled package result remains visible beside fresh observations',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 780));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       var opens = 0;
       await tester.pumpWidget(
         MaterialApp(
@@ -1050,6 +1052,26 @@ void main() {
                 (_, _) async => {
                   ...presentation(),
                   'message': 'Fresh observation ${++opens}',
+                  'actions': [
+                    {
+                      'id': 'start',
+                      'label': 'Run cycle now',
+                      'host': 'workspace.start',
+                    },
+                    {
+                      'id': 'stop',
+                      'label': 'Stop and revoke access',
+                      'host': 'workspace.stop',
+                    },
+                  ],
+                  'fields': [
+                    {
+                      'id': 'repository',
+                      'label': 'Repository',
+                      'type': 'text',
+                      'value': 'owner/project',
+                    },
+                  ],
                   'execution': {
                     'active': true,
                     'enabled': true,
@@ -1063,7 +1085,19 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Last cycle result'));
+      final start = find.byKey(const ValueKey('plugin-action-start'));
+      final stop = find.byKey(const ValueKey('plugin-action-stop'));
+      final result = find.text('Last cycle result');
+      final configuration = find.text('Configuration');
+      expect(tester.getBottomRight(stop).dy, lessThan(780));
+      expect(
+        tester.getTopLeft(start).dy,
+        lessThan(tester.getTopLeft(result).dy),
+      );
+      expect(
+        tester.getTopLeft(result).dy,
+        lessThan(tester.getTopLeft(configuration).dy),
+      );
       expect(
         find.text('Stopped: provider rejected content; nothing sent'),
         findsOneWidget,
@@ -1077,6 +1111,60 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Last successful cycle:'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'long cycle receipt stays expandable above settings and does not replace a preview',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 780));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const receipt =
+          'Service confirmed publication\nExact content ID: result-123\nPrepared content and provider evidence';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction:
+                (action, _) async => {
+                  ...presentation(),
+                  'message':
+                      action == 'preview'
+                          ? 'Prepared without sending'
+                          : 'Fresh observation',
+                  'actions': [
+                    {'id': 'preview', 'label': 'Preview'},
+                  ],
+                  'fields': [
+                    {
+                      'id': 'repository',
+                      'label': 'Repository',
+                      'type': 'text',
+                      'value': 'owner/project',
+                    },
+                  ],
+                  'execution': {
+                    'active': true,
+                    'enabled': true,
+                    'running': true,
+                    'last_result': receipt,
+                  },
+                },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Service confirmed publication'), findsOneWidget);
+      expect(find.text(receipt), findsNothing);
+      await tester.tap(find.text('Service confirmed publication'));
+      await tester.pumpAndSettle();
+      expect(find.text(receipt), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('plugin-action-preview')));
+      await tester.pumpAndSettle();
+      expect(find.text('Prepared without sending'), findsOneWidget);
+      expect(find.text('Last cycle result'), findsOneWidget);
+      expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },
   );
@@ -1400,7 +1488,8 @@ void main() {
           findsOneWidget,
         );
         final action = find.byKey(const ValueKey('plugin-action-refresh'));
-        await tester.ensureVisible(action);
+        await Scrollable.ensureVisible(tester.element(action), alignment: 0.5);
+        await tester.pumpAndSettle();
         await tester.tap(action);
         await tester.pumpAndSettle();
         expect(submitted?['limit'], 1.25);
