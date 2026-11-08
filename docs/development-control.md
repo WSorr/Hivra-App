@@ -218,10 +218,15 @@ process restart with saved access and the same selection. Each reached
 `complete=true`; every required frame had a newer quote observation and its
 last closed candle matched that observation. The original MNT 1m read also
 completed. Capsule and host production code were not changed or rebuilt.
-Samsung's listing-bounded read, pending-order retention, cold restart and return
-remain qualified on canonical 0.2.5; 0.2.6 was not installed on Samsung in this
-Mac-only pass. These are bounded read journeys, not trading or continuous-operation
-acceptance.
+Samsung's canonical 0.2.6 replacement retained the pending MNT order and saved
+one-hour access. Its first all-frame read ended visibly with `100410`; after a
+pause and cold process restart, the same native action finished without error
+and returned a fresh quote. The initial refusal remains an open rate-recovery
+finding, not erased by that successful repeat. Fresh Open orders returned the
+same four IDs. The original MNT 1m refresh and return preserved the same Capsule,
+Ledger v13 and three packages, with the automatic cycle off. Android acceptance
+used native UI results; individual raw frame timestamps were not inspected.
+These are bounded read journeys, not trading or continuous-operation acceptance.
 
 A separate unsigned GET sequence reproduced `100410` on request 22 at roughly
 1.2-second dispatch spacing; the host, credentials and WASM were absent. A slower
