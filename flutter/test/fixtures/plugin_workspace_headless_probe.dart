@@ -544,18 +544,15 @@ Future<void> _checkInstalledWasm(
             data = {
               'fill_orders': [
                 {
+                  'tradeId': entry ? '1' : '2',
                   'orderId': entry ? '123' : '999',
                   'symbol': 'BTC-USDT',
                   'side': entry ? 'BUY' : 'SELL',
-                  'volume': '1',
+                  'qty': '1',
                   'price': entry ? '96.5' : '105',
-                  'commission': entry ? '-0.01' : '-0.02',
-                  'currency': 'USDT',
-                  'filledTm':
-                      DateTime.fromMillisecondsSinceEpoch(
-                        now - 1,
-                        isUtc: true,
-                      ).toIso8601String(),
+                  'fee': entry ? '-0.01' : '-0.02',
+                  'realizedPnl': entry ? '0' : '8.5',
+                  'time': now - 1,
                 },
               ],
             };
