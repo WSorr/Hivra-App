@@ -192,23 +192,28 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Repair Jack's last-trade accounting against the actual BingX execution response.
-The retained owned-trade locator and fresh, matched provider evidence own the
-result. The package must read UTC fill time, base quantity and signed commission
-from the fields the service returns, rather than require absent fill IDs or a
-realized-PnL field. For supported linear USDT contracts, calculate trading PnL
-from complete matched entry/closing fills and show fees/rebates separately.
-Missing quantities, indistinguishable duplicate executions, invalid times,
-wrong account/order/position or non-USDT fees must remain unconfirmed. A partial
-exit must not become full TP. Retain the existing final position/open-order
-checks and current-management continuation after an unavailable old result.
+Make Jack read all selected timeframes for a contract listed inside its bounded
+600-candle window. Existing Mac and Samsung 0.2.4 both reject MNT's leading daily
+pages: the service has 459 contiguous daily candles including the current one,
+not 600. Its matching contract reports launch time 1754539200000; the first daily
+candle starts at 1754524800000. The first 96-candle page from that listing candle
+is complete. A missing pre-listing candle is not an internal service gap.
 
-Keep service rows and calculated results transient. Do not add a history store,
-checkpoint migration, host service adapter, API primitive or alternative effect
-path. Qualification needs regressions using the observed response shape, the
-canonical replacement package and read-only reconstruction through the installed
-plugin. It does not authorize a new trade, package installation, release or VPS
-update. Live new-cycle TP/closure and reentry remain separate evidence.
+The package owns the adjustment. A short leading page may trigger one public
+contract read; only unique matching-symbol launch evidence inside the requested
+window can move its start. Re-read through the same bounded page path and retain
+all gap, closed-candle, current-quote and zone first-known coverage checks. Missing
+or contradictory launch evidence still fails. Blindly skipping empty pages is
+rejected because it could hide unavailable history. No host operation, provider
+adapter, persistent listing cache, strategy change or new Capsule is needed.
+
+Qualification requires listing/gap/restart regressions, the canonical replacement
+WASM, complete fresh native reads on Mac/Samsung, preserved pending-order identity,
+return and restart. Initial native reproduction retained Ledger v121/v13, left
+both schedules off and restored MNT 1m through successful read-only refreshes.
+No Start, exchange mutation or VPS update is authorized. The 0.2.5 source repair
+is awaiting canonical installed acceptance; the historical 0.2.4 SL evidence below
+remains valid for its stated scope.
 
 The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
 existing actual-WASM probe for partial/full reducing fills, reopen and executor

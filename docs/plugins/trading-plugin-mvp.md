@@ -173,8 +173,13 @@ quality is measured separately from actual closed-trade outcomes.
   there is no legacy eligibility fallback.
   Each refresh reconstructs all six frames from the existing bounded provider
   window, so corrected historical candles cannot trap calculation behind a
-  saved candle cache. Retained capture/consumption marks survive reconstruction
-  and interruption; its temporary checkpoint ends when that frame is complete.
+  saved candle cache. The window contains at most 600 closed candles. A short
+  leading page may be shortened only to a matching service-confirmed contract
+  launch candle inside that window, then must be re-read without gaps through
+  the last closed candle. This does not prove freshness before the available
+  history or permit filling internal gaps. Retained capture/consumption marks
+  survive reconstruction and interruption; its temporary checkpoint ends when
+  that frame is complete.
   Partial reads cannot make a zone current or change a managed order's plan.
 - After an entry fills, the profit-taking exit targets a confirmed opposite
   JackV liquidity line on the profitable side of entry and closes only the
