@@ -224,6 +224,15 @@ Full Mac all-frame acceptance remains open; the historical 0.2.4 SL evidence bel
 remains valid for its stated scope. Results belong to `jack_market_history_20261108`
 in the existing acceptance record.
 
+The remaining Mac read is the same bounded outcome. A separate unsigned GET
+sequence reproduced `100410` on request 22 at roughly 1.2-second dispatch spacing;
+the host, credentials and WASM were absent. Candidate 0.2.6 reuses the package's
+existing transient retry count and wait requests to slow the remaining read after
+a rejection while preserving the exact page and total retry bound. Moving this
+service policy into a host throttle is rejected. Enlarging candle responses to
+reduce request count is not needed and would change the proven sandbox/input
+budget. Native all-frame acceptance of the changed bytes is still required.
+
 The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
 existing actual-WASM probe for partial/full reducing fills, reopen and executor
 replacement/removal. The host probe uses the observed service response shape;
