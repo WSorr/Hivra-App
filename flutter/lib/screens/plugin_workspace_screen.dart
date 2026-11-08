@@ -1040,10 +1040,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               child: const Text('Revoke plugin permissions'),
             )
             : null;
-    final message =
-        _busy
-            ? 'Working... Complete any system permission prompt to continue.'
-            : view?['message'] as String? ?? '';
+    final message = _busy ? 'Working…' : view?['message'] as String? ?? '';
     final messageLines = message.split('\n');
     final actions =
         (view?['actions'] as List? ?? const [])
@@ -1240,6 +1237,87 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         ),
                         const SizedBox(height: 12),
                       ],
+                      if (!_observationUnavailable &&
+                          _supportsExecution &&
+                          execution is Map) ...[
+                        Text(
+                          '${execution['revoked'] == true
+                              ? 'Permissions revoked'
+                              : execution['active'] == true
+                              ? 'Permissions active'
+                              : execution['active'] == false
+                              ? 'Permissions inactive'
+                              : 'Permission status unavailable'}. '
+                          '${execution['running'] == true
+                              ? 'Automatic cycle enabled.'
+                              : execution['running'] == false
+                              ? 'Automatic cycle off.'
+                              : 'Workflow status unavailable.'}'
+                          '${execution['active'] != true
+                              ? ''
+                              : execution['expires_at_ms'] == null
+                              ? ' Until you revoke access.'
+                              : ' Until ${DateTime.fromMillisecondsSinceEpoch(execution['expires_at_ms'] as int).toLocal()}.'}'
+                          '${execution['last_checked_at_ms'] == null ? '' : '\nLast completed cycle: ${DateTime.fromMillisecondsSinceEpoch(execution['last_checked_at_ms'] as int).toLocal()}'}'
+                          '${execution['last_error'] == null ? '' : '\n${execution['last_error']}'}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                      if (actions.isNotEmpty) ...[
+                        if (_remoteSelected &&
+                            actions.any(
+                              (a) => a['host'] == 'workspace.start',
+                            )) ...[
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Start replaces the VPS runner with this package and the selected settings. Already accepted service actions remain in effect.',
+                          ),
+                        ],
+                        const SizedBox(height: 22),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            for (var i = 0; i < actions.length; i++)
+                              actionButton(actions[i], i == 0),
+                          ],
+                        ),
+                      ],
+                      if (!_observationUnavailable &&
+                          _supportsExecution &&
+                          execution is Map) ...[
+                        if (execution['last_result'] is String &&
+                            (execution['last_result'] as String)
+                                .isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Last cycle result',
+                            style: theme.textTheme.labelLarge,
+                          ),
+                          if ((execution['last_result'] as String).contains(
+                            '\n',
+                          ))
+                            ExpansionTile(
+                              tilePadding: EdgeInsets.zero,
+                              title: Text(
+                                (execution['last_result'] as String)
+                                    .split('\n')
+                                    .first,
+                              ),
+                              children: [
+                                SelectableText(
+                                  execution['last_result'] as String,
+                                ),
+                              ],
+                            )
+                          else
+                            SelectableText(execution['last_result'] as String),
+                        ],
+                      ],
+                      const SizedBox(height: 16),
                       if (view['summary'] is String &&
                           (view['summary'] as String).isNotEmpty) ...[
                         SelectableText(
@@ -1265,26 +1343,6 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                           style: theme.textTheme.bodyMedium?.copyWith(
                             height: 1.6,
                           ),
-                        ),
-                      ],
-                      if (actions.isNotEmpty) ...[
-                        if (_remoteSelected &&
-                            actions.any(
-                              (a) => a['host'] == 'workspace.start',
-                            )) ...[
-                          const SizedBox(height: 14),
-                          const Text(
-                            'Start replaces the VPS runner with this package and the selected settings. Already accepted service actions remain in effect.',
-                          ),
-                        ],
-                        const SizedBox(height: 22),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            for (var i = 0; i < actions.length; i++)
-                              actionButton(actions[i], i == 0),
-                          ],
                         ),
                       ],
                     ], icon: Icons.insights_outlined),
@@ -1383,46 +1441,6 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                           ),
                           const SizedBox(height: 12),
                         ],
-                        if (!_observationUnavailable &&
-                            _supportsExecution &&
-                            execution is Map) ...[
-                          Text(
-                            '${execution['revoked'] == true
-                                ? 'Permissions revoked'
-                                : execution['active'] == true
-                                ? 'Permissions active'
-                                : execution['active'] == false
-                                ? 'Permissions inactive'
-                                : 'Permission status unavailable'}. '
-                            '${execution['running'] == true
-                                ? 'Scheduled workflow running.'
-                                : execution['running'] == false
-                                ? 'Scheduled workflow not running.'
-                                : 'Workflow status unavailable.'}'
-                            '${execution['active'] != true
-                                ? ''
-                                : execution['expires_at_ms'] == null
-                                ? ' Until you revoke access.'
-                                : ' Until ${DateTime.fromMillisecondsSinceEpoch(execution['expires_at_ms'] as int).toLocal()}.'}'
-                            '${execution['last_checked_at_ms'] == null ? '' : '\nLast completed cycle: ${DateTime.fromMillisecondsSinceEpoch(execution['last_checked_at_ms'] as int).toLocal()}'}'
-                            '${execution['last_error'] == null ? '' : '\n${execution['last_error']}'}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                              height: 1.5,
-                            ),
-                          ),
-                          if (execution['last_result'] is String &&
-                              (execution['last_result'] as String)
-                                  .isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              'Last cycle result',
-                              style: theme.textTheme.labelLarge,
-                            ),
-                            SelectableText(execution['last_result'] as String),
-                          ],
-                          const SizedBox(height: 12),
-                        ],
                         Wrap(
                           spacing: 10,
                           runSpacing: 10,
@@ -1454,6 +1472,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 child: const Text('Plugin permissions'),
                               ),
                             if (!_observationUnavailable &&
+                                !actions.any(
+                                  (a) => a['host'] == 'workspace.stop',
+                                ) &&
                                 revokeControl != null)
                               revokeControl,
                           ],

@@ -192,29 +192,36 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Repair Jack's last-trade accounting against the actual BingX execution response.
-The retained owned-trade locator and fresh, matched provider evidence own the
-result. The package must read UTC fill time, base quantity and signed commission
-from the fields the service returns, rather than require absent fill IDs or a
-realized-PnL field. For supported linear USDT contracts, calculate trading PnL
-from complete matched entry/closing fills and show fees/rebates separately.
-Missing quantities, indistinguishable duplicate executions, invalid times,
-wrong account/order/position or non-USDT fees must remain unconfirmed. A partial
-exit must not become full TP. Retain the existing final position/open-order
-checks and current-management continuation after an unavailable old result.
+Make Moltbook's automatic workflow understandable and usable on the existing
+Samsung Capsule. Keep schedule state, its last result and the package's controls
+ahead of configuration; permission/scheduling facts retain the existing runtime
+owner and publication/reply decisions remain in the package. Remove the lower
+copy of the same status. A successful foreground history read must not hide a
+failed automatic cycle, and an enabled schedule must not be labelled a
+successful publication or guaranteed Android background execution.
 
-Keep service rows and calculated results transient. Do not add a history store,
-checkpoint migration, host service adapter, API primitive or alternative effect
-path. Qualification needs regressions using the observed response shape, the
-canonical replacement package and read-only reconstruction through the installed
-plugin. It does not authorize a new trade, package installation, release or VPS
-update. Live new-cycle TP/closure and reentry remain separate evidence.
+Repair the observed non-JSON gateway failure inside Moltbook: distinguish the
+service operation and HTTP status, bound retries to the exact failed GET and
+never replay POST or inference. Reuse runtime.wait and transient continuation
+context. Keep service history authoritative, state null and the accepted
+stateless delivery limits; add no host adapter, API operation, store or fallback
+source. Preserve the existing Capsule/Ledger, saved credentials and unrelated
+Jack runner. Qualification needs bounded read/write-failure regressions,
+replacement/removal boundaries and a canonical installed Samsung cycle with a
+visible confirmed result. Source tests and a successful Start alone do not
+qualify publication. No commit, release or VPS mutation is implied.
 
-The 0.2.4 source repair passes 100 Jack tests, package/host review and the
+The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
 existing actual-WASM probe for partial/full reducing fills, reopen and executor
 replacement/removal. The host probe now uses the observed service response
-shape. These are source and synthetic-provider results; canonical CI bytes and
-installed read-only reconstruction of the retained trade remain unqualified.
+shape. Normal UI replacement in the existing Mac Capsule retained its locator;
+fresh service reads, including workspace reopen, confirmed the old MNT trade
+closed by SL, with quantity, average prices, fees and calculated trading PnL.
+The same Capsule/Ledger and active Samsung runner were preserved; no Start or
+VPS update occurred. Results belong to
+`jack_completed_trade_20261105.fill_response_repair_20261108` in the existing
+acceptance record. Android still runs 0.2.3; new-cycle TP/closure and reentry
+remain unqualified by this historical read-only acceptance.
 
 Owner Start/device replacement is accepted on the exact main-equivalent
 Mac/Samsung artifacts for MNT-USDT 1m, 1 USDT / 20%. Each owner Start replaced
@@ -261,7 +268,7 @@ work.
 | --- | --- |
 | Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
-| Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. A live read confirmed unsupported fill-field assumptions; 0.2.4 repairs them in the package, with source/actual-WASM evidence. Canonical CI bytes and exact installed read-only reconstruction remain pending. Live closure/reentry and restart during a managed trade remain open; synthetic closure is not TP acceptance. |
+| Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Canonical 0.2.4 reconstructed the retained MNT SL result through fresh reads after Mac package replacement and reopen; the actual-WASM probe covers synthetic partial/full closure and executor replacement. Android's updated package, live new-cycle closure/reentry and restart during a managed trade remain open; the historical SL is not new-cycle TP acceptance. |
 
 These source repairs are not qualified by the published test3 artifacts.
 Moltbook's independent Discovery update on Mac and Samsung qualified package
