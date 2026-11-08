@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-07
+Status date: 2026-11-08
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -192,24 +192,64 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Make Moltbook's automatic workflow understandable and usable on the existing
-Samsung Capsule. Keep schedule state, its last result and the package's controls
-ahead of configuration; permission/scheduling facts retain the existing runtime
-owner and publication/reply decisions remain in the package. Remove the lower
-copy of the same status. A successful foreground history read must not hide a
-failed automatic cycle, and an enabled schedule must not be labelled a
-successful publication or guaranteed Android background execution.
+Repair Jack's last-trade accounting against the actual BingX execution response.
+The retained owned-trade locator and fresh, matched provider evidence own the
+result. The package must read UTC fill time, base quantity and signed commission
+from the fields the service returns, rather than require absent fill IDs or a
+realized-PnL field. For supported linear USDT contracts, calculate trading PnL
+from complete matched entry/closing fills and show fees/rebates separately.
+Missing quantities, indistinguishable duplicate executions, invalid times,
+wrong account/order/position or non-USDT fees must remain unconfirmed. A partial
+exit must not become full TP. Retain the existing final position/open-order
+checks and current-management continuation after an unavailable old result.
 
-Repair the observed non-JSON gateway failure inside Moltbook: distinguish the
-service operation and HTTP status, bound retries to the exact failed GET and
-never replay POST or inference. Reuse runtime.wait and transient continuation
-context. Keep service history authoritative, state null and the accepted
-stateless delivery limits; add no host adapter, API operation, store or fallback
-source. Preserve the existing Capsule/Ledger, saved credentials and unrelated
-Jack runner. Qualification needs bounded read/write-failure regressions,
-replacement/removal boundaries and a canonical installed Samsung cycle with a
-visible confirmed result. Source tests and a successful Start alone do not
-qualify publication. No commit, release or VPS mutation is implied.
+Keep service rows and calculated results transient. Do not add a history store,
+checkpoint migration, host service adapter, API primitive or alternative effect
+path. Qualification needs regressions using the observed response shape, the
+canonical replacement package and read-only reconstruction through the installed
+plugin. It does not authorize a new trade, package installation, release or VPS
+update. Live new-cycle TP/closure and reentry remain separate evidence.
+
+The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
+existing actual-WASM probe for partial/full reducing fills, reopen and executor
+replacement/removal. The host probe uses the observed service response shape;
+Capsule production code is unchanged by this accounting repair. Normal UI
+replacement in the existing Mac Capsule retained its locator. Fresh service
+reads and workspace reopen confirmed the old MNT SHORT closed by SL: quantity
+228.93, average entry 0.4368, exit 0.4376, signed fees -0.070089 USDT and trading
+PnL after fees -0.253233 USDT, excluding funding. On Samsung, normal UI return
+ended the previous execution grant and retained the checkpoint before package
+replacement. The same package reopened the current MNT order and read four
+service orders with the saved one-hour key permission after a cold app restart;
+return kept the same Capsule and Ledger v13. No Capsule rebuild, runtime update,
+Start or exchange write was needed. The existing unfilled MNT order remained
+on the service with the automatic cycle off. Samsung had no retained last-trade
+locator, so Android closed-trade arithmetic was not exercised. This historical
+Mac SL does not qualify new-cycle TP, closure/reentry or restart during a
+managed trade. Results belong to
+`jack_completed_trade_20261105.fill_response_repair_20261108` in the existing
+acceptance record.
+
+Owner Start/device replacement is accepted on the exact main-equivalent
+Mac/Samsung artifacts for MNT-USDT 1m, 1 USDT / 20%. Each owner Start replaced
+the managed process, ended the prior executor and completed package cycles;
+Samsung continued with its app process stopped, then reopened saved access and
+returned to the same Capsule without root setup. The pre-existing MNT position
+and its orders were unchanged. Results belong to
+`vps_start_replacement_20261105.current_main_start_acceptance_20261108` in the
+existing acceptance record. Failed/stale Start retains source/real-WASM evidence;
+no working owner data was fault-injected. This does not qualify a new entry fill
+or completed trade.
+
+Stopped recovery after server-identity/device replacement is merged in PR #427
+and accepted on exact Mac/Samsung artifacts with the same source tree as main
+`cdee304`. Owner-verified root repair, saved-key cold reopen, sealed-checkpoint
+return, failed-open local revocation and unavailable-network controls passed;
+Samsung reopened the saved VPS after the owner restored VPN. Permissions stayed
+revoked and opaque checkpoints were retained. Results belong to
+`vps_start_replacement_20261105.stopped_recovery_20261107.identity_recovery.android_offline_revocation_20261107`
+in the existing acceptance record below. This closes stopped recovery, not
+financial Start or Jack's completed-trade journey.
 
 The canonical Moltbook 0.8.6 package and Capsule `5673149` APK are installed in
 the same Samsung Capsule, with Ledger v13 and saved credentials retained.
@@ -249,9 +289,7 @@ work.
 | --- | --- |
 | Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
-| Recover after another device replaces the VPS installation | Authenticated return restores the sealed opaque checkpoint without new authority; recovery remains visible after failed first open. Finish exact Mac/Samsung and matching-runner recovery acceptance, including an unreachable VPS. |
-| Start the selected package/settings on the chosen VPS | One setup/custody owner replaces the managed process independently of the installing device; stale replay and failed-Start revocation have source/real-WASM evidence. Device replacement and failure recovery need matching-artifact native evidence. |
-| Show Jack's actual completed trade and continue | Package-owned last-trade locator, fill accounting and pre-dispatch recovery use the common API. Live closure/reentry and restart during a managed trade remain open; synthetic closure is not TP acceptance. |
+| Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Canonical 0.2.4 reconstructed the retained MNT SL result through fresh reads after Mac replacement and reopen. Samsung package replacement, retained current-order reads, cold restart and return passed without rebuilding Capsule. Android closed-trade arithmetic was not exercised because its returned checkpoint had no last-trade locator. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; a historical Mac SL is not TP acceptance. |
 
 These source repairs are not qualified by the published test3 artifacts.
 Moltbook's independent Discovery update on Mac and Samsung qualified package
