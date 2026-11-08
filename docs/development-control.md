@@ -211,6 +211,20 @@ replacement/removal boundaries and a canonical installed Samsung cycle with a
 visible confirmed result. Source tests and a successful Start alone do not
 qualify publication. No commit, release or VPS mutation is implied.
 
+The canonical Moltbook 0.8.6 package and Capsule `5673149` APK are installed in
+the same Samsung Capsule, with Ledger v13 and saved credentials retained.
+Owner Start completed a cycle at 15:22:07 MSK on 2026-11-08: all five recent
+GitHub source commits were already represented in verified service posts, so
+the package sent no duplicate. Independent public reads confirmed those source
+matches. Schedule state, last result and Run/Stop controls were visible before
+configuration and survived workspace return/reopen. The owner-authorized local
+schedule remains enabled; the app must stay open. Results belong to
+`owner_grant_reuse_20261107.moltbook_samsung_start_20261108.source_repair` in the
+existing acceptance record. This qualifies the repaired Samsung cycle and
+presentation, not a new 0.8.6 publication/challenge or native injected gateway
+failure; those paths retain regression-test evidence. No new Capsule, API,
+store, Jack action or VPS mutation was introduced.
+
 The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
 existing actual-WASM probe for partial/full reducing fills, reopen and executor
 replacement/removal. The host probe now uses the observed service response
