@@ -211,27 +211,31 @@ Qualification requires listing/gap/restart regressions, the canonical replacemen
 WASM, complete fresh native reads on Mac/Samsung, preserved pending-order identity,
 return and restart. Initial native reproduction retained Ledger v121/v13, left
 both schedules off and restored MNT 1m through successful read-only refreshes.
-No Start, exchange mutation or VPS update is authorized. Canonical 0.2.5 passes
+No Start, exchange mutation or VPS update is authorized. Canonical 0.2.6 passes
 102 package tests, both repository CIs and the existing actual-WASM replacement
-probe. It is installed without rebuilding Capsule on both existing devices.
-Samsung completed the fresh all-frame read in about five minutes, retained the
-same unfilled order and saved access, and passed cold restart and return with
-Ledger v13. Mac completed the launch-bounded daily history, but two full reads,
-including one after cooldown with Samsung idle, ended in provider rejection
-`100410` on later pages. An isolated public GET succeeded; that does not explain
-or qualify the full native sequence. Mac's fresh 1m read and cold reopen passed.
-Full Mac all-frame acceptance remains open; the historical 0.2.4 SL evidence below
-remains valid for its stated scope. Results belong to `jack_market_history_20261108`
-in the existing acceptance record.
+probe. Mac completed two fresh native all-frame reads, the second after a cold
+process restart with saved access and the same selection. Each reached
+`complete=true`; every required frame had a newer quote observation and its
+last closed candle matched that observation. The original MNT 1m read also
+completed. Capsule and host production code were not changed or rebuilt.
+Samsung's listing-bounded read, pending-order retention, cold restart and return
+remain qualified on canonical 0.2.5; 0.2.6 was not installed on Samsung in this
+Mac-only pass. These are bounded read journeys, not trading or continuous-operation
+acceptance.
 
-The remaining Mac read is the same bounded outcome. A separate unsigned GET
-sequence reproduced `100410` on request 22 at roughly 1.2-second dispatch spacing;
-the host, credentials and WASM were absent. Candidate 0.2.6 reuses the package's
-existing transient retry count and wait requests to slow the remaining read after
-a rejection while preserving the exact page and total retry bound. Moving this
-service policy into a host throttle is rejected. Enlarging candle responses to
-reduce request count is not needed and would change the proven sandbox/input
-budget. Native all-frame acceptance of the changed bytes is still required.
+A separate unsigned GET sequence reproduced `100410` on request 22 at roughly
+1.2-second dispatch spacing; the host, credentials and WASM were absent. A slower
+constant alone still met a later rejection. The repaired package reuses its
+existing transient retry count and wait requests: rejected pages keep their
+exact offset, cooldown increases and remaining candle reads slow down. The two
+retries remain bounded across the action; mutation requests gain no retry. The
+same public paging algorithm completed all six frames in 50 requests, including
+two real rate rejections followed by successful reads of those exact pages.
+Moving this service policy into a host throttle is rejected. Enlarging candle
+responses is unnecessary and would change the proven sandbox/input budget.
+A persistent provider refusal still ends visibly rather than fabricating data
+or retrying indefinitely. Results belong to `jack_market_history_20261108` and
+its `rate_recovery` section in the existing acceptance record.
 
 The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
 existing actual-WASM probe for partial/full reducing fills, reopen and executor
