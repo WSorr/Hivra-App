@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-08
+Status date: 2026-11-11
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -211,7 +211,8 @@ Qualification requires listing/gap/restart regressions, the canonical replacemen
 WASM, complete fresh native reads on Mac/Samsung, preserved pending-order identity,
 return and restart. Initial native reproduction retained Ledger v121/v13, left
 both schedules off and restored MNT 1m through successful read-only refreshes.
-No Start, exchange mutation or VPS update is authorized. Canonical 0.2.6 passes
+Listing qualification requires no Start, exchange mutation or VPS update.
+Canonical 0.2.6 passes
 102 package tests, both repository CIs and the existing actual-WASM replacement
 probe. Mac completed two fresh native all-frame reads, the second after a cold
 process restart with saved access and the same selection. Each reached
@@ -221,12 +222,21 @@ completed. Capsule and host production code were not changed or rebuilt.
 Samsung's canonical 0.2.6 replacement retained the pending MNT order and saved
 one-hour access. Its first all-frame read ended visibly with `100410`; after a
 pause and cold process restart, the same native action finished without error
-and returned a fresh quote. The initial refusal remains an open rate-recovery
-finding, not erased by that successful repeat. Fresh Open orders returned the
-same four IDs. The original MNT 1m refresh and return preserved the same Capsule,
-Ledger v13 and three packages, with the automatic cycle off. Android acceptance
-used native UI results; individual raw frame timestamps were not inspected.
-These are bounded read journeys, not trading or continuous-operation acceptance.
+and returned a fresh quote. Fresh Open orders returned the same four IDs.
+On 11 November, two more native all-frame reads completed without a visible
+error, including one after another cold restart. Saved access, the selection,
+Capsule and Ledger v13 survived. The second read reconciled the same 220.16 MNT
+entry as closed by SL: average entry 0.4542, exit 0.4556, trading PnL -0.308224
+USDT and signed fees -0.070151 USDT, yielding -0.378375 USDT excluding funding.
+Matched fills and flat position/order evidence confirmed that result; a fresh
+open-order read retained the unrelated BUY/LONG trigger order without adoption
+or cancellation. The initial `100410` remains in the evidence; these successful
+repeats establish the bounded native read journey, not continuous rate stability.
+Android acceptance used native UI results; individual raw frame timestamps were
+not inspected. The final MNT 1m read recovered after one visible unavailable
+service response, then returned a fresh quote and the same confirmed SL result.
+Return preserved Ledger v13 and three packages, with the automatic cycle off.
+No Start or exchange mutation was used for these checks.
 
 A separate unsigned GET sequence reproduced `100410` on request 22 at roughly
 1.2-second dispatch spacing; the host, credentials and WASM were absent. A slower
@@ -242,25 +252,24 @@ A persistent provider refusal still ends visibly rather than fabricating data
 or retrying indefinitely. Results belong to `jack_market_history_20261108` and
 its `rate_recovery` section in the existing acceptance record.
 
-The canonical 0.2.4 package passes 100 Jack tests, both repository CIs and the
-existing actual-WASM probe for partial/full reducing fills, reopen and executor
-replacement/removal. The host probe uses the observed service response shape;
-Capsule production code is unchanged by this accounting repair. Normal UI
-replacement in the existing Mac Capsule retained its locator. Fresh service
-reads and workspace reopen confirmed the old MNT SHORT closed by SL: quantity
-228.93, average entry 0.4368, exit 0.4376, signed fees -0.070089 USDT and trading
-PnL after fees -0.253233 USDT, excluding funding. On Samsung, normal UI return
-ended the previous execution grant and retained the checkpoint before package
-replacement. The same package reopened the current MNT order and read four
-service orders with the saved one-hour key permission after a cold app restart;
-return kept the same Capsule and Ledger v13. No Capsule rebuild, runtime update,
-Start or exchange write was needed. The existing unfilled MNT order remained
-on the service with the automatic cycle off. Samsung had no retained last-trade
-locator, so Android closed-trade arithmetic was not exercised. This historical
-Mac SL does not qualify new-cycle TP, closure/reentry or restart during a
-managed trade. Results belong to
+The completed-trade accounting repair uses the observed service fill shape;
+Capsule production code is unchanged. Its existing actual-WASM probe covers
+partial/full reducing fills, reopen and executor replacement/removal. Mac
+replacement and fresh reads confirmed its retained MNT SL; Samsung's later
+0.2.6 read above also exercised closed-trade arithmetic and flat reconciliation.
+These retained trades do not qualify new-cycle TP, closure/reentry or restart
+during a managed trade. Earlier results belong to
 `jack_completed_trade_20261105.fill_response_repair_20261108` in the existing
 acceptance record.
+
+The owner separately pressed Start on Samsung on 11 November with MNT-USDT 1m,
+1 USDT / 20%, using the existing one-hour permission. A local cycle completed
+with no eligible entry and no order sent; the following cycle reported an
+unavailable service response without blind resubmission. After permission expiry
+the native workspace showed inactive permissions and automatic cycle off.
+This qualifies local Start/expiry observation, not a new trade or continuous
+operation. Results belong to `rate_recovery.samsung_026.owner_start_20261111`
+under `jack_market_history_20261108` in the same acceptance record.
 
 Owner Start/device replacement is accepted on the exact main-equivalent
 Mac/Samsung artifacts for MNT-USDT 1m, 1 USDT / 20%. Each owner Start replaced
@@ -321,7 +330,7 @@ work.
 | --- | --- |
 | Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
-| Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Canonical 0.2.4 reconstructed the retained MNT SL result through fresh reads after Mac replacement and reopen. Samsung package replacement, retained current-order reads, cold restart and return passed without rebuilding Capsule. Android closed-trade arithmetic was not exercised because its returned checkpoint had no last-trade locator. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; a historical Mac SL is not TP acceptance. |
+| Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Native Mac and Samsung reads reconstructed their retained MNT SL results; Samsung 0.2.6 also retired the filled entry after complete flat evidence. Replacement, cold restart and return passed without rebuilding Capsule. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; historical SL reconciliation does not qualify them. |
 
 These source repairs are not qualified by the published test3 artifacts.
 Moltbook's independent Discovery update on Mac and Samsung qualified package
