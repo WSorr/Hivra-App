@@ -192,6 +192,29 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Make Plugins recover visibly from an unreadable local package inventory. A
+failed registry read is unavailable information, not an empty installation.
+The screen must end loading, show a safe retry action, and avoid offering
+package mutations or activation until the canonical registry can be read.
+Retry reuses that registry; no screen repair, alternate inventory, new store,
+service or provider policy is introduced. Working owner files must not be
+corrupted to exercise the failure.
+
+Widget regressions reproduce malformed-file and filesystem failures at phone
+and desktop widths, repeated failure, successful retry and package activation.
+All 713 Flutter tests, analyze and review gates passed. Exact ZIP/APK from
+`c8a079b` qualified healthy inventory, published-catalog loading and Jack
+open/return on Mac and Samsung. Mac's three Ledgers, recovery files and package
+registry were unchanged; Samsung retained its original install time, both
+Capsule Ledger hashes and three package versions. The installed APK digest
+matched the packaged artifact. These checks introduced no new Capsule, grant,
+trading Start or VPS mutation. Native owner files were not fault-injected;
+malformed-file and I/O failure/retry remain widget and registry-test evidence.
+Artifact-bound results belong to `plugin_inventory_retry_20261111` in the
+existing acceptance record below.
+
+### Qualified Local Package Removal
+
 Remove the existing local Jack package on Mac through Plugins → Remove without
 contacting a previously selected VPS. A saved connection is a transport choice,
 not an execution assignment. Keep the existing registry, secret cleanup and

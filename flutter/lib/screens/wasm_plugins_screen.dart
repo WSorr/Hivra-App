@@ -26,7 +26,7 @@ class WasmPluginsScreen extends StatefulWidget {
 
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   late final PluginRuntimeModule _module;
-  List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
+  List<WasmPluginRecord>? _installed;
   WasmPluginSourceCatalog? _sourceCatalogSnapshot;
   String? _sourceCatalogError;
   bool _loading = true;
@@ -35,7 +35,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   Set<String> _installingSourceEntryIds = <String>{};
   WasmPluginRecord? _removingPlugin;
   String? _removalError;
+  bool get _registryUnavailable => _installed == null;
   bool get _packageBusy =>
+      _loading ||
+      _registryUnavailable ||
       _installing ||
       _installingSourceEntryIds.isNotEmpty ||
       _removingPlugin != null;
@@ -73,12 +76,26 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<void> _reload() async {
-    final installed = await _module.registry.loadPlugins();
     if (!mounted) return;
     setState(() {
-      _installed = installed;
-      _loading = false;
+      _loading = true;
     });
+    try {
+      final installed = await _module.registry.loadPlugins();
+      if (!mounted) return;
+      setState(() {
+        _installed = installed;
+        _loading = false;
+      });
+    } catch (_) {
+      // An unavailable inventory is neither empty nor permission to repair it
+      // in the screen. Registry loading owns reconciliation and preservation.
+      if (!mounted) return;
+      setState(() {
+        _installed = null;
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _reloadSourceCatalog() async {
@@ -358,18 +375,20 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _PluginScreenOverview(
-                      installedCount: _installed.length,
+                      installedCount: _installed?.length,
                       catalogCount: _sourceCatalogSnapshot?.entries.length ?? 0,
                       loading: _loading || _loadingSourceCatalog,
                     ),
                     const SizedBox(height: 16),
                     _InstalledSection(
                       loading: _loading,
+                      loadFailed: _registryUnavailable,
+                      onRetryLoad: _reload,
                       installing: _installing,
                       busy: _packageBusy,
                       removingName: _removingPlugin?.displayName,
                       removalError: _removalError,
-                      installed: _installed,
+                      installed: _installed ?? const [],
                       onInstallPressed: _installPlugin,
                       onRemovePressed: _removePlugin,
                       onOpenWorkspacePressed:
@@ -387,7 +406,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       entries:
                           _sourceCatalogSnapshot?.entries ??
                           const <WasmPluginSourceCatalogEntry>[],
-                      installed: _installed,
+                      installed: _installed ?? const [],
                       installingEntryIds: _installingSourceEntryIds,
                       packageBusy: _packageBusy,
                       onRefreshPressed: _reloadSourceCatalog,
@@ -432,7 +451,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 }
 
 class _PluginScreenOverview extends StatelessWidget {
-  final int installedCount;
+  final int? installedCount;
   final int catalogCount;
   final bool loading;
 
@@ -492,7 +511,12 @@ class _PluginScreenOverview extends StatelessWidget {
             children: [
               _OverviewMetric(
                 icon: Icons.inventory_2_outlined,
-                label: loading ? 'Loading' : '$installedCount installed',
+                label:
+                    loading
+                        ? 'Loading'
+                        : installedCount == null
+                        ? 'Unavailable'
+                        : '$installedCount installed',
               ),
               _OverviewMetric(
                 icon: Icons.cloud_download_outlined,
@@ -597,6 +621,8 @@ class _AdvancedPluginTools extends StatelessWidget {
 
 class _InstalledSection extends StatelessWidget {
   final bool loading;
+  final bool loadFailed;
+  final Future<void> Function() onRetryLoad;
   final bool installing;
   final bool busy;
   final String? removingName;
@@ -608,6 +634,8 @@ class _InstalledSection extends StatelessWidget {
 
   const _InstalledSection({
     required this.loading,
+    required this.loadFailed,
+    required this.onRetryLoad,
     required this.installing,
     required this.busy,
     required this.removingName,
@@ -693,7 +721,18 @@ class _InstalledSection extends StatelessWidget {
           ],
           if (loading)
             const Center(child: CircularProgressIndicator())
-          else if (installed.isEmpty)
+          else if (loadFailed) ...[
+            const Text(
+              'Installed plugins could not be read. Retry loading the list.',
+              style: TextStyle(color: Color(0xFFFFA4A4)),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onRetryLoad,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry loading plugins'),
+            ),
+          ] else if (installed.isEmpty)
             const _EmptyInstalledState()
           else
             _PluginGrid(
@@ -972,13 +1011,15 @@ class _CatalogEntryTile extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 12,
+            runSpacing: 8,
             children: [
               _OverviewMetric(
                 icon: Icons.sell_outlined,
                 label: 'v${entry.version}',
               ),
-              const Spacer(),
               FilledButton.tonalIcon(
                 onPressed: busy || installed ? null : onInstallPressed,
                 icon:
