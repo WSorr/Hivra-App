@@ -207,9 +207,17 @@ retained and that cleanup failure is disclosed. Core, card identity, provider
 protocols, secrets and Ledger do not change. Source qualification uses temporary
 file faults, two simultaneous store instances and phone/desktop widget journeys;
 20 focused tests, all 730 Flutter tests, analyze and review gates passed.
-Exact packaged save/reopen/return in existing Mac/Samsung Capsules remains
-pending. Working owner files must not be corrupted; no new Capsule, contact,
-message, trading Start or VPS mutation is part of acceptance.
+Exact `50cc1a7` Mac ZIP and Samsung APK qualified saving the current value,
+cancelling a changed draft, reopening the original value, cold process restart
+and return to the same Capsule. Mac retained all three name-file hashes, the
+card inventory, Ledgers and Jack recovery bytes. Samsung retained both card
+labels and Ledger v17/v12 hashes; its existing empty name stayed unset. Card
+counts remained 10/2. Installed bytes matched the packaged artifacts, and
+Samsung retained its signer and original install time. Artifact-bound results
+belong to `contact_label_preservation_20261111` in the existing acceptance record.
+Working data was not fault-injected: corrupt-file failure/retry and optional
+name-cleanup failure remain source-test evidence. No new Capsule, contact,
+message, trading Start or VPS mutation was used.
 
 ### Qualified Contact-Card Preservation
 
