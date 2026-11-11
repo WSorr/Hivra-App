@@ -192,6 +192,22 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve an existing contact-card file when it contains syntactically valid
+JSON with a non-object root. Explicit import, key synchronization and cleanup
+must not reinterpret unreadable saved data as an empty writable address book.
+`CapsuleAddressService` enforces this inside its existing per-file mutation
+queue before the action or atomic write. Read-only fallback for non-object
+roots remains unchanged, and optional routing metadata must not block Core
+activation. There is no new store, repair path, backup, schema or migration.
+
+Source regressions cover malformed JSON, array/null/scalar roots, every card
+mutation entry point, unchanged bytes and successful concurrent operations
+after an external repair. Working owner data is not fault-injected. Exact
+Mac/Samsung existing-card reimport and return remain pending; no new Capsule,
+contact, relationship, message, trading Start or VPS mutation is required.
+
+### Qualified Plugins Inventory Recovery
+
 Make Plugins recover visibly from an unreadable local package inventory. A
 failed registry read is unavailable information, not an empty installation.
 The screen must end loading, show a safe retry action, and avoid offering

@@ -545,29 +545,63 @@ $nbsp$nbsp}
     },
   );
 
-  test('failed card mutation does not poison later imports', () async {
-    final file = File('${tempDocsDir.path}/capsule_contact_cards.json');
-    await file.writeAsString('{broken');
-    final root = Uint8List.fromList(List.filled(32, 1));
-    final endpoint = Uint8List.fromList(List.filled(32, 2));
-    await expectLater(
-      service.upsertTrustedCardFromKeys(
-        rootPubkey: root,
-        nostrPubkey: endpoint,
-      ),
-      throwsFormatException,
+  for (final invalid in [
+    '{broken',
+    '["retained-card-evidence"]',
+    'null',
+    'true',
+    '42',
+    '"retained-card-evidence"',
+  ]) {
+    test(
+      'failed card mutation preserves bytes and permits retry ($invalid)',
+      () async {
+        final file = File('${tempDocsDir.path}/capsule_contact_cards.json');
+        await file.writeAsString(invalid);
+        final retained = await file.readAsBytes();
+        final root = Uint8List.fromList(List.filled(32, 1));
+        final endpoint = Uint8List.fromList(List.filled(32, 2));
+        final rootKey = HivraIdFormat.formatCapsuleKeyBytes(root);
+        final reopened = CapsuleAddressService(
+          dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+        );
+        final cardJson = jsonEncode(
+          CapsuleAddressCard(
+            rootKey: rootKey,
+            rootHex: _toHex(root),
+            nostrNpub: _toHex(endpoint),
+            nostrHex: _toHex(endpoint),
+          ).toJson(),
+        );
+        for (final mutate in <Future<dynamic> Function()>[
+          () => service.importCardPayload(cardJson),
+          () => service.upsertTrustedCardFromKeys(
+            rootPubkey: root,
+            nostrPubkey: endpoint,
+          ),
+          () => reopened.removeTrustedCard(rootKey),
+          () => reopened.removeCapsuleReferences(_toHex(root)),
+        ]) {
+          await expectLater(mutate(), throwsFormatException);
+          expect(await file.readAsBytes(), retained);
+        }
+        // An external repair is observed on the next operation. Failed work in
+        // another instance must not poison the existing per-file mutation queue.
+        await file.writeAsString('{}');
+        await Future.wait([
+          service.upsertTrustedCardFromKeys(
+            rootPubkey: root,
+            nostrPubkey: endpoint,
+          ),
+          reopened.upsertTrustedCardFromKeys(
+            rootPubkey: Uint8List.fromList(List.filled(32, 3)),
+            nostrPubkey: Uint8List.fromList(List.filled(32, 4)),
+          ),
+        ]);
+        expect(await reopened.contactCount(), 2);
+      },
     );
-    expect(await file.readAsString(), '{broken');
-    await file.writeAsString('{}');
-    expect(
-      await service.upsertTrustedCardFromKeys(
-        rootPubkey: root,
-        nostrPubkey: endpoint,
-      ),
-      isTrue,
-    );
-    expect(await service.contactCount(), 1);
-  });
+  }
 
   test(
     'local key synchronization preserves a signed card for matching keys',
