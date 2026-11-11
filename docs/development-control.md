@@ -192,6 +192,28 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Make saved-card loading failures visible and retryable in Settings. Initial
+summary, opening and post-mutation refresh use one existing list read; the
+separate raw-entry count methods are removed. Loading is not zero, and a thrown
+read failure is unavailable information, not an empty address book. Tapping
+the existing list retries the same reader; a successful empty read alone shows
+zero cards. Raw exceptions and file contents are not disclosed.
+
+Unavailable optional contact names must not hide readable cards: the dialog
+shows Capsule addresses and a clear names-unavailable notice. Reopening reads
+names again. The canonical card and name stores retain their existing parsing,
+write protection and lifecycle; the legacy non-object card-root read fallback
+is unchanged. No repair, schema, storage, host API or runtime owner is added.
+Source checks cover parser/I/O failure, repeated failure, recovery to populated
+and empty lists, deferred completion after disposal and optional-name recovery
+at phone/desktop widths. All 40 focused tests, 736 Flutter tests, analyze and
+review gates passed. Exact packaged read/open/close/restart/return in the
+existing Mac/Samsung Capsules remains pending. Working owner files must not be
+fault-injected; no new Capsule/contact, message, trading or VPS mutation is part
+of acceptance.
+
+### Qualified Contact-Name Preservation
+
 Keep owner-local contact names intact when a rename fails or overlaps another
 rename. `CapsuleContactLabelStore` remains the only name owner and write path;
 its existing Capsule file and atomic writer are retained. The whole mutation

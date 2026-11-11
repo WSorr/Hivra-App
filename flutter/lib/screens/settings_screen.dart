@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../services/capsule_address_service.dart';
 import '../services/settings_service.dart';
 import '../utils/hivra_id_format.dart';
 
@@ -26,7 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _isNeste = true;
   bool _isRelay = false;
-  int _contactCount = 0;
+  String _contactSummary = 'Loading saved cards...';
   String _appVersionLabel = 'Loading version...';
   final _contactNameController = TextEditingController();
 
@@ -40,14 +41,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _isNeste = widget.service.loadIsNeste();
-    _loadContactCount();
+    _loadTrustedCards();
     _loadAppVersionLabel();
   }
 
-  Future<void> _loadContactCount() async {
-    final count = await widget.service.contactCount();
-    if (!mounted) return;
-    setState(() => _contactCount = count);
+  Future<List<CapsuleAddressCard>?> _loadTrustedCards() async {
+    if (mounted) {
+      setState(() => _contactSummary = 'Loading saved cards...');
+    }
+    try {
+      final cards = await widget.service.listTrustedCards();
+      if (mounted) setState(() => _contactSummary = '${cards.length} saved');
+      return cards;
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _contactSummary = 'Saved cards unavailable. Tap to retry.',
+        );
+      }
+      return null;
+    }
   }
 
   Future<void> _loadAppVersionLabel() async {
@@ -252,7 +265,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         }
                         try {
                           await widget.service.importCardPayload(raw);
-                          await _loadContactCount();
+                          await _loadTrustedCards();
                           if (!dialogContext.mounted) return;
                           Navigator.of(dialogContext).pop();
                           if (!mounted) return;
@@ -274,8 +287,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showTrustedPeerCards() async {
-    final cards = await widget.service.listTrustedCards();
-    final labels = await widget.service.loadContactLabels();
+    final cards = await _loadTrustedCards();
+    if (cards == null || !mounted) return;
+    var labels = <String, String>{};
+    var namesAvailable = true;
+    try {
+      labels = await widget.service.loadContactLabels();
+    } catch (_) {
+      namesAvailable = false;
+    }
     if (!mounted) return;
 
     await showDialog<void>(
@@ -291,9 +311,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Names are local to the currently selected capsule.',
-                          style: TextStyle(color: Color(0xFF9FAABA)),
+                        Text(
+                          namesAvailable
+                              ? 'Names are local to the currently selected capsule.'
+                              : 'Contact names unavailable. Showing capsule addresses.',
+                          style: const TextStyle(color: Color(0xFF9FAABA)),
                         ),
                         const SizedBox(height: 12),
                         Flexible(
@@ -398,7 +420,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                 labels.remove(
                                                   card.rootKey.toLowerCase(),
                                                 );
-                                                await _loadContactCount();
+                                                await _loadTrustedCards();
                                                 if (!dialogContext.mounted) {
                                                   return;
                                                 }
@@ -632,7 +654,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.people),
                 title: const Text('Trusted peer cards'),
-                subtitle: Text('$_contactCount saved'),
+                subtitle: Text(_contactSummary),
                 onTap: _showTrustedPeerCards,
               ),
             ],

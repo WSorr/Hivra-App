@@ -65,8 +65,6 @@ class SettingsService {
 
   Uint8List? loadSeed() => _loadSeed();
 
-  Future<int> contactCount() => _contactCards.contactCount();
-
   Future<CapsuleAddressCard?> buildOwnCard() => _buildOwnCard();
 
   Future<String?> exportOwnCardJson() => _exportOwnCardJson();

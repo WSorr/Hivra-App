@@ -67,7 +67,7 @@ void main() {
 
     await service.importCardPayload(rawCard);
 
-    expect(await service.contactCount(), 1);
+    expect(await service.listTrustedCards(), hasLength(1));
 
     final listed = await service.listTrustedCards();
     expect(listed.length, 1);
@@ -81,7 +81,7 @@ void main() {
 
     expect(await service.removeTrustedCard(rootKey), isTrue);
     expect(await service.removeTrustedCard(rootKey), isFalse);
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
 
   test('throws on non-object contact card json', () async {
@@ -121,7 +121,7 @@ $nbsp$nbsp}
 
       await service.importCardJson(rawCard);
 
-      expect(await service.contactCount(), 1);
+      expect(await service.listTrustedCards(), hasLength(1));
       final resolved = await service.resolveNostrRecipient(rootKey);
       expect(resolved, isNotNull);
       expect(_toHex(resolved!), nostrHex);
@@ -278,7 +278,7 @@ $nbsp$nbsp}
 
       await verifyingService.importCardPayload(signedCard.toQrPayload());
 
-      expect(await verifyingService.contactCount(), 1);
+      expect(await verifyingService.listTrustedCards(), hasLength(1));
       final listed = await verifyingService.listTrustedCards();
       expect(listed.single.version, 2);
       expect(listed.single.signatureHex, _toHex(signatureBytes));
@@ -303,7 +303,7 @@ $nbsp$nbsp}
       service.importCardPayload(card.toQrPayload()),
       throwsA(isA<FormatException>()),
     );
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
 
   test('rejects contact card with mismatched root representations', () async {
@@ -327,7 +327,7 @@ $nbsp$nbsp}
       service.importCardPayload(rawCard),
       throwsA(isA<FormatException>()),
     );
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
 
   test('rejects contact card with mismatched Nostr representations', () async {
@@ -351,7 +351,7 @@ $nbsp$nbsp}
       service.importCardPayload(rawCard),
       throwsA(isA<FormatException>()),
     );
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
 
   test('rejects contact card that routes delivery to the root key', () async {
@@ -376,7 +376,7 @@ $nbsp$nbsp}
         ),
       ),
     );
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
 
   test('rejects malformed or oversized QR envelopes', () async {
@@ -409,7 +409,7 @@ $nbsp$nbsp}
       );
 
       expect(saved, isTrue);
-      expect(await service.contactCount(), 1);
+      expect(await service.listTrustedCards(), hasLength(1));
       final listed = await service.listTrustedCards();
       expect(listed.single.rootKey, rootKey);
       expect(listed.single.rootHex, _toHex(rootBytes));
@@ -428,7 +428,7 @@ $nbsp$nbsp}
     );
 
     expect(saved, isFalse);
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
 
   test('does not upsert a root key as its own transport endpoint', () async {
@@ -440,7 +440,7 @@ $nbsp$nbsp}
     );
 
     expect(saved, isFalse);
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
 
   test('gracefully handles malformed cards file root shape', () async {
@@ -450,7 +450,7 @@ $nbsp$nbsp}
     final listed = await service.listTrustedCards();
 
     expect(listed, isEmpty);
-    expect(await service.contactCount(), 0);
+    expect(await service.listTrustedCards(), hasLength(0));
   });
   test('routing prefers cards, then relationships, then invitations', () {
     final root = Uint8List.fromList(List.filled(32, 1));
@@ -524,7 +524,7 @@ $nbsp$nbsp}
         nostrPubkey: Uint8List.fromList(List.filled(32, i + 65)),
       );
       await Future.wait(List.generate(16, upsert));
-      expect(await service.contactCount(), 16);
+      expect(await service.listTrustedCards(), hasLength(16));
       await Future.wait<void>([
         for (var i = 0; i < 8; i++)
           service.removeCapsuleReferences(
@@ -598,7 +598,7 @@ $nbsp$nbsp}
             nostrPubkey: Uint8List.fromList(List.filled(32, 4)),
           ),
         ]);
-        expect(await reopened.contactCount(), 2);
+        expect(await reopened.listTrustedCards(), hasLength(2));
       },
     );
   }
