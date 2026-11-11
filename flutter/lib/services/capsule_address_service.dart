@@ -645,10 +645,16 @@ class CapsuleAddressService {
     final path = file.absolute.path;
     final previous = _cardOperations[path] ?? Future<void>.value();
     final operation = previous.then((_) async {
-      final cards =
+      final stored =
           await file.exists()
-              ? _parseJsonMap(await file.readAsString()) ?? <String, dynamic>{}
+              ? _parseJsonMap(await file.readAsString())
               : <String, dynamic>{};
+      if (write && stored == null) {
+        throw const FormatException(
+          'Saved contact cards could not be read. No changes were saved.',
+        );
+      }
+      final cards = stored ?? <String, dynamic>{};
       final before = write ? jsonEncode(cards) : null;
       final result = action(cards);
       if (write && before != jsonEncode(cards)) {
