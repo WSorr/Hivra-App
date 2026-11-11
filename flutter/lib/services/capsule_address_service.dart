@@ -272,11 +272,6 @@ class CapsuleAddressService {
     return card?.toPrettyJson();
   }
 
-  Future<int> contactCount() async {
-    final cards = await _readCards();
-    return cards.length;
-  }
-
   Future<List<CapsuleAddressCard>> listTrustedCards() async {
     final cards = await _readCards();
     final result = <CapsuleAddressCard>[];

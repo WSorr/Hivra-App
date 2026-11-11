@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,13 +13,11 @@ import 'package:hivra_app/services/settings_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeCapsuleAddressService extends CapsuleAddressService {
-  int count = 0;
   String? imported;
   String? removedRootKey;
   List<CapsuleAddressCard> cards = <CapsuleAddressCard>[];
-
-  @override
-  Future<int> contactCount() async => count;
+  Object? readError;
+  Future<List<CapsuleAddressCard>>? pendingRead;
 
   @override
   Future<void> importCardJson(String raw) async {
@@ -26,12 +25,27 @@ class _FakeCapsuleAddressService extends CapsuleAddressService {
   }
 
   @override
-  Future<List<CapsuleAddressCard>> listTrustedCards() async => cards;
+  Future<List<CapsuleAddressCard>> listTrustedCards() async {
+    if (readError != null) throw readError!;
+    return pendingRead ?? cards;
+  }
 
   @override
   Future<bool> removeTrustedCard(String rootKey) async {
     removedRootKey = rootKey;
     return true;
+  }
+}
+
+class _FailingContactLabels extends CapsuleContactLabelStore {
+  bool unavailable = true;
+
+  _FailingContactLabels() : super(readActiveCapsuleRootHex: () => null);
+
+  @override
+  Future<Map<String, String>> load() async {
+    if (unavailable) throw const FileSystemException('private local path');
+    return {'h1peer': 'Saved name'};
   }
 }
 
@@ -89,7 +103,6 @@ void main() {
     () async {
       final fakeContacts =
           _FakeCapsuleAddressService()
-            ..count = 2
             ..cards = <CapsuleAddressCard>[
               const CapsuleAddressCard(
                 rootKey: 'h1abc',
@@ -113,7 +126,6 @@ void main() {
         contactCards: fakeContacts,
       );
 
-      expect(await service.contactCount(), 2);
       expect(await service.buildOwnCard(), same(card));
       expect(await service.exportOwnCardJson(), '{"version":1}');
 
@@ -127,6 +139,187 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.macOS]) {
+    testWidgets(
+      'saved cards remain readable when names are unavailable on ${platform.name}',
+      (tester) async {
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.binding.setSurfaceSize(
+          platform == TargetPlatform.android
+              ? const Size(360, 800)
+              : const Size(1000, 720),
+        );
+        final labels = _FailingContactLabels();
+        final contacts =
+            _FakeCapsuleAddressService()
+              ..cards = [
+                const CapsuleAddressCard(
+                  rootKey: 'h1peer',
+                  rootHex: '11',
+                  nostrNpub: 'npub1peer',
+                  nostrHex: '22',
+                ),
+              ];
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark().copyWith(platform: platform),
+            home: SettingsScreen(
+              service: SettingsService(
+                loadIsNeste: () => true,
+                loadSeed: () => null,
+                buildOwnCard: () async => null,
+                exportOwnCardJson: () async => null,
+                loadAppVersionLabel: () async => 'Hivra test',
+                contactCards: contacts,
+                contactLabels: labels,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(find.text('Trusted peer cards'), 250);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Trusted peer cards'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          find.text('Contact names unavailable. Showing capsule addresses.'),
+          findsOneWidget,
+        );
+        expect(find.text('Verified delivery card'), findsOneWidget);
+        expect(find.textContaining('private local path'), findsNothing);
+        await tester.tap(find.widgetWithText(TextButton, 'Close'));
+        await tester.pumpAndSettle();
+        expect(find.text('1 saved'), findsOneWidget);
+        labels.unavailable = false;
+        await tester.tap(find.text('Trusted peer cards'));
+        await tester.pumpAndSettle();
+        expect(find.text('Saved name'), findsOneWidget);
+        expect(
+          find.text('Contact names unavailable. Showing capsule addresses.'),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'saved cards distinguish unavailable, populated and empty on ${platform.name}',
+      (tester) async {
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.binding.setSurfaceSize(
+          platform == TargetPlatform.android
+              ? const Size(360, 800)
+              : const Size(1000, 720),
+        );
+        final contacts =
+            _FakeCapsuleAddressService()
+              ..readError = const FormatException('private saved content')
+              ..cards = [
+                const CapsuleAddressCard(
+                  rootKey: 'h1peer',
+                  rootHex: '11',
+                  nostrNpub: 'npub1peer',
+                  nostrHex: '22',
+                ),
+              ];
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark().copyWith(platform: platform),
+            home: SettingsScreen(
+              service: SettingsService(
+                loadIsNeste: () => true,
+                loadSeed: () => null,
+                buildOwnCard: () async => null,
+                exportOwnCardJson: () async => null,
+                loadAppVersionLabel: () async => 'Hivra test',
+                contactCards: contacts,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.scrollUntilVisible(find.text('Trusted peer cards'), 250);
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Saved cards unavailable. Tap to retry.'),
+          findsOneWidget,
+        );
+        expect(find.text('0 saved'), findsNothing);
+        expect(find.textContaining('private saved content'), findsNothing);
+        await tester.tap(find.text('Trusted peer cards'));
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(tester.takeException(), isNull);
+
+        contacts.readError = null;
+        await tester.tap(find.text('Trusted peer cards'));
+        await tester.pumpAndSettle();
+        expect(find.text('Verified delivery card'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Close'));
+        await tester.pumpAndSettle();
+        expect(find.text('1 saved'), findsOneWidget);
+
+        contacts.readError = const FileSystemException('private local path');
+        await tester.tap(find.text('Trusted peer cards'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(
+          find.text('Saved cards unavailable. Tap to retry.'),
+          findsOneWidget,
+        );
+        expect(find.text('1 saved'), findsNothing);
+        expect(find.textContaining('private local path'), findsNothing);
+
+        contacts.readError = null;
+        contacts.cards = [];
+        await tester.tap(find.text('Trusted peer cards'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('No trusted peer cards imported yet.'),
+          findsOneWidget,
+        );
+        await tester.tap(find.widgetWithText(TextButton, 'Close'));
+        await tester.pumpAndSettle();
+        expect(find.text('0 saved'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'saved cards stay loading and ignore completion after disposal on ${platform.name}',
+      (tester) async {
+        final pending = Completer<List<CapsuleAddressCard>>();
+        final contacts =
+            _FakeCapsuleAddressService()..pendingRead = pending.future;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark().copyWith(platform: platform),
+            home: SettingsScreen(
+              service: SettingsService(
+                loadIsNeste: () => true,
+                loadSeed: () => null,
+                buildOwnCard: () async => null,
+                exportOwnCardJson: () async => null,
+                loadAppVersionLabel: () async => 'Hivra test',
+                contactCards: contacts,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(find.text('Trusted peer cards'), 250);
+        await tester.pumpAndSettle();
+        expect(find.text('Loading saved cards...'), findsOneWidget);
+        expect(find.text('0 saved'), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        pending.completeError(const FileSystemException('private local path'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets(
       'failed name save retains input and allows retry on ${platform.name}',
       (tester) async {
@@ -166,7 +359,6 @@ void main() {
           final original = await file.readAsString();
           final contacts =
               _FakeCapsuleAddressService()
-                ..count = 1
                 ..cards = [
                   const CapsuleAddressCard(
                     rootKey: peer,
@@ -252,7 +444,7 @@ void main() {
     testWidgets(
       'long card keeps import actions reachable on ${platform.name}',
       (tester) async {
-        final contacts = _FakeCapsuleAddressService()..count = 2;
+        final contacts = _FakeCapsuleAddressService();
         final cardJson =
             CapsuleAddressCard(
               version: 2,
