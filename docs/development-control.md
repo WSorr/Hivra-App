@@ -192,6 +192,31 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve recovery seeds through failed legacy plaintext migration. Capsule
+selection and bootstrap retain the existing `CapsuleSeedStore` migration path:
+validate every source entry before writing, refuse conflicting secure seeds,
+reuse identical stored entries, and delete the source only after all entries
+are confirmed in secure storage. A differing visible legacy copy retains both
+sources and blocks completion instead of silently deleting the other copy.
+Unreadable data or failed native reads,
+writes/read-back block activation with the existing retryable error instead
+of deleting the source or reporting a missing seed. Retry may reuse verified
+partial writes; it introduces no repair service, new plaintext fallback,
+credential prompt, schema, API or persistence owner. Key derivation, Core,
+Ledger and backup scope are unchanged. Migration source bytes and the secure
+destination remain separate until successful verification.
+
+All 87 focused seed/bootstrap/backup/selector/recovery tests, 757 Flutter tests,
+analyze and review gates passed. Regression tests use temporary files and
+synthetic secure storage only; working owner seed records are not fault-injected.
+The existing migration owner/path remains 1/1, with no additional runtime files
+or entities. Exact Mac/Samsung packaged
+open, cold restart and return remain required after commit/CI and guarded
+packaging; a healthy native open cannot qualify injected migration failure.
+No new Capsule, trading, publication or VPS mutation is part of this outcome.
+
+### Qualified Plugin-Credential Read Preservation
+
 Preserve plugin credentials when native storage returns an unreadable vault.
 Only a missing Keychain entry starts an empty vault; an existing empty or
 whitespace-only value follows the existing malformed-JSON failure path. Every

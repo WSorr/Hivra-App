@@ -201,18 +201,20 @@ class CapsuleSeedStore {
     final raw = await file.readAsString();
     final map = _parseJsonMap(raw);
     if (map == null) {
-      await file.delete();
-      await _deleteVisibleLegacyFallback(file);
-      return;
+      throw StateError('Legacy seed file is malformed');
     }
 
     final entries = <String, String>{};
     for (final entry in map.entries) {
       final pubKeyHex = entry.key.trim().toLowerCase();
-      final encoded = entry.value?.toString() ?? '';
+      final encoded = entry.value;
       if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(pubKeyHex) ||
-          _decodeSeedString(encoded) == null) {
-        continue;
+          encoded is! String ||
+          _decodeSeedString(encoded) == null ||
+          entries.containsKey(pubKeyHex)) {
+        throw StateError(
+          'Legacy seed file contains an invalid or duplicate entry',
+        );
       }
       entries[pubKeyHex] = encoded;
     }
@@ -220,6 +222,13 @@ class CapsuleSeedStore {
     try {
       for (final entry in entries.entries) {
         final key = '$_seedKeyPrefix${entry.key}';
+        final existing = await _secureStorage.read(key: key);
+        if (existing != null) {
+          if (existing != entry.value) {
+            throw StateError('Legacy seed conflicts with secure storage');
+          }
+          continue;
+        }
         await _secureStorage.write(key: key, value: entry.value);
         final persisted = await _secureStorage.read(key: key);
         if (persisted != entry.value) {
@@ -229,8 +238,8 @@ class CapsuleSeedStore {
     } catch (error) {
       throw StateError('Secure seed migration failed: $error');
     }
+    await _deleteVisibleLegacyFallback(file, raw);
     await file.delete();
-    await _deleteVisibleLegacyFallback(file);
   }
 
   Future<Uint8List?> loadValidatedSeed(
@@ -262,13 +271,21 @@ class CapsuleSeedStore {
     return File('${capsulesRoot.path}/$_seedFallbackFileName');
   }
 
-  Future<void> _deleteVisibleLegacyFallback(File canonicalFile) async {
+  Future<void> _deleteVisibleLegacyFallback(
+    File canonicalFile,
+    String migratedSource,
+  ) async {
     final visibleRoot = await _dirs.userVisibleRootDirectory();
     final legacyFile = File(
       '${visibleRoot.path}/capsules/$_seedFallbackFileName',
     );
     if (legacyFile.absolute.path == canonicalFile.absolute.path) return;
-    if (await legacyFile.exists()) await legacyFile.delete();
+    if (await legacyFile.exists()) {
+      if (await legacyFile.readAsString() != migratedSource) {
+        throw StateError('Legacy seed copies differ; migration is incomplete');
+      }
+      await legacyFile.delete();
+    }
   }
 
   Future<String> _cacheKey(String pubKeyHex) async {
