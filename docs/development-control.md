@@ -203,8 +203,15 @@ activation. There is no new store, repair path, backup, schema or migration.
 Source regressions cover malformed JSON, array/null/scalar roots, every card
 mutation entry point, unchanged bytes and successful concurrent operations
 after an external repair. Working owner data is not fault-injected. Exact
-Mac/Samsung existing-card reimport and return remain pending; no new Capsule,
-contact, relationship, message, trading Start or VPS mutation is required.
+`e18d09b` Mac ZIP and Samsung APK qualified existing-card reimport, unchanged
+card counts (10/2), cold restart and return to the same Capsule. Mac upgraded
+an existing v1 own card with its signed Share-card output and repeated
+that import; Samsung reimported its existing signed card. Ledger v121/v17 and
+Mac recovery-file hashes remained unchanged. Artifact digests and bounded
+acceptance are recorded in the existing `acceptance.json` under
+`contact_card_preservation_20261111`; native corrupt-file recovery is not claimed.
+No new Capsule, contact, relationship, message, trading Start or VPS mutation
+was used.
 
 ### Qualified Plugins Inventory Recovery
 
