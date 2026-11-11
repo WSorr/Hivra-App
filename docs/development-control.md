@@ -192,6 +192,22 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Make Plugins recover visibly from an unreadable local package inventory. A
+failed registry read is unavailable information, not an empty installation.
+The screen must end loading, show a safe retry action, and avoid offering
+package mutations or activation until the canonical registry can be read.
+Retry reuses that registry; no screen repair, alternate inventory, new store,
+service or provider policy is introduced. Working owner files must not be
+corrupted to exercise the failure.
+
+Widget regressions reproduce malformed-file and filesystem failures at phone
+and desktop widths, repeated failure, successful retry and package activation.
+Exact packaged Mac/Samsung healthy-inventory acceptance remains pending; source
+tests do not qualify changed release bytes. No trading or VPS mutation is
+required for this outcome.
+
+### Qualified Local Package Removal
+
 Remove the existing local Jack package on Mac through Plugins → Remove without
 contacting a previously selected VPS. A saved connection is a transport choice,
 not an execution assignment. Keep the existing registry, secret cleanup and
@@ -345,6 +361,7 @@ work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
+| Recover the Plugins screen after inventory read failure | Source widget regressions cover safe error presentation, repeated failure and retry without interpreting an unknown inventory as empty. Registry fault tests retain file-preservation coverage. Exact changed Mac/Samsung artifacts remain unqualified; working owner data is not fault-injected. |
 | Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Native Mac and Samsung reads reconstructed their retained MNT SL results; Samsung 0.2.6 also retired the filled entry after complete flat evidence. Replacement, cold restart and return passed without rebuilding Capsule. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; historical SL reconciliation does not qualify them. |

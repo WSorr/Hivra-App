@@ -9,6 +9,7 @@ import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/screens/plugin_workspace_screen.dart';
+import 'package:hivra_app/screens/wasm_plugins_screen.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
 import 'package:hivra_app/services/capsule_contact_label_store.dart';
@@ -29,6 +30,110 @@ import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  for (final error in [
+    const FormatException('PRIVATE_REGISTRY_CONTENT'),
+    const FileSystemException('PRIVATE_REGISTRY_PATH'),
+  ]) {
+    for (final width in [360.0, 1200.0]) {
+      testWidgets(
+        'plugin inventory failure can retry without admission or data cleanup (${error.runtimeType}, width $width)',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 900);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final f = (await tester.runAsync(Fixture.create))!;
+          addTearDown(() => tester.runAsync(f.close));
+          f.registry.loadError = error;
+          final ports =
+              UnusedWorkspacePorts()
+                ..catalog = const WasmPluginSourceCatalog(
+                  sourceId: 'source',
+                  sourceName: 'Public source',
+                  fetchedAtIso: '2026-11-11T00:00:00Z',
+                  entries: [
+                    WasmPluginSourceCatalogEntry(
+                      id: 'other',
+                      pluginId: 'other.application',
+                      displayName: 'Another application',
+                      version: '1.0.0',
+                      downloadUrl: 'https://source.example/app.zip',
+                      packageKind: 'zip',
+                      sha256Hex: null,
+                    ),
+                  ],
+                );
+          var opened = 0;
+          final module = PluginRuntimeModule(
+            registry: f.registry,
+            sourceCatalog: ports,
+            manualChecks: ports,
+            pluginHostApi: f.runtime().pluginHostApi,
+            attestationExchange: ports,
+            chatDelivery: ports,
+            passiveReceive: ports,
+            contactLabels: ports,
+            uiLog: ports,
+            fileStore: f.files,
+            secretVault: ports,
+            readActiveCapsuleRootHex: () => f.owner,
+          );
+          await tester.pumpWidget(
+            MaterialApp(
+              home: WasmPluginsScreen(
+                module: module,
+                onOpenWorkspacePressed:
+                    (_) => () {
+                      opened++;
+                    },
+              ),
+            ),
+          );
+          await tester.pumpAndSettle(
+            const Duration(milliseconds: 100),
+            EnginePhase.sendSemanticsUpdate,
+            const Duration(seconds: 1),
+          );
+          expect(tester.takeException(), isNull);
+          expect(find.byType(CircularProgressIndicator), findsNothing);
+          expect(find.text('0 installed'), findsNothing);
+          expect(find.text('No plugin packages installed yet.'), findsNothing);
+          expect(find.textContaining('PRIVATE_REGISTRY'), findsNothing);
+          expect(ports.logs.join(), isNot(contains('PRIVATE_REGISTRY')));
+          for (final name in ['Add package', 'Install']) {
+            final button = find.widgetWithText(FilledButton, name);
+            expect(tester.widget<FilledButton>(button).onPressed, isNull);
+          }
+          final retry = find.widgetWithText(
+            OutlinedButton,
+            'Retry loading plugins',
+          );
+          expect(retry, findsOneWidget);
+          await tester.ensureVisible(retry);
+          await tester.pumpAndSettle();
+          await tester.tap(retry);
+          await tester.pumpAndSettle();
+          expect(retry, findsOneWidget);
+          expect(find.byType(CircularProgressIndicator), findsNothing);
+          f.registry.loadError = null;
+          await tester.tap(retry);
+          await tester.pumpAndSettle();
+          expect(find.text('1 installed'), findsOneWidget);
+          expect(find.text(f.registry.record.displayName), findsOneWidget);
+          expect(retry, findsNothing);
+          final open = find.widgetWithText(FilledButton, 'Open');
+          await tester.ensureVisible(open);
+          await tester.pumpAndSettle();
+          await tester.tap(open);
+          expect(opened, 1);
+          expect(f.actions, isEmpty);
+          expect(f.sends, 0);
+          await tester.pumpWidget(const SizedBox());
+        },
+      );
+    }
+  }
+
   for (final authority in ['local', 'vps', 'corrupt']) {
     test(
       'package removal uses execution authority rather than a saved VPS ($authority)',
@@ -3117,7 +3222,22 @@ class UnusedWorkspacePorts
         CapsulePassiveReceivePort,
         CapsuleContactLabelStore,
         CapsuleScopedSecretVault,
-        UiEventLogService {
+        UiEventLogService,
+        WasmPluginSourceCatalogService {
+  WasmPluginSourceCatalog? catalog;
+  final logs = <String>[];
+  @override
+  Future<void> log(String source, String message) async {
+    logs.add('$source $message');
+  }
+
+  @override
+  Future<WasmPluginSourceCatalog> fetchCatalogWithFallback({
+    String primaryCatalogUrl = WasmPluginSourceCatalogService.defaultCatalogUrl,
+    String secondaryCatalogUrl =
+        WasmPluginSourceCatalogService.fallbackCatalogUrl,
+    String? localCatalogPathOverride,
+  }) async => catalog ?? (throw StateError('Unexpected catalog read'));
   Future<void> Function()? beforeResolve;
   Future<void> Function(String, Set<String>)? onDeletePlugin;
 
@@ -3146,6 +3266,7 @@ class UnusedWorkspacePorts
 }
 
 class Registry extends WasmPluginRegistryService {
+  Object? loadError;
   bool installed = true;
   bool network = true;
   bool persistent = true, scheduled = true;
@@ -3176,8 +3297,11 @@ class Registry extends WasmPluginRegistryService {
     ],
   );
   @override
-  Future<List<WasmPluginRecord>> loadPlugins() async =>
-      installed ? [record] : [];
+  Future<List<WasmPluginRecord>> loadPlugins() async {
+    if (loadError != null) throw loadError!;
+    return installed ? [record] : [];
+  }
+
   @override
   Future<PluginRuntimeBinding> resolveRuntimeBinding(String id) async =>
       installed

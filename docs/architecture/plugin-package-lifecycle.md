@@ -95,6 +95,12 @@ Every serialized load repairs the managed directory:
 This recovery is idempotent. Package or temporary-file cleanup may be retried
 after restart without changing the committed registry result.
 
+The Plugins screen treats a failed inventory read as unavailable, never as an
+empty registry. It ends loading and offers retry through the same registry.
+Package actions and activation remain unavailable until reading succeeds;
+refreshing the public catalog does not establish the local installed inventory.
+Raw registry errors and file content are not displayed or logged by this path.
+
 A lost VPS return acknowledgement can outlive a package update. The host may
 read an old grant only for authenticated retirement; that does not admit package
 execution. If the server rebound an ended grant to new package bytes, accepting
