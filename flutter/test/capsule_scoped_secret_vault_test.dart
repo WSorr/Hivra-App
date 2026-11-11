@@ -9,6 +9,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
   int writes = 0;
   int reads = 0;
+  int deletes = 0;
   bool failWrite = false;
   Future<void> Function()? beforeRead;
 
@@ -57,6 +58,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    deletes++;
     values.remove(key);
   }
 }
@@ -186,17 +188,67 @@ void main() {
     expect(await _load(vault, capsuleB, pluginB, 'account-c'), 'key-c');
   });
 
-  test('fails closed on malformed persisted vault', () async {
-    storage.values['hivra.capsule_scoped_secrets.v1'] = jsonEncode(
-      <String, dynamic>{'schema_version': 99, 'entries': <dynamic>[]},
-    );
-    vault = CapsuleScopedSecretVault(secureStorage: storage);
+  for (final corruption
+      in {
+        'empty value': '',
+        'whitespace only': ' \n\t ',
+        'malformed JSON': '{',
+        'non-object root': '[]',
+        'unsupported schema': jsonEncode({
+          'schema_version': 99,
+          'entries': <dynamic>[],
+        }),
+      }.entries) {
+    test(
+      'unreadable vault (${corruption.key}) preserves data and retries',
+      () async {
+        await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
+        await _save(vault, capsuleB, pluginB, 'account-b', 'key-b');
+        const key = 'hivra.capsule_scoped_secrets.v1';
+        final valid = storage.values[key]!;
+        final writes = storage.writes;
+        final deletes = storage.deletes;
+        storage.values[key] = corruption.value;
+        final corrupted = Map<String, String>.from(storage.values);
+        vault = CapsuleScopedSecretVault(secureStorage: storage);
 
-    await expectLater(
-      _load(vault, capsuleA, pluginA, 'account-a'),
-      throwsA(isA<StateError>()),
+        await expectLater(vault.listReferences(capsuleA), throwsStateError);
+        await expectLater(
+          _load(vault, capsuleA, pluginA, 'account-a'),
+          throwsStateError,
+        );
+        await expectLater(
+          _save(vault, capsuleA, pluginA, 'account-new', 'new-key'),
+          throwsStateError,
+        );
+        await expectLater(
+          vault.addReferences(
+            capsuleHex: capsuleA,
+            pluginId: pluginA,
+            secrets: [
+              {'label': 'New connection', 'value': 'new-key'},
+            ],
+          ),
+          throwsStateError,
+        );
+        await expectLater(
+          vault.deletePlugin(pluginA, capsuleHexes: {capsuleA}),
+          throwsStateError,
+        );
+        await expectLater(vault.deleteCapsule(capsuleA), throwsStateError);
+        expect(storage.values, corrupted);
+        expect(storage.writes, writes);
+        expect(storage.deletes, deletes);
+
+        // An unavailable read must not cache an empty vault for this session.
+        storage.values[key] = valid;
+        expect(await _load(vault, capsuleA, pluginA, 'account-a'), 'key-a');
+        expect(await _load(vault, capsuleB, pluginB, 'account-b'), 'key-b');
+        expect(storage.writes, writes);
+        expect(storage.deletes, deletes);
+      },
     );
-  });
+  }
 
   test('serializes concurrent updates without losing a scope', () async {
     await Future.wait(<Future<void>>[

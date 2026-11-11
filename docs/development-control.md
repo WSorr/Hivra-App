@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-11
+Status date: 2026-11-12
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -191,6 +191,23 @@ branch state; published artifacts and their signoff belong to
   the existing opaque store.
 
 ## Selected Product Outcome
+
+Preserve plugin credentials when native storage returns an unreadable vault.
+Only a missing Keychain entry starts an empty vault; an existing empty or
+whitespace-only value follows the existing malformed-JSON failure path. Every
+picker, reference resolution, connection save and cleanup retains the same
+`CapsuleScopedSecretVault` owner. A failed read must neither overwrite native
+storage nor cache an empty replacement, so retry can read a restored valid
+record without restarting the application. No new store, permission, prompt,
+repair, migration, API or runtime owner is introduced.
+
+Source regressions use synthetic storage only and cover blank/malformed data,
+rejected mutations, unchanged bytes, retry and existing package-removal failure
+retention. The 73 focused vault/workspace tests pass. Exact Mac/Samsung healthy
+connection acceptance remains pending; working Keychain entries must not be
+fault-injected. Trading and VPS changes are outside this outcome.
+
+### Qualified Saved-Card Read Recovery
 
 Make saved-card loading failures visible and retryable in Settings. Initial
 summary, opening and post-mutation refresh use one existing list read; the
