@@ -203,9 +203,18 @@ repair, migration, API or runtime owner is introduced.
 
 Source regressions use synthetic storage only and cover blank/malformed data,
 rejected mutations, unchanged bytes, retry and existing package-removal failure
-retention. The 73 focused vault/workspace tests pass. Exact Mac/Samsung healthy
-connection acceptance remains pending; working Keychain entries must not be
-fault-injected. Trading and VPS changes are outside this outcome.
+retention. All 73 focused vault/workspace tests, 740 Flutter tests, analyze and
+review gates passed. Exact `e4afbd1` Mac ZIP and Samsung APK qualified saved
+reference pickers, cancellation without renewed access, cold process restart
+and return to the same Capsule. Mac retained all three Ledger files, card/name
+files, package registry and recovery bytes; Samsung retained both Ledger
+versions/hashes, its signer and original install time. Installed bytes matched
+the packaged artifacts. Existing Moltbook reference metadata remained readable;
+no credential values were extracted and no Allow or Start was used. Results
+belong to `secret_vault_read_preservation_20261112` in the existing acceptance
+record. Working Keychain records were not fault-injected: corruption/retry
+remains source-test evidence, not native failure qualification. Trading,
+publications and VPS changes were excluded.
 
 ### Qualified Saved-Card Read Recovery
 
