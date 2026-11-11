@@ -205,7 +205,7 @@ class CapsuleScopedSecretVault {
     } catch (error) {
       throw StateError('Secure plugin credential storage is unavailable');
     }
-    if (raw == null || raw.trim().isEmpty) {
+    if (raw == null) {
       _coordinator.cache = <String, _VaultEntry>{};
       return <String, _VaultEntry>{};
     }
