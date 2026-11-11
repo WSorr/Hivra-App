@@ -29,6 +29,134 @@ import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 import '../bin/plugin_workspace_runner.dart';
 
 void main() {
+  for (final authority in ['local', 'vps', 'corrupt']) {
+    test(
+      'package removal uses execution authority rather than a saved VPS ($authority)',
+      () async {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        await f.enable();
+        await f.changeGrant((grant) {
+          grant['package_id'] = 'previous-package';
+          grant['package_digest'] = 'c' * 64;
+          grant['expires_at_ms'] = DateTime.now().millisecondsSinceEpoch - 1;
+          if (authority == 'vps') {
+            grant['executor'] = 'vps';
+            grant['executor_id'] = 'e' * 64;
+            grant['handoff_id'] = 'd' * 64;
+          }
+        });
+        final registry = WasmPluginRegistryService(
+          dataDirs: UserVisibleDataDirectoryService(homeOverride: f.home.path),
+        );
+        final plugins = await registry.pluginsDirectory(create: true);
+        await File(
+          '${plugins.path}/${f.registry.record.storedFileName}',
+        ).writeAsString('inactive fixture package');
+        await File(
+          '${plugins.path}/registry.json',
+        ).writeAsString(jsonEncode([f.registry.record.toJson()]));
+        final dir = await f.files.capsuleDirForHex(f.owner);
+        final plugin = f.registry.record.pluginId!;
+        if (authority == 'corrupt') {
+          await f.files.writePluginState(
+            dir,
+            plugin,
+            'workspace-execution.v1.json',
+            '{',
+          );
+        }
+        final retained = await f.files.readPluginState(
+          dir,
+          plugin,
+          'workspace-execution.v1.json',
+        );
+        const pending = '{"private_shape":["unresolved-delivery"]}';
+        await f.files.writePluginState(
+          dir,
+          plugin,
+          'workspace.v1.json',
+          pending,
+        );
+        await f.files.writePluginState(
+          dir,
+          plugin,
+          PluginWorkspaceRemoteService.connectionFile,
+          jsonEncode({
+            'owner': f.owner,
+            'plugin_id': plugin,
+            'executor_id': 'e' * 64,
+            'host': 'offline.example',
+            'port': 22,
+            'fingerprint': 'SHA256:${'A' * 43}',
+            'selected': true,
+            'package_id': 'old-server-package',
+            'package_digest': 'c' * 64,
+          }),
+        );
+        final calls = <String>[];
+        var secretCleanup = false;
+        final ports =
+            UnusedWorkspacePorts()
+              ..onDeletePlugin = (id, owners) async {
+                expect(id, plugin);
+                expect(owners, {f.owner});
+                secretCleanup = true;
+              };
+        final module = PluginRuntimeModule(
+          registry: registry,
+          sourceCatalog: const WasmPluginSourceCatalogService(),
+          manualChecks: ports,
+          pluginHostApi: f.runtime().pluginHostApi,
+          attestationExchange: ports,
+          chatDelivery: ports,
+          passiveReceive: ports,
+          contactLabels: ports,
+          uiLog: ports,
+          fileStore: f.files,
+          secretVault: ports,
+          readActiveCapsuleRootHex: () => f.owner,
+          workspaceRemote: PluginWorkspaceRemoteService(
+            files: f.files,
+            vault: ports,
+            registry: registry,
+            requestTransport: (_, command, _) async {
+              calls.add(command);
+              throw StateError('VPS unavailable');
+            },
+          ),
+        );
+        if (authority == 'local') {
+          await module.removePlugin(f.registry.record);
+          expect(await registry.loadPlugins(), isEmpty);
+          expect(secretCleanup, isTrue);
+          expect(calls, isEmpty);
+        } else {
+          await expectLater(
+            module.removePlugin(f.registry.record),
+            throwsA(anything),
+          );
+          expect((await registry.loadPlugins()).single.removalPending, isFalse);
+          expect(secretCleanup, isFalse);
+          expect(calls, authority == 'vps' ? ['request'] : isEmpty);
+        }
+        expect(
+          await f.files.readPluginState(dir, plugin, 'workspace.v1.json'),
+          pending,
+        );
+        expect(
+          await f.files.readPluginState(
+            dir,
+            plugin,
+            'workspace-execution.v1.json',
+          ),
+          retained,
+        );
+        expect(f.sends, 0);
+      },
+    );
+  }
+
   for (final deleteSavedData in [false, true]) {
     test(
       'failed secret cleanup preserves private data across retry (delete saved data: $deleteSavedData)',

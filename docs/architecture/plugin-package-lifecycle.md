@@ -48,9 +48,11 @@ is recovery work and cannot roll back or invalidate the committed record.
 
 ## Remove
 
-- The application module requires an authenticated VPS return and runner-removal
-  acknowledgement before deregistration. It never treats an unreadable old grant
-  as proof that remote authority has ended.
+- An assigned VPS requires an authenticated return and runner-removal
+  acknowledgement before deregistration. A saved VPS connection alone does not
+  assign execution: removing a local package does not contact or uninstall that
+  server. Invalid execution controls still block removal; they are not evidence
+  that remote authority has ended.
 - Before cleanup, removal atomically marks the existing registry record as
   `removalPending`. This host-owned status denies runtime binding and replacement;
   it is not plugin-private state and does not create a second registry.

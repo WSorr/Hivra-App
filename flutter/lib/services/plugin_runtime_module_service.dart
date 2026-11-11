@@ -208,10 +208,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           checkpoint: Map<String, dynamic>.from(result['checkpoint'] as Map),
           ownerCapsuleHex: owner,
         );
-      }
-      if (uninstall) {
-        final c = await _remote.connection(owner, record.pluginId!);
-        if (c != null && c['package_id'] != null) {
+        if (uninstall) {
           await _remote.uninstall(c);
         }
       }
