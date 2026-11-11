@@ -202,9 +202,16 @@ corrupted to exercise the failure.
 
 Widget regressions reproduce malformed-file and filesystem failures at phone
 and desktop widths, repeated failure, successful retry and package activation.
-Exact packaged Mac/Samsung healthy-inventory acceptance remains pending; source
-tests do not qualify changed release bytes. No trading or VPS mutation is
-required for this outcome.
+All 713 Flutter tests, analyze and review gates passed. Exact ZIP/APK from
+`c8a079b` qualified healthy inventory, published-catalog loading and Jack
+open/return on Mac and Samsung. Mac's three Ledgers, recovery files and package
+registry were unchanged; Samsung retained its original install time, both
+Capsule Ledger hashes and three package versions. The installed APK digest
+matched the packaged artifact. These checks introduced no new Capsule, grant,
+trading Start or VPS mutation. Native owner files were not fault-injected;
+malformed-file and I/O failure/retry remain widget and registry-test evidence.
+Artifact-bound results belong to `plugin_inventory_retry_20261111` in the
+existing acceptance record below.
 
 ### Qualified Local Package Removal
 
@@ -361,7 +368,6 @@ work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
-| Recover the Plugins screen after inventory read failure | Source widget regressions cover safe error presentation, repeated failure and retry without interpreting an unknown inventory as empty. Registry fault tests retain file-preservation coverage. Exact changed Mac/Samsung artifacts remain unqualified; working owner data is not fault-injected. |
 | Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Native Mac and Samsung reads reconstructed their retained MNT SL results; Samsung 0.2.6 also retired the filled entry after complete flat evidence. Replacement, cold restart and return passed without rebuilding Capsule. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; historical SL reconciliation does not qualify them. |
