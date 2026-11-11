@@ -192,6 +192,27 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Keep owner-local contact names intact when a rename fails or overlaps another
+rename. `CapsuleContactLabelStore` remains the only name owner and write path;
+its existing Capsule file and atomic writer are retained. The whole mutation
+is serialized per file across store instances. Missing data may start empty;
+an existing empty, malformed or unsupported file is not permission to replace
+the saved names. Read-only presentation retains its best-effort fallback.
+This is local restart retention, not a new archive, backup, repair or migration.
+
+The existing name dialog must show a safe save failure, keep the entered name
+and allow retry without claiming a successful rename. A committed card removal
+still completes if its optional local-name cleanup fails; the names file is
+retained and that cleanup failure is disclosed. Core, card identity, provider
+protocols, secrets and Ledger do not change. Source qualification uses temporary
+file faults, two simultaneous store instances and phone/desktop widget journeys;
+20 focused tests, all 730 Flutter tests, analyze and review gates passed.
+Exact packaged save/reopen/return in existing Mac/Samsung Capsules remains
+pending. Working owner files must not be corrupted; no new Capsule, contact,
+message, trading Start or VPS mutation is part of acceptance.
+
+### Qualified Contact-Card Preservation
+
 Preserve an existing contact-card file when it contains syntactically valid
 JSON with a non-object root. Explicit import, key synchronization and cleanup
 must not reinterpret unreadable saved data as an empty writable address book.
