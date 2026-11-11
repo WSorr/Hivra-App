@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/screens/settings_screen.dart';
 import 'package:hivra_app/services/capsule_address_service.dart';
+import 'package:hivra_app/services/capsule_contact_label_store.dart';
+import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/settings_service.dart';
+import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeCapsuleAddressService extends CapsuleAddressService {
   int count = 0;
@@ -122,6 +127,128 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.macOS]) {
+    testWidgets(
+      'failed name save retains input and allows retry on ${platform.name}',
+      (tester) async {
+        await tester.runAsync(() async {
+          Future<void> waitFor(Finder finder, {bool present = true}) async {
+            for (var attempt = 0; attempt < 100; attempt++) {
+              await tester.pump(const Duration(milliseconds: 20));
+              if (finder.evaluate().isNotEmpty == present) break;
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+            expect(finder, present ? findsWidgets : findsNothing);
+            await tester.pumpAndSettle();
+          }
+
+          final temp = await Directory.systemTemp.createTemp('hivra-label-ui-');
+          addTearDown(() => temp.delete(recursive: true));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          await tester.binding.setSurfaceSize(
+            platform == TargetPlatform.android
+                ? const Size(360, 800)
+                : const Size(1000, 720),
+          );
+          final files = CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(homeOverride: temp.path),
+          );
+          final owner = 'a' * 64;
+          const peer = 'h1peer';
+          final labels = CapsuleContactLabelStore(
+            fileStore: files,
+            readActiveCapsuleRootHex: () => owner,
+          );
+          await labels.save(peerRootKey: peer, label: 'Old name');
+          await labels.save(peerRootKey: 'h1other', label: 'Retained name');
+          final file = files.contactLabelsFile(
+            await files.capsuleDirForHex(owner),
+          );
+          final original = await file.readAsString();
+          final contacts =
+              _FakeCapsuleAddressService()
+                ..count = 1
+                ..cards = [
+                  const CapsuleAddressCard(
+                    rootKey: peer,
+                    rootHex: '11',
+                    nostrNpub: 'npub1peer',
+                    nostrHex: '22',
+                  ),
+                ];
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData.dark().copyWith(platform: platform),
+              home: SettingsScreen(
+                service: SettingsService(
+                  loadIsNeste: () => true,
+                  loadSeed: () => null,
+                  buildOwnCard: () async => null,
+                  exportOwnCardJson: () async => null,
+                  loadAppVersionLabel: () async => 'Hivra test',
+                  contactCards: contacts,
+                  contactLabels: labels,
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(find.text('Trusted peer cards'), 250);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Trusted peer cards'));
+          await waitFor(find.byTooltip('Name capsule'));
+          await tester.tap(find.byTooltip('Name capsule'));
+          await tester.pumpAndSettle();
+          await tester.enterText(find.byType(TextField), 'New name');
+          await file.writeAsString('{broken');
+          await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+          await waitFor(
+            find.text('Name could not be saved. Existing names were kept.'),
+          );
+          expect(tester.takeException(), isNull);
+          expect(find.text('Name capsule'), findsOneWidget);
+          expect(
+            find.text('Name could not be saved. Existing names were kept.'),
+            findsOneWidget,
+          );
+          expect(
+            tester.widget<TextField>(find.byType(TextField)).controller!.text,
+            'New name',
+          );
+          expect(await file.readAsString(), '{broken');
+          expect(
+            find.widgetWithText(FilledButton, 'Save').hitTestable(),
+            findsOneWidget,
+          );
+
+          await file.writeAsString(original);
+          await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+          await waitFor(find.text('Name capsule'), present: false);
+          expect(tester.takeException(), isNull);
+          expect(find.text('Name capsule'), findsNothing);
+          expect(find.text('New name'), findsOneWidget);
+          expect(await labels.load(), {
+            peer: 'New name',
+            'h1other': 'Retained name',
+          });
+
+          // Optional name cleanup cannot undo a successfully removed card.
+          await file.writeAsString('{broken');
+          await tester.tap(find.byTooltip('Remove'));
+          await waitFor(find.text('New name'), present: false);
+          expect(tester.takeException(), isNull);
+          expect(contacts.removedRootKey, peer);
+          expect(find.text('New name'), findsNothing);
+          expect(await file.readAsString(), '{broken');
+          await tester.tap(find.widgetWithText(TextButton, 'Close'));
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Card removed. Its local name could not be cleared.'),
+            findsOneWidget,
+          );
+        });
+      },
+    );
+
     testWidgets(
       'long card keeps import actions reachable on ${platform.name}',
       (tester) async {

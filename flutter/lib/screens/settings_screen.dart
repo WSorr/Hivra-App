@@ -28,6 +28,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isRelay = false;
   int _contactCount = 0;
   String _appVersionLabel = 'Loading version...';
+  final _contactNameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _contactNameController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -367,11 +374,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                 if (!removed) {
                                                   return;
                                                 }
-                                                await widget.service
-                                                    .saveContactLabel(
-                                                      peerRootKey: card.rootKey,
-                                                      label: '',
+                                                try {
+                                                  await widget.service
+                                                      .saveContactLabel(
+                                                        peerRootKey:
+                                                            card.rootKey,
+                                                        label: '',
+                                                      );
+                                                } catch (_) {
+                                                  if (mounted) {
+                                                    ScaffoldMessenger.of(
+                                                      this.context,
+                                                    ).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                          'Card removed. Its local name could not be cleared.',
+                                                        ),
+                                                      ),
                                                     );
+                                                  }
+                                                }
                                                 cards.removeAt(index);
                                                 labels.remove(
                                                   card.rootKey.toLowerCase(),
@@ -404,39 +426,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<String?> _editContactLabel(String rootKey, String? current) async {
-    final controller = TextEditingController(text: current ?? '');
+    final controller = _contactNameController..text = current ?? '';
+    var saving = false;
+    String? error;
     final saved = await showDialog<String>(
       context: context,
       builder:
-          (dialogContext) => AlertDialog(
-            title: const Text('Name capsule'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              maxLength: 64,
-              decoration: InputDecoration(
-                labelText: 'Local name',
-                hintText: 'For example, Alex or Work Android',
-                helperText: 'Stored only by this capsule.',
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed:
-                    () =>
-                        Navigator.of(dialogContext).pop(controller.text.trim()),
-                child: const Text('Save'),
-              ),
-            ],
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Name capsule'),
+                  content: TextField(
+                    controller: controller,
+                    autofocus: true,
+                    enabled: !saving,
+                    maxLength: 64,
+                    decoration: InputDecoration(
+                      labelText: 'Local name',
+                      hintText: 'For example, Alex or Work Android',
+                      helperText: 'Stored only by this capsule.',
+                      errorText: error,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          saving
+                              ? null
+                              : () async {
+                                final name = controller.text.trim();
+                                setDialogState(() {
+                                  saving = true;
+                                  error = null;
+                                });
+                                try {
+                                  await widget.service.saveContactLabel(
+                                    peerRootKey: rootKey,
+                                    label: name,
+                                  );
+                                  if (dialogContext.mounted) {
+                                    Navigator.of(dialogContext).pop(name);
+                                  }
+                                } catch (_) {
+                                  if (!dialogContext.mounted) return;
+                                  setDialogState(() {
+                                    saving = false;
+                                    error =
+                                        'Name could not be saved. Existing names were kept.';
+                                  });
+                                }
+                              },
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
           ),
     );
-    controller.dispose();
-    if (saved == null) return null;
-    await widget.service.saveContactLabel(peerRootKey: rootKey, label: saved);
     return saved;
   }
 
