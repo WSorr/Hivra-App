@@ -192,6 +192,23 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Remove the existing local Jack package on Mac through Plugins → Remove without
+contacting a previously selected VPS. A saved connection is a transport choice,
+not an execution assignment. Keep the existing registry, secret cleanup and
+opaque recovery retention; an assigned VPS still requires authenticated return,
+and malformed execution controls still fail closed. No manual data cleanup,
+new Capsule, trading Start or VPS mutation is part of this acceptance.
+
+Source regressions reproduce the failure with a replaced local grant and an
+unavailable saved server, and cover retained remote authority and corrupt grant
+data. The exact 475620b Mac ZIP qualified native removal, absence after a cold
+restart, Discovery reinstall and Jack open/return in the same existing Capsule.
+All three Ledgers, Jack's three recovery files and the other package records
+remained unchanged. No new access, Start, manual cleanup or VPS mutation was
+performed. Artifact-bound evidence is in the existing acceptance record below.
+
+### Qualified Jack Market-History Result
+
 Make Jack read all selected timeframes for a contract listed inside its bounded
 600-candle window. Existing Mac and Samsung 0.2.4 both reject MNT's leading daily
 pages: the service has 459 contiguous daily candles including the current one,
