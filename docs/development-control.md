@@ -201,7 +201,11 @@ new Capsule, trading Start or VPS mutation is part of this acceptance.
 
 Source regressions reproduce the failure with a replaced local grant and an
 unavailable saved server, and cover retained remote authority and corrupt grant
-data. Exact packaged Mac removal and cold restart remain pending.
+data. The exact 475620b Mac ZIP qualified native removal, absence after a cold
+restart, Discovery reinstall and Jack open/return in the same existing Capsule.
+All three Ledgers, Jack's three recovery files and the other package records
+remained unchanged. No new access, Start, manual cleanup or VPS mutation was
+performed. Artifact-bound evidence is in the existing acceptance record below.
 
 ### Qualified Jack Market-History Result
 
