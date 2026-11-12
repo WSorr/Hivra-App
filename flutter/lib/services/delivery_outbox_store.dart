@@ -251,21 +251,37 @@ class DeliveryOutboxStore {
     if (raw == null) return const <DeliveryOutboxItem>[];
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! Map) return const <DeliveryOutboxItem>[];
-      final items = decoded['items'];
-      if (items is! List) return const <DeliveryOutboxItem>[];
-      final parsed = items
-          .map(DeliveryOutboxItem.fromJson)
-          .whereType<DeliveryOutboxItem>()
-          .toList(growable: false);
-      final schemaVersion = decoded['schema_version'];
+      if (decoded is! Map) {
+        throw const FormatException('Invalid delivery outbox');
+      }
+      final schemaVersion =
+          decoded.containsKey('schema_version') ? decoded['schema_version'] : 1;
       if (schemaVersion is! int ||
-          schemaVersion < deliveryOutboxSchemaVersion) {
+          schemaVersion < 1 ||
+          schemaVersion > deliveryOutboxSchemaVersion) {
+        throw const FormatException('Unsupported delivery outbox schema');
+      }
+      final items = decoded['items'];
+      if (items is! List) {
+        throw const FormatException('Invalid delivery outbox items');
+      }
+      final parsed = <DeliveryOutboxItem>[];
+      final ids = <String>{};
+      for (final rawItem in items) {
+        final item = DeliveryOutboxItem.fromJson(rawItem);
+        if (item == null ||
+            item.capsuleHex != capsuleHex ||
+            !ids.add(item.id)) {
+          throw const FormatException('Invalid delivery outbox item');
+        }
+        parsed.add(item);
+      }
+      if (schemaVersion < deliveryOutboxSchemaVersion) {
         await _write(capsuleHex, parsed);
       }
       return parsed;
     } catch (_) {
-      return const <DeliveryOutboxItem>[];
+      throw StateError('Delivery outbox is unavailable or invalid');
     }
   }
 

@@ -89,6 +89,18 @@ to v5, making the classification explicit on disk. It cannot bind a receipt,
 wake a repeated retry loop, or be revived by aggregate ledger inference.
 Referenced legacy records may still resume through the one canonical lifecycle.
 
+Only a missing outbox file means no saved delivery recovery state. Existing
+blank, malformed, unsupported-schema or partially invalid data is unavailable,
+not an empty queue. Validate the complete Capsule-bound record set, including
+unique item identities, before legacy rewrite or mutation; preserve the source
+on read/validation/rewrite failure. A later read retries the same owner without
+an empty cached replacement. Unversioned legacy input and schemas v1-v4 retain
+the existing conversion to v5; an unsupported newer schema cannot be rewritten
+under current semantics. A failed background pump closes its current task and
+releases the same scheduler slot for later ordinary retry without an unhandled
+continuation or dispatch based on a falsely empty queue. This adds no second
+journal, automatic repair or live-delivery guarantee.
+
 This distinction matters because a Nostr `OK` is a relay acknowledgement, not
 receiver delivery. NIP-01 defines `OK` as acceptance or denial of an `EVENT`;
 the receiving capsule still has to retrieve the event through its own `REQ`

@@ -7,6 +7,18 @@ import 'package:hivra_app/services/delivery_outbox_store.dart';
 import 'package:hivra_app/services/delivery_transport_contract.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
+class _ControlledOutboxFiles extends CapsuleFileStore {
+  bool rejectWrite = true;
+
+  _ControlledOutboxFiles({required super.dirs});
+
+  @override
+  Future<void> writeDeliveryOutbox(Directory dir, String rawJson) async {
+    if (rejectWrite) throw const FileSystemException('test write failure');
+    await super.writeDeliveryOutbox(dir, rawJson);
+  }
+}
+
 void main() {
   group('DeliveryOutboxStore', () {
     late Directory tempHome;
@@ -28,6 +40,135 @@ void main() {
     tearDown(() async {
       if (await tempHome.exists()) {
         await tempHome.delete(recursive: true);
+      }
+    });
+
+    group('unreadable delivery evidence', () {
+      final now = DateTime.utc(2026, 7, 5, 10);
+      final pending = DeliveryOutboxItem(
+        id: 'pending-fact',
+        capsuleHex: capsuleHex,
+        transport: DeliveryTransportId.nostr,
+        kind: DeliveryOutboxKind.invitationSent,
+        reason: DeliveryOutboxReason.sendInvitationRetry,
+        deliveryReference: deliveryReference,
+        createdAt: now,
+        nextAttemptAt: now,
+        attempts: 0,
+        status: DeliveryOutboxStatus.pending,
+      );
+      final published =
+          pending
+              .copyWith(
+                status: DeliveryOutboxStatus.published,
+                recipientHex: '22' * 32,
+                adapterAcceptedBy: 'wss://relay.example',
+                adapterEnvelopeId: 'already-published-event',
+                adapterMessageKind: 1,
+                adapterFailedBeforeAccept: 0,
+                publishedAt: now,
+              )
+              .toJson()
+            ..['id'] = 'published-fact';
+      final good = jsonEncode({
+        'schema_version': deliveryOutboxSchemaVersion,
+        'items': [pending.toJson(), published],
+      });
+      final invalidSources = <String, String>{
+        'blank': '',
+        'whitespace': ' \n\t ',
+        'malformed JSON': '{damaged',
+        'non-object root': '[]',
+        'missing items': '{"schema_version":5}',
+        'non-list items': '{"schema_version":5,"items":{}}',
+        'future schema': jsonEncode({
+          'schema_version': deliveryOutboxSchemaVersion + 1,
+          'items': [pending.toJson(), published],
+        }),
+        'invalid schema': jsonEncode({'schema_version': '5', 'items': []}),
+        'null schema': jsonEncode({'schema_version': null, 'items': []}),
+        'invalid schema number': jsonEncode({'schema_version': 0, 'items': []}),
+        'partially invalid legacy source': jsonEncode({
+          'schema_version': 4,
+          'items': [published, null],
+        }),
+        'wrong Capsule': jsonEncode({
+          'schema_version': 5,
+          'items': [
+            {...published, 'capsule_hex': 'bb' * 32},
+          ],
+        }),
+        'duplicate identity': jsonEncode({
+          'schema_version': 5,
+          'items': [published, published],
+        }),
+      };
+
+      for (final entry in invalidSources.entries) {
+        test(
+          '${entry.key} blocks mutation and retains evidence for retry',
+          () async {
+            final file = File(
+              '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleHex/delivery_outbox.json',
+            );
+            await file.parent.create(recursive: true);
+            await file.writeAsString(entry.value);
+            for (final operation in <Future<Object?> Function()>[
+              () => store.load(capsuleHex),
+              () => store.due(capsuleHex: capsuleHex, now: now),
+              () => store.enqueue(
+                capsuleHex: capsuleHex,
+                transport: DeliveryTransportId.nostr,
+                kind: DeliveryOutboxKind.invitationSent,
+                reason: DeliveryOutboxReason.sendInvitationRetry,
+                deliveryReference: deliveryReference,
+                now: now,
+              ),
+              () => store.enqueueIfAbsent(
+                capsuleHex: capsuleHex,
+                transport: DeliveryTransportId.nostr,
+                kind: DeliveryOutboxKind.invitationSent,
+                reason: DeliveryOutboxReason.sendInvitationRetry,
+                deliveryReference: deliveryReference,
+                now: now,
+              ),
+              () => store.markAttempt(
+                capsuleHex: capsuleHex,
+                itemId: pending.id,
+                nextAttemptAt: now,
+              ),
+              () => store.markPublished(
+                capsuleHex: capsuleHex,
+                itemId: pending.id,
+                nextAttemptAt: now,
+                recipientHex: '22' * 32,
+                adapterAcceptedBy: 'wss://relay.example',
+                adapterEnvelopeId: 'test-receipt',
+                adapterMessageKind: 1,
+                adapterFailedBeforeAccept: 0,
+                publishedAt: now,
+              ),
+              () => store.markSuperseded(
+                capsuleHex: capsuleHex,
+                itemId: pending.id,
+              ),
+            ]) {
+              await expectLater(operation(), throwsA(isA<StateError>()));
+              expect(await file.readAsString(), entry.value);
+            }
+
+            await file.writeAsString(good);
+            final loaded = await store.load(capsuleHex);
+            expect(loaded, hasLength(2));
+            expect(loaded.last.adapterEnvelopeId, 'already-published-event');
+            expect(loaded.last.status, DeliveryOutboxStatus.published);
+            expect(
+              (await store.due(capsuleHex: capsuleHex, now: now)).single.id,
+              pending.id,
+            );
+            expect(await file.readAsString(), good);
+          },
+        );
       }
     });
 
@@ -172,38 +313,81 @@ void main() {
       expect(item?.attempts, 2);
     });
 
-    test('load persists legacy aggregate quarantine as schema v5', () async {
-      final file = File(
-        '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleHex/delivery_outbox.json',
-      );
-      await file.parent.create(recursive: true);
-      await file.writeAsString(
-        jsonEncode(<String, Object?>{
-          'schema_version': 4,
-          'items': <Object?>[
-            <String, Object?>{
-              'id': 'legacy-pending-file',
-              'capsule_hex': capsuleHex,
-              'transport': DeliveryTransportId.nostr,
-              'kind': DeliveryOutboxKind.invitationSent,
-              'reason': DeliveryOutboxReason.sendInvitationRetry,
-              'created_at': '2026-07-05T10:00:00Z',
-              'next_attempt_at': '2026-07-05T10:00:00Z',
-              'attempts': 2,
-              'status': 'pending',
-            },
-          ],
-        }),
-      );
+    for (final schema in <int?>[null, 1, 2, 3, 4]) {
+      test(
+        'load persists legacy schema $schema aggregate quarantine as schema v5',
+        () async {
+          final file = File(
+            '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleHex/delivery_outbox.json',
+          );
+          await file.parent.create(recursive: true);
+          await file.writeAsString(
+            jsonEncode(<String, Object?>{
+              if (schema != null) 'schema_version': schema,
+              'items': <Object?>[
+                <String, Object?>{
+                  'id': 'legacy-pending-file',
+                  'capsule_hex': capsuleHex,
+                  'transport': DeliveryTransportId.nostr,
+                  'kind': DeliveryOutboxKind.invitationSent,
+                  'reason': DeliveryOutboxReason.sendInvitationRetry,
+                  'created_at': '2026-07-05T10:00:00Z',
+                  'next_attempt_at': '2026-07-05T10:00:00Z',
+                  'attempts': 2,
+                  'status': 'pending',
+                },
+              ],
+            }),
+          );
 
-      final loaded = await store.load(capsuleHex);
-      final migrated = jsonDecode(await file.readAsString()) as Map;
-      final migratedItem = (migrated['items'] as List).single as Map;
+          final loaded = await store.load(capsuleHex);
+          final migrated = jsonDecode(await file.readAsString()) as Map;
+          final migratedItem = (migrated['items'] as List).single as Map;
 
-      expect(loaded.single.status, DeliveryOutboxStatus.quarantined);
-      expect(migrated['schema_version'], deliveryOutboxSchemaVersion);
-      expect(migratedItem['status'], 'quarantined');
-    });
+          expect(loaded.single.status, DeliveryOutboxStatus.quarantined);
+          expect(migrated['schema_version'], deliveryOutboxSchemaVersion);
+          expect(migratedItem['status'], 'quarantined');
+        },
+      );
+    }
+
+    test(
+      'missing and valid empty outboxes remain distinct readable states',
+      () async {
+        final file = File(
+          '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleHex/delivery_outbox.json',
+        );
+        expect(await store.load(capsuleHex), isEmpty);
+        expect(await file.exists(), isFalse);
+        await file.writeAsString('{"schema_version":5,"items":[]}');
+        expect(await store.load(capsuleHex), isEmpty);
+        expect(await file.readAsString(), '{"schema_version":5,"items":[]}');
+      },
+    );
+
+    test(
+      'failed legacy rewrite preserves bytes and is retried instead of returning empty',
+      () async {
+        final files = _ControlledOutboxFiles(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        );
+        store = DeliveryOutboxStore(fileStore: files);
+        final file = File(
+          '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleHex/delivery_outbox.json',
+        );
+        final original = '{"schema_version":4,"items":[]}';
+        await file.parent.create(recursive: true);
+        await file.writeAsString(original);
+        await expectLater(store.load(capsuleHex), throwsA(isA<StateError>()));
+        expect(await file.readAsString(), original);
+        files.rejectWrite = false;
+        expect(await store.load(capsuleHex), isEmpty);
+        expect(
+          (jsonDecode(await file.readAsString()) as Map)['schema_version'],
+          5,
+        );
+      },
+    );
 
     test('revives referenced legacy retry-exhausted core delivery', () {
       final item = DeliveryOutboxItem.fromJson(<String, Object?>{

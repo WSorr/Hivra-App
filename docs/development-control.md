@@ -192,6 +192,30 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve delivery recovery evidence when the existing outbox is unreadable.
+`CapsuleFileStore` distinguishes a missing file from existing blank bytes;
+`DeliveryOutboxStore` rejects an invalid or unsupported schema, incomplete
+record set, duplicate identity or wrong-Capsule record before migration or
+mutation. Failed reads/rewrite cannot become an empty queue or erase prior
+publication evidence. Valid legacy schemas retain the existing quarantine and
+receipt semantics. The same delivery lifecycle stops a failed scheduled pump,
+handles its error once and releases it for a later ordinary retry; it does not
+dispatch from an unreadable source or add another retry controller.
+
+The Ledger remains authoritative; the existing outbox remains a local delivery
+recovery index, not a service archive or guaranteed end-to-end queue. No new
+schema, store, API, runtime owner or repair workflow is introduced. File access,
+outbox parsing/mutation and delivery scheduling retain their three existing
+owners and one canonical delivery path. All 57 focused store/lifecycle/invitation
+and inspection tests, 778 Flutter tests, analyze and review gates passed.
+Source fault tests use temporary files and synthetic records only. Exact
+native healthy open/local inspection, cold
+restart and same-Capsule return remain required; working owner delivery files
+must not be corrupted. Live sends, invitations/revocations, new Capsules,
+trading, publications and VPS mutations are excluded.
+
+### Qualified Recovery-Seed Migration Preservation
+
 Preserve recovery seeds through failed legacy plaintext migration. Capsule
 selection and bootstrap retain the existing `CapsuleSeedStore` migration path:
 validate every source entry before writing, refuse conflicting secure seeds,

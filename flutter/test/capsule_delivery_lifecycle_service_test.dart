@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/capsule_delivery_lifecycle_service.dart';
@@ -6,6 +7,21 @@ import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/delivery_outbox_store.dart';
 import 'package:hivra_app/services/delivery_transport_contract.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
+
+class _ControlledReadOutbox extends DeliveryOutboxStore {
+  bool failReads = true;
+  int dueReads = 0;
+
+  @override
+  Future<List<DeliveryOutboxItem>> due({
+    required String capsuleHex,
+    required DateTime now,
+  }) async {
+    dueReads++;
+    if (failReads) throw StateError('test outbox read failure');
+    return [];
+  }
+}
 
 void main() {
   const capsuleA =
@@ -41,6 +57,78 @@ void main() {
         await tempHome.delete(recursive: true);
       }
     });
+
+    test(
+      'unreadable outbox never dispatches and can be retried after recovery',
+      () async {
+        final file = File(
+          '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleA/delivery_outbox.json',
+        );
+        await outbox.enqueue(
+          capsuleHex: capsuleA,
+          transport: DeliveryTransportId.nostr,
+          kind: DeliveryOutboxKind.invitationSent,
+          reason: DeliveryOutboxReason.sendInvitationRetry,
+          deliveryReference: deliveryReference,
+          now: now,
+        );
+        final original = await file.readAsString();
+        final damaged = jsonDecode(original) as Map<String, dynamic>;
+        damaged['schema_version'] = 4;
+        (damaged['items'] as List).add(null);
+        final damagedSource = jsonEncode(damaged);
+        await file.writeAsString(damagedSource);
+        var dispatches = 0;
+        final lifecycle = CapsuleDeliveryLifecycleService(
+          outbox: outbox,
+          now: () => now,
+          retryDelays: const [],
+          retryRunner: (_, _) async {
+            dispatches++;
+            return const CapsuleDeliveryCycleResult(code: 0);
+          },
+        );
+
+        await expectLater(
+          lifecycle.pumpDueNow(capsuleHex: capsuleA),
+          throwsA(isA<StateError>()),
+        );
+        expect(dispatches, 0);
+        expect(await file.readAsString(), damagedSource);
+
+        await file.writeAsString(original);
+        await lifecycle.pumpDueNow(capsuleHex: capsuleA);
+        expect(dispatches, 1);
+        expect(
+          (await outbox.load(capsuleA)).single.status,
+          DeliveryOutboxStatus.superseded,
+        );
+      },
+    );
+
+    test(
+      'scheduled read failure is handled and releases the same pump for retry',
+      () async {
+        final controlled = _ControlledReadOutbox();
+        var dispatches = 0;
+        final lifecycle = CapsuleDeliveryLifecycleService(
+          outbox: controlled,
+          retryDelays: const [Duration.zero],
+          retryRunner: (_, _) async {
+            dispatches++;
+            return const CapsuleDeliveryCycleResult(code: 0);
+          },
+        );
+        lifecycle.scheduleDuePump(capsuleHex: capsuleA);
+        await Future<void>.delayed(Duration.zero);
+        expect(controlled.dueReads, 1);
+        controlled.failReads = false;
+        lifecycle.scheduleDuePump(capsuleHex: capsuleA);
+        await Future<void>.delayed(Duration.zero);
+        expect(controlled.dueReads, 3);
+        expect(dispatches, 0);
+      },
+    );
 
     test('records a receipt against only the matching capsule outbox', () async {
       final lifecycle = CapsuleDeliveryLifecycleService(
