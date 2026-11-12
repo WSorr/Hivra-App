@@ -207,10 +207,16 @@ their two existing owners and one durable timeline-write path; no new API,
 schema, store, retry controller or runtime entity is introduced. All 55 focused
 Chat tests, 782 Flutter tests, analyze and review gates passed. Four regressions
 failed before the repair. Fault tests use temporary synthetic files only.
-Exact Mac/Samsung healthy Chat open, cold
-restart and same-Capsule return remain pending the owner's return; working
-history must not be fault-injected. New Capsules, messages, permissions,
-publications, trading and VPS mutations are excluded from that smoke.
+Exact `c1835c5` Mac ZIP and Samsung APK passed in-place update, existing Chat
+open, saved-budget inspection/Cancel, cold process restart and return to the
+same Capsule. Repeated reads retained 75 messages / 100 MB on Mac and
+24 messages / 100 MB on Samsung. All 18 Mac baseline file hashes and both
+visible Samsung Ledger hashes were retained. Samsung mirror touch injection
+was unavailable; after one owner navigation step, visible UI taps/swipes used
+the previously requested ADB fallback. No private Android files were extracted
+or changed. Working history was not fault-injected; native acceptance covers
+healthy reads/restart, not injected corruption or end-to-end delivery. No new
+Capsules, messages, permissions, publications, trading or VPS mutations occurred.
 
 ### Qualified Delivery-Outbox Preservation
 
