@@ -206,8 +206,7 @@ class CapsuleFileStore {
   Future<String?> readChatTimeline(Directory dir) async {
     final file = chatTimelineFile(dir);
     if (!await file.exists()) return null;
-    final raw = await file.readAsString();
-    return raw.trim().isEmpty ? null : raw;
+    return file.readAsString();
   }
 
   Future<void> writeChatTimeline(Directory dir, String rawJson) async {
