@@ -209,10 +209,15 @@ outbox parsing/mutation and delivery scheduling retain their three existing
 owners and one canonical delivery path. All 57 focused store/lifecycle/invitation
 and inspection tests, 778 Flutter tests, analyze and review gates passed.
 Source fault tests use temporary files and synthetic records only. Exact
-native healthy open/local inspection, cold
-restart and same-Capsule return remain required; working owner delivery files
-must not be corrupted. Live sends, invitations/revocations, new Capsules,
-trading, publications and VPS mutations are excluded.
+`bd10b05` Mac ZIP and Samsung APK passed healthy local inspection, cold process
+restart, repeated outbox reads and return to the same existing Capsule. Counts
+remained 38 records / 37 published / 0 pending on Mac and 5 / 5 / 0 on Samsung.
+Mac baseline file hashes and both visible Samsung Ledger hashes were retained.
+Diagnosis made no AI provider call; no new permissions or outgoing messages
+were issued. Working owner files were not fault-injected: malformed source and
+failed rewrites are qualified by source tests only. Live sends,
+invitations/revocations, new Capsules, trading, publications and VPS mutations
+remain excluded; this does not qualify end-to-end delivery.
 
 ### Qualified Recovery-Seed Migration Preservation
 
