@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'delivery_outbox_store.dart';
@@ -144,8 +143,9 @@ class CapsuleDeliveryLifecycleService {
     if (normalized == null || _pumpsByCapsule.containsKey(normalized)) return;
 
     final task = _runPump(normalized);
-    _pumpsByCapsule[normalized] = task.catchError((_) {});
-    unawaited(task.whenComplete(() => _pumpsByCapsule.remove(normalized)));
+    _pumpsByCapsule[normalized] = task.catchError((_) {}).whenComplete(() {
+      _pumpsByCapsule.remove(normalized);
+    });
   }
 
   Future<CapsuleDeliveryCycleResult?> pumpDueNow({

@@ -185,8 +185,7 @@ class CapsuleFileStore {
   Future<String?> readDeliveryOutbox(Directory dir) async {
     final file = deliveryOutboxFile(dir);
     if (!await file.exists()) return null;
-    final raw = await file.readAsString();
-    return raw.trim().isEmpty ? null : raw;
+    return file.readAsString();
   }
 
   Future<void> writeDeliveryOutbox(Directory dir, String rawJson) async {
