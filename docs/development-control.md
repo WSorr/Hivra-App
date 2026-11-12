@@ -192,6 +192,40 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve recovery seeds through failed legacy plaintext migration. Capsule
+selection and bootstrap retain the existing `CapsuleSeedStore` migration path:
+validate every source entry before writing, refuse conflicting secure seeds,
+reuse identical stored entries, and delete the source only after all entries
+are confirmed in secure storage. A differing visible legacy copy retains both
+sources and blocks completion instead of silently deleting the other copy.
+Unreadable data or failed native reads,
+writes/read-back block activation with the existing retryable error instead
+of deleting the source or reporting a missing seed. Retry may reuse verified
+partial writes; it introduces no repair service, new plaintext fallback,
+credential prompt, schema, API or persistence owner. Key derivation, Core,
+Ledger and backup scope are unchanged. Migration source bytes and the secure
+destination remain separate until successful verification.
+
+All 87 focused seed/bootstrap/backup/selector/recovery tests, 757 Flutter tests,
+analyze and review gates passed. Regression tests use temporary files and
+synthetic secure storage only; working owner seed records are not fault-injected.
+The existing migration owner/path remains 1/1, with no additional runtime files
+or entities. Exact `d3a171c` Mac ZIP and Samsung APK passed existing-Capsule
+open, cold process restart and return. Mac returned through the selector
+without another unlock after restart; all three Ledger files, card/name files,
+package registry and recovery bytes retained their baseline hashes. Samsung
+retained both Ledger versions/hashes, its signer and original install time;
+Jack open/return required no renewed permission or Start. Installed bundle/APK
+bytes matched their packaged artifacts. The first Mac activation elapsed during
+the owner Keychain handoff; ordinary retry opened the same Capsule without a
+second prompt. Results belong to `seed_migration_preservation_20261112` in the
+existing acceptance record. Healthy native open does not qualify injected
+migration failure: malformed legacy sources and native storage faults retain
+source-test evidence only. No new Capsule, trading, publication or VPS mutation
+was used. These are unpublished test artifacts, not a release qualification.
+
+### Qualified Plugin-Credential Read Preservation
+
 Preserve plugin credentials when native storage returns an unreadable vault.
 Only a missing Keychain entry starts an empty vault; an existing empty or
 whitespace-only value follows the existing malformed-JSON failure path. Every

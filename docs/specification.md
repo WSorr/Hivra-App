@@ -592,8 +592,14 @@ Storage:
   Android secure storage MUST derive its filesystem boundary from the active
   process `Context.filesDir`; adapters MUST NOT assume owner user `0`.
 - Legacy plaintext seed files MAY be consumed only for one-time migration:
-  every valid entry is written to secure storage, verified by read-back, and
-  the plaintext file is deleted before normal use continues.
+  validate the complete source before any secure-storage write. Unreadable,
+  invalid or duplicate normalized entries MUST block migration and preserve
+  the source. A conflicting existing secure seed MUST NOT be overwritten;
+  an identical stored seed needs no rewrite. Delete the plaintext source only
+  after every entry is confirmed in secure storage by read-back; a separate
+  visible legacy copy must match the migrated source before cleanup. Failed
+  migration retains the source for retry and cannot continue normal activation
+  as though the seed were missing. No new plaintext fallback is written.
 - Capsule metadata stored under "capsule_metadata".
 
 Selector screen:

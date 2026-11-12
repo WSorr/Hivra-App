@@ -10,6 +10,10 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
   final Map<String, int> readCounts = <String, int>{};
+  final List<String> writtenKeys = <String>[];
+  String? failReadKey;
+  String? failWriteKey;
+  String? ignoreWriteKey;
   bool failDelete = false;
 
   @override
@@ -23,6 +27,9 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    writtenKeys.add(key);
+    if (key == failWriteKey) throw StateError('test secure write failure');
+    if (key == ignoreWriteKey) return;
     if (value == null) {
       values.remove(key);
     } else {
@@ -41,6 +48,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     readCounts[key] = (readCounts[key] ?? 0) + 1;
+    if (key == failReadKey) throw StateError('test secure read failure');
     return values[key];
   }
 
@@ -192,6 +200,208 @@ void main() {
     expect(loaded, orderedEquals(seed));
     expect(secureStorage.values['hivra.seed.$capsuleHex'], base64.encode(seed));
     expect(await fallbackFile.exists(), isFalse);
+  });
+
+  group('legacy seed migration preservation', () {
+    late Directory root;
+    late File source;
+    late _FakeSecureStorage secureStorage;
+    late CapsuleSeedStore store;
+    final otherCapsule = List<String>.filled(64, 'b').join();
+    final otherSeed = Uint8List.fromList(seed.reversed.toList());
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('hivra-seed-test-');
+      source = File('${root.path}/capsules/capsule_seeds.json');
+      await source.parent.create(recursive: true);
+      secureStorage = _FakeSecureStorage();
+      store = CapsuleSeedStore(
+        secureStorage: secureStorage,
+        dirs: UserVisibleDataDirectoryService(
+          runtimeRootOverride: root.path,
+          homeOverride: root.path,
+        ),
+      );
+    });
+
+    tearDown(() => root.delete(recursive: true));
+
+    final invalidSources = <String, String>{
+      'empty file': '',
+      'whitespace': ' \n\t ',
+      'broken JSON': '{malformed',
+      'non-object root': '[]',
+      'null root': 'null',
+      'invalid owner': jsonEncode({
+        capsuleHex: base64.encode(seed),
+        'invalid-owner': base64.encode(seed),
+      }),
+      'invalid seed': jsonEncode({
+        capsuleHex: base64.encode(seed),
+        otherCapsule: 'invalid-base64',
+      }),
+      'wrong seed length': jsonEncode({
+        capsuleHex: base64.encode(seed),
+        otherCapsule: base64.encode([1, 2, 3]),
+      }),
+      'non-string seed': jsonEncode({capsuleHex: null}),
+      'duplicate normalized owner': jsonEncode({
+        capsuleHex: base64.encode(seed),
+        capsuleHex.toUpperCase(): base64.encode(otherSeed),
+      }),
+    };
+
+    for (final entry in invalidSources.entries) {
+      test(
+        '${entry.key} retains source and blocks writes until retry',
+        () async {
+          await source.writeAsString(entry.value);
+          for (final operation in <Future<Object?> Function()>[
+            () => store.loadSeed(capsuleHex),
+            () => store.hasStoredSeed(capsuleHex),
+            () => store.loadValidatedSeed(
+              capsuleHex,
+              isValidSeed: (_) async => true,
+              persistValidatedSeed: (_) async => fail('Unexpected persistence'),
+            ),
+            () => store.storeSeed(capsuleHex, seed),
+          ]) {
+            await expectLater(operation(), throwsA(isA<StateError>()));
+            expect(await source.readAsString(), entry.value);
+            expect(secureStorage.values, isEmpty);
+            expect(secureStorage.writtenKeys, isEmpty);
+          }
+
+          await source.writeAsString(
+            jsonEncode({capsuleHex: base64.encode(seed)}),
+          );
+          expect(await store.loadSeed(capsuleHex), orderedEquals(seed));
+          expect(await source.exists(), isFalse);
+          expect(
+            secureStorage.values['hivra.seed.$capsuleHex'],
+            base64.encode(seed),
+          );
+        },
+      );
+    }
+
+    test(
+      'conflicting secure seed is never replaced by a legacy seed',
+      () async {
+        final original = jsonEncode({capsuleHex: base64.encode(seed)});
+        await source.writeAsString(original);
+        secureStorage.values['hivra.seed.$capsuleHex'] = base64.encode(
+          otherSeed,
+        );
+
+        await expectLater(
+          store.loadSeed(capsuleHex),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(await source.readAsString(), original);
+        expect(
+          secureStorage.values['hivra.seed.$capsuleHex'],
+          base64.encode(otherSeed),
+        );
+        expect(secureStorage.writtenKeys, isEmpty);
+      },
+    );
+
+    for (final failure in [
+      'read failure',
+      'write failure',
+      'read-back mismatch',
+    ]) {
+      test('$failure retains all source entries for retry', () async {
+        final original = jsonEncode({
+          capsuleHex: base64.encode(seed),
+          otherCapsule: base64.encode(otherSeed),
+        });
+        await source.writeAsString(original);
+        if (failure == 'read failure') {
+          secureStorage.failReadKey = 'hivra.seed.$otherCapsule';
+        } else if (failure == 'write failure') {
+          secureStorage.failWriteKey = 'hivra.seed.$otherCapsule';
+        } else {
+          secureStorage.ignoreWriteKey = 'hivra.seed.$otherCapsule';
+        }
+
+        await expectLater(
+          store.loadSeed(capsuleHex),
+          throwsA(isA<StateError>()),
+        );
+        expect(await source.readAsString(), original);
+        expect(
+          secureStorage.values['hivra.seed.$capsuleHex'],
+          base64.encode(seed),
+        );
+
+        secureStorage.failReadKey = null;
+        secureStorage.failWriteKey = null;
+        secureStorage.ignoreWriteKey = null;
+        store = CapsuleSeedStore(
+          secureStorage: secureStorage,
+          dirs: UserVisibleDataDirectoryService(
+            runtimeRootOverride: root.path,
+            homeOverride: root.path,
+          ),
+        );
+        expect(await store.loadSeed(capsuleHex), orderedEquals(seed));
+        expect(await store.loadSeed(otherCapsule), orderedEquals(otherSeed));
+        expect(await source.exists(), isFalse);
+        // A verified earlier write is reused, rather than requesting another write.
+        expect(
+          secureStorage.writtenKeys.where(
+            (key) => key == 'hivra.seed.$capsuleHex',
+          ),
+          hasLength(1),
+        );
+      });
+    }
+
+    test('migration reuses an identical stored seed without a write', () async {
+      await source.writeAsString(jsonEncode({capsuleHex: base64.encode(seed)}));
+      secureStorage.values['hivra.seed.$capsuleHex'] = base64.encode(seed);
+
+      expect(await store.loadSeed(capsuleHex), orderedEquals(seed));
+      expect(await source.exists(), isFalse);
+      expect(secureStorage.writtenKeys, isEmpty);
+    });
+
+    test('an empty legacy map has no seed to migrate', () async {
+      await source.writeAsString('{}');
+
+      expect(await store.loadSeed(capsuleHex), isNull);
+      expect(await source.exists(), isFalse);
+      expect(secureStorage.writtenKeys, isEmpty);
+    });
+
+    test('different visible legacy copy is retained with the source', () async {
+      final original = jsonEncode({capsuleHex: base64.encode(seed)});
+      final other = jsonEncode({otherCapsule: base64.encode(otherSeed)});
+      final visibleSource = File(
+        '${root.path}/Documents/Hivra/capsules/capsule_seeds.json',
+      );
+      await source.writeAsString(original);
+      await visibleSource.parent.create(recursive: true);
+      await visibleSource.writeAsString(other);
+
+      await expectLater(store.loadSeed(capsuleHex), throwsA(isA<StateError>()));
+
+      expect(await source.readAsString(), original);
+      expect(await visibleSource.readAsString(), other);
+      expect(
+        secureStorage.values['hivra.seed.$capsuleHex'],
+        base64.encode(seed),
+      );
+      // Resolving the conflicting fixture permits the same migration to retry.
+      await visibleSource.writeAsString(original);
+      expect(await store.loadSeed(capsuleHex), orderedEquals(seed));
+      expect(await source.exists(), isFalse);
+      expect(await visibleSource.exists(), isFalse);
+      expect(secureStorage.writtenKeys, hasLength(1));
+    });
   });
 
   test('caches loaded seed for the current process', () async {
