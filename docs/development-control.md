@@ -210,10 +210,19 @@ All 87 focused seed/bootstrap/backup/selector/recovery tests, 757 Flutter tests,
 analyze and review gates passed. Regression tests use temporary files and
 synthetic secure storage only; working owner seed records are not fault-injected.
 The existing migration owner/path remains 1/1, with no additional runtime files
-or entities. Exact Mac/Samsung packaged
-open, cold restart and return remain required after commit/CI and guarded
-packaging; a healthy native open cannot qualify injected migration failure.
-No new Capsule, trading, publication or VPS mutation is part of this outcome.
+or entities. Exact `d3a171c` Mac ZIP and Samsung APK passed existing-Capsule
+open, cold process restart and return. Mac returned through the selector
+without another unlock after restart; all three Ledger files, card/name files,
+package registry and recovery bytes retained their baseline hashes. Samsung
+retained both Ledger versions/hashes, its signer and original install time;
+Jack open/return required no renewed permission or Start. Installed bundle/APK
+bytes matched their packaged artifacts. The first Mac activation elapsed during
+the owner Keychain handoff; ordinary retry opened the same Capsule without a
+second prompt. Results belong to `seed_migration_preservation_20261112` in the
+existing acceptance record. Healthy native open does not qualify injected
+migration failure: malformed legacy sources and native storage faults retain
+source-test evidence only. No new Capsule, trading, publication or VPS mutation
+was used. These are unpublished test artifacts, not a release qualification.
 
 ### Qualified Plugin-Credential Read Preservation
 
