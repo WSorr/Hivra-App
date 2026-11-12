@@ -562,8 +562,12 @@ Storage:
   selected document; it MUST NOT depend on an installed Share receiver or
   request broad storage access. Screens and platform adapters MUST NOT
   serialize, encrypt, decrypt, or reinterpret backup payloads.
-- Both Import Backup and phrase Recovery MUST converge on the complete import
-  owner for v3. Restore MUST validate authenticated paths, bounds, legacy package
+- Both Import Backup and phrase Recovery with a selected backup MUST converge
+  on the same atomic import owner for every supported format, including legacy
+  v1/raw Ledger and encrypted v2. A matching seed and native read-only Ledger
+  validation are required before publication; plaintext compatibility does not
+  authorize an unverified write. Restore MUST validate authenticated paths,
+  bounds, legacy package
   preflight and the native Ledger signatures/structure before publishing data.
   Existing Capsule data MUST NOT be overwritten or merged with an old snapshot;
   installed package conflicts MUST fail without downgrading other Capsules.

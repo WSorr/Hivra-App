@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -104,11 +105,28 @@ class _DeletionRuntime implements CapsuleSelectorRuntime {
 class _ScreenService extends CapsuleSelectorService {
   final List<CapsuleSelectorItem> items;
   final exports = <(String, String)>[];
+  final imports = <(String, Uint8List?)>[];
 
   _ScreenService(this.items) : super(_ActivationRuntime());
 
   @override
   Future<List<CapsuleSelectorItem>> loadCapsules() async => items;
+
+  @override
+  bool validateMnemonic(String phrase) => phrase == 'public test';
+
+  @override
+  Uint8List mnemonicToSeed(String phrase) =>
+      Uint8List.fromList(List.filled(32, 7));
+
+  @override
+  Future<String?> importCapsuleFromBackupJson(
+    String raw, {
+    Uint8List? seed,
+  }) async {
+    imports.add((raw, seed));
+    return null;
+  }
 
   @override
   Future<String?> exportCapsuleBackupToPath(
@@ -474,6 +492,77 @@ void main() {
       expect(inbox.loadMessages(capsuleHex), hasLength(1));
     },
   );
+
+  for (final width in [390.0, 1200.0]) {
+    for (final canceled in [false, true]) {
+      testWidgets(
+        'legacy backup requests seed before import at $width (cancel: $canceled)',
+        (tester) async {
+          final stand = Directory.systemTemp.createTempSync(
+            'hivra-backup-picker-',
+          );
+          final file = File('${stand.path}/ledger.json')
+            ..writeAsStringSync('{"owner":"${'aa' * 32}","events":[]}');
+          addTearDown(() => stand.deleteSync(recursive: true));
+          tester.view.physicalSize = Size(width, 900);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          const channel = MethodChannel('hivra/file_documents');
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, (call) async {
+                expect(call.method, 'openDocument');
+                return file.path;
+              });
+          addTearDown(
+            () => TestDefaultBinaryMessengerBinding
+                .instance
+                .defaultBinaryMessenger
+                .setMockMethodCallHandler(channel, null),
+          );
+          final service = _ScreenService([]);
+          await tester.pumpWidget(
+            MaterialApp(
+              home: CapsuleSelectorScreen(
+                autoSelectSingle: false,
+                service: service,
+                uiLog: _NoopUiLog(),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.runAsync(() async {
+            await tester.tap(find.text('Import Backup'));
+            final wait = Stopwatch()..start();
+            while (find.text('Restore Capsule Backup').evaluate().isEmpty &&
+                wait.elapsed < const Duration(seconds: 5)) {
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+              await tester.pump();
+            }
+          });
+          await tester.pumpAndSettle();
+          expect(find.text('Restore Capsule Backup'), findsOneWidget);
+          expect(service.imports, isEmpty);
+          if (!canceled) {
+            await tester.enterText(find.byType(TextField), 'public test');
+          }
+          await tester.runAsync(() async {
+            await tester.tap(find.text(canceled ? 'Cancel' : 'Restore'));
+            await tester.pumpAndSettle();
+          });
+          await tester.pumpAndSettle();
+          expect(service.imports, canceled ? isEmpty : hasLength(1));
+          if (!canceled) {
+            expect(service.imports.single.$1, file.readAsStringSync());
+            expect(service.imports.single.$2, List.filled(32, 7));
+            expect(find.text('Import failed: invalid backup'), findsOneWidget);
+          }
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant.only(TargetPlatform.android),
+      );
+    }
+  }
 
   for (final canceled in [false, true]) {
     testWidgets('selector export uses Save Backup (canceled: $canceled)', (

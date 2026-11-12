@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import '../ffi/recovery_runtime.dart';
-import 'capsule_backup_codec.dart';
 import 'capsule_ledger_summary_parser.dart';
 import 'ledger_view_support.dart';
 
@@ -42,31 +41,18 @@ class RecoveryService {
   }) async {
     try {
       final seed = _runtime.mnemonicToSeed(phrase.trim());
-      final selectedBackup =
-          selectedBackupJson == null
-              ? null
-              : await CapsuleBackupCodec.tryDecodeBackup(
-                selectedBackupJson,
-                seed,
-              );
-      if (selectedBackupJson != null && selectedBackup == null) {
-        return const RecoveryExecutionResult.failure(
-          'Backup authentication failed or the seed phrase does not match',
-        );
-      }
-      if (selectedBackup?.files != null) {
+      if (selectedBackupJson != null) {
         final restored = await _runtime.importCompleteBackup(
-          selectedBackupJson!,
+          selectedBackupJson,
           seed,
         );
         return restored
             ? const RecoveryExecutionResult.success()
             : const RecoveryExecutionResult.failure(
-              'Failed to restore complete Capsule backup',
+              'Failed to restore Capsule backup',
             );
       }
-      final selectedBackupLedgerJson = selectedBackup?.ledgerJson;
-      bool isGenesisRecovered = selectedBackup?.isGenesis ?? false;
+      var isGenesisRecovered = false;
 
       final createError = _runtime.createCapsuleError(
         seed,
@@ -76,32 +62,7 @@ class RecoveryService {
         return RecoveryExecutionResult.failure(createError);
       }
 
-      if (selectedBackupLedgerJson != null) {
-        final expectedOwner = _extractOwnerHexFromLedger(
-          selectedBackupLedgerJson,
-        );
-        final currentPubKey = _runtime.capsuleRuntimeOwnerPublicKey();
-        final currentOwner =
-            currentPubKey == null ? null : _bytesToHex(currentPubKey);
-        if (expectedOwner != null &&
-            currentOwner != null &&
-            expectedOwner != currentOwner) {
-          return const RecoveryExecutionResult.failure(
-            'Selected backup does not match this seed phrase',
-          );
-        }
-      }
-
-      final importedLedger =
-          selectedBackupLedgerJson != null
-              ? _runtime.importLedger(selectedBackupLedgerJson)
-              : await _runtime.importLedgerIfExists();
-
-      if (selectedBackupLedgerJson != null && !importedLedger) {
-        return const RecoveryExecutionResult.failure(
-          'Failed to import selected backup ledger',
-        );
-      }
+      final importedLedger = await _runtime.importLedgerIfExists();
 
       if (importedLedger) {
         final exportedLedger = _runtime.exportLedger();
@@ -117,15 +78,7 @@ class RecoveryService {
           return RecoveryExecutionResult.failure(recreateError);
         }
 
-        if (selectedBackupLedgerJson != null) {
-          if (!_runtime.importLedger(selectedBackupLedgerJson)) {
-            return const RecoveryExecutionResult.failure(
-              'Failed to import selected backup',
-            );
-          }
-        } else {
-          await _runtime.importLedgerIfExists();
-        }
+        await _runtime.importLedgerIfExists();
       }
 
       await _runtime.persistAfterCreate(
@@ -146,14 +99,6 @@ class RecoveryService {
     if (ledgerJson == null || ledgerJson.trim().isEmpty) return 0;
     final summary = _summaryParser.parse(ledgerJson, _bytesToHex);
     return summary.starterCount;
-  }
-
-  String? _extractOwnerHexFromLedger(String ledgerJson) {
-    final root = _support.exportLedgerRoot(ledgerJson);
-    if (root == null) return null;
-    final ownerBytes = _summaryParser.parseBytesField(root['owner']);
-    if (ownerBytes == null || ownerBytes.length != 32) return null;
-    return _bytesToHex(Uint8List.fromList(ownerBytes));
   }
 
   bool? _inferGenesisFromLedgerJson(String? ledgerJson) {

@@ -574,6 +574,92 @@ void main() {
     expect(await dst.readLedger(dir), 'current truth');
     expect(dstSecure.values, isEmpty);
   });
+
+  for (final format in ['v2', 'v1', 'raw']) {
+    Future<String> oldBackup() async => switch (format) {
+      'v2' => File('test/fixtures/capsule_backup_v2.json').readAsString(),
+      'v1' => Future.value(
+        CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: ledger,
+          isGenesis: true,
+          isNeste: false,
+        ),
+      ),
+      _ => Future.value(ledger),
+    };
+    final oldSeed =
+        format == 'v2' ? Uint8List.fromList(List.filled(32, 7)) : seed;
+    final oldOwner = format == 'v2' ? '07' * 32 : owner;
+    Future<String?> restoreOld(String raw) => importer
+        .importCapsuleFromBackupJson(raw, seed: oldSeed, hivra: bindings);
+
+    test(
+      '$format recovery needs seed and native validation before writing',
+      () async {
+        final raw = await oldBackup();
+        expect(
+          await importer.importCapsuleFromBackupJson(raw, hivra: bindings),
+          isNull,
+        );
+        expect(
+          await importer.importCapsuleFromBackupJson(raw, seed: oldSeed),
+          isNull,
+        );
+        expect(await (await dst.capsuleDirForHex(oldOwner)).exists(), false);
+        expect(dstSecure.values, isEmpty);
+      },
+    );
+
+    test('$format recovery never overwrites existing Capsule data', () async {
+      final dir = await dst.capsuleDirForHex(oldOwner, create: true);
+      await dst.writeLedger(dir, 'current truth');
+      await dst.writeChatTimeline(dir, 'retained local messages');
+      await expectLater(restoreOld(await oldBackup()), throwsStateError);
+      expect(await dst.readLedger(dir), 'current truth');
+      expect(await dst.readChatTimeline(dir), 'retained local messages');
+      expect(dstSecure.values, isEmpty);
+    });
+
+    test(
+      '$format recovery validates Ledger before publishing anything',
+      () async {
+        bindings.valid = false;
+        expect(await restoreOld(await oldBackup()), isNull);
+        expect(bindings.validations, 1);
+        expect(await (await dst.capsuleDirForHex(oldOwner)).exists(), false);
+        expect(
+          (await CapsuleIndexStore(dirs: dstDirs).read()).capsules,
+          isEmpty,
+        );
+        expect(dstSecure.values, isEmpty);
+      },
+    );
+
+    test(
+      '$format failed recovery rolls back and retries through the same owner',
+      () async {
+        final raw = await oldBackup();
+        dstSecure.failWrite = true;
+        await expectLater(restoreOld(raw), throwsStateError);
+        expect(await (await dst.capsuleDirForHex(oldOwner)).exists(), false);
+        expect(
+          (await CapsuleIndexStore(dirs: dstDirs).read()).capsules,
+          isEmpty,
+        );
+        expect(dstSecure.values, isEmpty);
+        dstSecure.failWrite = false;
+        expect(await restoreOld(raw), oldOwner);
+        final reopened = CapsuleFileStore(dirs: dstDirs);
+        final dir = await reopened.capsuleDirForHex(oldOwner);
+        expect(
+          await reopened.readLedger(dir),
+          (await CapsuleBackupCodec.tryDecodeBackup(raw, oldSeed))!.ledgerJson,
+        );
+        expect(await reopened.readChatTimeline(dir), isNull);
+        expect(await seeds(dstDirs, dstSecure).loadSeed(oldOwner), oldSeed);
+      },
+    );
+  }
   test(
     'package conflict retains installed version and other Capsule',
     () async {

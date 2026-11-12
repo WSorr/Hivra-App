@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-12
+Status date: 2026-11-13
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -191,6 +191,39 @@ branch state; published artifacts and their signoff belong to
   the existing opaque store.
 
 ## Selected Product Outcome
+
+Preserve existing Capsule data and avoid partial publication when restoring any
+supported backup format. Import Backup and phrase Recovery with a selected file
+must converge on the existing atomic import owner, including encrypted v2,
+plaintext v1 and raw-Ledger compatibility inputs. The seed and the native
+read-only Ledger validator are required before any import writes; asking for
+the matching phrase precedes publication rather than repairing authority after
+legacy data has already been written. Existing Capsules are never overwritten
+or merged with a snapshot. Wrong identity, invalid Ledger or unavailable secure
+storage must leave existing data intact; failed staging rolls back and the same
+import can retry.
+
+Reuse the existing v3 staging, index/seed rollback and package admission path;
+remove the direct legacy snapshot writer and phrase-recovery fallback instead
+of adding guards to each path. Backup publication retains one persistence owner
+and shrinks from two paths to one. The codec remains the format owner; no new
+schema, store, API, controller, permission or runtime entity is introduced.
+Core-only export scope and separate seed custody remain unchanged. Seed-only
+identity recovery and existing read-only full-state v3 compatibility are outside
+this repair and retain their existing behavior.
+
+Source regressions use temporary synthetic files and fake secure storage only;
+no installed Capsule, seed, backup, message, trading session or VPS is mutated.
+Nine regressions reproduced the legacy overwrite, missing native validation and
+partial-publication failures before the repair. All 108 focused and 799 full
+Flutter tests, analyze and repository review gates passed; the existing native
+Ledger-validator regression also passed without changing active runtime state.
+Exact native acceptance remains pending. Under the owner's no-new-Capsules
+constraint, native smoke can qualify cancellation, refusal to overwrite an
+existing Capsule, preserved data, cold restart and return; it cannot establish
+a fresh-target native restore or full long-term User Lifetime qualification.
+
+### Qualified Retained-Chat Read Preservation
 
 Preserve the retained Chat window when its existing encrypted timeline is blank.
 The shared file owner distinguishes a missing timeline from existing empty or
