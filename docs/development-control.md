@@ -218,10 +218,16 @@ Nine regressions reproduced the legacy overwrite, missing native validation and
 partial-publication failures before the repair. All 108 focused and 799 full
 Flutter tests, analyze and repository review gates passed; the existing native
 Ledger-validator regression also passed without changing active runtime state.
-Exact native acceptance remains pending. Under the owner's no-new-Capsules
-constraint, native smoke can qualify cancellation, refusal to overwrite an
-existing Capsule, preserved data, cold restart and return; it cannot establish
-a fresh-target native restore or full long-term User Lifetime qualification.
+Exact `287e911` Mac ZIP and Samsung APK passed cancellation, refusal to replace
+an existing Capsule, preserved data, cold process restart and return. Mac kept
+all 18 baseline file hashes; Samsung kept both existing Ledger versions/hashes
+and its three installed packages. The owner reported the exact Mac refusal;
+the Samsung refusal was captured immediately after Restore through the
+owner-authorized ADB fallback. The temporary Samsung Core export was removed
+from Downloads through recoverable Trash. No new Capsule, permission, message,
+trading action or VPS mutation occurred. Under the no-new-Capsules constraint,
+this qualifies preservation of existing data, not a fresh-target native restore
+or full long-term User Lifetime recovery.
 
 ### Qualified Retained-Chat Read Preservation
 
