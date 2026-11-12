@@ -219,15 +219,22 @@ partial-publication failures before the repair. All 108 focused and 799 full
 Flutter tests, analyze and repository review gates passed; the existing native
 Ledger-validator regression also passed without changing active runtime state.
 Exact `287e911` Mac ZIP and Samsung APK passed cancellation, refusal to replace
-an existing Capsule, preserved data, cold process restart and return. Mac kept
-all 18 baseline file hashes; Samsung kept both existing Ledger versions/hashes
-and its three installed packages. The owner reported the exact Mac refusal;
-the Samsung refusal was captured immediately after Restore through the
-owner-authorized ADB fallback. The temporary Samsung Core export was removed
-from Downloads through recoverable Trash. No new Capsule, permission, message,
-trading action or VPS mutation occurred. Under the no-new-Capsules constraint,
-this qualifies preservation of existing data, not a fresh-target native restore
-or full long-term User Lifetime recovery.
+an existing Capsule, preserved data, cold process restart and return. The owner
+then authorized one disposable test identity for actual fresh-target restore.
+Its native v3 Core export was 9,370 bytes. After confirmed deletion on Mac,
+Import Backup restored the same identity, full Ledger hash, version 6, six
+events and five starters; the displayed starter IDs matched. Importing that file
+on Samsung, where the test identity did not exist, produced the same state.
+Both restored copies passed cold process restart. Native deletion then removed
+the test identity and its seed on both devices; both digest-matched temporary
+backup copies were removed. Final cold launches showed only the original three Mac
+and two Samsung Capsules with their original Ledger versions/hashes. All 18
+Mac baseline file hashes remained unchanged. The earlier refusal smoke retained
+installed packages; its temporary Samsung Core export went to recoverable
+Trash, which was not purged. No new permission, message, trading action or VPS
+mutation occurred. This qualifies fresh-target native v3 Core restore for the
+tested Genesis history and preservation of existing data; it does not qualify
+every legacy format natively or full long-term User Lifetime recovery.
 
 ### Qualified Retained-Chat Read Preservation
 
