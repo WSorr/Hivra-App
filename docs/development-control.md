@@ -192,6 +192,28 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve the retained Chat window when its existing encrypted timeline is blank.
+The shared file owner distinguishes a missing timeline from existing empty or
+whitespace bytes. The existing timeline owner rejects those bytes rather than
+initializing an empty history: budget changes and incoming/outgoing durable
+updates cannot replace the source, and ingress is not acknowledged before a
+successful durable handoff. Restoring a valid source allows the same owner to
+retry and recover its saved budget, completed messages and unresolved sends.
+
+Missing files and authenticated empty timelines remain valid. The owner-selected
+byte budget, completed-message eviction, encryption, Core-only backup scope and
+read markers are unchanged. File access and encrypted timeline retention keep
+their two existing owners and one durable timeline-write path; no new API,
+schema, store, retry controller or runtime entity is introduced. All 55 focused
+Chat tests, 782 Flutter tests, analyze and review gates passed. Four regressions
+failed before the repair. Fault tests use temporary synthetic files only.
+Exact Mac/Samsung healthy Chat open, cold
+restart and same-Capsule return remain pending the owner's return; working
+history must not be fault-injected. New Capsules, messages, permissions,
+publications, trading and VPS mutations are excluded from that smoke.
+
+### Qualified Delivery-Outbox Preservation
+
 Preserve delivery recovery evidence when the existing outbox is unreadable.
 `CapsuleFileStore` distinguishes a missing file from existing blank bytes;
 `DeliveryOutboxStore` rejects an invalid or unsupported schema, incomplete

@@ -563,6 +563,86 @@ void main() {
       },
     );
 
+    for (final raw in ['', ' \n\t']) {
+      test(
+        'blank saved timeline blocks replacement and retries after restoration '
+        '(${raw.isEmpty ? 'empty' : 'whitespace'})',
+        () async {
+          final home = await Directory.systemTemp.createTemp('hivra-chat-');
+          addTearDown(() => home.delete(recursive: true));
+          final files = CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+          );
+          Future<Uint8List?> seed(String _) async =>
+              Uint8List.fromList(List.filled(32, 34));
+          CapsuleDeliveryInboxStore reopen() => CapsuleDeliveryInboxStore(
+            fileStore: files,
+            loadTimelineSeed: seed,
+          );
+          CapsuleChatInboxMessage message(String id, {bool pending = false}) =>
+              CapsuleChatInboxMessage(
+                id: id,
+                fromHex: pending ? capsuleHex : peerHex,
+                toHex: pending ? peerHex : capsuleHex,
+                messageText: id,
+                createdAtUtc: '2026-11-12T00:00:00Z',
+                envelopeHashHex: id,
+                timestampMs: 1,
+                direction:
+                    pending
+                        ? CapsuleChatMessageDirection.outgoing
+                        : CapsuleChatMessageDirection.incoming,
+                deliveryState:
+                    pending
+                        ? CapsuleChatMessageDeliveryState.pending
+                        : CapsuleChatMessageDeliveryState.received,
+              );
+          final original = reopen();
+          expect(await original.loadCacheBudgetBytes(capsuleHex), 100000000);
+          await original.setCacheBudgetBytes(capsuleHex, 4096);
+          final empty = reopen();
+          expect(await empty.loadCacheBudgetBytes(capsuleHex), 4096);
+          expect(empty.loadMessages(capsuleHex), isEmpty);
+          await empty.mergeDurably(
+            capsuleHex,
+            messages: [message('pending', pending: true), message('retained')],
+          );
+          final dir = await files.capsuleDirForHex(capsuleHex);
+          final saved = (await files.readChatTimeline(dir))!;
+          await files.writeChatTimeline(dir, raw);
+          final retry = reopen();
+          expect(await retry.hydrateCapsule(capsuleHex), isFalse);
+          await expectLater(
+            retry.loadCacheBudgetBytes(capsuleHex),
+            throwsStateError,
+          );
+          await expectLater(
+            retry.setCacheBudgetBytes(capsuleHex, 2048),
+            throwsStateError,
+          );
+          await expectLater(
+            retry.upsertMessageDurably(capsuleHex, message('new')),
+            throwsStateError,
+          );
+          expect(retry.loadMessages(capsuleHex), isEmpty);
+          expect(await files.chatTimelineFile(dir).readAsString(), raw);
+          await files.writeChatTimeline(dir, saved);
+          expect(await retry.loadCacheBudgetBytes(capsuleHex), 4096);
+          expect(
+            retry.loadMessages(capsuleHex).map((m) => m.id),
+            containsAll(['pending', 'retained']),
+          );
+          await retry.upsertMessageDurably(capsuleHex, message('new'));
+          final restarted = reopen();
+          expect(await restarted.loadCacheBudgetBytes(capsuleHex), 4096);
+          expect(
+            restarted.loadMessages(capsuleHex).map((m) => m.id),
+            unorderedEquals(['pending', 'retained', 'new']),
+          );
+        },
+      );
+    }
+
     test('wrong-capsule or corrupt timeline fails closed', () async {
       final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
       addTearDown(() async {
@@ -795,9 +875,12 @@ void main() {
     },
   );
 
-  test(
-    'chat timeline persistence failure blocks handoff acknowledgement',
-    () async {
+  for (final failure in [
+    'missing seed',
+    'empty timeline',
+    'whitespace timeline',
+  ]) {
+    test('chat timeline $failure blocks handoff acknowledgement', () async {
       const peerHex =
           '1111111111111111111111111111111111111111111111111111111111111111';
       const localRootHex =
@@ -806,8 +889,15 @@ void main() {
       addTearDown(() async {
         if (await tempHome.exists()) await tempHome.delete(recursive: true);
       });
+      final files = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+      final dir = await files.capsuleDirForHex(localRootHex, create: true);
+      final raw = failure == 'empty timeline' ? '' : ' \n\t';
+      if (failure != 'missing seed') await files.writeChatTimeline(dir, raw);
       var acknowledgementCalls = 0;
       final service = CapsuleChatDeliveryService(
+        deferredInboxStore: CapsuleChatDeferredInboxStore(fileStore: files),
         runtime: _FakeRuntime(
           capsuleRootKey: _hexToBytes(localRootHex),
           workerBootstrap: const <String, Object?>{
@@ -827,10 +917,12 @@ void main() {
           ),
         ]),
         deliveryInboxStore: CapsuleDeliveryInboxStore(
-          fileStore: CapsuleFileStore(
-            dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
-          ),
-          loadTimelineSeed: (_) async => null,
+          fileStore: files,
+          loadTimelineSeed:
+              (_) async =>
+                  failure == 'missing seed'
+                      ? null
+                      : Uint8List.fromList(List.filled(32, 35)),
         ),
         receiveWorkerRunner:
             (_) async => <String, Object?>{
@@ -858,10 +950,20 @@ void main() {
       final result = await service.drainAndFilter();
 
       expect(result.code, -2005);
-      expect(result.errorMessage, contains('Capsule seed is unavailable'));
+      expect(
+        result.errorMessage,
+        contains(
+          failure == 'missing seed'
+              ? 'Capsule seed is unavailable'
+              : 'Existing Chat timeline is unavailable',
+        ),
+      );
+      if (failure != 'missing seed') {
+        expect(await files.chatTimelineFile(dir).readAsString(), raw);
+      }
       expect(acknowledgementCalls, 0);
-    },
-  );
+    });
+  }
 
   test(
     'workspace keeps passive chat visible when the next refresh times out',
