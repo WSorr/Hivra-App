@@ -192,6 +192,38 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve Chat messages awaiting peer confirmation when their existing deferred
+inbox cannot be read or saved. A missing file and a valid empty inbox remain
+empty; existing blank bytes, malformed or unsupported snapshots, incomplete
+record sets, duplicate identities and wrong-Capsule records must not become a
+partial or empty writable queue. Validate the whole snapshot in the existing
+deferred-inbox owner before projection or replacement. The existing receive
+result must report a safe failure without disclosing file contents and must
+leave adapter events unacknowledged until the durable handoff succeeds.
+
+Retry uses the same receive path after storage recovers. If the timeline was
+already committed before a deferred-inbox write failed, replay must retain its
+stable message identities without duplicating content. The existing item cap,
+first-seen expiry, schema and Core-only backup exclusion are unchanged; this is
+not an archive, new retention guarantee or new delivery protocol. File access,
+deferred-inbox parsing and Chat receive retain their three existing owners and
+one handoff path. Remove the lossy empty/partial-read fallback instead of adding
+a repair store, controller, API, permission or runtime entity.
+
+Twelve regressions failed before the repair. All 81 focused and 813 full Flutter
+tests, analyze and repository review gates passed, including retained limit/
+expiry and replay after a committed timeline followed by a failed deferred
+write. The repair adds 25 production lines in existing files and introduces no
+runtime owner or write path. Source fault checks use temporary synthetic files
+only. Native acceptance must
+use the existing Mac/Samsung Capsules without new identities, messages,
+permissions, trading or VPS changes. Healthy open, retained-history inspection,
+cold restart and return do not qualify injected corruption on owner files or
+new end-to-end delivery. Commit, push/CI and exact packaged acceptance remain
+pending; no native acceptance of changed bytes is claimed.
+
+### Qualified Selected-Backup Restore Preservation
+
 Preserve existing Capsule data and avoid partial publication when restoring any
 supported backup format. Import Backup and phrase Recovery with a selected file
 must converge on the existing atomic import owner, including encrypted v2,
