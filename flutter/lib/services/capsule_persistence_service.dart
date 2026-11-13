@@ -39,13 +39,19 @@ class CapsulePersistenceService {
   factory CapsulePersistenceService.forTesting({
     required UserVisibleDataDirectoryService dirs,
     required CapsuleSeedStore seedStore,
-  }) => CapsulePersistenceService._internal(dirs: dirs, seedStore: seedStore);
+    CapsuleFileStore? fileStore,
+  }) => CapsulePersistenceService._internal(
+    dirs: dirs,
+    seedStore: seedStore,
+    fileStore: fileStore,
+  );
 
   CapsulePersistenceService._internal({
     UserVisibleDataDirectoryService dirs =
         const UserVisibleDataDirectoryService(),
     CapsuleSeedStore? seedStore,
-  }) : _fileStore = CapsuleFileStore(dirs: dirs),
+    CapsuleFileStore? fileStore,
+  }) : _fileStore = fileStore ?? CapsuleFileStore(dirs: dirs),
        _indexStore = CapsuleIndexStore(dirs: dirs),
        _seedStore = seedStore ?? CapsuleSeedStore(dirs: dirs),
        _userVisibleDirs = dirs,
@@ -69,7 +75,7 @@ class CapsulePersistenceService {
   final UserVisibleDataDirectoryService _userVisibleDirs;
   final WasmPluginRegistryService _pluginRegistry;
   final CapsuleAddressService _addressBook;
-  Future<void> _backupImportTail = Future<void>.value();
+  static Future<void> _persistenceTail = Future<void>.value();
   final AtomicFileWriteService _atomicWrites = const AtomicFileWriteService();
   late final CapsuleRuntimeBootstrapService _runtimeBootstrapService;
 
@@ -177,18 +183,16 @@ class CapsulePersistenceService {
   Future<bool> persistLedgerSnapshot(CapsulePersistenceBindings hivra) async {
     final ledger = hivra.exportLedger();
     if (ledger == null || ledger.isEmpty) return false;
-
-    final dir = await _currentCapsuleDir(hivra, create: true);
-    final existingLedger = await _fileStore.readLedger(dir);
-    if (_isIncomingLedgerStale(
-      incomingLedgerJson: ledger,
-      existingLedgerJson: existingLedger,
-    )) {
-      return false;
-    }
-    await _persistLedgerGeneration(dir, ledger, hivra.exportCapsuleStateJson());
-    await _touchRuntimeCapsuleMetadata(hivra);
-    return true;
+    // Capture the exported owner and projection before asynchronous storage:
+    // the process-global native Capsule may change while the write is waiting.
+    final owner = _extractOwnerHex(ledger);
+    if (owner == null) return false;
+    return persistLedgerSnapshotForCapsuleHex(
+      owner,
+      ledger,
+      capsuleStateJson: hivra.exportCapsuleStateJson(),
+      identityMode: _detectIdentityMode(hivra, owner),
+    );
   }
 
   Future<bool> applyLedgerSnapshotIfNotStale(
@@ -216,23 +220,36 @@ class CapsulePersistenceService {
     String pubKeyHex,
     String ledgerJson, {
     String? capsuleStateJson,
+    String? identityMode,
   }) async {
     if (pubKeyHex.isEmpty || ledgerJson.trim().isEmpty) return false;
     final ownerHex = _extractOwnerHex(ledgerJson);
     final targetPubKeyHex = ownerHex ?? pubKeyHex;
-    final dir = await _capsuleDirForHex(targetPubKeyHex, create: true);
-    final existingLedger = await _fileStore.readLedger(dir);
-    if (_isIncomingLedgerStale(
-      incomingLedgerJson: ledgerJson,
-      existingLedgerJson: existingLedger,
-    )) {
-      return false;
-    }
-    await _persistLedgerGeneration(dir, ledgerJson, capsuleStateJson);
-    // Keep index heartbeat fresh for the capsule that actually produced worker output,
-    // but do not switch active capsule.
-    await _upsertCapsuleIndex(targetPubKeyHex);
-    return true;
+    return _serializePersistence(() async {
+      final dir = await _capsuleDirForHex(targetPubKeyHex, create: true);
+      final existingLedger = await _fileStore.readLedger(dir);
+      if (_isIncomingLedgerStale(
+        incomingLedgerJson: ledgerJson,
+        existingLedgerJson: existingLedger,
+      )) {
+        return false;
+      }
+      final state = await _fileStore.readState(dir);
+      final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
+        ledgerJson: ledgerJson,
+        isGenesis: state?['isGenesis'] == true,
+        isNeste: state?['isNeste'] != false,
+      );
+      await _fileStore.writeLedgerSnapshot(
+        dir,
+        ledgerJson: ledgerJson,
+        backupJson: backupJson,
+        coreProjectionJson: capsuleStateJson,
+      );
+      // Refresh only the owner that produced this immutable snapshot.
+      await _upsertCapsuleIndex(targetPubKeyHex, identityMode: identityMode);
+      return true;
+    });
   }
 
   Future<String?> exportBackupEnvelopeToPath(
@@ -297,25 +314,6 @@ class CapsulePersistenceService {
       await _touchRuntimeCapsuleMetadata(hivra);
     }
     return imported;
-  }
-
-  Future<void> _persistLedgerGeneration(
-    Directory dir,
-    String ledgerJson,
-    String? coreProjectionJson,
-  ) async {
-    final state = await _fileStore.readState(dir);
-    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
-      ledgerJson: ledgerJson,
-      isGenesis: state?['isGenesis'] == true,
-      isNeste: state?['isNeste'] != false,
-    );
-    await _fileStore.writeLedgerSnapshot(
-      dir,
-      ledgerJson: ledgerJson,
-      backupJson: backupJson,
-      coreProjectionJson: coreProjectionJson,
-    );
   }
 
   Future<String?> resolveActiveCapsuleHex(
@@ -893,24 +891,25 @@ class CapsulePersistenceService {
       return null;
     }
 
-    final previous = _backupImportTail;
-    final operation = previous
-        .catchError((_) {})
-        .then(
-          (_) => _restoreCompleteBackup(
-            ownerHex,
-            contents,
-            seed,
-            hivra
-                        .seedRootPublicKey(seed)
-                        ?.map((b) => b.toRadixString(16).padLeft(2, '0'))
-                        .join() ==
-                    ownerHex
-                ? 'root_owner'
-                : 'legacy_nostr_owner',
-          ),
-        );
-    _backupImportTail = operation.then<void>(
+    return _serializePersistence(
+      () => _restoreCompleteBackup(
+        ownerHex,
+        contents,
+        seed,
+        hivra
+                    .seedRootPublicKey(seed)
+                    ?.map((b) => b.toRadixString(16).padLeft(2, '0'))
+                    .join() ==
+                ownerHex
+            ? 'root_owner'
+            : 'legacy_nostr_owner',
+      ),
+    );
+  }
+
+  Future<T> _serializePersistence<T>(Future<T> Function() publish) {
+    final operation = _persistenceTail.then((_) => publish());
+    _persistenceTail = operation.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},
     );
