@@ -115,19 +115,22 @@ class CapsuleChatDeferredInboxStore {
     final dir = await _fileStore.capsuleDirForHex(normalized, create: true);
     final raw = await _fileStore.readChatDeferredInbox(dir);
     if (raw == null) return const <CapsuleChatDeferredInboxItem>[];
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return const <CapsuleChatDeferredInboxItem>[];
-      final items = decoded['items'];
-      if (items is! List) return const <CapsuleChatDeferredInboxItem>[];
-      return items
-          .map(CapsuleChatDeferredInboxItem.fromJson)
-          .whereType<CapsuleChatDeferredInboxItem>()
-          .where((item) => item.capsuleHex == normalized)
-          .toList(growable: false);
-    } catch (_) {
-      return const <CapsuleChatDeferredInboxItem>[];
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map ||
+        decoded['schema_version'] != capsuleChatDeferredInboxSchemaVersion ||
+        decoded['items'] is! List) {
+      throw const FormatException('Invalid deferred Chat inbox');
     }
+    final items = <CapsuleChatDeferredInboxItem>[];
+    final ids = <String>{};
+    for (final rawItem in decoded['items'] as List) {
+      final item = CapsuleChatDeferredInboxItem.fromJson(rawItem);
+      if (item == null || item.capsuleHex != normalized || !ids.add(item.id)) {
+        throw const FormatException('Invalid deferred Chat inbox item');
+      }
+      items.add(item);
+    }
+    return items;
   }
 
   Future<void> replaceAll({

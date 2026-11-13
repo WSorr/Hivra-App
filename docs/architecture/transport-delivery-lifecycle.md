@@ -203,6 +203,17 @@ second inbox owner. Flutter acknowledges an ordinary Chat event only after the
 existing Capsule-scoped timeline commits it durably. Projection failure leaves
 the handoff record available for retry.
 
+Messages awaiting peer confirmation use the existing deferred Chat inbox before
+adapter acknowledgement. Only a missing file starts an empty inbox. Existing
+blank or unreadable snapshots, unsupported versions, incomplete record sets,
+duplicate identities and wrong-Capsule records must block replacement and
+acknowledgement rather than silently dropping records. A read or write failure
+returns a safe receive error without exposing stored content; the same receive
+path can retry when storage recovers. Replay after an already committed timeline
+write retains its stable message identities. The existing 200-item cap and
+48-hour first-seen expiry remain unchanged; this inbox is not a permanent archive
+and remains outside Core backups.
+
 The same acknowledgement boundary applies to execution-control envelopes that
 already enter through the 1.x Chat delivery capability path. The existing
 `CapsuleDeliveryInboxStore` retains the evaluated command decision, exact
