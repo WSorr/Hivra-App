@@ -217,10 +217,25 @@ qualification also covers independent service instances, backup-write failure,
 same-generation retry, stale/equal-history behavior, ownerless exports and
 legacy identity metadata. All 96 focused and 820 full Flutter tests, analyze
 and review gates passed. The repair removes one net production line in existing
-files, including its existing-factory test injection. Exact packaged Mac/Samsung
-acceptance remains pending; source faults use only temporary synthetic files.
-Working Capsules, seed records, Jack, exchange orders and the VPS are excluded
-from fault injection.
+files, including its existing-factory test injection. Exact `6195ef8` Mac ZIP
+and Samsung APK passed in-place update, normal refresh, switching between two
+existing Capsules, cold process restart, reopening the second Capsule and return
+to the original Capsule. All three Mac and two Samsung identities retained their
+Ledger versions and full authenticated heads. Installed Mac bundle files and
+the public Samsung APK matched the packaged artifacts. Seven of ten Mac
+baseline files were byte-identical, including all three projections and the
+package registry. Normal publication rewrote two recovery envelopes and the
+second Capsule's Ledger JSON; every primary/recovery Ledger pair matched, and
+Core reopened the same authenticated histories. Backup export timestamps are
+not a history identity. The first Mac seed request outlasted its wait; ordinary
+retry opened the same Capsule after owner Keychain approval. The second seed
+was approved on Mac; cold reopen then required no further prompt.
+
+Native acceptance uses healthy existing data; failure and interleaving evidence
+remains in temporary synthetic source tests. No Capsule, message, package
+replacement, permission, trading action, release or VPS mutation was created.
+Jack was not opened. Seed records and working files were not fault-injected.
+Merge and release remain separate owner choices.
 
 ### Qualified Deferred-Chat Inbox Preservation
 
