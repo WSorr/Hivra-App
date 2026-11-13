@@ -192,6 +192,53 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve the exported Capsule owner and latest durable Ledger generation when
+normal foreground and worker saves overlap or finish after a Capsule switch.
+A save carries its Ledger, owner and derived projection before asynchronous
+storage; it must not select its destination from a later active native context.
+The existing version/hash comparison and complete Ledger/backup/projection write
+must be ordered together so a delayed older save cannot replace newer history.
+
+Foreground saves converge on the existing owner-targeted snapshot writer. Reuse
+the backup-import publication queue for the whole persistence operation, across
+service instances, and release it after failure so retry remains possible.
+Remove the foreground-only directory selection, duplicate stale comparison and
+write-time identity reconciliation. Refresh only the producing owner's index
+heartbeat; do not switch the active Capsule. Publication retains one owner,
+normal read/compare/publish paths shrink from two to one, and the existing queue
+remains one. The physical file writer is unchanged. No new service, schema,
+store, runtime API, archive or runtime entity is introduced. Birth, deletion,
+identity migration, native Ledger validation, backup formats and recovery
+fallback retain their existing scope.
+
+Three synthetic-storage regressions reproduced a cross-Capsule overwrite and
+rollback from three retained events to two through both save inputs. Source
+qualification also covers independent service instances, backup-write failure,
+same-generation retry, stale/equal-history behavior, ownerless exports and
+legacy identity metadata. All 96 focused and 820 full Flutter tests, analyze
+and review gates passed. The repair removes one net production line in existing
+files, including its existing-factory test injection. Exact `6195ef8` Mac ZIP
+and Samsung APK passed in-place update, normal refresh, switching between two
+existing Capsules, cold process restart, reopening the second Capsule and return
+to the original Capsule. All three Mac and two Samsung identities retained their
+Ledger versions and full authenticated heads. Installed Mac bundle files and
+the public Samsung APK matched the packaged artifacts. Seven of ten Mac
+baseline files were byte-identical, including all three projections and the
+package registry. Normal publication rewrote two recovery envelopes and the
+second Capsule's Ledger JSON; every primary/recovery Ledger pair matched, and
+Core reopened the same authenticated histories. Backup export timestamps are
+not a history identity. The first Mac seed request outlasted its wait; ordinary
+retry opened the same Capsule after owner Keychain approval. The second seed
+was approved on Mac; cold reopen then required no further prompt.
+
+Native acceptance uses healthy existing data; failure and interleaving evidence
+remains in temporary synthetic source tests. No Capsule, message, package
+replacement, permission, trading action, release or VPS mutation was created.
+Jack was not opened. Seed records and working files were not fault-injected.
+Merge and release remain separate owner choices.
+
+### Qualified Deferred-Chat Inbox Preservation
+
 Preserve Chat messages awaiting peer confirmation when their existing deferred
 inbox cannot be read or saved. A missing file and a valid empty inbox remain
 empty; existing blank bytes, malformed or unsupported snapshots, incomplete
@@ -228,8 +275,8 @@ Samsung used authorized visible ADB input, not private-file extraction. No new
 Capsule, message, permission, trading action, publication or VPS mutation
 occurred. Healthy native reads do not qualify injected corruption on owner
 files or new end-to-end delivery; failure and retry evidence remains in the
-source regressions. The source CI is green; integration and release remain
-separate owner choices.
+source regressions. PR #442 is merged with green CI main. Release remains a
+separate owner choice.
 
 ### Qualified Selected-Backup Restore Preservation
 
