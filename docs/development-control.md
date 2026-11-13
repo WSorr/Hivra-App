@@ -215,12 +215,21 @@ tests, analyze and repository review gates passed, including retained limit/
 expiry and replay after a committed timeline followed by a failed deferred
 write. The repair adds 25 production lines in existing files and introduces no
 runtime owner or write path. Source fault checks use temporary synthetic files
-only. Native acceptance must
-use the existing Mac/Samsung Capsules without new identities, messages,
-permissions, trading or VPS changes. Healthy open, retained-history inspection,
-cold restart and return do not qualify injected corruption on owner files or
-new end-to-end delivery. Commit, push/CI and exact packaged acceptance remain
-pending; no native acceptance of changed bytes is claimed.
+only. Exact `bc24dd6` Mac ZIP and Samsung APK passed in-place update, existing
+Chat open, retained-history inspection, cache-budget inspection/Cancel, cold
+process restart and return to the same Capsule. Repeated reads retained 75
+messages on Mac and 24 messages / 100 MB on Samsung without changing either
+budget. The three Mac and two Samsung identities, Ledger versions/hashes and
+installed packages remained present. All 18 Mac baseline file hashes remained
+unchanged. Installed Mac bundle files and the public Samsung APK matched the
+packaged artifacts. The initial Mac Keychain handoff outlasted its wait; ordinary
+retry opened the same Capsule, and cold reopen needed no further prompt.
+Samsung used authorized visible ADB input, not private-file extraction. No new
+Capsule, message, permission, trading action, publication or VPS mutation
+occurred. Healthy native reads do not qualify injected corruption on owner
+files or new end-to-end delivery; failure and retry evidence remains in the
+source regressions. The source CI is green; integration and release remain
+separate owner choices.
 
 ### Qualified Selected-Backup Restore Preservation
 
