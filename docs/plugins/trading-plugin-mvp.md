@@ -70,8 +70,15 @@ quality is measured separately from actual closed-trade outcomes.
    in either mode; do not expose a whitelist, scanner, runner ID, or session
    hash as a prerequisite. On VPS, Start replaces the previous managed runner
    with this package and the selected instrument/settings, independent of which
-   authorized device installed it. Previous exchange orders are not cancelled;
-   the package retains unresolved identities and reconciles its selected scope.
+   authorized device installed it. Replacement ends the previous execution
+   assignment. It neither cancels accepted exchange orders nor waits for their
+   fill, cancellation or position closure. The person may manage those orders
+   and positions outside Hivra; completing the previous assignment is not a
+   prerequisite for the new one. Retained unresolved identities are recovery
+   evidence, not continuing authority. Any later automated management must be
+   covered by the new owner authorization. A new Start resets the earlier
+   run's active and parked strategy plans; it keeps the necessary dispatch
+   identities without turning them into a mandatory order-history archive.
    Keep advanced strategy settings and calculation evidence in optional,
    collapsed sections. Keep the execution mode, connected account, endpoint,
    current trading status, and actionable failures visible without expanding
@@ -87,11 +94,12 @@ quality is measured separately from actual closed-trade outcomes.
    managed entry: manual orders are visible, never automatically adopted or
    cancelled. Failed reading is not an empty list; reopening requires fresh
    provider evidence rather than presenting cached rows as current.
-7. Reopen the app or restart the runner. The same order is reconciled, not
-   submitted again. Stop prevents new entries but does not cancel a pending
-   exchange order or close a position. The existing order stays visible and
-   may still fill; its filled position remains managed. Cancel order and Close
-   position are separate explicit actions. Never silently presume an order was
+7. Reopen the app or restart the runner under the same assignment. The same
+   order is reconciled, not submitted again. This recovery does not extend an
+   assignment ended by replacement. Stop prevents new entries but does not
+   cancel a pending exchange order or close a position. The existing order stays
+   visible and may still fill; its filled position remains managed. Cancel order
+   and Close position are separate explicit actions. Never silently presume an order was
    cancelled.
    Uninstall does not cancel provider orders; after reinstall, reconnecting
    the same account allows exact provider reconciliation.

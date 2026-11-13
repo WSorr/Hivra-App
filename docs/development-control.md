@@ -188,9 +188,45 @@ branch state; published artifacts and their signoff belong to
   continuous operation are not qualified by connection or synthetic probes.
   Automatic stop restoration/amendment remain excluded. Old local test-session
   migration was excluded; new protocol-2 sessions retain unresolved intent in
-  the existing opaque store.
+  the existing opaque store. Published Jack 0.2.6 can still reject settings
+  changes at Start while an earlier order remains unresolved. The selected
+  candidate below repairs that package behavior; it is not yet delivered.
 
 ## Selected Product Outcome
+
+An explicit Jack Start ends the previous assignment and applies the selected
+settings without waiting for its exchange orders or positions to complete.
+Earlier orders remain at the exchange for the owner to manage outside Hivra.
+Ordinary restart and Stop new entries still recover/manage the current
+assignment; a fresh Start must not reactivate its earlier active or parked plan.
+The accepted product boundary belongs to the [trading brief](plugins/trading-plugin-mvp.md).
+
+Candidate Jack 0.2.7 resets current-run strategy state through the existing
+package Start action and retains the connected account, dispatch-identity map
+and last-trade locator. Ending an assignment does not claim its trade closed.
+Retained identities still prevent replay; they do not authorize continued
+management. Fresh cycles reacquire market/account evidence. The workspace and
+grant explain the consequence before Start. Remove the prior Start-through-
+recovery path and its running-flag/request-discard workarounds. Host authority
+and package workflow keep two owners and one Start custody path; no host
+runtime change, API, schema, store, archive or runtime entity is added.
+
+Two regressions failed before the repair. All 103 Jack tests, the complete
+plugin review and 57 existing workspace-boundary tests passed; Flutter analyze
+passed. The built WASM passed same-instrument replacement with an outstanding
+position/reducing exit, changed settings, a further instrument change, retained
+dispatch identities, acknowledgement replay, refusal of old-device control and
+revocation after invalid Start through the unchanged headless custody owner.
+No effect was dispatched. The same existing probe also retained partial exit
+fills and reacquired a confirmed full trade result without enlarging sandbox
+bounds. All provider evidence was synthetic in one temporary runtime, removed
+after the check; working Capsules and the VPS were not touched. Native
+installation and financial Start are not qualified by these checks. Canonical
+bytes and integration state belong to source-bound acceptance evidence. The
+owner authorized commit/push/CI for this candidate; installation, publication
+and live effects still require separate authority.
+
+### Qualified Selected-Backup Restore Preservation
 
 Preserve existing Capsule data and avoid partial publication when restoring any
 supported backup format. Import Backup and phrase Recovery with a selected file

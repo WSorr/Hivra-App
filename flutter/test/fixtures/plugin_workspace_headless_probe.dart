@@ -847,6 +847,55 @@ Future<void> _checkInstalledWasm(
       'executor_id': 'f' * 64,
       'checkpoint': checkpoint,
     };
+    // Replacement must also work on the same instrument with an open position
+    // and reducing exit. These service facts do not require the old run to end
+    // its trade before the owner can issue a new assignment.
+    final outstanding = Map<String, dynamic>.from(
+      jsonDecode(jsonEncode(seed)) as Map,
+    );
+    outstanding['last_trade'] = (jsonDecode(retired) as Map)['last_trade'];
+    outstanding['intents'] = {
+      '7' * 64: 'order.entry.place',
+      '8' * 64: 'position.exit.place',
+    };
+    await files.writePluginState(
+      directory,
+      record.pluginId!,
+      'workspace.v1.json',
+      jsonEncode(outstanding),
+    );
+    final sameInstrument =
+        jsonDecode(jsonEncode(start)) as Map<String, dynamic>;
+    final selected = {
+      ...settings,
+      'entry_margin': 2.0,
+      'stop_percent': 15.0,
+      'timeframes': '5m',
+    };
+    sameInstrument['checkpoint']['execution']['handoff_id'] = '6' * 64;
+    sameInstrument['checkpoint']['execution']['settings'] = selected;
+    await WorkspaceRunner.setup(root, sameInstrument);
+    final fresh =
+        jsonDecode(
+              (await files.readPluginState(
+                directory,
+                record.pluginId!,
+                'workspace.v1.json',
+              ))!,
+            )
+            as Map;
+    if (!_sameJson(fresh['engine']['settings'], selected) ||
+        fresh['engine']['entry'] != null ||
+        fresh['engine']['parked'] != null ||
+        !_sameJson(fresh['intents'], outstanding['intents']) ||
+        !_sameJson(fresh['last_trade'], outstanding['last_trade']) ||
+        writes != 0) {
+      throw StateError(
+        'Same-instrument replacement retained old management, lost intent or sent an effect',
+      );
+    }
+    // A further Start can choose another instrument without reviving the
+    // ended plan. The client copy still contains that stale plan.
     final replaced = await WorkspaceRunner.setup(root, start);
     if (replaced['executor_id'] != 'f' * 64 ||
         replaced['package_digest'] != binding.packageDigestHex) {
@@ -863,7 +912,9 @@ Future<void> _checkInstalledWasm(
             as Map;
     if (current['engine']['settings']['symbol'] != 'MNT-USDT' ||
         current['engine']['entry'] != null ||
-        current['last_trade'] == null) {
+        current['last_trade'] == null ||
+        !_sameJson(current['intents'], outstanding['intents']) ||
+        writes != 0) {
       throw StateError(
         'Start lost server evidence or kept the previous selection',
       );
@@ -944,7 +995,7 @@ Future<void> _checkInstalledWasm(
       );
     }
     stdout.writeln(
-      'server replacement PASS: other device, selected symbol, retained opaque evidence, no stale replay, old control refused, failed Start revoked; no network',
+      'server replacement PASS: open position/exit released without effects, same/new instrument settings, retained dispatch identities, no stale replay, old control refused, failed Start revoked; no network',
     );
     if (executable != null) {
       // Independent process/restart smoke starts from the original synthetic
