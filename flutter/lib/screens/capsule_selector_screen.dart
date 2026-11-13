@@ -163,11 +163,8 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       if (file == null) return;
 
       final raw = await File(file.path).readAsString();
-      Uint8List? importSeed;
-      if (_service.backupRequiresSeed(raw)) {
-        importSeed = await _requestSeedForEncryptedBackup();
-        if (importSeed == null) return;
-      }
+      final importSeed = await _requestSeedForBackup();
+      if (importSeed == null) return;
       final importedHex = await _service.importCapsuleFromBackupJson(
         raw,
         seed: importSeed,
@@ -337,13 +334,13 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     return true;
   }
 
-  Future<Uint8List?> _requestSeedForEncryptedBackup() async {
+  Future<Uint8List?> _requestSeedForBackup() async {
     _seedController.clear();
     final confirm = await showDialog<bool>(
       context: context,
       builder:
           (ctx) => AlertDialog(
-            title: const Text('Decrypt Capsule Backup'),
+            title: const Text('Restore Capsule Backup'),
             content: TextField(
               controller: _seedController,
               maxLines: 3,
@@ -358,7 +355,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Decrypt'),
+                child: const Text('Restore'),
               ),
             ],
           ),

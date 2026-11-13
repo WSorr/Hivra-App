@@ -11,10 +11,6 @@ abstract class RecoveryRuntime {
 
   String? createCapsuleError(Uint8List seed, {required bool isGenesis});
 
-  Uint8List? capsuleRuntimeOwnerPublicKey();
-
-  bool importLedger(String ledgerJson);
-
   String? exportLedger();
 
   Future<bool> importLedgerIfExists();
@@ -61,13 +57,6 @@ class HivraRecoveryRuntime implements RecoveryRuntime {
       ownerMode: HivraBindings.rootOwnerMode,
     );
   }
-
-  @override
-  Uint8List? capsuleRuntimeOwnerPublicKey() =>
-      _hivra.capsuleRuntimeOwnerPublicKey();
-
-  @override
-  bool importLedger(String ledgerJson) => _hivra.importLedger(ledgerJson);
 
   @override
   String? exportLedger() => _hivra.exportLedger();

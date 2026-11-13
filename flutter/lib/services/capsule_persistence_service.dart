@@ -881,76 +881,40 @@ class CapsulePersistenceService {
     Uint8List? seed,
     CapsulePersistenceBindings? hivra,
   }) async {
-    final contents =
-        CapsuleBackupCodec.isEncryptedEnvelope(rawJson)
-            ? seed == null
-                ? null
-                : await CapsuleBackupCodec.tryDecodeBackup(rawJson, seed)
-            : await CapsuleBackupCodec.tryDecodeBackup(rawJson, Uint8List(0));
+    if (seed == null || hivra == null) return null;
+    final contents = await CapsuleBackupCodec.tryDecodeBackup(rawJson, seed);
     if (contents == null) return null;
     final ledgerJson = contents.ledgerJson;
 
     final ownerHex = _extractOwnerHex(ledgerJson);
     if (ownerHex == null) return null;
-    if (seed != null &&
-        hivra != null &&
-        !await seedMatchesCapsule(hivra, seed, ownerHex)) {
+    if (!await seedMatchesCapsule(hivra, seed, ownerHex) ||
+        !hivra.validateBackupLedger(ledgerJson, seed)) {
       return null;
     }
 
-    if (contents.files != null) {
-      if (seed == null ||
-          hivra == null ||
-          !hivra.validateBackupLedger(ledgerJson, seed)) {
-        return null;
-      }
-      final previous = _backupImportTail;
-      final operation = previous
-          .catchError((_) {})
-          .then(
-            (_) => _restoreCompleteBackup(
-              ownerHex,
-              contents,
-              seed,
-              hivra
-                          .seedRootPublicKey(seed)
-                          ?.map((b) => b.toRadixString(16).padLeft(2, '0'))
-                          .join() ==
-                      ownerHex
-                  ? 'root_owner'
-                  : 'legacy_nostr_owner',
-            ),
-          );
-      _backupImportTail = operation.then<void>(
-        (_) {},
-        onError: (Object _, StackTrace _) {},
-      );
-      return operation;
-    }
-
-    final capsuleDir = await _capsuleDirForHex(ownerHex, create: true);
-    final localBackupJson = CapsuleBackupCodec.encodeBackupEnvelope(
-      ledgerJson: ledgerJson,
-      isGenesis: contents.isGenesis,
-      isNeste: contents.isNeste,
+    final previous = _backupImportTail;
+    final operation = previous
+        .catchError((_) {})
+        .then(
+          (_) => _restoreCompleteBackup(
+            ownerHex,
+            contents,
+            seed,
+            hivra
+                        .seedRootPublicKey(seed)
+                        ?.map((b) => b.toRadixString(16).padLeft(2, '0'))
+                        .join() ==
+                    ownerHex
+                ? 'root_owner'
+                : 'legacy_nostr_owner',
+          ),
+        );
+    _backupImportTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
     );
-    await _fileStore.writeLedgerSnapshot(
-      capsuleDir,
-      ledgerJson: ledgerJson,
-      backupJson: localBackupJson,
-    );
-
-    final meta = _extractBackupMeta(rawJson);
-    await _upsertCapsuleIndex(
-      ownerHex,
-      isGenesis: contents.isGenesis ?? meta?.isGenesis,
-      isNeste: contents.isNeste ?? meta?.isNeste,
-    );
-    if (seed != null) {
-      await _storeSeedForCapsule(ownerHex, seed);
-    }
-    await _setActiveCapsule(ownerHex);
-    return ownerHex;
+    return operation;
   }
 
   Future<String> _restoreCompleteBackup(
@@ -959,7 +923,7 @@ class CapsulePersistenceService {
     Uint8List seed,
     String identityMode,
   ) async {
-    final files = CapsuleFileStore.decodeBackupFiles(contents.files!);
+    final files = CapsuleFileStore.decodeBackupFiles(contents.files ?? {});
     final target = await _capsuleDirForHex(owner);
     if (await FileSystemEntity.type(target.parent.path, followLinks: false) ==
             FileSystemEntityType.link ||
@@ -1052,7 +1016,7 @@ class CapsulePersistenceService {
 
       // New Core backups do not depend on application installation health.
       // Only existing archives with ZIPs enter package admission/rollback.
-      return contents.packages!.isEmpty
+      return (contents.packages ?? {}).isEmpty
           ? await restoreCore()
           : await _pluginRegistry.withBackupPackages(
             contents.packages!,
@@ -1819,24 +1783,6 @@ class CapsulePersistenceService {
     return incomingHash != existingHash;
   }
 
-  _BackupMeta? _extractBackupMeta(String rawJson) {
-    final map = _parseJsonMap(rawJson);
-    if (map == null) return null;
-    final metaRaw = map['meta'];
-    if (metaRaw is! Map) return null;
-    final meta = Map<String, dynamic>.from(metaRaw);
-    return _BackupMeta(
-      isGenesis:
-          meta['is_genesis'] == true
-              ? true
-              : (meta['is_genesis'] == false ? false : null),
-      isNeste:
-          meta['is_neste'] == true
-              ? true
-              : (meta['is_neste'] == false ? false : null),
-    );
-  }
-
   Map<String, dynamic>? _parseLedgerRoot(String? ledgerJson) {
     return _support.exportLedgerRoot(ledgerJson);
   }
@@ -1857,11 +1803,4 @@ class CapsulePersistenceService {
     if (ownerBytes == null || ownerBytes.length != 32) return null;
     return _bytesToHex(Uint8List.fromList(ownerBytes));
   }
-}
-
-class _BackupMeta {
-  final bool? isGenesis;
-  final bool? isNeste;
-
-  _BackupMeta({required this.isGenesis, required this.isNeste});
 }
