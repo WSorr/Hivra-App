@@ -92,7 +92,7 @@ release row to make it current.
 | Capsule addressing | [Addressing model](capsule-addressing-model.md) |
 | Android seed migration | [Seed migration](android-keystore-migration.md) |
 | Toolchain evolution | [Toolchain contract](platform-toolchain-evolution.md) |
-| Jack product brief and package policy | [Trading brief](plugins/trading-plugin-mvp.md) |
+| Jack product brief, new Start and restart recovery | [Trading brief](plugins/trading-plugin-mvp.md) |
 | Moltbook stateless workflow, history and recovery limits | [Moltbook lifecycle](plugins/moltbook_engagement_lifecycle_v1.md) |
 | External package source, catalog trust and version independence | [External plugin source](plugins/external_plugin_source.md) |
 

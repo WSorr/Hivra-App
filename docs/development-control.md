@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-13
+Status date: 2026-11-15
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -188,9 +188,54 @@ branch state; published artifacts and their signoff belong to
   continuous operation are not qualified by connection or synthetic probes.
   Automatic stop restoration/amendment remain excluded. Old local test-session
   migration was excluded; new protocol-2 sessions retain unresolved intent in
-  the existing opaque store.
+  the existing opaque store. Published Jack 0.2.6 can still reject settings
+  changes at Start while an earlier order remains unresolved. The selected
+  candidate below repairs that package behavior; it is not yet delivered.
 
 ## Selected Product Outcome
+
+An explicit Jack Start ends the previous assignment and applies the selected
+settings without waiting for its exchange orders or positions to complete.
+Earlier orders remain at the exchange for the owner to manage outside Hivra.
+Ordinary restart and Stop new entries still recover/manage the current
+assignment; a fresh Start must not reactivate its earlier active or parked plan.
+The accepted product boundary belongs to the [trading brief](plugins/trading-plugin-mvp.md).
+
+Candidate Jack 0.2.7 resets current-run strategy state through the existing
+package Start action and retains the connected account, dispatch-identity map
+and last-trade locator. Ending an assignment does not claim its trade closed.
+Retained identities still prevent replay; they do not authorize continued
+management. Fresh cycles reacquire market/account evidence. The workspace and
+grant explain the consequence before Start. Remove the prior Start-through-
+recovery path and its running-flag/request-discard workarounds. Host authority
+and package workflow keep two owners and one Start custody path; no host
+runtime change, API, schema, store, archive or runtime entity is added.
+
+Two regressions failed before the repair. All 103 Jack tests, the complete
+plugin review and 57 existing workspace-boundary tests passed; Flutter analyze
+passed. The built WASM passed same-instrument replacement with an outstanding
+position/reducing exit, changed settings, a further instrument change, retained
+dispatch identities, acknowledgement replay, refusal of old-device control and
+revocation after invalid Start through the unchanged headless custody owner.
+No effect was dispatched. The same existing probe also retained partial exit
+fills and reacquired a confirmed full trade result without enlarging sandbox
+bounds. All provider evidence was synthetic in one temporary runtime, removed
+after the check; these probes did not touch working Capsules or the VPS.
+
+Separately, the canonical 0.2.7 package passed in-place replacement of 0.2.6,
+opening, retained MNT settings, cold restart and return to the same existing
+Samsung Capsule. Both existing identities and full Ledger heads were retained,
+along with the same three installed packages. The owner-approved local cycle
+was stopped and its permission revoked before replacement; the new package did
+not inherit execution authority or restart it. No Capsule rebuild, new grant,
+financial Start, explicit order cancellation/position closure or VPS operation
+was requested in this Samsung acceptance. Earlier Mac native Start evidence is
+retained separately; neither that nor this bounded check qualifies the full
+entry-to-TP/closure/reentry journey. Canonical bytes, native receipts and
+integration state belong to the existing source-bound acceptance evidence.
+Discovery publication remains a separate release step.
+
+### Qualified Ledger Snapshot Preservation
 
 Preserve the exported Capsule owner and latest durable Ledger generation when
 normal foreground and worker saves overlap or finish after a Capsule switch.
