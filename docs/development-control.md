@@ -220,11 +220,21 @@ revocation after invalid Start through the unchanged headless custody owner.
 No effect was dispatched. The same existing probe also retained partial exit
 fills and reacquired a confirmed full trade result without enlarging sandbox
 bounds. All provider evidence was synthetic in one temporary runtime, removed
-after the check; working Capsules and the VPS were not touched. Native
-installation and financial Start are not qualified by these checks. Canonical
-bytes and integration state belong to source-bound acceptance evidence. The
-owner authorized commit/push/CI for this candidate; installation, publication
-and live effects still require separate authority.
+after the check; these probes did not touch working Capsules or the VPS.
+
+Separately, the canonical 0.2.7 package passed in-place replacement of 0.2.6,
+opening, retained MNT settings, cold restart and return to the same existing
+Samsung Capsule. Both existing identities and full Ledger heads were retained,
+along with the same three installed packages. The owner-approved local cycle
+was stopped and its permission revoked before replacement; the new package did
+not inherit execution authority or restart it. No Capsule rebuild, new grant,
+financial Start, explicit order cancellation/position closure or VPS operation
+was requested in this Samsung acceptance. Earlier Mac native Start evidence is
+retained separately; neither that nor this bounded check qualifies the full
+entry-to-TP/closure/reentry journey. Canonical bytes, native receipts and
+integration state belong to the existing source-bound acceptance evidence.
+Discovery publication remains a separate release step.
+
 ### Qualified Ledger Snapshot Preservation
 
 Preserve the exported Capsule owner and latest durable Ledger generation when
