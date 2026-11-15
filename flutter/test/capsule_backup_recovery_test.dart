@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -71,16 +72,23 @@ class _Bindings implements HivraBindings {
   bool valid = true;
   int validations = 0;
   Uint8List? nostrKey;
+  Uint8List? rootOwner;
+  Uint8List owner = Uint8List.fromList(List.filled(32, 0xaa));
   String? ledger;
+  String? projection;
   @override
-  Uint8List? capsuleRuntimeOwnerPublicKey() =>
-      Uint8List.fromList(List.filled(32, 0xaa));
+  Uint8List? capsuleRuntimeOwnerPublicKey() => Uint8List.fromList(owner);
   @override
-  Uint8List? capsuleRootPublicKey() => capsuleRuntimeOwnerPublicKey();
+  Uint8List? capsuleRootPublicKey() =>
+      rootOwner ?? capsuleRuntimeOwnerPublicKey();
+  @override
+  Uint8List? capsuleNostrPublicKey() => nostrKey;
   @override
   bool setApplicationStorageRoot(String path) => true;
   @override
   String? exportLedger() => ledger;
+  @override
+  String? exportCapsuleStateJson() => projection;
   @override
   Uint8List? seedRootPublicKey(Uint8List seed) => seed;
   @override
@@ -95,12 +103,81 @@ class _Bindings implements HivraBindings {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _DelayedSnapshotStore extends CapsuleFileStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  final laterWriteCompleted = Completer<void>();
+
+  _DelayedSnapshotStore({required super.dirs});
+
+  @override
+  Future<void> writeLedgerSnapshot(
+    Directory dir, {
+    required String ledgerJson,
+    required String backupJson,
+    String? coreProjectionJson,
+  }) async {
+    final first = !entered.isCompleted;
+    if (first) {
+      entered.complete();
+      await release.future;
+    }
+    await super.writeLedgerSnapshot(
+      dir,
+      ledgerJson: ledgerJson,
+      backupJson: backupJson,
+      coreProjectionJson: coreProjectionJson,
+    );
+    if (!first && !laterWriteCompleted.isCompleted) {
+      laterWriteCompleted.complete();
+    }
+  }
+}
+
+class _SwitchingSnapshotStore extends CapsuleFileStore {
+  void Function()? switchOwner;
+
+  _SwitchingSnapshotStore({required super.dirs, required this.switchOwner});
+
+  @override
+  Future<Directory> docsDirectory() async {
+    final directory = await super.docsDirectory();
+    final change = switchOwner;
+    switchOwner = null;
+    change?.call();
+    return directory;
+  }
+}
+
+class _FailingSnapshotBackupStore extends CapsuleFileStore {
+  bool failBackup = true;
+
+  _FailingSnapshotBackupStore({required super.dirs});
+
+  @override
+  Future<void> writeBackup(Directory dir, String backupJson) {
+    if (failBackup) {
+      failBackup = false;
+      throw const FileSystemException('simulated snapshot backup failure');
+    }
+    return super.writeBackup(dir, backupJson);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final seed = Uint8List.fromList(List.filled(32, 0xaa));
   final owner = 'aa' * 32;
   const plugin = 'hivra.test.backup.v1';
   final ledger = jsonEncode({'owner': List.filled(32, 0xaa), 'events': []});
+  String snapshot(int count, {int ownerByte = 0xaa, String? hash}) =>
+      jsonEncode({
+        'owner': List.filled(32, ownerByte),
+        'events': List.generate(count, (i) => {'sequence': i}),
+        'last_hash': hash ?? '$count',
+      });
+  String projection(int count) =>
+      jsonEncode({'version': count, 'ledger_hash': '$count', 'slots': []});
   late Directory stand;
   late UserVisibleDataDirectoryService srcDirs, dstDirs;
   late CapsuleFileStore src, dst;
@@ -179,6 +256,259 @@ void main() {
     bindings = _Bindings();
   });
   tearDown(() async => stand.delete(recursive: true));
+  test(
+    'foreground snapshot retains its exported owner across Capsule switch',
+    () async {
+      final otherOwner = 'bb' * 32;
+      final first = await dst.capsuleDirForHex(owner, create: true);
+      final second = await dst.capsuleDirForHex(otherOwner, create: true);
+      await dst.writeLedger(first, snapshot(1));
+      await dst.writeLedger(second, snapshot(2, ownerByte: 0xbb));
+      await dst.writeState(first, {'isGenesis': true, 'isNeste': false});
+      await dst.writeState(second, {'isGenesis': false, 'isNeste': true});
+      final index = CapsuleIndexStore(dirs: dstDirs);
+      await index.upsert(owner, isGenesis: true, isNeste: false);
+      await index.upsert(otherOwner, isGenesis: false, isNeste: true);
+      await index.setActive(otherOwner);
+      bindings.ledger = snapshot(3);
+      bindings.projection = projection(3);
+      final switching = _SwitchingSnapshotStore(
+        dirs: dstDirs,
+        switchOwner: () {
+          bindings.owner = Uint8List.fromList(List.filled(32, 0xbb));
+          bindings.ledger = snapshot(2, ownerByte: 0xbb);
+          bindings.projection = projection(2);
+        },
+      );
+      final persistence = CapsulePersistenceService.forTesting(
+        dirs: dstDirs,
+        seedStore: seeds(dstDirs, dstSecure),
+        fileStore: switching,
+      );
+
+      expect(await persistence.persistLedgerSnapshot(bindings), isTrue);
+
+      final reopened = CapsuleFileStore(dirs: dstDirs);
+      expect(await reopened.readLedger(second), snapshot(2, ownerByte: 0xbb));
+      expect(await reopened.readLedger(first), snapshot(3));
+      expect(
+        (await reopened.readState(first))!['coreProjection'],
+        jsonDecode(projection(3)),
+      );
+      final savedIndex = await index.read();
+      expect(savedIndex.activePubKeyHex, otherOwner);
+      expect(savedIndex.capsules[owner]!.isGenesis, isTrue);
+      expect(savedIndex.capsules[owner]!.isNeste, isFalse);
+      expect(savedIndex.capsules[otherOwner]!.isGenesis, isFalse);
+    },
+  );
+  for (final foregroundFirst in [false, true]) {
+    test(
+      'delayed ${foregroundFirst ? 'foreground' : 'worker'} snapshot cannot replace newer durable history',
+      () async {
+        final directory = await dst.capsuleDirForHex(owner, create: true);
+        await dst.writeLedgerSnapshot(
+          directory,
+          ledgerJson: snapshot(1),
+          backupJson: CapsuleBackupCodec.encodeBackupEnvelope(
+            ledgerJson: snapshot(1),
+            isGenesis: false,
+            isNeste: true,
+          ),
+          coreProjectionJson: projection(1),
+        );
+        final delayed = _DelayedSnapshotStore(dirs: dstDirs);
+        addTearDown(() {
+          if (!delayed.release.isCompleted) delayed.release.complete();
+        });
+        final persistence = CapsulePersistenceService.forTesting(
+          dirs: dstDirs,
+          seedStore: seeds(dstDirs, dstSecure),
+          fileStore: delayed,
+        );
+        final anotherInstance = CapsulePersistenceService.forTesting(
+          dirs: dstDirs,
+          seedStore: seeds(dstDirs, dstSecure),
+          fileStore: delayed,
+        );
+        bindings.ledger = snapshot(foregroundFirst ? 2 : 3);
+        bindings.projection = projection(foregroundFirst ? 2 : 3);
+        final older =
+            foregroundFirst
+                ? persistence.persistLedgerSnapshot(bindings)
+                : persistence.persistLedgerSnapshotForCapsuleHex(
+                  owner,
+                  snapshot(2),
+                  capsuleStateJson: projection(2),
+                );
+        await delayed.entered.future;
+        final newer =
+            foregroundFirst
+                ? anotherInstance.persistLedgerSnapshotForCapsuleHex(
+                  owner,
+                  snapshot(3),
+                  capsuleStateJson: projection(3),
+                )
+                : anotherInstance.persistLedgerSnapshot(bindings);
+        // Give an uncoordinated writer a chance to commit while the first
+        // storage operation is held. A serialized writer remains queued; the
+        // timer only releases the test fault and is not a timing assertion.
+        await Future.any([
+          delayed.laterWriteCompleted.future,
+          Future<void>.delayed(const Duration(seconds: 1)),
+        ]);
+        delayed.release.complete();
+        expect(await Future.wait([older, newer]), [true, true]);
+
+        final reopened = CapsuleFileStore(dirs: dstDirs);
+        expect(await reopened.readLedger(directory), snapshot(3));
+        expect(
+          CapsuleBackupCodec.tryExtractLedgerJson(
+            (await reopened.readBackup(directory))!,
+          ),
+          snapshot(3),
+        );
+        expect(
+          (await reopened.readState(directory))!['coreProjection'],
+          jsonDecode(projection(3)),
+        );
+      },
+    );
+  }
+  test(
+    'failed snapshot backup retains latest Ledger and allows retry',
+    () async {
+      final directory = await dst.capsuleDirForHex(owner, create: true);
+      await dst.writeLedgerSnapshot(
+        directory,
+        ledgerJson: snapshot(1),
+        backupJson: CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: snapshot(1),
+          isGenesis: false,
+          isNeste: true,
+        ),
+        coreProjectionJson: projection(1),
+      );
+      final persistence = CapsulePersistenceService.forTesting(
+        dirs: dstDirs,
+        seedStore: seeds(dstDirs, dstSecure),
+        fileStore: _FailingSnapshotBackupStore(dirs: dstDirs),
+      );
+      await expectLater(
+        persistence.persistLedgerSnapshotForCapsuleHex(owner, snapshot(3)),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await dst.readLedger(directory), snapshot(3));
+      final oldBackup = await dst.readBackup(directory);
+      expect(CapsuleBackupCodec.tryExtractLedgerJson(oldBackup!), snapshot(1));
+      expect(
+        await persistence.persistLedgerSnapshotForCapsuleHex(
+          owner,
+          snapshot(2),
+        ),
+        isFalse,
+      );
+      expect(await dst.readLedger(directory), snapshot(3));
+      expect(await dst.readBackup(directory), oldBackup);
+      expect(
+        await persistence.persistLedgerSnapshotForCapsuleHex(
+          owner,
+          snapshot(3),
+          capsuleStateJson: projection(3),
+        ),
+        isTrue,
+      );
+      expect(
+        CapsuleBackupCodec.tryExtractLedgerJson(
+          (await dst.readBackup(directory))!,
+        ),
+        snapshot(3),
+      );
+      expect(
+        await persistence.persistLedgerSnapshotForCapsuleHex(
+          owner,
+          snapshot(4),
+          capsuleStateJson: projection(4),
+        ),
+        isTrue,
+      );
+      final reopened = CapsuleFileStore(dirs: dstDirs);
+      expect(await reopened.readLedger(directory), snapshot(4));
+      expect(
+        CapsuleBackupCodec.tryExtractLedgerJson(
+          (await reopened.readBackup(directory))!,
+        ),
+        snapshot(4),
+      );
+      expect(
+        (await reopened.readState(directory))!['coreProjection'],
+        jsonDecode(projection(4)),
+      );
+    },
+  );
+  test(
+    'snapshot comparison retains newer and conflicting equal history',
+    () async {
+      expect(
+        await importer.persistLedgerSnapshotForCapsuleHex(owner, snapshot(3)),
+        isTrue,
+      );
+      final directory = await dst.capsuleDirForHex(owner);
+      final savedBackup = await dst.readBackup(directory);
+      for (final incoming in [snapshot(2), snapshot(3, hash: 'fork')]) {
+        expect(
+          await importer.persistLedgerSnapshotForCapsuleHex(owner, incoming),
+          isFalse,
+        );
+        expect(await dst.readLedger(directory), snapshot(3));
+        expect(await dst.readBackup(directory), savedBackup);
+      }
+      expect(
+        await importer.persistLedgerSnapshotForCapsuleHex(owner, snapshot(3)),
+        isTrue,
+      );
+      expect(await dst.readLedger(directory), snapshot(3));
+    },
+  );
+  test(
+    'foreground snapshot without an exported owner cannot replace history',
+    () async {
+      final directory = await dst.capsuleDirForHex(owner, create: true);
+      await dst.writeLedger(directory, snapshot(3));
+      bindings.ledger = '{broken export';
+      await expectLater(
+        importer.persistLedgerSnapshot(bindings),
+        throwsFormatException,
+      );
+      expect(await dst.readLedger(directory), snapshot(3));
+      for (final incoming in ['{}', '[]']) {
+        bindings.ledger = incoming;
+        expect(await importer.persistLedgerSnapshot(bindings), isFalse);
+        expect(await dst.readLedger(directory), snapshot(3));
+      }
+    },
+  );
+  test(
+    'foreground snapshot retains legacy identity metadata at its origin',
+    () async {
+      final directory = await dst.capsuleDirForHex(owner, create: true);
+      await dst.writeLedger(directory, snapshot(1));
+      final index = CapsuleIndexStore(dirs: dstDirs);
+      await index.upsert(owner, identityMode: 'mixed_or_unknown');
+      bindings.rootOwner = Uint8List.fromList(List.filled(32, 0xbb));
+      bindings.nostrKey = Uint8List.fromList(List.filled(32, 0xaa));
+      bindings.ledger = snapshot(2);
+      bindings.projection = projection(2);
+
+      expect(await importer.persistLedgerSnapshot(bindings), isTrue);
+
+      expect(await dst.readLedger(directory), snapshot(2));
+      expect(
+        (await index.read()).capsules[owner]!.identityMode,
+        'legacy_nostr_owner',
+      );
+    },
+  );
   test(
     'app size and package lifecycle cannot enlarge or block Core backup',
     () async {

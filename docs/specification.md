@@ -514,6 +514,14 @@ Users can have multiple independent capsules.
 Storage:
 
 - Each capsule has its own seed in platform secure storage.
+- A normal Ledger save MUST retain the owner and projection of its exported
+  snapshot across asynchronous storage and Capsule switching. Foreground and
+  worker saves MUST share the version/hash comparison and ordered publication
+  of Ledger, recovery backup and derived projection, so a delayed older save
+  cannot roll back a newer committed generation. A failed publication MUST
+  propagate to its caller and allow a later retry. Snapshot persistence MUST
+  NOT change the selected Capsule; identity metadata MUST come from the same
+  exported context rather than a later active Capsule.
 - On macOS, canonical mutable runtime data is stored under
   `~/Library/Application Support/Hivra`. This includes capsule ledgers and
   index, contact cards, plugin runtime/catalog data, delivery state, logs, and

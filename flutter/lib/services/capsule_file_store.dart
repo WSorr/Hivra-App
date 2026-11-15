@@ -195,8 +195,7 @@ class CapsuleFileStore {
   Future<String?> readChatDeferredInbox(Directory dir) async {
     final file = chatDeferredInboxFile(dir);
     if (!await file.exists()) return null;
-    final raw = await file.readAsString();
-    return raw.trim().isEmpty ? null : raw;
+    return file.readAsString();
   }
 
   Future<void> writeChatDeferredInbox(Directory dir, String rawJson) async {

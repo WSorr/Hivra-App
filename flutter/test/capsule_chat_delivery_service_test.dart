@@ -2055,6 +2055,327 @@ void main() {
     expect(sendCalls, 0);
   });
 
+  for (final fault in [
+    'empty',
+    'whitespace',
+    'malformed JSON',
+    'non-object root',
+    'missing version',
+    'unsupported version',
+    'invalid items',
+    'partial batch',
+    'wrong Capsule',
+    'duplicate identity',
+  ]) {
+    test(
+      'deferred Chat $fault preserves pending handoff and retries',
+      () async {
+        const owner =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+        const peer =
+            '1111111111111111111111111111111111111111111111111111111111111111';
+        final home = await Directory.systemTemp.createTemp('hivra-chat-');
+        addTearDown(() => home.delete(recursive: true));
+        final files = CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+        );
+        final deferred = CapsuleChatDeferredInboxStore(fileStore: files);
+        final timeline = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed:
+              (_) async => Uint8List.fromList(List.filled(32, 10)),
+        );
+        final now = DateTime.utc(2026, 8, 13);
+        final payload = jsonEncode({
+          'message_text': 'private deferred marker',
+          'created_at_utc': now.toIso8601String(),
+          'envelope_hash_hex': '',
+        });
+        final saved = deferred.create(
+          adapterEventId: 'previous-event',
+          capsuleHex: owner,
+          fromHex: peer,
+          payloadJson: payload,
+          timestampMs: 1,
+          now: now,
+        );
+        final valid = <String, Object?>{
+          'schema_version': capsuleChatDeferredInboxSchemaVersion,
+          'items': [saved.toJson()],
+        };
+        final raw = switch (fault) {
+          'empty' => '',
+          'whitespace' => ' \n\t',
+          'malformed JSON' => '{"private deferred marker":',
+          'non-object root' => jsonEncode([saved.toJson()]),
+          'missing version' => jsonEncode({
+            'items': [saved.toJson()],
+          }),
+          'unsupported version' => jsonEncode({...valid, 'schema_version': 2}),
+          'invalid items' => jsonEncode({...valid, 'items': {}}),
+          'partial batch' => jsonEncode({
+            ...valid,
+            'items': [saved.toJson(), {}],
+          }),
+          'wrong Capsule' => jsonEncode({
+            ...valid,
+            'items': [
+              saved.toJson(),
+              {...saved.toJson(), 'capsule_hex': peer},
+            ],
+          }),
+          _ => jsonEncode({
+            ...valid,
+            'items': [saved.toJson(), saved.toJson()],
+          }),
+        };
+        final dir = await files.capsuleDirForHex(owner, create: true);
+        await files.writeChatDeferredInbox(dir, raw);
+        final acknowledged = <String>[];
+        final service = CapsuleChatDeliveryService(
+          runtime: _FakeRuntime(
+            capsuleRootKey: _hexToBytes(owner),
+            workerBootstrap: const {'activeCapsuleHex': owner},
+          ),
+          manualChecks: _FakeManualConsensusCheckService(const [
+            ManualConsensusCheck(
+              peerHex: peer,
+              peerLabel: 'peer',
+              invitationCount: 1,
+              relationshipCount: 1,
+              hashHex: owner,
+              canonicalJson: '{}',
+              blockingFacts: [],
+            ),
+          ]),
+          deferredInboxStore: deferred,
+          deliveryInboxStore: timeline,
+          nowUtc: () => now,
+          receiveWorkerRunner:
+              (_) async => {
+                'result': 1,
+                'json': jsonEncode([
+                  {
+                    'event_id': 'next-event',
+                    'from_hex': peer,
+                    'payload_json': payload,
+                    'timestamp_ms': 2,
+                  },
+                ]),
+              },
+          acknowledgeWorkerRunner: (args) async {
+            acknowledged.addAll((args['eventIds'] as List).cast<String>());
+            return {'result': 0};
+          },
+        );
+
+        for (var attempt = 0; attempt < 2; attempt++) {
+          final failed = await service.drainAndFilter();
+          expect(failed.code, -2005);
+          expect(failed.errorMessage, isNotEmpty);
+          expect(
+            failed.errorMessage,
+            isNot(contains('private deferred marker')),
+          );
+          expect(failed.messages, isEmpty);
+          expect(acknowledged, isEmpty);
+          expect(await files.chatDeferredInboxFile(dir).readAsString(), raw);
+          expect(await files.chatTimelineFile(dir).exists(), isFalse);
+        }
+
+        await files.writeChatDeferredInbox(dir, jsonEncode(valid));
+        final retried = await service.drainAndFilter();
+        expect(retried.code, 1);
+        expect(retried.messages.map((message) => message.id), [
+          'previous-event',
+          'next-event',
+        ]);
+        expect(acknowledged, unorderedEquals(['previous-event', 'next-event']));
+        expect(await deferred.load(owner), isEmpty);
+        final reopened = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed:
+              (_) async => Uint8List.fromList(List.filled(32, 10)),
+        );
+        expect(await reopened.hydrateCapsule(owner), isTrue);
+        expect(reopened.loadMessages(owner).map((message) => message.id), [
+          'previous-event',
+          'next-event',
+        ]);
+      },
+    );
+  }
+
+  for (final operation in ['read', 'write', 'write after timeline']) {
+    test(
+      'deferred Chat $operation failure retains source and retries',
+      () async {
+        const owner =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+        const peer =
+            '1111111111111111111111111111111111111111111111111111111111111111';
+        final home = await Directory.systemTemp.createTemp('hivra-chat-');
+        addTearDown(() => home.delete(recursive: true));
+        final files = _FailingChatFileStore(
+          UserVisibleDataDirectoryService(homeOverride: home.path),
+        );
+        final deferred = CapsuleChatDeferredInboxStore(fileStore: files);
+        final projected = operation == 'write after timeline';
+        final timeline = CapsuleDeliveryInboxStore(
+          fileStore: files,
+          loadTimelineSeed:
+              (_) async => Uint8List.fromList(List.filled(32, 10)),
+        );
+        final now = DateTime.utc(2026, 8, 13);
+        final payload = jsonEncode({
+          'message_text': 'private deferred marker',
+          'created_at_utc': now.toIso8601String(),
+          'envelope_hash_hex': '',
+        });
+        final saved = deferred.create(
+          adapterEventId: 'previous-event',
+          capsuleHex: owner,
+          fromHex: peer,
+          payloadJson: payload,
+          timestampMs: 1,
+          now: now.subtract(const Duration(hours: 1)),
+        );
+        await deferred.replaceAll(capsuleHex: owner, items: [saved], now: now);
+        final dir = await files.capsuleDirForHex(owner);
+        final raw = await files.chatDeferredInboxFile(dir).readAsString();
+        files.failDeferredReads = operation == 'read';
+        files.failDeferredWrites = operation != 'read';
+        final acknowledged = <String>[];
+        final service = CapsuleChatDeliveryService(
+          runtime: _FakeRuntime(
+            capsuleRootKey: _hexToBytes(owner),
+            workerBootstrap: const {'activeCapsuleHex': owner},
+          ),
+          manualChecks: _FakeManualConsensusCheckService(const [
+            ManualConsensusCheck(
+              peerHex: peer,
+              peerLabel: 'peer',
+              invitationCount: 1,
+              relationshipCount: 1,
+              hashHex: owner,
+              canonicalJson: '{}',
+              blockingFacts: [],
+            ),
+          ]),
+          readAttestedSignable:
+              projected
+                  ? null
+                  : (_) async => const ConsensusSignableResult(
+                    preview: null,
+                    blockingFacts: [
+                      ConsensusBlockingFact(code: 'pair_attestation_missing'),
+                    ],
+                  ),
+          deferredInboxStore: deferred,
+          deliveryInboxStore: timeline,
+          nowUtc: () => now,
+          receiveWorkerRunner:
+              (_) async => {
+                'result': 1,
+                'json': jsonEncode([
+                  {
+                    'event_id': 'next-event',
+                    'from_hex': peer,
+                    'payload_json': payload,
+                    'timestamp_ms': 2,
+                  },
+                ]),
+              },
+          acknowledgeWorkerRunner: (args) async {
+            acknowledged.addAll((args['eventIds'] as List).cast<String>());
+            return {'result': 0};
+          },
+        );
+
+        final failed = await service.drainAndFilter();
+        expect(failed.code, -2005);
+        expect(failed.errorMessage, isNotEmpty);
+        expect(failed.errorMessage, isNot(contains('private deferred marker')));
+        expect(acknowledged, isEmpty);
+        expect(await files.chatDeferredInboxFile(dir).readAsString(), raw);
+        expect(timeline.loadMessages(owner), hasLength(projected ? 2 : 0));
+        files.failDeferredReads = false;
+        files.failDeferredWrites = false;
+        final retried = await service.drainAndFilter();
+        expect(retried.code, 1);
+        expect(retried.deferredByConsensus, projected ? 0 : 2);
+        expect(retried.messages, hasLength(projected ? 2 : 0));
+        expect(acknowledged, unorderedEquals(['previous-event', 'next-event']));
+        final reopened = CapsuleChatDeferredInboxStore(fileStore: files);
+        final retained = await reopened.load(owner);
+        expect(retained, hasLength(projected ? 0 : 2));
+        if (projected) {
+          final reopenedTimeline = CapsuleDeliveryInboxStore(
+            fileStore: files,
+            loadTimelineSeed:
+                (_) async => Uint8List.fromList(List.filled(32, 10)),
+          );
+          expect(await reopenedTimeline.hydrateCapsule(owner), isTrue);
+          expect(
+            reopenedTimeline.loadMessages(owner).map((message) => message.id),
+            ['previous-event', 'next-event'],
+          );
+        } else {
+          expect(
+            retained.singleWhere((item) => item.id == saved.id).firstSeenAt,
+            saved.firstSeenAt,
+          );
+        }
+      },
+    );
+  }
+
+  test(
+    'deferred Chat retains its existing item cap and first-seen expiry',
+    () async {
+      final home = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() => home.delete(recursive: true));
+      final files = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+      );
+      final deferred = CapsuleChatDeferredInboxStore(fileStore: files);
+      final now = DateTime.utc(2026, 8, 13);
+      final items = [
+        for (var i = 0; i < capsuleChatDeferredInboxMaxItems + 2; i++)
+          deferred.create(
+            capsuleHex: 'a' * 64,
+            fromHex: 'b' * 64,
+            payloadJson: 'message $i',
+            timestampMs: i,
+            now: now.subtract(Duration(minutes: i)),
+          ),
+      ];
+      final expired = deferred
+          .create(
+            capsuleHex: 'a' * 64,
+            fromHex: 'b' * 64,
+            payloadJson: 'expired',
+            timestampMs: -1,
+            now: now.subtract(
+              capsuleChatDeferredInboxTtl + const Duration(seconds: 1),
+            ),
+          )
+          .copyWith(lastSeenAt: now);
+      await deferred.replaceAll(
+        capsuleHex: 'a' * 64,
+        items: [...items, expired],
+        now: now,
+      );
+      final reopened = CapsuleChatDeferredInboxStore(fileStore: files);
+      expect(
+        (await reopened.load('a' * 64)).map((item) => item.id),
+        unorderedEquals(
+          items.take(capsuleChatDeferredInboxMaxItems).map((item) => item.id),
+        ),
+      );
+    },
+  );
+
   test('chat receive defers messages until pair attestation arrives', () async {
     const peerRootHex =
         '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
@@ -2453,11 +2774,29 @@ String _bytesToHex(Uint8List bytes) {
 
 class _FailingChatFileStore extends CapsuleFileStore {
   bool failWrites = false;
+  bool failDeferredReads = false;
+  bool failDeferredWrites = false;
   _FailingChatFileStore(UserVisibleDataDirectoryService dirs)
     : super(dirs: dirs);
   @override
   Future<void> writeChatTimeline(Directory dir, String contents) {
     if (failWrites) throw StateError('synthetic timeline write failure');
     return super.writeChatTimeline(dir, contents);
+  }
+
+  @override
+  Future<String?> readChatDeferredInbox(Directory dir) {
+    if (failDeferredReads) {
+      throw const FileSystemException('private deferred marker');
+    }
+    return super.readChatDeferredInbox(dir);
+  }
+
+  @override
+  Future<void> writeChatDeferredInbox(Directory dir, String contents) {
+    if (failDeferredWrites) {
+      throw const FileSystemException('private deferred marker');
+    }
+    return super.writeChatDeferredInbox(dir, contents);
   }
 }

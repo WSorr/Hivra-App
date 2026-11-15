@@ -494,7 +494,19 @@ class CapsuleChatDeliveryService {
     final nextDeferred = <CapsuleChatDeferredInboxItem>[];
     final terminalEventIds = <String>{};
     final now = _nowUtc();
-    final deferredItems = await _deferredInboxStore.load(localRootHex ?? '');
+    final List<CapsuleChatDeferredInboxItem> deferredItems;
+    try {
+      deferredItems = await _deferredInboxStore.load(localRootHex ?? '');
+    } catch (_) {
+      return CapsuleChatDeliveryReceiveResult(
+        code: -2005,
+        errorMessage:
+            'Saved Chat messages awaiting peer confirmation could not be read. Try again.',
+        droppedByConsensus: 0,
+        deferredByConsensus: 0,
+        messages: const <CapsuleChatInboxMessage>[],
+      );
+    }
     final incomingItems = <_ChatTransportItem>[
       for (final item in deferredItems)
         _ChatTransportItem(
@@ -626,11 +638,22 @@ class CapsuleChatDeliveryService {
       for (final item in nextDeferred) {
         deferredById[item.id] = item;
       }
-      await _deferredInboxStore.replaceAll(
-        capsuleHex: localRootHex,
-        items: deferredById.values,
-        now: now,
-      );
+      try {
+        await _deferredInboxStore.replaceAll(
+          capsuleHex: localRootHex,
+          items: deferredById.values,
+          now: now,
+        );
+      } catch (_) {
+        return CapsuleChatDeliveryReceiveResult(
+          code: -2005,
+          errorMessage:
+              'Chat messages awaiting peer confirmation could not be saved. Try again.',
+          droppedByConsensus: droppedByConsensus,
+          deferredByConsensus: deferredByConsensus,
+          messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+        );
+      }
     }
     if (terminalEventIds.isNotEmpty) {
       final acknowledgement = await _workerQueue.run(
