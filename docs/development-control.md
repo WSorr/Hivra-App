@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-15
+Status date: 2026-11-17
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -183,14 +183,14 @@ branch state; published artifacts and their signoff belong to
   local product stores are removed. It reads service history and uses Analyst
   inference under owner grants; its stateless recovery limits belong to the
   [Moltbook lifecycle](plugins/moltbook_engagement_lifecycle_v1.md).
-- Jack's completed-trade journey remains experimental. Live entry-to-TP,
-  closure/reentry, restart during ambiguous delivery, profitability and
-  continuous operation are not qualified by connection or synthetic probes.
+- Jack 0.2.7 is delivered through signed Discovery without rebuilding Capsule.
+  One live managed entry, full TP fill and final flat position are confirmed.
+  Reentry, restart during ambiguous delivery or an open position, and
+  continuous operation remain unqualified.
   Automatic stop restoration/amendment remain excluded. Old local test-session
   migration was excluded; new protocol-2 sessions retain unresolved intent in
-  the existing opaque store. Published Jack 0.2.6 can still reject settings
-  changes at Start while an earlier order remains unresolved. The selected
-  candidate below repairs that package behavior; it is not yet delivered.
+  the existing opaque store. The accepted fresh-Start behavior below is
+  delivered by the package; no host runtime change is required.
 
 ## Selected Product Outcome
 
@@ -201,7 +201,7 @@ Ordinary restart and Stop new entries still recover/manage the current
 assignment; a fresh Start must not reactivate its earlier active or parked plan.
 The accepted product boundary belongs to the [trading brief](plugins/trading-plugin-mvp.md).
 
-Candidate Jack 0.2.7 resets current-run strategy state through the existing
+Jack 0.2.7 resets current-run strategy state through the existing
 package Start action and retains the connected account, dispatch-identity map
 and last-trade locator. Ending an assignment does not claim its trade closed.
 Retained identities still prevent replay; they do not authorize continued
@@ -230,10 +230,14 @@ was stopped and its permission revoked before replacement; the new package did
 not inherit execution authority or restart it. No Capsule rebuild, new grant,
 financial Start, explicit order cancellation/position closure or VPS operation
 was requested in this Samsung acceptance. Earlier Mac native Start evidence is
-retained separately; neither that nor this bounded check qualifies the full
-entry-to-TP/closure/reentry journey. Canonical bytes, native receipts and
-integration state belong to the existing source-bound acceptance evidence.
-Discovery publication remains a separate release step.
+retained separately. A later read-only provider check matched the checkpoint's
+entry, profit-exit and position identities to full entry/exit fills, fees and
+the final absence of the managed position and open orders. The unfilled stop
+was cancelled. This confirms a live entry-to-TP/closure; reentry and restart
+during an open position remain unqualified. Canonical bytes, native receipts
+and integration state belong to the existing source-bound acceptance evidence.
+Discovery set `v0.2.14-plugins` binds the same accepted Jack 0.2.7 ZIP and the
+unchanged Chat/Moltbook packages under the existing catalog trust root.
 
 ### Qualified Ledger Snapshot Preservation
 
