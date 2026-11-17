@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
@@ -611,6 +612,65 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
+  for (final tamperTail in [false, true]) {
+    test(
+      'checksum covers a complete large package (tampered tail: $tamperTail)',
+      () async {
+        final archive = ZipDecoder().decodeBytes(packageBytes);
+        final random = Random(7);
+        final payload = List<int>.generate(
+          192 * 1024,
+          (_) => random.nextInt(256),
+        );
+        archive.addFile(
+          ArchiveFile('plugin/payload.bin', payload.length, payload),
+        );
+        final candidate = ZipEncoder().encode(archive)!;
+        expect(candidate.length, greaterThan(128 * 1024));
+        final expected = sha256.convert(candidate).toString();
+        final input = List<int>.of(candidate);
+        if (tamperTail) input[input.length - 1] ^= 1;
+        final source = File('${tempDocsDir.path}/candidate-0.1.0.zip');
+        await source.writeAsBytes(input, flush: true);
+        final activeFile = File('${tempDocsDir.path}/active.zip');
+        await activeFile.writeAsBytes(packageBytes, flush: true);
+        final active = await registry.installPluginFromFile(activeFile);
+        var retirements = 0;
+        final installing = service.installFromSourceEntry(
+          WasmPluginSourceCatalogEntry(
+            id: 'large',
+            pluginId: active.pluginId!,
+            displayName: 'Large package',
+            version: '0.1.0',
+            downloadUrl: source.uri.toString(),
+            packageKind: 'zip',
+            sha256Hex: expected,
+          ),
+          beforeInstall: (_) async {
+            retirements++;
+          },
+        );
+        if (tamperTail) {
+          await expectLater(installing, throwsA(isA<FormatException>()));
+          expect(retirements, 0);
+          expect((await registry.loadPlugins()).single.id, active.id);
+        } else {
+          final replacement = await installing;
+          expect(retirements, 1);
+          expect(replacement.id, isNot(active.id));
+          expect(replacement.pluginVersion, '0.1.0');
+          final plugins = await registry.pluginsDirectory();
+          expect(
+            await File(
+              '${plugins.path}/${replacement.storedFileName}',
+            ).readAsBytes(),
+            candidate,
+          );
+        }
+      },
+    );
+  }
 
   test('fetchCatalog rejects invalid sha256_hex shape', () async {
     final badCatalogPath = '${tempDocsDir.path}/plugin_catalog_bad_sha.json';

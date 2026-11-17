@@ -194,6 +194,39 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Keep native package import responsive before the existing package-size check.
+The Add package screen buffered the entire selected file before inspection;
+Discovery checksum verification did the same before preflight. An oversized
+selection or download could therefore exhaust the Dart heap before rejection.
+Remove those two eager buffers through the existing file-copy and hash-stream
+APIs, without changing the 8 MiB package limit, archive rules, trust order,
+execution retirement, grants, registry transaction or retained state.
+
+The [package lifecycle](architecture/plugin-package-lifecycle.md) owns the I/O
+ordering. Four existing owners remain four; whole-file buffering paths before
+workspace preflight shrink from two to zero. The implementation changes two
+production lines and adds no file, service, DTO, schema, API, store, permission
+or runtime entity. Supported native pickers already return file-backed inputs.
+The existing durable registry writer remains the publication boundary.
+
+Source checks cover complete multi-chunk archive digests, tampering at the
+archive tail before retirement, the retained size rejection before ZIP parsing,
+and the existing picker/workspace/registry journeys. Source validation passed:
+135 focused tests, all 832 Flutter tests, analysis and review gates.
+
+Exact source `837b5ad` passed CI and packaged Mac/Samsung acceptance in existing
+Capsules: native import, 9 MiB size rejection before installation, official
+Chat replacement and signed Discovery update, retained cache, cold restart
+and return. Owner Ledger, Chat history and workspace-state files remained
+unchanged; temporary inputs were removed. The earlier Mac window-observation
+failure cleared after the owner rebooted and reconnected Computer Use. Results
+and artifact digests belong to `plugin_input_streaming_20261117` in the existing
+acceptance record below. Native peak memory and an actual OOM were not measured;
+this qualifies the bounded installation journey and removal of the two eager
+Dart buffers, not a measured total-process memory ceiling.
+
+### Qualified Discovery Candidate Rejection
+
 Reject an invalid Discovery update before ending the installed package's
 existing workflow. A corrupt archive, wrong plugin/version or mismatched legacy
 filename version must leave execution, grants, credentials, opaque state and
