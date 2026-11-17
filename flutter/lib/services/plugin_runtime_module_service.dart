@@ -332,6 +332,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     required WasmPluginRecord record,
     required String action,
     Map<String, dynamic> settings = const {},
+    bool readOnly = false,
   }) async {
     final owner = activeCapsuleRootHex();
     if (owner == null) throw StateError('Open a Capsule first');
@@ -389,6 +390,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       record: record,
       action: action,
       settings: settings,
+      readOnly: readOnly,
     );
     return {
       ...view,

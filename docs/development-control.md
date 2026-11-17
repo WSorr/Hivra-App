@@ -194,6 +194,35 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Reopen an assigned VPS workspace while its autonomous cycle is awaiting a
+service response. The owner must receive the package's retained presentation
+and current grant metadata without waiting for the effect workflow to finish.
+Reading status must not dispatch package requests, write private state, repeat
+Start or claim fresh exchange reconciliation. A failed read remains unavailable.
+
+The [common API contract](plugins/plugin_host_api_v1.md) owns the behavior.
+Reuse the existing workspace invocation, atomic checkpoint and authority lease:
+`status` renders once outside the action lease, while an exact adoption replay
+acknowledges through authority alone. New adoption and ordinary actions retain
+their serialized custody/effect path. Owner, package and capability checks,
+Stop/revocation propagation and unresolved effect evidence remain binding.
+Package workflow and generic runtime remain two owners, with one effect lane;
+no new service, file, command, schema, persistent cache or plugin-specific rule.
+
+Qualification covers blocked-cycle status and adoption replay, unchanged opaque
+state/evidence, source revocation during a blocked request, package replacement,
+removal, owner switching, cold runtime presentation and status before adoption.
+Restoring either old queue dependency makes the blocked-cycle regression time
+out; the repaired executor completes it while the response remains pending.
+All 63 workspace tests, 838 Flutter tests, analysis and repository review gates
+pass. Native acceptance of changed binaries remains pending. The owner has
+authorized commit/push/CI and a runtime-only update on the existing VPS for this
+journey. Preserve its assignment, grant, credentials and opaque checkpoint; do
+not issue a new trading Start or change strategy, website or VPN. Source tests
+alone do not qualify the installed runner or the native reopening journey.
+
+### Qualified Bounded Native Package Import
+
 Keep native package import responsive before the existing package-size check.
 The Add package screen buffered the entire selected file before inspection;
 Discovery checksum verification did the same before preflight. An oversized

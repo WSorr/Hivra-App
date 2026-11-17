@@ -578,6 +578,7 @@ class WorkspaceRunner {
             view = await runtime.runWorkspaceAction(
               record: record,
               action: 'open',
+              readOnly: true,
             );
           }
         } catch (_) {
