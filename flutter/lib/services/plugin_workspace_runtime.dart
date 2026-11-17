@@ -120,6 +120,7 @@ class PluginWorkspaceRuntime {
     required WasmPluginRecord record,
     required String action,
     Map<String, dynamic> settings = const {},
+    bool readOnly = false,
   }) async {
     final owner = _readActiveCapsuleRootHex()?.trim().toLowerCase();
     final pluginId = record.pluginId;
@@ -127,6 +128,7 @@ class PluginWorkspaceRuntime {
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(owner) ||
         pluginId == null ||
         record.contractKind != pluginWorkspaceContractKind ||
+        (readOnly && action != 'open') ||
         !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(action)) {
       throw StateError('Installed workspace and active Capsule are required');
     }
@@ -134,6 +136,17 @@ class PluginWorkspaceRuntime {
     final ownedSettings = Map<String, dynamic>.from(
       jsonDecode(jsonEncode(settings)) as Map,
     );
+    if (readOnly) {
+      // Atomic checkpoints can be presented while an effect awaits its result.
+      // Observation neither writes package state nor dispatches continuations.
+      return _runWorkspaceOwned(
+        owner,
+        record,
+        action,
+        ownedSettings,
+        readOnly: true,
+      );
+    }
     final key = '$owner::$pluginId';
     return _serialize(
       key,
@@ -164,10 +177,14 @@ class PluginWorkspaceRuntime {
     String owner,
     WasmPluginRecord record,
     String action,
-    Map<String, dynamic> settings,
-  ) async {
+    Map<String, dynamic> settings, {
+    bool readOnly = false,
+  }) async {
     final pluginId = record.pluginId!;
-    final directory = await _fileStore.capsuleDirForHex(owner, create: true);
+    final directory = await _fileStore.capsuleDirForHex(
+      owner,
+      create: !readOnly,
+    );
     final initial = await registry.resolveRuntimeBinding(pluginId);
     final digest = initial.packageDigestHex;
     if (digest == null || initial.packageId != record.id) {
@@ -257,7 +274,7 @@ class PluginWorkspaceRuntime {
           output['state'] == null
               ? null
               : Map<String, dynamic>.from(output['state'] as Map);
-      if (persistent && state != null) {
+      if (!readOnly && persistent && state != null) {
         await _fileStore.writePluginState(
           directory,
           pluginId,
@@ -334,7 +351,7 @@ class PluginWorkspaceRuntime {
     var output = await invoke(action);
     for (var steps = 0; steps < 512; steps++) {
       final requests = output['requests'] as List;
-      if (requests.isEmpty) {
+      if (readOnly || requests.isEmpty) {
         final view = currentView!;
         final current = await _readExecution(record, owner);
         if (current != null) {
@@ -342,7 +359,7 @@ class PluginWorkspaceRuntime {
             current,
             _cycleObservations['$owner::$pluginId'],
           );
-          _armScheduledExecution(record, owner, current);
+          if (!readOnly) _armScheduledExecution(record, owner, current);
         }
         return view;
       }
@@ -875,90 +892,89 @@ class PluginWorkspaceRuntime {
     }
     final key = '$owner::${record.pluginId}';
     var newlyAdopted = false;
+    Future<bool> adopt({bool replayOnly = false}) => _serialize(
+      '$key::execution',
+      () => _withWorkspaceLease(owner, record, () async {
+        final binding = await registry.resolveRuntimeBinding(record.pluginId!);
+        if (binding.packageId != record.id ||
+            binding.packageDigestHex != checkpoint['package_digest'] ||
+            !binding.capabilities.contains('workspace.schedule') ||
+            !_isStillOwnedBy(owner)) {
+          throw StateError('Handoff package or Capsule changed');
+        }
+        final previous = await _readExecution(
+          record,
+          owner,
+          enforceHost: false,
+          allowRemoteRecoveryBinding: true,
+        );
+        if (previous != null) {
+          if (previous['handoff_id'] == incoming['handoff_id'] &&
+              previous['handoff_digest'] == digest &&
+              previous['executor'] == 'vps') {
+            if ((!workspaceExecutionEnabled(incoming) &&
+                    workspaceExecutionEnabled(previous)) ||
+                (incoming['revoked'] == true && previous['revoked'] != true)) {
+              final directory = await _fileStore.capsuleDirForHex(owner);
+              await _fileStore.writePluginState(
+                directory,
+                record.pluginId!,
+                _executionFile,
+                jsonEncode({
+                  ...previous,
+                  workspaceExecutionFlag(previous): false,
+                  if (incoming['revoked'] == true) 'revoked': true,
+                  'revision': (previous['revision'] as int) + 1,
+                }),
+              );
+            }
+            return true;
+          }
+          if (previous['executor'] != 'local' ||
+              workspaceExecutionIsActive(previous) ||
+              workspaceExecutionEnabled(previous) ||
+              previous['handoff_id'] == incoming['handoff_id']) {
+            throw StateError('VPS already owns another workspace checkpoint');
+          }
+        }
+        if (replayOnly) return false;
+        final directory = await _fileStore.capsuleDirForHex(
+          owner,
+          create: true,
+        );
+        final preserveWorkspace =
+            await _fileStore.readPluginState(
+              directory,
+              record.pluginId!,
+              'workspace.v1.json',
+            ) !=
+            null;
+        await _fileStore.restorePluginCheckpoint(directory, record.pluginId!, {
+          if (checkpoint['workspace'] != null && !preserveWorkspace)
+            'workspace.v1.json': checkpoint['workspace'] as String,
+          if (checkpoint['effects'] != null && !preserveWorkspace)
+            'external_effects.v1.json': checkpoint['effects'] as String,
+          _executionFile: jsonEncode({
+            ...incoming,
+            'package_id': record.id,
+            'handoff_digest': digest,
+          }),
+        }, replaceSealed: previous != null);
+        newlyAdopted = true;
+        return true;
+      }, authorityOnly: true),
+    );
+    // An exact acknowledgement only touches authority. It must not queue behind
+    // a cycle's state lease, nor take that lease while holding authority.
+    if (await adopt(replayOnly: true)) {
+      await resumeWorkspaceScheduling(record);
+      return;
+    }
     try {
       await _serialize(
         key,
         () => _withWorkspaceLease(owner, record, () async {
-          await _serialize(
-            '$key::execution',
-            () => _withWorkspaceLease(owner, record, () async {
-              final binding = await registry.resolveRuntimeBinding(
-                record.pluginId!,
-              );
-              if (binding.packageId != record.id ||
-                  binding.packageDigestHex != checkpoint['package_digest'] ||
-                  !binding.capabilities.contains('workspace.schedule') ||
-                  !_isStillOwnedBy(owner)) {
-                throw StateError('Handoff package or Capsule changed');
-              }
-              final previous = await _readExecution(
-                record,
-                owner,
-                enforceHost: false,
-                allowRemoteRecoveryBinding: true,
-              );
-              if (previous != null) {
-                if (previous['handoff_id'] == incoming['handoff_id'] &&
-                    previous['handoff_digest'] == digest &&
-                    previous['executor'] == 'vps') {
-                  if ((!workspaceExecutionEnabled(incoming) &&
-                          workspaceExecutionEnabled(previous)) ||
-                      (incoming['revoked'] == true &&
-                          previous['revoked'] != true)) {
-                    final directory = await _fileStore.capsuleDirForHex(owner);
-                    await _fileStore.writePluginState(
-                      directory,
-                      record.pluginId!,
-                      _executionFile,
-                      jsonEncode({
-                        ...previous,
-                        workspaceExecutionFlag(previous): false,
-                        if (incoming['revoked'] == true) 'revoked': true,
-                        'revision': (previous['revision'] as int) + 1,
-                      }),
-                    );
-                  }
-                  return;
-                }
-                if (previous['executor'] != 'local' ||
-                    workspaceExecutionIsActive(previous) ||
-                    workspaceExecutionEnabled(previous) ||
-                    previous['handoff_id'] == incoming['handoff_id']) {
-                  throw StateError(
-                    'VPS already owns another workspace checkpoint',
-                  );
-                }
-              }
-              final directory = await _fileStore.capsuleDirForHex(
-                owner,
-                create: true,
-              );
-              final preserveWorkspace =
-                  await _fileStore.readPluginState(
-                    directory,
-                    record.pluginId!,
-                    'workspace.v1.json',
-                  ) !=
-                  null;
-              await _fileStore.restorePluginCheckpoint(
-                directory,
-                record.pluginId!,
-                {
-                  if (checkpoint['workspace'] != null && !preserveWorkspace)
-                    'workspace.v1.json': checkpoint['workspace'] as String,
-                  if (checkpoint['effects'] != null && !preserveWorkspace)
-                    'external_effects.v1.json': checkpoint['effects'] as String,
-                  _executionFile: jsonEncode({
-                    ...incoming,
-                    'package_id': record.id,
-                    'handoff_digest': digest,
-                  }),
-                },
-                replaceSealed: previous != null,
-              );
-              newlyAdopted = true;
-            }, authorityOnly: true),
-          );
+          await adopt();
           // Setup and resumption share custody and package execution. A replay
           // acknowledges the original grant without repeating its Start.
           final startAction = (incoming['scope'] as Map?)?['start_action'];

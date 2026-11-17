@@ -194,6 +194,44 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Reopen an assigned VPS workspace while its autonomous cycle is awaiting a
+service response. The owner must receive the package's retained presentation
+and current grant metadata without waiting for the effect workflow to finish.
+Reading status must not dispatch package requests, write private state, repeat
+Start or claim fresh exchange reconciliation. A failed read remains unavailable.
+
+The [common API contract](plugins/plugin_host_api_v1.md) owns the behavior.
+Reuse the existing workspace invocation, atomic checkpoint and authority lease:
+`status` renders once outside the action lease, while an exact adoption replay
+acknowledges through authority alone. New adoption and ordinary actions retain
+their serialized custody/effect path. Owner, package and capability checks,
+Stop/revocation propagation and unresolved effect evidence remain binding.
+Package workflow and generic runtime remain two owners, with one effect lane;
+no new service, file, command, schema, persistent cache or plugin-specific rule.
+
+Qualification covers blocked-cycle status and adoption replay, unchanged opaque
+state/evidence, source revocation during a blocked request, package replacement,
+removal, owner switching, cold runtime presentation and status before adoption.
+Restoring either old queue dependency makes the blocked-cycle regression time
+out; the repaired executor completes it while the response remains pending.
+All 63 workspace tests, 838 Flutter tests, analysis and repository review gates
+pass. Green CI `44149849429` built the exact runner used for the owner-authorized
+runtime-only VPS update. All 14 data files were byte-identical across the swap;
+grant revision 5 and the existing MNT-USDT/all assignment were retained.
+Server status took 0.418 seconds after startup and 0.654 seconds while an HTTPS
+request was in flight. Native Jack reopened and returned to the same Capsule
+before the cycle completed; a later status still had no completed-cycle result
+and returned in 0.932 seconds without an observation error.
+
+The existing Mac Capsule 1.0.6/build 100060029 was neither rebuilt nor
+reinstalled. No new permission or Keychain prompt was needed; owner Ledger/state
+hashes remained unchanged. This qualifies remote presentation, not fresh
+exchange reconciliation or a completed trade. No new Capsule, strategy change,
+website/VPN change or financial Start was introduced. Results belong to
+`workspace_status_read_20261117` in the existing acceptance record below.
+
+### Qualified Bounded Native Package Import
+
 Keep native package import responsive before the existing package-size check.
 The Add package screen buffered the entire selected file before inspection;
 Discovery checksum verification did the same before preflight. An oversized

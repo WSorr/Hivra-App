@@ -833,17 +833,17 @@ void main() {
           checkpoint: nextCheckpoint,
         );
         await starting.future;
-        var replayAcknowledged = false;
-        final replay = nextRuntime
-            .adoptWorkspaceFromLocal(
-              record: serverFiles.registry.record,
-              checkpoint: nextCheckpoint,
-            )
-            .then((_) => replayAcknowledged = true);
-        await Future<void>.delayed(Duration.zero);
-        expect(replayAcknowledged, isFalse);
-        releaseStart.complete();
-        await Future.wait([firstAdoption, replay]);
+        try {
+          await nextRuntime
+              .adoptWorkspaceFromLocal(
+                record: serverFiles.registry.record,
+                checkpoint: nextCheckpoint,
+              )
+              .timeout(const Duration(seconds: 2));
+        } finally {
+          releaseStart.complete();
+          await firstAdoption;
+        }
         expect(
           serverFiles.actions.where((a) => a == 'begin_owner_workflow'),
           hasLength(1),
@@ -900,6 +900,221 @@ void main() {
       }
     },
   );
+
+  test(
+    'remote status and adoption replay remain readable during a blocked cycle',
+    () async {
+      final source = await Fixture.create();
+      final server = await Fixture.create();
+      final entered = Completer<void>(), release = Completer<void>();
+      Future<Map<String, dynamic>>? cycle;
+      PluginWorkspaceRuntime? runtime;
+      try {
+        final local = source.runtime();
+        await source.enable();
+        await local.runWorkspaceAction(
+          record: source.registry.record,
+          action: 'open',
+        );
+        final checkpoint = await local.releaseWorkspaceToVps(
+          source.registry.record,
+          executorId: 'e' * 64,
+        );
+        runtime = server.runtime(
+          executionHost: 'vps',
+          executionIdentity: 'e' * 64,
+        );
+        await runtime.adoptWorkspaceFromLocal(
+          record: server.registry.record,
+          checkpoint: checkpoint,
+        );
+        final binding = {
+          'owner': server.owner,
+          'plugin_id': server.registry.record.pluginId,
+          'package_id': server.registry.record.id,
+          'package_digest': server.registry.digest,
+          'executor_id': 'e' * 64,
+        };
+        final root =
+            await UserVisibleDataDirectoryService(
+              homeOverride: server.home.path,
+            ).rootDirectory();
+        WorkspaceRunner runner(PluginWorkspaceRuntime host) => WorkspaceRunner(
+          root: root,
+          registry: server.registry,
+          binding: binding,
+          runtime: host,
+        );
+        final directory = await server.files.capsuleDirForHex(server.owner);
+        Future<List<String?>> retainedBytes() => Future.wait([
+          for (final file in [
+            'workspace.v1.json',
+            'external_effects.v1.json',
+            'workspace-execution.v1.json',
+          ])
+            server.files.readPluginState(
+              directory,
+              server.registry.record.pluginId!,
+              file,
+            ),
+        ]);
+        server.onSend = () async {
+          entered.complete();
+          await release.future;
+        };
+        cycle = runtime.runScheduledWorkspaceCycle(server.registry.record);
+        await entered.future.timeout(const Duration(seconds: 2));
+        final retained = await retainedBytes();
+        // A replacement schema and requests proposed by open are presentation
+        // output only; neither may overwrite or advance the in-flight workflow.
+        server.newSchema = server.requestOnOpen = true;
+        final status = await runner(runtime)
+            .dispatch({...binding, 'command': 'status'})
+            .timeout(const Duration(seconds: 2));
+        expect(status['view']['message'], 'Ready');
+        expect(status['view']['execution']['running'], isTrue);
+        expect(status['observation_error'], isNull);
+        expect(await retainedBytes(), retained);
+        expect(server.sends, 1);
+        expect(server.received, isEmpty);
+        await runner(runtime)
+            .dispatch({
+              ...binding,
+              'command': 'adopt',
+              'checkpoint': checkpoint,
+            })
+            .timeout(const Duration(seconds: 2));
+        expect(await retainedBytes(), retained);
+        await expectLater(
+          runner(runtime).dispatch({
+            ...binding,
+            'command': 'adopt',
+            'checkpoint': {...checkpoint, 'workspace': '{"different":true}'},
+          }),
+          throwsStateError,
+        );
+        expect(await retainedBytes(), retained);
+
+        // A lost Stop acknowledgement still travels with the frozen checkpoint
+        // without waiting for the network response or renewing authority.
+        server.chain = true;
+        await runner(runtime)
+            .dispatch({
+              ...binding,
+              'command': 'adopt',
+              'checkpoint': {
+                ...checkpoint,
+                'execution': {
+                  ...checkpoint['execution'] as Map,
+                  'enabled': false,
+                  'revoked': true,
+                },
+              },
+            })
+            .timeout(const Duration(seconds: 2));
+        final stopped = await runner(
+          runtime,
+        ).dispatch({...binding, 'command': 'status'});
+        expect(stopped['view']['execution']['running'], isFalse);
+        expect(stopped['view']['execution']['revoked'], isTrue);
+        expect((await retainedBytes()).take(2), retained.take(2));
+        release.complete();
+        await cycle;
+        expect(server.sends, 1);
+        expect(server.received.last['outcome'], 'not_dispatched');
+
+        final completed = await retainedBytes();
+        final restarted = server.runtime(
+          executionHost: 'vps',
+          executionIdentity: 'e' * 64,
+        );
+        final reopened = await runner(
+          restarted,
+        ).dispatch({...binding, 'command': 'status'});
+        expect(reopened['view']['execution']['revoked'], isTrue);
+        expect(await retainedBytes(), completed);
+        expect(server.sends, 1);
+      } finally {
+        if (!release.isCompleted) release.complete();
+        await cycle;
+        await runtime?.drainWorkspaceActions(server.registry.record.pluginId!);
+        await source.close();
+        await server.close();
+      }
+    },
+  );
+
+  for (final change in ['replace', 'remove', 'owner', 'revoke']) {
+    test('read-only presentation rechecks $change during rendering', () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      final runtime = f.runtime();
+      await f.enable();
+      await runtime.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+      );
+      final retained = await f.state();
+      f.newSchema = f.requestOnOpen = true;
+      f.onInvoke = (_) async {
+        switch (change) {
+          case 'replace':
+            f.registry.digest = 'c' * 64;
+          case 'remove':
+            f.registry.installed = false;
+          case 'owner':
+            f.owner = 'c' * 64;
+          case 'revoke':
+            await f.changeGrant((grant) {
+              grant['revoked'] = true;
+              grant['enabled'] = false;
+              grant['revision'] = (grant['revision'] as int) + 1;
+            });
+        }
+      };
+      final observation = runtime.runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+        readOnly: true,
+      );
+      if (change == 'revoke') {
+        final view = await observation;
+        expect(view['execution']['revoked'], isTrue);
+        expect(view['execution']['running'], isFalse);
+      } else {
+        await expectLater(observation, throwsStateError);
+      }
+      expect(await f.state(), retained);
+      expect(f.sends, 0);
+    });
+  }
+
+  test('status before adoption does not initialize a workspace', () async {
+    final f = await Fixture.create();
+    addTearDown(f.close);
+    final root =
+        await UserVisibleDataDirectoryService(
+          homeOverride: f.home.path,
+        ).rootDirectory();
+    final binding = {
+      'owner': f.owner,
+      'plugin_id': f.registry.record.pluginId,
+      'package_id': f.registry.record.id,
+      'package_digest': f.registry.digest,
+      'executor_id': 'e' * 64,
+    };
+    final runner = WorkspaceRunner(
+      root: root,
+      registry: f.registry,
+      binding: binding,
+      runtime: f.runtime(executionHost: 'vps', executionIdentity: 'e' * 64),
+    );
+    final status = await runner.dispatch({...binding, 'command': 'status'});
+    expect(status['view'], isNull);
+    expect(f.actions, isEmpty);
+    expect(f.sends, 0);
+    expect((await f.files.capsuleDirForHex(f.owner)).existsSync(), isFalse);
+  });
 
   test(
     'Start wakes the package immediately; observation never starts a second cycle',
@@ -3333,7 +3548,7 @@ class Fixture {
   String owner = 'a' * 64;
   String? secrets;
   int sends = 0;
-  bool newSchema = false, chain = false;
+  bool newSchema = false, chain = false, requestOnOpen = false;
   String requestKind = 'http.request', method = 'POST', url;
   String? credential;
   Map<String, dynamic>? auth;
@@ -3438,6 +3653,7 @@ class Fixture {
         if (newSchema && action == 'open') {
           state['entirely_different_shape'] = [state.remove('private_schema')];
         }
+        if (requestOnOpen && action == 'open') requests = [this.request()];
         return PluginRuntimeInvokeEvidence(
           mode: 'wasmi_v1',
           modulePath: 'plugin/module.wasm',

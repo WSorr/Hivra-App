@@ -345,6 +345,15 @@ observation refreshes. This is an in-memory presentation only: grant changes,
 package replacement and process shutdown invalidate it. Completion is not a
 claim that a provider accepted an effect; the package's result retains that
 distinction. No service history or effect journal is persisted by this projection.
+Remote `status` presents the package's latest atomic opaque checkpoint without
+waiting for a workflow's state lease. It invokes `open` once with the current
+owner/package checks and grant metadata, but saves no returned state, dispatches
+no capability requests and does not arm scheduling. The package owns the view
+and observation age; this is not a fresh service reconciliation. An exact
+adoption replay uses only the authority lease, so recovering its lost
+acknowledgement cannot delay reopening behind a cycle. It never repeats Start,
+restores older state or renews access; source Stop/revocation still propagates.
+New adoption and effectful actions retain the serialized state/custody path.
 The owner may choose a deadline or authorize until revocation. `workspace.stop`
 fully revokes host dispatch. A package may expose an ordinary partial-Stop
 workflow without revoking access to its remaining operations.
@@ -480,6 +489,7 @@ authorize network access through the common workspace API.
   Local and headless execution share `PluginWorkspaceRuntime`, the same vault
   ports, workspace serialization/OS lease and package binding checks. Existing
   local/VPS custody still has one executor and no implicit local fallback.
+  Remote checkpoint presentation is read-only and does not take the action lease.
   Reading a v1 grant retains custody evidence; it never becomes v2 network
   authority, arms a timer or silently upgrades its scope. The owner must approve
   the new generic terms. The source change does not deploy or restart a VPS.
