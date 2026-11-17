@@ -215,11 +215,20 @@ removal, owner switching, cold runtime presentation and status before adoption.
 Restoring either old queue dependency makes the blocked-cycle regression time
 out; the repaired executor completes it while the response remains pending.
 All 63 workspace tests, 838 Flutter tests, analysis and repository review gates
-pass. Native acceptance of changed binaries remains pending. The owner has
-authorized commit/push/CI and a runtime-only update on the existing VPS for this
-journey. Preserve its assignment, grant, credentials and opaque checkpoint; do
-not issue a new trading Start or change strategy, website or VPN. Source tests
-alone do not qualify the installed runner or the native reopening journey.
+pass. Green CI `44149849429` built the exact runner used for the owner-authorized
+runtime-only VPS update. All 14 data files were byte-identical across the swap;
+grant revision 5 and the existing MNT-USDT/all assignment were retained.
+Server status took 0.418 seconds after startup and 0.654 seconds while an HTTPS
+request was in flight. Native Jack reopened and returned to the same Capsule
+before the cycle completed; a later status still had no completed-cycle result
+and returned in 0.932 seconds without an observation error.
+
+The existing Mac Capsule 1.0.6/build 100060029 was neither rebuilt nor
+reinstalled. No new permission or Keychain prompt was needed; owner Ledger/state
+hashes remained unchanged. This qualifies remote presentation, not fresh
+exchange reconciliation or a completed trade. No new Capsule, strategy change,
+website/VPN change or financial Start was introduced. Results belong to
+`workspace_status_read_20261117` in the existing acceptance record below.
 
 ### Qualified Bounded Native Package Import
 
