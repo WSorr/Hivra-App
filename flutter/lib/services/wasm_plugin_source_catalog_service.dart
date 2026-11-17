@@ -7,6 +7,7 @@ import 'package:cryptography/cryptography.dart';
 
 import '../models/wasm_plugin_models.dart';
 import 'user_visible_data_directory_service.dart';
+import 'wasm_plugin_package_preflight_service.dart';
 import 'wasm_plugin_registry_service.dart';
 
 class WasmPluginSourceCatalogService {
@@ -131,70 +132,75 @@ class WasmPluginSourceCatalogService {
         'Plugin source entry download URL is invalid',
       );
     }
-    if (!uri.hasScheme || uri.scheme == 'file') {
+    final local = !uri.hasScheme || uri.scheme == 'file';
+    File? sourceFile;
+    if (local) {
       final filePath = uri.hasScheme ? uri.toFilePath() : entry.downloadUrl;
-      final sourceFile = File(filePath);
+      sourceFile = File(filePath);
       if (!await sourceFile.exists()) {
         throw FormatException('Plugin source package not found: $filePath');
       }
-      await _verifyChecksumIfPresent(
-        sourceEntryId: entry.id,
-        expectedSha256Hex: entry.sha256Hex,
-        file: sourceFile,
-      );
-      await beforeInstall?.call(entry.pluginId);
-      return _registry.installPluginFromFile(
-        sourceFile,
-        validateRecord:
-            (record) => _validateInstalledRecordAgainstCatalogEntry(
-              entry: entry,
-              record: record,
-            ),
-      );
-    }
-    if (uri.scheme != 'http' && uri.scheme != 'https') {
+    } else if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw const FormatException(
         'Unsupported plugin source package URL scheme',
       );
     }
 
     final tempDir = await Directory.systemTemp.createTemp('hivra_plugin_src_');
-    final tempFile = File('${tempDir.path}/${entry.id}_v${entry.version}.zip');
-
-    final client = _httpClientFactory();
-    client.autoUncompress = false;
-    client.connectionTimeout = _networkTimeout;
+    final fileName =
+        sourceFile != null
+            ? sourceFile.uri.pathSegments.last
+            : '${entry.id}_v${entry.version}.zip';
+    final tempFile = File('${tempDir.path}/$fileName');
+    HttpClient? client;
     try {
-      final request = await client.getUrl(uri).timeout(_networkTimeout);
-      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
-      final response = await request.close().timeout(_networkTimeout);
-      if (response.statusCode != HttpStatus.ok) {
-        throw HttpException(
-          'Failed to download plugin package (HTTP ${response.statusCode})',
-          uri: uri,
-        );
+      if (sourceFile != null) {
+        await sourceFile.copy(tempFile.path);
+      } else {
+        client = _httpClientFactory();
+        client.autoUncompress = false;
+        client.connectionTimeout = _networkTimeout;
+        final request = await client.getUrl(uri).timeout(_networkTimeout);
+        request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+        final response = await request.close().timeout(_networkTimeout);
+        if (response.statusCode != HttpStatus.ok) {
+          throw HttpException(
+            'Failed to download plugin package (HTTP ${response.statusCode})',
+            uri: uri,
+          );
+        }
+        final sink = tempFile.openWrite();
+        await response.pipe(sink).timeout(_networkTimeout);
+        await sink.flush();
+        await sink.close();
       }
-      final sink = tempFile.openWrite();
-      await response.pipe(sink).timeout(_networkTimeout);
-      await sink.flush();
-      await sink.close();
-
       await _verifyChecksumIfPresent(
         sourceEntryId: entry.id,
         expectedSha256Hex: entry.sha256Hex,
         file: tempFile,
       );
-      await beforeInstall?.call(entry.pluginId);
+      final inspected = await const WasmPluginPackagePreflightService().inspect(
+        tempFile,
+      );
+      _validatePackageAgainstCatalogEntry(
+        entry: entry,
+        pluginId: inspected.pluginId,
+        version: inspected.resolvedVersion(fileName),
+        packageKind: inspected.packageKind,
+      );
+      await beforeInstall?.call(inspected.pluginId);
       return await _registry.installPluginFromFile(
         tempFile,
         validateRecord:
-            (record) => _validateInstalledRecordAgainstCatalogEntry(
+            (record) => _validatePackageAgainstCatalogEntry(
               entry: entry,
-              record: record,
+              pluginId: record.pluginId,
+              version: record.pluginVersion,
+              packageKind: record.packageKind,
             ),
       );
     } finally {
-      client.close(force: true);
+      client?.close(force: true);
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
@@ -483,16 +489,18 @@ class WasmPluginSourceCatalogService {
     return normalized;
   }
 
-  Future<void> _validateInstalledRecordAgainstCatalogEntry({
+  void _validatePackageAgainstCatalogEntry({
     required WasmPluginSourceCatalogEntry entry,
-    required WasmPluginRecord record,
-  }) async {
+    required String? pluginId,
+    required String? version,
+    required String packageKind,
+  }) {
     final expectedPluginId = entry.pluginId.trim().toLowerCase();
     final expectedVersion = entry.version.trim().toLowerCase();
     final expectedPackageKind = entry.packageKind.trim().toLowerCase();
-    final installedPluginId = (record.pluginId ?? '').trim().toLowerCase();
-    final installedVersion = (record.pluginVersion ?? '').trim().toLowerCase();
-    final installedPackageKind = record.packageKind.trim().toLowerCase();
+    final installedPluginId = (pluginId ?? '').trim().toLowerCase();
+    final installedVersion = (version ?? '').trim().toLowerCase();
+    final installedPackageKind = packageKind.trim().toLowerCase();
 
     final pluginIdMatch =
         installedPluginId.isNotEmpty && installedPluginId == expectedPluginId;

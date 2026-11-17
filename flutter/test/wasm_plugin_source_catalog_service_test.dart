@@ -43,6 +43,7 @@ void main() {
   late WasmPluginSourceCatalogService service;
   late SimpleKeyPair catalogSigningKey;
   late String catalogPublicKeyHex;
+  late List<int> downloadBytes;
   List<String>? catalogCacheControl;
   List<String>? catalogPragma;
 
@@ -90,6 +91,7 @@ void main() {
     );
     catalogCacheControl = null;
     catalogPragma = null;
+    downloadBytes = packageBytes;
 
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final downloadUrl =
@@ -132,7 +134,7 @@ void main() {
         request.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.binary
-          ..add(packageBytes);
+          ..add(downloadBytes);
         await request.response.close();
         return;
       }
@@ -857,38 +859,176 @@ void main() {
     },
   );
 
-  test('installFromSourceEntry rolls back on metadata mismatch', () async {
-    final activePackage = File('${tempDocsDir.path}/active-plugin.zip');
-    await activePackage.writeAsBytes(mismatchPluginPackageBytes, flush: true);
-    final activeRecord = await registry.installPluginFromFile(activePackage);
-    final pluginsDir = await registry.pluginsDirectory();
-    final activeStoredFile = File(
-      '${pluginsDir.path}/${activeRecord.storedFileName}',
-    );
-    final sourceDir = Directory('${tempDocsDir.path}/source')..createSync();
-    final packagePath = '${sourceDir.path}/metadata-mismatch-plugin.zip';
-    File(packagePath).writeAsBytesSync(mismatchPluginPackageBytes, flush: true);
+  for (final remote in [false, true]) {
+    for (final fault in [
+      'archive',
+      'plugin',
+      'version',
+      if (!remote) 'filename',
+    ]) {
+      test('rejected source keeps execution untouched ($remote, $fault)', () async {
+        final activePackage = File('${tempDocsDir.path}/active.zip');
+        await activePackage.writeAsBytes(packageBytes, flush: true);
+        final active = await registry.installPluginFromFile(activePackage);
+        final pluginsDir = await registry.pluginsDirectory();
+        final registryFile = File('${pluginsDir.path}/registry.json');
+        final before = await registryFile.readAsString();
+        final candidate =
+            fault == 'filename'
+                ? packageBytes
+                : fault == 'plugin'
+                ? mismatchPluginPackageBytes
+                : _zipBytes(
+                  files: {
+                    if (fault != 'archive')
+                      'plugin/manifest.json': jsonEncode({
+                        'schema': 'hivra.plugin.manifest',
+                        'version': 1,
+                        'release_version': '0.2.0',
+                        'plugin_id': active.pluginId,
+                        'contract': {'kind': 'plugin_workspace_v1'},
+                        'runtime': {
+                          'abi': 'hivra_host_abi_v2',
+                          'entry_export': 'hivra_evaluate_v1',
+                        },
+                        'capabilities': [
+                          'workspace.render',
+                          'workspace.continue',
+                        ],
+                      }),
+                    'plugin/module.wasm': const <int>[
+                      0,
+                      97,
+                      115,
+                      109,
+                      1,
+                      0,
+                      0,
+                      0,
+                    ],
+                  },
+                );
+        downloadBytes = candidate;
+        final source = File(
+          '${tempDocsDir.path}/candidate${fault == 'filename' ? '-0.2.0' : ''}.zip',
+        );
+        await source.writeAsBytes(candidate, flush: true);
+        var retirements = 0;
+        await expectLater(
+          service.installFromSourceEntry(
+            WasmPluginSourceCatalogEntry(
+              id: 'candidate',
+              pluginId: active.pluginId!,
+              displayName: 'Candidate',
+              version: '0.1.0',
+              downloadUrl:
+                  remote
+                      ? 'http://127.0.0.1:${server.port}/packages/demo-plugin.zip'
+                      : source.uri.toString(),
+              packageKind: 'zip',
+              sha256Hex: sha256.convert(candidate).toString(),
+            ),
+            beforeInstall: (_) async {
+              retirements++;
+            },
+          ),
+          throwsA(isA<FormatException>()),
+        );
+        expect(retirements, 0);
+        expect(await registryFile.readAsString(), before);
+        expect((await registry.loadPlugins()).single.id, active.id);
+        expect(
+          await File(
+            '${pluginsDir.path}/${active.storedFileName}',
+          ).readAsBytes(),
+          packageBytes,
+        );
+      });
+    }
+  }
 
-    final entry = WasmPluginSourceCatalogEntry(
-      id: 'metadata-mismatch',
-      pluginId: 'hivra.contract.moltbook-ambassador.v1',
-      displayName: 'Expected Moltbook Plugin',
-      version: '0.1.0',
-      downloadUrl: File(packagePath).uri.toString(),
-      packageKind: 'zip',
-      sha256Hex: sha256.convert(mismatchPluginPackageBytes).toString(),
+  for (final remote in [false, true]) {
+    test(
+      'failed retirement preserves the package and permits retry ($remote)',
+      () async {
+        final source = File('${tempDocsDir.path}/candidate.zip');
+        await source.writeAsBytes(packageBytes, flush: true);
+        final active = await registry.installPluginFromFile(source);
+        final entry = WasmPluginSourceCatalogEntry(
+          id: 'candidate',
+          pluginId: active.pluginId!,
+          displayName: 'Candidate',
+          version: '0.1.0',
+          downloadUrl:
+              remote
+                  ? 'http://127.0.0.1:${server.port}/packages/demo-plugin.zip'
+                  : source.uri.toString(),
+          packageKind: 'zip',
+          sha256Hex: packageSha256Hex,
+        );
+        await expectLater(
+          service.installFromSourceEntry(
+            entry,
+            beforeInstall: (_) async {
+              expect((await registry.loadPlugins()).single.id, active.id);
+              throw StateError('Previous executor is unavailable');
+            },
+          ),
+          throwsStateError,
+        );
+        final reopened = WasmPluginRegistryService(dataDirs: dataDirs);
+        expect((await reopened.loadPlugins()).single.id, active.id);
+        var retirements = 0;
+        final replacement = await WasmPluginSourceCatalogService(
+          registry: reopened,
+          dataDirs: dataDirs,
+        ).installFromSourceEntry(
+          entry,
+          beforeInstall: (pluginId) async {
+            expect(pluginId, active.pluginId);
+            expect((await reopened.loadPlugins()).single.id, active.id);
+            retirements++;
+          },
+        );
+        expect(retirements, 1);
+        expect((await reopened.loadPlugins()).single.id, replacement.id);
+        expect(replacement.id, isNot(active.id));
+      },
     );
+  }
 
-    await expectLater(
-      () => service.installFromSourceEntry(entry),
-      throwsA(isA<FormatException>()),
-    );
-
-    final installed = await registry.loadPlugins();
-    expect(installed, hasLength(1));
-    expect(installed.single.id, activeRecord.id);
-    expect(await activeStoredFile.exists(), isTrue);
-  });
+  test(
+    'source changes during retirement cannot replace the verified candidate',
+    () async {
+      final source = File('${tempDocsDir.path}/candidate.zip');
+      await source.writeAsBytes(packageBytes, flush: true);
+      var retirements = 0;
+      final installed = await service.installFromSourceEntry(
+        WasmPluginSourceCatalogEntry(
+          id: 'candidate',
+          pluginId: 'hivra.contract.moltbook-ambassador.v1',
+          displayName: 'Candidate',
+          version: '0.1.0',
+          downloadUrl: source.uri.toString(),
+          packageKind: 'zip',
+          sha256Hex: packageSha256Hex,
+        ),
+        beforeInstall: (_) async {
+          retirements++;
+          await source.writeAsBytes(mismatchPluginPackageBytes, flush: true);
+        },
+      );
+      expect(retirements, 1);
+      expect(installed.pluginId, 'hivra.contract.moltbook-ambassador.v1');
+      final pluginsDir = await registry.pluginsDirectory();
+      expect(
+        await File(
+          '${pluginsDir.path}/${installed.storedFileName}',
+        ).readAsBytes(),
+        packageBytes,
+      );
+    },
+  );
 }
 
 String _catalogJson({

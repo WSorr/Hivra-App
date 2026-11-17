@@ -38,6 +38,15 @@ is recovery work and cannot roll back or invalidate the committed record.
 - Preflight inspects the staged bytes that would become active.
 - Source-catalog identity, version, and package-kind validation runs before the
   registry commit.
+- Source installation copies or downloads one temporary candidate, checks its
+  checksum, inspects the package and matches its catalog metadata before asking
+  the application module to retire the previous executor. Local and HTTP inputs
+  use the same validation/retirement handoff. The existing package preflight
+  result resolves manifest or legacy filename versions for both this check and
+  registry admission; the registry validates its own staged copy before commit.
+  Rejected candidates never stop the previous workflow. A failed authenticated
+  retirement keeps the existing registration and permits ordinary retry; it
+  does not authorize activating the candidate or restarting an old workflow.
 - A failed preflight, validation, or registry write removes only the staged
   candidate and preserves the previous active record and package.
 - An update atomically replaces the active record for the same `plugin_id`.
@@ -115,6 +124,7 @@ without interpreting plugin-private fields, and the local grant remains ended.
 | Before package staging | Previous registry and packages remain unchanged |
 | During staging or preflight | Candidate is absent or recoverable as an orphan; previous registration remains active |
 | Catalog metadata rejection | Candidate is removed; previous active version remains active |
+| Source candidate fails checksum, package or catalog validation | Previous execution is not retired; registration, grants, secrets and saved state are untouched |
 | Registry commit failure | Previous registry and packages remain active |
 | Interruption after install/update commit | New record and package are active; superseded package may remain as a recoverable orphan |
 | Removal intent cannot be committed | Previous active record and package remain; cleanup has not started |

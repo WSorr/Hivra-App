@@ -194,6 +194,42 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Reject an invalid Discovery update before ending the installed package's
+existing workflow. A corrupt archive, wrong plugin/version or mismatched legacy
+filename version must leave execution, grants, credentials, opaque state and
+the current registration alone. This closes a concrete installation defect;
+it does not implement unavailable-VPS replacement or change custody, removal,
+reconnection or authority inheritance.
+
+The [package lifecycle](architecture/plugin-package-lifecycle.md) owns the
+changed ordering. Four existing owners remain four; two source handoff paths
+converge into one. Shared version resolution removes the registry-only helpers.
+Production code shrinks by seven lines; no file, service, DTO, runtime operation,
+schema, store or permanent archive is added. Later retirement/write failures
+remain visible and never silently resume an ended autonomous workflow.
+
+Six initial temporary-storage regressions reproduced premature retirement for
+local and HTTP archives with invalid structure, plugin identity or version.
+Qualification also covers legacy filename mismatch, source-file replacement
+during retirement and retry after an unavailable old executor. Source tests
+use an in-process HTTP server and synthetic packages; working Capsules, secrets
+and remote executors are untouched. The earlier metadata-only rollback test is
+replaced by these execution/registry-preservation checks. All 829 Flutter tests,
+analyze and repository review gates pass. Exact `9564317` Mac ZIP and Samsung APK
+qualified updating Chat 0.2.2 to 0.2.3 through signed Discovery, opening,
+cold process restart, reopening and return to the same existing
+Capsule. Mac retained 75 messages and Samsung 24, both with their unchanged
+100 MB budgets. All three Mac and both Samsung identities retained their full
+Ledger heads. The installed binaries matched their packaged artifacts. No new
+Capsule, message, access grant, Jack action or VPS operation was introduced.
+The initial Mac seed wait timed out; an ordinary retry after owner Keychain
+approval opened the same Capsule, and cold reopen needed no further prompt.
+Native acceptance uses healthy owner data; rejected candidates and retirement
+failures remain source-test evidence. Artifact-bound results belong to
+`discovery_update_validation_20261117` in the existing acceptance record below.
+
+### Qualified Jack Fresh Start
+
 An explicit Jack Start ends the previous assignment and applies the selected
 settings without waiting for its exchange orders or positions to complete.
 Earlier orders remain at the exchange for the owner to manage outside Hivra.
