@@ -215,8 +215,18 @@ during retirement and retry after an unavailable old executor. Source tests
 use an in-process HTTP server and synthetic packages; working Capsules, secrets
 and remote executors are untouched. The earlier metadata-only rollback test is
 replaced by these execution/registry-preservation checks. All 829 Flutter tests,
-analyze and repository review gates pass. Exact Mac/Samsung packaging and native
-install/restart/return remain pending owner-approved commit, CI and smoke.
+analyze and repository review gates pass. Exact `9564317` Mac ZIP and Samsung APK
+qualified updating Chat 0.2.2 to 0.2.3 through signed Discovery, opening,
+cold process restart, reopening and return to the same existing
+Capsule. Mac retained 75 messages and Samsung 24, both with their unchanged
+100 MB budgets. All three Mac and both Samsung identities retained their full
+Ledger heads. The installed binaries matched their packaged artifacts. No new
+Capsule, message, access grant, Jack action or VPS operation was introduced.
+The initial Mac seed wait timed out; an ordinary retry after owner Keychain
+approval opened the same Capsule, and cold reopen needed no further prompt.
+Native acceptance uses healthy owner data; rejected candidates and retirement
+failures remain source-test evidence. Artifact-bound results belong to
+`discovery_update_validation_20261117` in the existing acceptance record below.
 
 ### Qualified Jack Fresh Start
 
