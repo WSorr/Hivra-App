@@ -170,10 +170,7 @@ class WasmPluginRegistryService {
         await sourceFile.readAsBytes(),
       );
       final preflight = await _preflight.inspect(storedFile);
-      final resolvedVersion = _resolvePluginVersion(
-        preflightVersion: preflight.pluginVersion,
-        sourceFileName: sourceName,
-      );
+      final resolvedVersion = preflight.resolvedVersion(sourceName);
       final replaced = _recordsToReplace(
         existing: existing,
         incomingPluginId: preflight.pluginId,
@@ -401,15 +398,6 @@ class WasmPluginRegistryService {
     return pluginId;
   }
 
-  String? _resolvePluginVersion({
-    required String? preflightVersion,
-    required String sourceFileName,
-  }) {
-    final normalized = _normalizeOptional(preflightVersion);
-    if (normalized != null) return normalized;
-    return _extractVersionFromFileName(sourceFileName);
-  }
-
   List<WasmPluginRecord> _recordsToReplace({
     required List<WasmPluginRecord> existing,
     required String? incomingPluginId,
@@ -422,18 +410,6 @@ class WasmPluginRegistryService {
       final recordPluginId = canonicalPluginId(record.pluginId);
       return recordPluginId == pluginId;
     }).toList();
-  }
-
-  String? _normalizeOptional(String? value) {
-    final normalized = value?.trim() ?? '';
-    return normalized.isEmpty ? null : normalized;
-  }
-
-  String? _extractVersionFromFileName(String fileName) {
-    final match = RegExp(r'-([0-9]+(?:\.[0-9]+){1,3})\.').firstMatch(fileName);
-    if (match == null) return null;
-    final raw = match.group(1)?.trim() ?? '';
-    return raw.isEmpty ? null : raw;
   }
 
   Future<void> _deleteStoredFilesForRecords(

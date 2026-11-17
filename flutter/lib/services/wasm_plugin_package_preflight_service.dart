@@ -29,6 +29,15 @@ class WasmPluginPackagePreflight {
     this.runtimeModulePath,
     this.capabilities = const <String>[],
   });
+
+  String? resolvedVersion(String sourceFileName) {
+    final declared = pluginVersion?.trim() ?? '';
+    if (declared.isNotEmpty) return declared;
+    final match = RegExp(
+      r'-([0-9]+(?:\.[0-9]+){1,3})\.',
+    ).firstMatch(sourceFileName);
+    return match?.group(1);
+  }
 }
 
 class WasmPluginPackagePreflightService {
