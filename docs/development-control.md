@@ -194,6 +194,32 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Keep native package import responsive before the existing package-size check.
+The Add package screen buffered the entire selected file before inspection;
+Discovery checksum verification did the same before preflight. An oversized
+selection or download could therefore exhaust the Dart heap before rejection.
+Remove those two eager buffers through the existing file-copy and hash-stream
+APIs, without changing the 8 MiB package limit, archive rules, trust order,
+execution retirement, grants, registry transaction or retained state.
+
+The [package lifecycle](architecture/plugin-package-lifecycle.md) owns the I/O
+ordering. Four existing owners remain four; whole-file buffering paths before
+workspace preflight shrink from two to zero. The implementation changes two
+production lines and adds no file, service, DTO, schema, API, store, permission
+or runtime entity. Supported native pickers already return file-backed inputs.
+The existing durable registry writer remains the publication boundary.
+
+Source checks cover complete multi-chunk archive digests, tampering at the
+archive tail before retirement, the retained size rejection before ZIP parsing,
+and the existing picker/workspace/registry journeys. They use temporary files;
+they do not measure native peak memory or fault-inject owner data. Exact
+Mac/Samsung Add package, oversized-file rejection, cold restart and return in
+existing Capsules remain pending exact packaging and native smoke.
+Source validation passed: 135 focused tests, all 832 Flutter tests, analysis
+and review gates. Native memory use and product acceptance remain unqualified.
+
+### Qualified Discovery Candidate Rejection
+
 Reject an invalid Discovery update before ending the installed package's
 existing workflow. A corrupt archive, wrong plugin/version or mismatched legacy
 filename version must leave execution, grants, credentials, opaque state and

@@ -23,6 +23,27 @@ void main() {
     }
   });
 
+  test('rejects an oversized file before decoding the archive', () async {
+    final file = File('${tempDir.path}/oversized.zip');
+    final handle = await file.open(mode: FileMode.write);
+    try {
+      await handle.truncate(9 * 1024 * 1024);
+    } finally {
+      await handle.close();
+    }
+    await expectLater(
+      service.inspect(file),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'size rejection',
+          contains('size'),
+        ),
+      ),
+    );
+    expect(await file.length(), 9 * 1024 * 1024);
+  });
+
   test('rejects raw WASM even with a valid module header', () async {
     final file = File('${tempDir.path}/valid.wasm');
     await file.writeAsBytes(const <int>[

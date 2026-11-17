@@ -147,7 +147,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       tempDir = await Directory.systemTemp.createTemp('hivra_plugin_import_');
       final safeName = _safePluginImportFileName(file.name, file.path);
       final source = File('${tempDir.path}/$safeName');
-      await source.writeAsBytes(await file.readAsBytes(), flush: true);
+      await file.saveTo(source.path);
       final record = await _module.installPluginFromFile(source);
       await _module.uiLog.log(
         'plugin.install.success',

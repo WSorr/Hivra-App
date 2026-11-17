@@ -34,6 +34,11 @@ is recovery work and cannot roll back or invalidate the committed record.
 
 ## Install And Update
 
+- Native file-picker staging uses the file-backed selection's copy operation;
+  catalog SHA-256 verification consumes the staged file as a stream. Neither
+  operation buffers the whole unadmitted archive in Dart before package
+  preflight. Existing package/archive bounds, digest validation, retirement
+  ordering and durable registry publication remain unchanged.
 - The existing registry is read before a candidate package is staged.
 - Preflight inspects the staged bytes that would become active.
 - Source-catalog identity, version, and package-kind validation runs before the

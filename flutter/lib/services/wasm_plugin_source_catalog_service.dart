@@ -465,7 +465,7 @@ class WasmPluginSourceCatalogService {
     if (expected == null || expected.isEmpty) {
       return;
     }
-    final actual = sha256.convert(await file.readAsBytes()).toString();
+    final actual = (await sha256.bind(file.openRead()).first).toString();
     if (actual != expected) {
       final sizeBytes = await file.length();
       throw FormatException(
