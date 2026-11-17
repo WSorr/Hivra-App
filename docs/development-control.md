@@ -211,12 +211,19 @@ The existing durable registry writer remains the publication boundary.
 
 Source checks cover complete multi-chunk archive digests, tampering at the
 archive tail before retirement, the retained size rejection before ZIP parsing,
-and the existing picker/workspace/registry journeys. They use temporary files;
-they do not measure native peak memory or fault-inject owner data. Exact
-Mac/Samsung Add package, oversized-file rejection, cold restart and return in
-existing Capsules remain pending exact packaging and native smoke.
-Source validation passed: 135 focused tests, all 832 Flutter tests, analysis
-and review gates. Native memory use and product acceptance remain unqualified.
+and the existing picker/workspace/registry journeys. Source validation passed:
+135 focused tests, all 832 Flutter tests, analysis and review gates.
+
+Exact source `837b5ad` passed CI and packaged Mac/Samsung acceptance in existing
+Capsules: native import, 9 MiB size rejection before installation, official
+Chat replacement and signed Discovery update, retained cache, cold restart
+and return. Owner Ledger, Chat history and workspace-state files remained
+unchanged; temporary inputs were removed. The earlier Mac window-observation
+failure cleared after the owner rebooted and reconnected Computer Use. Results
+and artifact digests belong to `plugin_input_streaming_20261117` in the existing
+acceptance record below. Native peak memory and an actual OOM were not measured;
+this qualifies the bounded installation journey and removal of the two eager
+Dart buffers, not a measured total-process memory ceiling.
 
 ### Qualified Discovery Candidate Rejection
 
