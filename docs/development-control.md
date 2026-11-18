@@ -219,8 +219,20 @@ analysis and repository review gates pass. Nine checks cover unchanged bytes
 and metadata, reopened-store retry, existing JSON/UTF-8 recovery, BOM handling
 and the selector's failure/retry journey at phone and desktop widths. Production
 changes two lines with no net growth. Working Capsule files and seeds were not
-fault-injected. Exact Mac/Samsung acceptance is pending; no new Capsule, grant,
-message, Jack opening, trading or VPS action is selected.
+fault-injected.
+
+Exact da4a9f8 Mac ZIP and Samsung APK passed opening the primary, switching to
+the secondary, cold process restart, secondary reopen and return. The three
+Mac and two Samsung identities and history heads remain unchanged (opened
+Ledger v121/v71 and v17/v12). Mac index identity, creation and network metadata
+remain intact; all three Ledger and state files are byte-identical and recovery
+envelopes contain the corresponding history. Normal selection updates only
+active/last-active index fields. Exact bytes, process replacement and native
+receipts belong to `capsule_index_read_preservation_20261118` in the existing
+acceptance record. Read-denial and malformed-input cases retain isolated
+fixture qualification; working files were not fault-injected. No new Capsule,
+grant, message, trading command, VPS change or release occurred, and no plugin
+workspace was opened for this smoke.
 
 ### Qualified Stored-History Candidate Fallback
 
