@@ -218,9 +218,17 @@ evicted content returning after a delayed load. All 65 focused and 881 Flutter
 tests, analysis, formatting and repository review gates pass. Six added cases
 cover missing/saved timelines, cache clearing during loading, queued failure
 and retry, retained pending sends, restart and independence of another Capsule.
-Production code adds five net lines. Exact Mac/Samsung acceptance is pending.
-Faults and message input use temporary fixtures only; working Capsules,
-messages, grants, Jack and VPS are untouched.
+Production code adds five net lines. Exact `b2d6228` Mac ZIP and physical Samsung
+APK acceptance passed: existing history and unchanged 100 MB budget, repeated
+Chat opening, cold process restart and return to the same Capsule. The retained
+message counts stayed at 13 on Mac and 24 on Samsung. Mac's three Ledger/state
+files and encrypted timelines remain byte-identical; recovery exports contain
+the same history. Samsung retained both Capsule history heads and its original
+installation time and signer; installed bytes match the packaged APK. The
+existing acceptance record below owns exact artifacts and native receipts under
+`chat_timeline_load_order_20261118`. Delayed-load and failure/retry behavior uses
+temporary fixtures only; working data was not fault-injected. No budget change,
+message send/deletion, new Capsule/grant, Jack opening or VPS mutation occurred.
 
 ### Qualified Stored-History Candidate Fallback
 
