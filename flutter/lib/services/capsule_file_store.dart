@@ -134,7 +134,13 @@ class CapsuleFileStore {
           projection['slots'] is! List) {
         return false;
       }
-      final state = await readState(dir) ?? <String, dynamic>{};
+      Map<String, dynamic>? state;
+      try {
+        state = _parseJsonMap(await stateFile(dir).readAsString());
+      } on PathNotFoundException {
+        state = <String, dynamic>{};
+      }
+      if (state == null) return false;
       state['coreProjection'] = projection;
       await writeState(dir, state);
       return true;

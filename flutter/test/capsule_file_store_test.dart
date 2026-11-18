@@ -279,6 +279,93 @@ void main() {
     },
   );
 
+  for (final entry
+      in <String, List<int>>{
+        'empty file': <int>[],
+        'truncated JSON': '{"isGenesis":true,'.codeUnits,
+        'non-map JSON': '["retained metadata"]'.codeUnits,
+        'invalid UTF-8': <int>[0xff, 0xfe],
+      }.entries) {
+    test(
+      'Core projection preserves existing ${entry.key} across retry',
+      () async {
+        final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+        final stateFile = store.stateFile(dir);
+        await stateFile.writeAsBytes(entry.value, flush: true);
+        const projection = '{"version":7,"ledger_hash":"42","slots":[]}';
+
+        expect(await store.writeCoreProjection(dir, projection), isFalse);
+        expect(await stateFile.readAsBytes(), entry.value);
+
+        final reopened = CapsuleFileStore(
+          dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+        );
+        expect(await reopened.writeCoreProjection(dir, projection), isFalse);
+        expect(await stateFile.readAsBytes(), entry.value);
+      },
+    );
+  }
+
+  test(
+    'Core projection can initialize a genuinely missing state file',
+    () async {
+      final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+      const projection = '{"version":7,"ledger_hash":"42","slots":[]}';
+      expect(await store.stateFile(dir).exists(), isFalse);
+
+      expect(await store.writeCoreProjection(dir, projection), isTrue);
+      final reopened = CapsuleFileStore(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      );
+      expect((await reopened.readState(dir))?['coreProjection'], {
+        'version': 7,
+        'ledger_hash': '42',
+        'slots': [],
+      });
+    },
+  );
+
+  test(
+    'unreadable metadata does not block Ledger and backup publication or later projection retry',
+    () async {
+      final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+      const retained = '{"isGenesis":true,"identityMode":"root_owner",';
+      const projection = '{"version":7,"ledger_hash":"42","slots":[]}';
+      await store.stateFile(dir).writeAsString(retained, flush: true);
+      await store.writeLedger(dir, '{"generation":1}');
+      await store.writeBackup(dir, '{"generation":1}');
+
+      await store.writeLedgerSnapshot(
+        dir,
+        ledgerJson: '{"generation":2}',
+        backupJson: '{"generation":2}',
+        coreProjectionJson: projection,
+      );
+      expect(await store.readLedger(dir), '{"generation":2}');
+      expect(await store.readBackup(dir), '{"generation":2}');
+      expect(await store.stateFile(dir).readAsString(), retained);
+
+      final reopened = CapsuleFileStore(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      );
+      expect(await reopened.writeCoreProjection(dir, projection), isFalse);
+      expect(await store.stateFile(dir).readAsString(), retained);
+      await reopened.writeState(dir, {
+        'isGenesis': true,
+        'isNeste': false,
+        'identityMode': 'root_owner',
+      });
+      expect(await reopened.writeCoreProjection(dir, projection), isTrue);
+      final state = await reopened.readState(dir);
+      expect(state?['isGenesis'], isTrue);
+      expect(state?['isNeste'], isFalse);
+      expect(state?['identityMode'], 'root_owner');
+      expect((state?['coreProjection'] as Map?)?['version'], 7);
+      expect(await reopened.readLedger(dir), '{"generation":2}');
+      expect(await reopened.readBackup(dir), '{"generation":2}');
+    },
+  );
+
   test('atomic byte writes persist bytes without leaving temp files', () async {
     const atomicWrites = AtomicFileWriteService();
     final target = File('${tempDocsDir.path}/plugin.zip');

@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-17
+Status date: 2026-11-18
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -193,6 +193,33 @@ branch state; published artifacts and their signoff belong to
   delivered by the package; no host runtime change is required.
 
 ## Selected Product Outcome
+
+Preserve existing Capsule metadata when refreshing the derived Core projection.
+The tolerant read used for recovery returned null for both absence and failure;
+the update path then wrote a projection-only file over unreadable metadata.
+Only a confirmed missing path may initialize an empty metadata map. A read or
+parse failure must preserve the existing bytes, allow retry, and leave the
+authoritative Ledger/backup generation independent of this optional cache.
+
+The [Ledger persistence contract](architecture/continuous-ledger-protocol-v5.md)
+owns this boundary. Open/restart and normal snapshot save already converge in
+`CapsuleFileStore.writeCoreProjection`; keep that owner and ordered writer.
+Use the pinned Dart `PathNotFoundException` rather than another mode, schema,
+service or fallback. Core remains the interpreter and the file store remains
+the publication owner: two owners and one projection-write path before/after.
+No new file, API, store, Capsule, permission or runtime entity is introduced.
+
+Five regressions reproduced destructive replacement for empty, malformed,
+non-map and invalid UTF-8 state, including the Ledger/backup save journey.
+Qualification uses temporary files in the existing tests, a reopened store,
+genuine absence, and successful retry after metadata becomes readable. Working
+Capsules, seeds, plugins, trading and VPS are outside fault injection. All 76
+focused and 844 Flutter tests, analysis and repository review gates pass. The
+production change is six net lines; the existing tolerant recovery read is
+unchanged. Exact packaged Mac/Android acceptance remains pending; source tests
+do not qualify the installed applications.
+
+### Qualified Remote Workspace Presentation
 
 Reopen an assigned VPS workspace while its autonomous cycle is awaiting a
 service response. The owner must receive the package's retained presentation

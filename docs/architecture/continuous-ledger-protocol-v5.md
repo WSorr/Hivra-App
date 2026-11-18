@@ -174,6 +174,9 @@ one owner-signed anchor begins subsequent v5 history.
 - write one ledger generation atomically per file in the order ledger ->
   backup -> derived Core projection; a failure MUST retain a valid ledger and
   MUST NOT delete an existing target as a replacement fallback;
+- refreshing that derived projection MUST retain other Capsule metadata.
+  An unreadable existing state file MUST NOT be replaced with empty metadata;
+  the derived cache may lag while Ledger and backup publication succeeds;
 - prove restart, export/import, restore, and cross-platform projection parity;
 - run adversarial import vectors and focused macOS/Android smoke before a
   release candidate.
