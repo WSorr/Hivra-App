@@ -9,6 +9,7 @@ import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/ffi/capsule_runtime_bootstrap_runtime.dart';
 import 'package:hivra_app/services/capsule_runtime_bootstrap_service.dart';
 import 'package:hivra_app/services/capsule_seed_store.dart';
+import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeCapsuleFileStore extends CapsuleFileStore {
   _FakeCapsuleFileStore({this.state, this.ledgerJson, this.backupJson});
@@ -558,7 +559,7 @@ void main() {
     );
 
     test(
-      'drops incompatible stored history when both ledger and backup invalid',
+      'refuses bootstrap when neither retained history belongs to the Capsule',
       () async {
         final malformedLedger = jsonEncode(<String, dynamic>{
           'owner': <int>[170, 170],
@@ -583,11 +584,87 @@ void main() {
           bytesToHex: bytesToHex,
         );
 
-        expect(bootstrap, isNotNull);
-        expect(bootstrap!.ledgerJson, isNull);
-        expect(bootstrap.ledgerImportCandidates, isEmpty);
+        expect(bootstrap, isNull);
       },
     );
+
+    for (final raw in <String?>[null, ' \n']) {
+      final condition = raw == null ? 'missing' : 'blank';
+      test('refuses bootstrap with $condition local history', () async {
+        final root = await Directory.systemTemp.createTemp('hivra-bootstrap-');
+        addTearDown(() => root.delete(recursive: true));
+        final files = CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(runtimeRootOverride: root.path),
+        );
+        final directory = await files.capsuleDirForHex(pubKeyHex, create: true);
+        if (raw != null) {
+          await files.writeLedger(directory, raw);
+          await files.writeBackup(directory, raw);
+        }
+        final service = CapsuleRuntimeBootstrapService(
+          files,
+          _FakeCapsuleSeedStore(seed),
+        );
+
+        expect(
+          await service.loadRuntimeBootstrap(pubKeyHex, bytesToHex: bytesToHex),
+          isNull,
+        );
+        expect(await files.ledgerFile(directory).exists(), raw != null);
+        if (raw != null) {
+          expect(await files.ledgerFile(directory).readAsString(), raw);
+        }
+      });
+
+      test(
+        'refresh cannot replace $condition history with a fresh runtime',
+        () async {
+          final root = await Directory.systemTemp.createTemp(
+            'hivra-bootstrap-',
+          );
+          addTearDown(() => root.delete(recursive: true));
+          final files = CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(
+              runtimeRootOverride: root.path,
+            ),
+          );
+          final directory = await files.capsuleDirForHex(
+            pubKeyHex,
+            create: true,
+          );
+          if (raw != null) {
+            await files.writeLedger(directory, raw);
+            await files.writeBackup(directory, raw);
+          }
+          final runtime = _FakeBootstrapRuntime(
+            seedRootPubkey: Uint8List.fromList(List<int>.filled(32, 0xaa)),
+            seedNostrPubkey: Uint8List.fromList(List<int>.filled(32, 0xbb)),
+            exportedLedger: ledgerWithEvents(0xaa, const []),
+          );
+          final service = CapsuleRuntimeBootstrapService(
+            files,
+            _FakeCapsuleSeedStore(seed),
+          );
+
+          expect(
+            await service.refreshCapsuleSnapshot(
+              runtime,
+              pubKeyHex,
+              bytesToHex: bytesToHex,
+            ),
+            isFalse,
+          );
+          expect(await files.ledgerFile(directory).exists(), raw != null);
+          expect(await files.backupFile(directory).exists(), raw != null);
+          expect(await files.stateFile(directory).exists(), isFalse);
+          if (raw != null) {
+            expect(await files.ledgerFile(directory).readAsString(), raw);
+            expect(await files.backupFile(directory).readAsString(), raw);
+          }
+          expect(runtime.importAttempts, isEmpty);
+        },
+      );
+    }
 
     test(
       'refreshCapsuleSnapshot falls back to next import candidate when primary import fails',

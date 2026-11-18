@@ -166,8 +166,7 @@ class CapsulePersistenceService {
       return false;
     }
 
-    await importLedgerIfExists(hivra);
-    return true;
+    return importLedgerIfExists(hivra);
   }
 
   Future<bool> importLedgerIfExists(CapsulePersistenceBindings hivra) async {
@@ -585,10 +584,6 @@ class CapsulePersistenceService {
     final candidates = bootstrap.ledgerImportCandidates
         .where((candidate) => candidate.trim().isNotEmpty)
         .toList(growable: false);
-    if (candidates.isEmpty) {
-      return true;
-    }
-
     for (final candidate in candidates) {
       if (hivra.importLedger(candidate)) {
         return true;
