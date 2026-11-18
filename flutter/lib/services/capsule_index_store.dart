@@ -38,9 +38,9 @@ class CapsuleIndexStore {
       index = CapsulesIndex(activePubKeyHex: null, capsules: {});
     } else {
       try {
-        final raw = await indexFile.readAsString();
+        final raw = utf8.decode(await indexFile.readAsBytes());
         index = _fromJson(raw);
-      } catch (_) {
+      } on FormatException {
         indexReadFailed = true;
         index = CapsulesIndex(activePubKeyHex: null, capsules: {});
       }
