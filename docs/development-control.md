@@ -217,10 +217,21 @@ No file, service, DTO, API, store, permission or runtime entity is added.
 Six regressions fail on the preceding source. All 120 focused and 866 Flutter
 tests, analysis and repository review gates pass. Production code adds 15 lines.
 Qualification covers real temporary UTF-8 faults, malformed-input fallback,
-preserved source bytes, Core rejection, read failure/retry and refusal to overwrite an invalid
-current history or publish a malformed runtime export. Working Capsule files
-and seeds are not fault-injected. Exact Mac/Samsung acceptance is pending;
-no new Capsule, message, Jack opening, trading or VPS mutation is authorized.
+preserved source bytes, Core rejection, read failure/retry and refusal to
+overwrite an invalid current history or publish a malformed runtime export.
+Working Capsule files and seeds were not fault-injected.
+
+On 18 November, exact fd85cf1 Mac ZIP/Samsung APK acceptance passed: open the
+existing primary, switch to the secondary, cold process restart, reopen the
+secondary and return to the primary. The three Mac and two Samsung identities
+and history heads remain unchanged (opened Ledger v121/v71 and v17/v12).
+All three Mac Ledger and state files remain byte-identical; refreshed recovery
+envelopes contain the same history. Exact bytes, process replacement and native
+receipts are recorded under `bootstrap_candidate_fallback_20261118` in the
+existing acceptance record. Healthy native activation qualifies that journey;
+malformed-input and storage-failure behavior retains isolated fixture evidence.
+Fallback cannot reconstruct unavailable events. No new Capsule, grant, message,
+Jack opening, trading command, VPS change or release occurred.
 
 ### Qualified Stored-History Admission
 
