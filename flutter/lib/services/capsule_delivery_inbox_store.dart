@@ -59,46 +59,48 @@ class CapsuleDeliveryInboxStore {
   Future<bool> hydrateCapsule(String capsuleRootHex) async {
     final normalized = capsuleRootHex.trim().toLowerCase();
     if (!_isHex64(normalized)) return false;
-    if (_hydratedCapsules.contains(normalized)) return true;
-    try {
-      final capsuleDir = await _fileStore.capsuleDirForHex(normalized);
-      final raw = await _fileStore.readChatTimeline(capsuleDir);
-      if (raw == null) {
-        _cacheBudgets[normalized] = initialCacheBudgetBytes;
+    return _serializeTimeline(normalized, () async {
+      if (_hydratedCapsules.contains(normalized)) return true;
+      try {
+        final capsuleDir = await _fileStore.capsuleDirForHex(normalized);
+        final raw = await _fileStore.readChatTimeline(capsuleDir);
+        if (raw == null) {
+          _cacheBudgets[normalized] = initialCacheBudgetBytes;
+          _hydratedCapsules.add(normalized);
+          return true;
+        }
+        final cleartext = await _openTimeline(normalized, raw);
+        if (cleartext == null) return false;
+        final decoded = jsonDecode(cleartext);
+        if (decoded is! Map ||
+            decoded['version'] != 1 ||
+            decoded['capsule_root_hex'] != normalized ||
+            decoded['messages'] is! List) {
+          return false;
+        }
+        final budget = decoded['cache_budget_bytes'];
+        if (budget != null && (budget is! int || budget <= 0)) return false;
+        _cacheBudgets[normalized] = budget as int? ?? initialCacheBudgetBytes;
+        final loaded = <String, CapsuleChatInboxMessage>{};
+        for (final item in decoded['messages'] as List) {
+          final message = _decodeTimelineMessage(item, normalized);
+          if (message == null) return false;
+          loaded[message.id] = message;
+        }
         _hydratedCapsules.add(normalized);
+        final existing = _messagesByCapsule[normalized];
+        if (existing != null) loaded.addAll(existing);
+        if (loaded.isNotEmpty) _messagesByCapsule[normalized] = loaded;
+        if (loaded.isEmpty) return true;
+        _touchCapsule(normalized);
+        await _persistTimelineNow(normalized, const [], null);
+        _retainNewestCapsules();
         return true;
-      }
-      final cleartext = await _openTimeline(normalized, raw);
-      if (cleartext == null) return false;
-      final decoded = jsonDecode(cleartext);
-      if (decoded is! Map ||
-          decoded['version'] != 1 ||
-          decoded['capsule_root_hex'] != normalized ||
-          decoded['messages'] is! List) {
+      } catch (_) {
+        _hydratedCapsules.remove(normalized);
         return false;
       }
-      final budget = decoded['cache_budget_bytes'];
-      if (budget != null && (budget is! int || budget <= 0)) return false;
-      _cacheBudgets[normalized] = budget as int? ?? initialCacheBudgetBytes;
-      final loaded = <String, CapsuleChatInboxMessage>{};
-      for (final item in decoded['messages'] as List) {
-        final message = _decodeTimelineMessage(item, normalized);
-        if (message == null) return false;
-        loaded[message.id] = message;
-      }
-      _hydratedCapsules.add(normalized);
-      final existing = _messagesByCapsule[normalized];
-      if (existing != null) loaded.addAll(existing);
-      if (loaded.isNotEmpty) _messagesByCapsule[normalized] = loaded;
-      if (loaded.isEmpty) return true;
-      _touchCapsule(normalized);
-      await _persistTimeline(normalized);
-      _retainNewestCapsules();
-      return true;
-    } catch (_) {
-      _hydratedCapsules.remove(normalized);
-      return false;
-    }
+    });
   }
 
   Future<void> mergeDurably(
@@ -159,7 +161,6 @@ class CapsuleDeliveryInboxStore {
     _capsuleOrder.remove(normalized);
     _hydratedCapsules.remove(normalized);
     _cacheBudgets.remove(normalized);
-    _timelineWriteTails.remove(normalized);
     _readStateWriteTails.remove(normalized);
   }
 
@@ -282,20 +283,24 @@ class CapsuleDeliveryInboxStore {
     String capsuleRootHex, {
     List<CapsuleChatInboxMessage> incoming = const [],
     int? cacheBudgetBytes,
-  }) async {
+  }) => _serializeTimeline(
+    capsuleRootHex,
+    () => _persistTimelineNow(capsuleRootHex, incoming, cacheBudgetBytes),
+  );
+
+  Future<T> _serializeTimeline<T>(
+    String capsuleRootHex,
+    Future<T> Function() operation,
+  ) async {
     final previous =
         _timelineWriteTails[capsuleRootHex] ?? Future<void>.value();
-    final next = previous
-        .catchError((Object _) {})
-        .then(
-          (_) =>
-              _persistTimelineNow(capsuleRootHex, incoming, cacheBudgetBytes),
-        );
-    _timelineWriteTails[capsuleRootHex] = next;
+    final next = previous.then((_) => operation());
+    final tail = next.then<void>((_) {}, onError: (Object _) {});
+    _timelineWriteTails[capsuleRootHex] = tail;
     try {
-      await next;
+      return await next;
     } finally {
-      if (identical(_timelineWriteTails[capsuleRootHex], next)) {
+      if (identical(_timelineWriteTails[capsuleRootHex], tail)) {
         _timelineWriteTails.remove(capsuleRootHex);
       }
     }

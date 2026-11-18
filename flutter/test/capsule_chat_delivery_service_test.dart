@@ -514,6 +514,193 @@ void main() {
       },
     );
 
+    for (final scenario in [
+      (saved: false, cleared: false),
+      (saved: true, cleared: false),
+      (saved: false, cleared: true),
+      (saved: true, cleared: true),
+    ]) {
+      final saved = scenario.saved;
+      test('delayed hydration retains the committed window '
+          '(saved: $saved, cleared: ${scenario.cleared})', () async {
+        final home = await Directory.systemTemp.createTemp('hivra-retention-');
+        addTearDown(() => home.delete(recursive: true));
+        final files = _FailingChatFileStore(
+          UserVisibleDataDirectoryService(homeOverride: home.path),
+        );
+        Future<Uint8List?> seed(String _) async =>
+            Uint8List.fromList(List.filled(32, 35));
+        CapsuleDeliveryInboxStore reopen() =>
+            CapsuleDeliveryInboxStore(fileStore: files, loadTimelineSeed: seed);
+        CapsuleChatInboxMessage message(
+          String id,
+          int time, {
+          bool pending = false,
+        }) => CapsuleChatInboxMessage(
+          id: id,
+          fromHex: pending ? capsuleHex : peerHex,
+          toHex: pending ? peerHex : capsuleHex,
+          messageText: pending ? id : 'x' * 1024,
+          createdAtUtc: '2026-11-18T00:00:00Z',
+          envelopeHashHex: id,
+          timestampMs: time,
+          direction:
+              pending
+                  ? CapsuleChatMessageDirection.outgoing
+                  : CapsuleChatMessageDirection.incoming,
+          deliveryState:
+              pending
+                  ? CapsuleChatMessageDeliveryState.pending
+                  : CapsuleChatMessageDeliveryState.received,
+        );
+        final messages = [
+          message('old', 1),
+          message('new', 2),
+          message('pending', 0, pending: true),
+        ];
+        if (saved) await reopen().mergeDurably(capsuleHex, messages: messages);
+        final dir = await files.capsuleDirForHex(capsuleHex, create: true);
+        final captured = await files.readChatTimeline(dir);
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        var reads = 0;
+        files.readTimeline = (_) async {
+          if (++reads == 1) {
+            entered.complete();
+            await release.future;
+          }
+          return captured;
+        };
+        final store = reopen();
+        final delayedLoad = store.hydrateCapsule(capsuleHex);
+        await entered.future;
+        if (scenario.cleared) store.clearCapsule(capsuleHex);
+        Future<void> changeWindow() async {
+          await store.setCacheBudgetBytes(capsuleHex, 2000);
+          if (!saved) await store.mergeDurably(capsuleHex, messages: messages);
+        }
+
+        final changed = changeWindow();
+        await Future.any([
+          changed,
+          Future<void>.delayed(const Duration(seconds: 1)),
+        ]);
+        files.readTimeline = null;
+        release.complete();
+        expect(await delayedLoad, isTrue);
+        await changed;
+
+        expect(
+          {
+            'budget': await store.loadCacheBudgetBytes(capsuleHex),
+            'ids':
+                store.loadMessages(capsuleHex).map((m) => m.id).toList()
+                  ..sort(),
+          },
+          {
+            'budget': 2000,
+            'ids': ['new', 'pending'],
+          },
+        );
+        await store.upsertMessageDurably(capsuleHex, message('latest', 3));
+        final restarted = reopen();
+        expect(await restarted.loadCacheBudgetBytes(capsuleHex), 2000);
+        expect(
+          restarted.loadMessages(capsuleHex).map((m) => m.id),
+          isNot(contains('old')),
+        );
+        expect(
+          restarted.loadMessages(capsuleHex).map((m) => m.id),
+          contains('pending'),
+        );
+      });
+    }
+
+    test('a failed timeline load releases a queued retry', () async {
+      final home = await Directory.systemTemp.createTemp('hivra-retention-');
+      addTearDown(() => home.delete(recursive: true));
+      final files = _FailingChatFileStore(
+        UserVisibleDataDirectoryService(homeOverride: home.path),
+      );
+      Future<Uint8List?> seed(String _) async =>
+          Uint8List.fromList(List.filled(32, 36));
+      CapsuleDeliveryInboxStore reopen() =>
+          CapsuleDeliveryInboxStore(fileStore: files, loadTimelineSeed: seed);
+      await reopen().setCacheBudgetBytes(capsuleHex, 4096);
+      final dir = await files.capsuleDirForHex(capsuleHex);
+      final saved = await files.readChatTimeline(dir);
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      var reads = 0;
+      files.readTimeline = (_) async {
+        if (++reads == 1) {
+          entered.complete();
+          await release.future;
+          throw const FileSystemException('synthetic timeline read failure');
+        }
+        return saved;
+      };
+      final store = reopen();
+      final first = store.hydrateCapsule(capsuleHex);
+      await entered.future;
+      final retry = store.hydrateCapsule(capsuleHex);
+      await Future.any([
+        retry,
+        Future<bool>.delayed(const Duration(seconds: 1), () => false),
+      ]);
+      release.complete();
+      expect(await first, isFalse);
+      expect(await retry, isTrue);
+      files.readTimeline =
+          (_) async =>
+              throw const FileSystemException(
+                'storage temporarily unavailable',
+              );
+      expect(await store.loadCacheBudgetBytes(capsuleHex), 4096);
+      files.readTimeline = null;
+      expect(await files.readChatTimeline(dir), saved);
+      await store.setCacheBudgetBytes(capsuleHex, 2048);
+      expect(await reopen().loadCacheBudgetBytes(capsuleHex), 2048);
+    });
+
+    test('one blocked timeline does not block another Capsule', () async {
+      final home = await Directory.systemTemp.createTemp('hivra-retention-');
+      addTearDown(() => home.delete(recursive: true));
+      final files = _FailingChatFileStore(
+        UserVisibleDataDirectoryService(homeOverride: home.path),
+      );
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      files.readTimeline = (dir) async {
+        if (dir.path.endsWith(capsuleHex)) {
+          entered.complete();
+          await release.future;
+        }
+        return null;
+      };
+      final store = CapsuleDeliveryInboxStore(fileStore: files);
+      final blocked = store.hydrateCapsule(capsuleHex);
+      await entered.future;
+      expect(
+        await store
+            .loadCacheBudgetBytes(peerHex)
+            .timeout(const Duration(seconds: 2)),
+        100000000,
+      );
+      expect(store.loadMessages(peerHex), isEmpty);
+      release.complete();
+      expect(await blocked, isTrue);
+    });
+
     test(
       'failed budget commit preserves the old window and preference',
       () async {
@@ -2776,8 +2963,12 @@ class _FailingChatFileStore extends CapsuleFileStore {
   bool failWrites = false;
   bool failDeferredReads = false;
   bool failDeferredWrites = false;
+  Future<String?> Function(Directory)? readTimeline;
   _FailingChatFileStore(UserVisibleDataDirectoryService dirs)
     : super(dirs: dirs);
+  @override
+  Future<String?> readChatTimeline(Directory dir) =>
+      readTimeline?.call(dir) ?? super.readChatTimeline(dir);
   @override
   Future<void> writeChatTimeline(Directory dir, String contents) {
     if (failWrites) throw StateError('synthetic timeline write failure');
