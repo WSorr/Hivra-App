@@ -257,9 +257,14 @@ eviction. No complete service archive or recovery of evicted content is promised
 
 The budget is optional metadata in the existing authenticated timeline payload;
 older payloads use the default. Budget changes, eviction and incoming/outgoing
-timeline updates converge on the same queued atomic encrypted write. Publish the
-new in-memory window only after that write succeeds. A failed replacement keeps
-the old saved window and budget. Only a missing timeline starts a new empty
+timeline updates converge on the same queued atomic encrypted write. Loading
+and publication use that same per-Capsule operation order;
+a delayed load must not roll back a committed budget or restore evicted content.
+Concurrent loads reuse the completed hydration, and a failed load releases the
+same queue for retry. Clearing the in-memory cache retains pending timeline
+ordering until those operations settle; other Capsules remain independent.
+Publish the new in-memory window only after that write succeeds. A failed
+replacement keeps the old saved window and budget. Only a missing timeline starts a new empty
 window; existing blank or unreadable bytes block durable updates and ingress
 acknowledgement instead of being replaced. A later valid read retries through
 the same timeline owner. Read/unread markers retain their existing file
