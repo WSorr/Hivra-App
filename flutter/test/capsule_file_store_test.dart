@@ -126,6 +126,34 @@ void main() {
     },
   );
 
+  test(
+    'plugin storage distinguishes missing data from an unreadable path',
+    () async {
+      const plugin = 'example.workspace';
+      final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+      expect(await store.readPluginState(dir, plugin, 'data-pending'), isNull);
+      final stateDir = await store.pluginStateDirectory(dir, plugin);
+      expect(await stateDir.exists(), isFalse);
+      final unreadable = Directory(
+        store.pluginStateFile(stateDir, 'data-pending').path,
+      );
+      await unreadable.create(recursive: true);
+      final marker = File('${unreadable.path}/retained');
+      await marker.writeAsString('opaque pending request');
+      final reopened = CapsuleFileStore(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      );
+
+      for (final reader in [store, reopened]) {
+        await expectLater(
+          reader.readPluginState(dir, plugin, 'data-pending'),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(await marker.readAsString(), 'opaque pending request');
+      }
+    },
+  );
+
   test('readState returns null when state file is missing', () async {
     final dir = await store.capsuleDirForHex(capsuleHex, create: true);
 

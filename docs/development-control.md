@@ -194,6 +194,38 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Keep package storage values distinct from absence or read failure. Empty and
+whitespace strings are valid opaque `data-` values and must survive reopening
+and package replacement. A retained but invalid workspace must fail through
+the existing decoder before package evaluation or dispatch, retain its bytes
+and authority, and allow retry after the file becomes readable and valid.
+
+The [common API contract](plugins/plugin_host_api_v1.md) owns this boundary.
+Reuse `PluginWorkspaceRuntime` and `CapsuleFileStore.readPluginState`; remove
+the preliminary existence check and lossy empty-value normalization. Only
+`PathNotFoundException` means absence. Package interpretation remains in the
+package, and retained workspace/authority decoding remains in the executor.
+Two host owners and one storage-read path remain before/after, with no new API,
+file, service, schema, store, permission or runtime entity.
+
+Five regressions reproduce the defect on the previous source: opaque values
+lost across runtime/package replacement, a retained empty or whitespace
+workspace treated as a new invocation, and an unreadable path treated as missing.
+All 85 focused and 849 Flutter tests and analysis pass. Qualification uses only
+existing temporary-file/workspace fixtures, preserves pending data and authority
+through failure/retry, and exercises the existing replacement/removal checks.
+The production change is two net lines. Exact ZIP/APK acceptance from `d1419ca`
+passed on Mac and physical Samsung: existing Chat and Jack open and return to
+the same Capsule, with cold process restart and Jack reopening. Mac retained
+its saved connection and grant deadline; Samsung retained MNT/all, 1 USDT/20%,
+with new entries still off. The three/two Capsule inventories, three installed
+packages per device and Ledger hashes remained unchanged. The installed Mac
+bundle matches all ZIP entries and the installed APK matches its packaged hash.
+Read-failure injection remains temporary-file evidence; no working file was
+corrupted or new grant, Start, message, trade or VPS update requested.
+
+### Qualified Core Projection Preservation
+
 Preserve existing Capsule metadata when refreshing the derived Core projection.
 The tolerant read used for recovery returned null for both absence and failure;
 the update path then wrote a projection-only file over unreadable metadata.

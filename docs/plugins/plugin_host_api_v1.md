@@ -227,6 +227,12 @@ existing stores. Package settings and necessary private checkpoints use the
 existing optional opaque store; the package owns their schema and upgrades.
 Do not introduce another persistence service or required provider-history log.
 
+Opaque storage returns string contents verbatim, including empty and whitespace
+values. Null means the requested path is absent; a present path that cannot be
+read is an error. Retained workspace and permission files still use their
+existing decoders: unreadable or invalid content must not become an initial
+workspace or missing grant. Stateless packages do not read private checkpoints.
+
 Workspace uninstall first closes package admission and drains the existing
 executor. It deletes code and secrets and invalidates the installed-package
 grant binding. The bounded opaque workspace checkpoint and `data-` storage
