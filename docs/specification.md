@@ -1446,6 +1446,7 @@ Rules:
 2. Valid triggers for recomputation are:
    - smart-contract execution precondition checks
    - explicit user-requested consensus checks
+     (including preparation of a selected Chat peer before sending content)
 3. Consensus derivation MUST read only canonical ledger-derived projections.
 4. A dedicated Consensus Processor module MUST provide at least:
    - `preview` (derive canonical projection and hash)
@@ -1500,6 +1501,11 @@ Dependency direction remains:
 transport and root-signing implemented only by host adapters below the
 orchestration boundary. UI may request synchronization and display evidence,
 but cannot create, approve, or cache consensus truth.
+
+Selecting a Chat peer requests the existing pair-attestation exchange without
+sending message content. An attestation-only receive refreshes the displayed
+readiness. Sending content still requires the same current two-root guard;
+selection and recovery do not renew any application's effect authority.
 
 ### 8.5 Drone Consensus Guard Standard
 

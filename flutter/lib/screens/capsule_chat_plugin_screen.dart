@@ -169,7 +169,10 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
         activeCapsule != result.capsuleHex) {
       return;
     }
-    if (result.chat.messages.isEmpty) return;
+    if (result.chat.messages.isEmpty) {
+      if (result.attestations.storedCount > 0) await _refreshContacts();
+      return;
+    }
 
     try {
       final cachedMessages =
@@ -350,6 +353,31 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       _noticeIsError = false;
     });
     unawaited(_markMessagesRead(_messagesForSelectedPeer(_messages)));
+    unawaited(_secureSelectedPeer(nextPeer));
+  }
+
+  Future<void> _secureSelectedPeer(String peerHex) async {
+    final owner = _module.activeCapsuleRootHex();
+    if (owner == null) return;
+    var failed = false;
+    try {
+      await _module.attestationExchange.ensureForPeer(peerHex);
+    } catch (_) {
+      failed = true;
+    }
+    if (!mounted ||
+        owner != _module.activeCapsuleRootHex() ||
+        peerHex != _peerController.text) {
+      return;
+    }
+    if (failed) {
+      setState(() {
+        _notice =
+            'Could not secure this conversation. Select it again to retry.';
+        _noticeIsError = true;
+      });
+    }
+    await _refreshContacts();
   }
 
   Future<void> _send() async {

@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-18
+Status date: 2026-11-19
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -193,6 +193,32 @@ branch state; published artifacts and their signoff belong to
   delivered by the package; no host runtime change is required.
 
 ## Selected Product Outcome
+
+Recover Core history containing a relationship on macOS and Samsung, then
+reacquire operational pair evidence through the ordinary interface without
+sending Chat content. Keep the accepted Core-only export and separate seed
+custody: restore into an absent destination, preserve working Capsules and
+do not resume delegated effects.
+
+Native preparation reproduced a missing entry point: choosing a Chat contact
+does not request verification; only Send reaches the existing attestation
+exchange. An attestation-only receive also leaves the open Chat readiness
+unchanged. Selection must request the same exchange owner, and the existing
+passive-receive listener must refresh that projection when evidence arrives.
+Keep Send's current guard, the signed pair model, response cooldown and one
+exchange/store/transport path. Add no service, permission, background loop,
+schema, backup payload or message-send path. Late selection completion must
+not update a different selected peer or Capsule.
+
+Automated Core-history and peer-exchange recovery checks pass independently.
+Four widget checks cover the missing selection trigger, retry after failure,
+attestation-only readiness and asynchronous Capsule boundary. Native
+relationship recovery and cold restart remain pending on the corrected bytes;
+the owner authorized two temporary test identities and one test relationship,
+followed by native cleanup. No working history, Chat send, trading action or
+VPS change is authorized by this qualification.
+
+### Qualified Pair-Evidence Read Preservation
 
 Retain saved pair evidence and automatic-response checkpoints when their file
 is unavailable. An existing empty or whitespace-only file must not become a
