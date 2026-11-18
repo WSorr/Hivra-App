@@ -63,6 +63,27 @@ void main() {
     }
   });
 
+  for (final backup in [false, true]) {
+    test(
+      '${backup ? 'backup' : 'Ledger'} decoding distinguishes invalid UTF-8 from I/O failure',
+      () async {
+        final directory = await store.capsuleDirForHex(
+          capsuleHex,
+          create: true,
+        );
+        final file =
+            backup ? store.backupFile(directory) : store.ledgerFile(directory);
+        Future<String?> read() =>
+            backup ? store.readBackup(directory) : store.readLedger(directory);
+        await file.writeAsString('\ufeff{"label":"café"}');
+        expect(await read(), '{"label":"café"}');
+        await file.writeAsBytes([0xff, 0xfe]);
+        await expectLater(read(), throwsFormatException);
+        expect(await file.readAsBytes(), [0xff, 0xfe]);
+      },
+    );
+  }
+
   test('plugin cleanup returns only runtime-owned capsule scopes', () async {
     const plugin = 'hivra.contract.cleanup.v1';
     final otherOwner = 'b' * 64;

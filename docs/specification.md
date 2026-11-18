@@ -520,6 +520,11 @@ Storage:
   a fresh runtime as recovered history. Retain existing files and allow retry;
   a verified backup remains a valid fallback. Explicit seed-only recovery is
   a separate identity-recovery action and does not reconstruct missing history.
+- During indexed activation or snapshot refresh, malformed JSON or invalid
+  UTF-8 in one history candidate MUST NOT prevent considering the other copy.
+  Read-only selection MUST leave source bytes intact. Filesystem and unrelated
+  runtime failures still propagate; no input failure authorizes a fresh history
+  or a write without successful Core import.
 - A normal Ledger save MUST retain the owner and projection of its exported
   snapshot across asynchronous storage and Capsule switching. Foreground and
   worker saves MUST share the version/hash comparison and ordered publication
