@@ -221,10 +221,18 @@ All 90 focused and 885 Flutter tests, analysis and formatting pass. Four added
 cases cover empty/whitespace input, valid empty snapshots, real invalid UTF-8,
 byte preservation, queued failure/retry and restored cooldown after reopening.
 Existing migration, signature guard, response exchange, Capsule isolation and
-Core-only recovery checks remain covered. Faults use temporary fixtures only;
-working files, keys and relationships are not fault-injected. Exact Mac/Samsung
-acceptance is pending: existing relationship/Chat readiness, cold process
-restart and return, without new messages, permissions, Capsules or Jack actions.
+Core-only recovery checks remain covered. Exact `4e778f6` Mac ZIP and physical
+Samsung APK acceptance passed: existing relationships and Chat readiness, cold
+process restart and return to the same Capsule. Mac retained four ready contacts
+and one requiring verification; Samsung retained both ready contacts. Mac's
+three Ledger/state, pair-evidence/checkpoint, Chat timeline and outbox files
+remain byte-identical, and recovery exports contain the same history. Samsung
+retained both Capsule history heads, its original install time and signer;
+installed bytes match the packaged APK. Exact artifacts and native receipts
+belong to `pair_evidence_read_preservation_20261118` in the existing acceptance
+record below. Unavailable-file refusal and retry use temporary fixtures only;
+working files, keys and relationships were not fault-injected. No new Capsule,
+grant, message send, Jack action or VPS mutation occurred.
 
 ### Qualified Stored-History Candidate Fallback
 
