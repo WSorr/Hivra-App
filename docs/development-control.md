@@ -216,8 +216,13 @@ genuine absence, and successful retry after metadata becomes readable. Working
 Capsules, seeds, plugins, trading and VPS are outside fault injection. All 76
 focused and 844 Flutter tests, analysis and repository review gates pass. The
 production change is six net lines; the existing tolerant recovery read is
-unchanged. Exact packaged Mac/Android acceptance remains pending; source tests
-do not qualify the installed applications.
+unchanged. Exact ZIP/APK acceptance from `8734137` passed on Mac and physical
+Samsung: existing Capsules open, switch, survive a cold restart and return with
+the same identity, network, relationship counts and Ledger hashes. Mac retains
+three Capsules (the opened Ledgers are v121/v71); Samsung retains two (v17/v12).
+The installed Mac bundle matches every ZIP entry and the installed APK matches
+the packaged SHA-256. No working metadata was corrupted, new permission issued,
+message sent, plugin action started or VPS changed during this acceptance.
 
 ### Qualified Remote Workspace Presentation
 
