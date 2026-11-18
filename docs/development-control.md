@@ -214,9 +214,15 @@ workspace treated as a new invocation, and an unreadable path treated as missing
 All 85 focused and 849 Flutter tests and analysis pass. Qualification uses only
 existing temporary-file/workspace fixtures, preserves pending data and authority
 through failure/retry, and exercises the existing replacement/removal checks.
-The production change is two net lines. Exact packaged Mac/Samsung acceptance is pending;
-working files must not be fault-injected, and no new grant, plugin Start,
-message, trade, Capsule or VPS change is part of this pass.
+The production change is two net lines. Exact ZIP/APK acceptance from `d1419ca`
+passed on Mac and physical Samsung: existing Chat and Jack open and return to
+the same Capsule, with cold process restart and Jack reopening. Mac retained
+its saved connection and grant deadline; Samsung retained MNT/all, 1 USDT/20%,
+with new entries still off. The three/two Capsule inventories, three installed
+packages per device and Ledger hashes remained unchanged. The installed Mac
+bundle matches all ZIP entries and the installed APK matches its packaged hash.
+Read-failure injection remains temporary-file evidence; no working file was
+corrupted or new grant, Start, message, trade or VPS update requested.
 
 ### Qualified Core Projection Preservation
 
