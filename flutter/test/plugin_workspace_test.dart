@@ -2486,6 +2486,118 @@ void main() {
     expect(f.sends, 0);
     expect(f.received.single['outcome'], 'not_dispatched');
   });
+  for (final entry in {'empty': '', 'whitespace': ' \n\t'}.entries) {
+    test(
+      'opaque storage retains ${entry.key} values across runtime and package replacement',
+      () async {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        await f.enable();
+        f.requestKind = 'storage.write';
+        f.extraRequest = {'key': 'data-owner-value', 'value': entry.value};
+        await f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        );
+        expect(f.received.single, containsPair('written', true));
+
+        f.registry.digest = 'c' * 64;
+        f.newSchema = true;
+        await f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'open',
+        );
+        expect((await f.state())['entirely_different_shape'], isList);
+        expect(
+          await f.runtime().readWorkspaceExecution(f.registry.record),
+          isNull,
+        );
+        await f.enable();
+        f.requestKind = 'storage.read';
+        f.extraRequest = {'key': 'data-owner-value'};
+        f.received.clear();
+        await f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        );
+        expect(f.received.single, containsPair('value', entry.value));
+        expect(f.sends, 0);
+      },
+    );
+
+    test(
+      'a retained ${entry.key} workspace cannot be reset before retry',
+      () async {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        await f.enable();
+        final dir = await f.files.capsuleDirForHex(f.owner);
+        final plugin = f.registry.record.pluginId!;
+        await f.files.writePluginState(
+          dir,
+          plugin,
+          'workspace.v1.json',
+          entry.value,
+        );
+        await f.files.writePluginState(
+          dir,
+          plugin,
+          'data-pending',
+          'opaque pending request',
+        );
+        final grant = await f.files.readPluginState(
+          dir,
+          plugin,
+          'workspace-execution.v1.json',
+        );
+        f.actions.clear();
+        for (var attempt = 0; attempt < 2; attempt++) {
+          await expectLater(
+            f.runtime().runWorkspaceAction(
+              record: f.registry.record,
+              action: 'run',
+            ),
+            throwsA(isA<FormatException>()),
+          );
+          expect(f.actions, isEmpty);
+          expect(f.sends, 0);
+          expect(
+            await f.files.readPluginState(dir, plugin, 'workspace.v1.json'),
+            entry.value,
+          );
+          expect(
+            await f.files.readPluginState(dir, plugin, 'data-pending'),
+            'opaque pending request',
+          );
+          expect(
+            await f.files.readPluginState(
+              dir,
+              plugin,
+              'workspace-execution.v1.json',
+            ),
+            grant,
+          );
+        }
+        final retained = {
+          'different_private_shape': ['pending-request'],
+        };
+        await f.files.writePluginState(
+          dir,
+          plugin,
+          'workspace.v1.json',
+          jsonEncode(retained),
+        );
+        await f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'open',
+        );
+        expect(f.actions, ['open']);
+        expect(f.sends, 0);
+        expect(await f.state(), retained);
+      },
+    );
+  }
+
   test(
     'opaque data cannot overwrite permissions or legacy delivery evidence',
     () async {

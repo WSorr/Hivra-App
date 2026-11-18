@@ -288,9 +288,11 @@ class CapsuleFileStore {
   ) async {
     final stateDir = await pluginStateDirectory(capsuleDir, pluginId);
     final file = pluginStateFile(stateDir, fileName);
-    if (!await file.exists()) return null;
-    final raw = await file.readAsString();
-    return raw.trim().isEmpty ? null : raw;
+    try {
+      return await file.readAsString();
+    } on PathNotFoundException {
+      return null;
+    }
   }
 
   Future<void> writePluginState(
