@@ -194,41 +194,37 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Keep the owner's committed Chat window and budget when initial loading overlaps
-another read, a budget change or a durable message update. A delayed read must
-not restore an earlier budget or bring back completed content already evicted.
-Pending and ambiguous sends retain the accepted protection. Local cache clearing
-must not fork an operation already pending on that same timeline; unrelated
-Capsules remain independent.
+Retain saved pair evidence and automatic-response checkpoints when their file
+is unavailable. An existing empty or whitespace-only file must not become a
+new writable store that silently releases a previously cooling response.
+Missing storage may still initialize on first use, valid empty snapshots may
+accept evidence, and the existing schema-v1 migration remains supported.
+Read/validation failure preserves bytes and permits ordinary retry after the
+same source becomes usable; it creates no repair or evidence archive.
 
 The [delivery lifecycle](architecture/transport-delivery-lifecycle.md) owns the
-retention contract. Reuse `CapsuleDeliveryInboxStore` and its existing per-Capsule
-timeline tail for hydration and durable writes. Compare this with a separate
-in-flight-load map: a second map would not itself order loading with queued
-writes. The selected mechanism uses the pinned Dart 3.13.3
-[Future chaining](https://api.dart.dev/dart-async/Future/then.html); errors still
-reach the existing caller while the existing queue remains available for retry.
-One changed host owner remains one and two independently scheduled state paths
-converge on one ordering path. No file, service, API, schema, storage, permission,
-queue or runtime entity is added. Core-only backups, completed-cache eviction,
-device-local windows and package/host boundaries retain their accepted scope.
+response contract. Keep `ConsensusAttestationStore` as the single snapshot
+validator, mutation queue and response-reservation owner. Remove only the
+empty-to-missing conversion in `CapsuleFileStore`; its existing pinned Dart
+3.13.3 [file reader](https://api.dart.dev/dart-io/File/readAsString.html) returns
+the original string. Rechecking file existence inside the store would add a
+second filesystem admission path instead of letting the existing validator
+classify the original contents. One changed file owner remains one; snapshot
+and response ownership remain unchanged. Two empty-store initialization paths
+(missing and blank) become one (missing). Production code shrinks by one line.
+No file, service, API, schema, permission, storage or runtime entity is added.
+Core-only recovery may still lose operational evidence and require peer
+reconnection; this repair does not move it into Ledger or Capsule backups.
 
-Two regressions reproduced a 2,000-byte saved budget reverting to 100 MB and
-evicted content returning after a delayed load. All 65 focused and 881 Flutter
-tests, analysis, formatting and repository review gates pass. Six added cases
-cover missing/saved timelines, cache clearing during loading, queued failure
-and retry, retained pending sends, restart and independence of another Capsule.
-Production code adds five net lines. Exact `b2d6228` Mac ZIP and physical Samsung
-APK acceptance passed: existing history and unchanged 100 MB budget, repeated
-Chat opening, cold process restart and return to the same Capsule. The retained
-message counts stayed at 13 on Mac and 24 on Samsung. Mac's three Ledger/state
-files and encrypted timelines remain byte-identical; recovery exports contain
-the same history. Samsung retained both Capsule history heads and its original
-installation time and signer; installed bytes match the packaged APK. The
-existing acceptance record below owns exact artifacts and native receipts under
-`chat_timeline_load_order_20261118`. Delayed-load and failure/retry behavior uses
-temporary fixtures only; working data was not fault-injected. No budget change,
-message send/deletion, new Capsule/grant, Jack opening or VPS mutation occurred.
+Two regressions reproduced early response permission after a blank-file merge.
+All 90 focused and 885 Flutter tests, analysis and formatting pass. Four added
+cases cover empty/whitespace input, valid empty snapshots, real invalid UTF-8,
+byte preservation, queued failure/retry and restored cooldown after reopening.
+Existing migration, signature guard, response exchange, Capsule isolation and
+Core-only recovery checks remain covered. Faults use temporary fixtures only;
+working files, keys and relationships are not fault-injected. Exact Mac/Samsung
+acceptance is pending: existing relationship/Chat readiness, cold process
+restart and return, without new messages, permissions, Capsules or Jack actions.
 
 ### Qualified Stored-History Candidate Fallback
 

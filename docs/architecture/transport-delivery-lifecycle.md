@@ -618,6 +618,13 @@ evidence, never hidden payload copies.
   - an automatic response reserves its checkpoint atomically before send. If
     storage is corrupt, unavailable, or at the `4096`-checkpoint bound, the
     response fails closed without a network effect;
+  - only a missing attestation file starts an empty store. An existing blank
+    file is invalid input, not permission to recreate evidence and discard
+    response checkpoints. File reads retain its contents for the existing
+    snapshot validator; failed reads/validation cannot merge evidence or
+    rewrite checkpoints. Later reads retry the same store without a second
+    archive or automatic repair. Valid empty schema-v2 snapshots and schema-v1
+    migration retain their existing behavior;
   - adapter-accepted send marks the checkpoint delivered. Failed, timed-out,
     and delivered responses may become eligible only after a persisted `15
     minute` retry boundary; no process restart, relay overlap, screen refresh,

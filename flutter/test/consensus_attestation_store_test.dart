@@ -227,6 +227,139 @@ void main() {
     },
   );
 
+  for (final fault
+      in <String, String>{'empty': '', 'whitespace-only': ' \r\n\t '}.entries) {
+    test('${fault.key} evidence cannot restart a cooling response', () async {
+      final pair = _pair(
+        localRootHex: capsuleA,
+        peerRootHex: capsuleB,
+        snapshotHashHex: snapshotA,
+      );
+      final now = DateTime.utc(2026, 8, 3, 12);
+      await store.merge(capsuleA, pair);
+      expect((await _reserve(store, capsuleA, pair, now)).canSend, isTrue);
+      final dir = await fileStore.capsuleDirForHex(capsuleA);
+      final file = fileStore.pairConsensusAttestationsFile(dir);
+      final saved = await file.readAsBytes();
+      await file.writeAsString(fault.value, flush: true);
+
+      Object? mergeError;
+      try {
+        await store.merge(capsuleA, pair);
+      } catch (error) {
+        mergeError = error;
+      }
+      final duringFailure = now.add(const Duration(minutes: 1));
+      final blocked = await _reserve(store, capsuleA, pair, duringFailure);
+      expect(blocked.canSend, isFalse);
+      expect(
+        blocked.status,
+        ConsensusAttestationResponseReservationStatus.unavailable,
+      );
+      expect(mergeError, isA<StateError>());
+      expect(
+        await store.markResponseDelivered(
+          capsuleRootHex: capsuleA,
+          peerEvidenceRecordKey: pair[1].recordKey,
+          localEvidenceRecordKey: pair[0].recordKey,
+          nowUtc: duringFailure,
+        ),
+        isFalse,
+      );
+      expect(await store.load(capsuleA), isEmpty);
+      expect(await file.readAsString(), fault.value);
+
+      await file.writeAsBytes(saved, flush: true);
+      final reopened = ConsensusAttestationStore(fileStore: fileStore);
+      expect(
+        (await reopened.load(capsuleA)).map((item) => item.recordKey),
+        unorderedEquals(pair.map((item) => item.recordKey)),
+      );
+      expect(await reopened.merge(capsuleA, pair), isEmpty);
+      expect(
+        (await _reserve(reopened, capsuleA, pair, duringFailure)).status,
+        ConsensusAttestationResponseReservationStatus.coolingDown,
+      );
+      expect(await file.readAsBytes(), saved);
+    });
+  }
+
+  test('valid empty snapshot admits the first evidence and response', () async {
+    final pair = _pair(
+      localRootHex: capsuleA,
+      peerRootHex: capsuleB,
+      snapshotHashHex: snapshotA,
+    );
+    final dir = await fileStore.capsuleDirForHex(capsuleA, create: true);
+    await fileStore.writePairConsensusAttestations(
+      dir,
+      jsonEncode(<String, Object?>{
+        'schema_version': consensusAttestationStoreSchemaVersion,
+        'attestations': <Object?>[],
+        'response_checkpoints': <Object?>[],
+      }),
+    );
+    expect(await store.load(capsuleA), isEmpty);
+    expect(await store.merge(capsuleA, pair), hasLength(2));
+    final now = DateTime.utc(2026, 8, 3, 12);
+    expect((await _reserve(store, capsuleA, pair, now)).canSend, isTrue);
+    expect(
+      (await _reserve(
+        ConsensusAttestationStore(fileStore: fileStore),
+        capsuleA,
+        pair,
+        now.add(const Duration(minutes: 1)),
+      )).status,
+      ConsensusAttestationResponseReservationStatus.coolingDown,
+    );
+  });
+
+  test(
+    'unreadable evidence preserves bytes and retries the same store',
+    () async {
+      final pair = _pair(
+        localRootHex: capsuleA,
+        peerRootHex: capsuleB,
+        snapshotHashHex: snapshotA,
+      );
+      final now = DateTime.utc(2026, 8, 3, 12);
+      await store.merge(capsuleA, pair);
+      expect((await _reserve(store, capsuleA, pair, now)).canSend, isTrue);
+      final dir = await fileStore.capsuleDirForHex(capsuleA);
+      final file = fileStore.pairConsensusAttestationsFile(dir);
+      final saved = await file.readAsBytes();
+      const invalidUtf8 = <int>[0xff, 0xfe];
+      await file.writeAsBytes(invalidUtf8, flush: true);
+
+      await expectLater(
+        store.load(capsuleA),
+        throwsA(isA<FileSystemException>()),
+      );
+      await expectLater(
+        store.merge(capsuleA, pair),
+        throwsA(isA<FileSystemException>()),
+      );
+      await expectLater(
+        _reserve(store, capsuleA, pair, now.add(const Duration(minutes: 1))),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await file.readAsBytes(), invalidUtf8);
+
+      await file.writeAsBytes(saved, flush: true);
+      expect(await store.merge(capsuleA, pair), isEmpty);
+      expect(
+        (await _reserve(
+          store,
+          capsuleA,
+          pair,
+          now.add(const Duration(minutes: 1)),
+        )).status,
+        ConsensusAttestationResponseReservationStatus.coolingDown,
+      );
+      expect(await file.readAsBytes(), saved);
+    },
+  );
+
   test('corrupt checkpoint storage suppresses automatic response', () async {
     final pair = _pair(
       localRootHex: capsuleA,
