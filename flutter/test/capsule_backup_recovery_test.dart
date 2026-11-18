@@ -76,6 +76,39 @@ class _Bindings implements HivraBindings {
   Uint8List owner = Uint8List.fromList(List.filled(32, 0xaa));
   String? ledger;
   String? projection;
+  Uint8List? loadedSeed = Uint8List.fromList(List.filled(32, 0xaa));
+  final Set<String> importableLedgers = {};
+  final List<String> importAttempts = [];
+  int creations = 0;
+  @override
+  Uint8List? loadSeed() => loadedSeed;
+  @override
+  bool saveSeed(Uint8List seed) {
+    loadedSeed = Uint8List.fromList(seed);
+    return true;
+  }
+
+  @override
+  bool createCapsule(
+    Uint8List seed, {
+    bool isNeste = true,
+    bool isGenesis = false,
+    int ownerMode = HivraBindings.rootOwnerMode,
+  }) {
+    creations++;
+    owner = Uint8List.fromList(seed);
+    ledger = jsonEncode({'owner': owner.toList(), 'events': []});
+    return true;
+  }
+
+  @override
+  bool importLedger(String json) {
+    importAttempts.add(json);
+    if (!importableLedgers.contains(json)) return false;
+    ledger = json;
+    return true;
+  }
+
   @override
   Uint8List? capsuleRuntimeOwnerPublicKey() => Uint8List.fromList(owner);
   @override
@@ -256,6 +289,57 @@ void main() {
     bindings = _Bindings();
   });
   tearDown(() async => stand.delete(recursive: true));
+  for (final active in [false, true]) {
+    test(
+      '${active ? 'selected' : 'legacy'} bootstrap retains invalid history and retries the same Capsule',
+      () async {
+        final directory = await dst.capsuleDirForHex(owner, create: true);
+        final invalidLedger = jsonEncode({
+          'owner': [170, 170],
+          'events': [],
+        });
+        final invalidBackup = CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: snapshot(2, ownerByte: 0xbb),
+        );
+        await dst.writeLedger(directory, invalidLedger);
+        await dst.writeBackup(directory, invalidBackup);
+        await dst.writeState(directory, {'isGenesis': false, 'isNeste': true});
+        await seeds(dstDirs, dstSecure).storeSeed(owner, seed);
+        final index = CapsuleIndexStore(dirs: dstDirs);
+        await index.upsert(owner);
+        await index.setActive(owner);
+        final before = Map<String, String>.of(dstSecure.values);
+        final metadata = await dst.stateFile(directory).readAsBytes();
+        final capsuleIndex = File(
+          '${(await dstDirs.capsulesDirectory()).path}/capsules_index.json',
+        );
+        final indexBytes = await capsuleIndex.readAsBytes();
+        Future<bool> bootstrap(CapsulePersistenceService service) =>
+            active
+                ? service.bootstrapActiveCapsuleRuntime(bindings)
+                : service.bootstrapRuntimeFromDisk(bindings);
+
+        expect(await bootstrap(importer), isFalse);
+        final reopened = persistence(dstDirs, dstSecure);
+        expect(await bootstrap(reopened), isFalse);
+        if (active) expect(bindings.creations, 0);
+        expect(await dst.readLedger(directory), invalidLedger);
+        expect(await dst.readBackup(directory), invalidBackup);
+        expect(await dst.stateFile(directory).readAsBytes(), metadata);
+        expect(await capsuleIndex.readAsBytes(), indexBytes);
+        expect(dstSecure.values, before);
+
+        final recoveredHistory = snapshot(3);
+        await dst.writeLedger(directory, recoveredHistory);
+        bindings.importableLedgers.add(recoveredHistory);
+        expect(await bootstrap(reopened), isTrue);
+        expect(bindings.exportLedger(), recoveredHistory);
+        expect(await dst.readLedger(directory), recoveredHistory);
+        expect(await dst.readBackup(directory), invalidBackup);
+        expect((await index.read()).capsules.keys, [owner]);
+      },
+    );
+  }
   test(
     'foreground snapshot retains its exported owner across Capsule switch',
     () async {

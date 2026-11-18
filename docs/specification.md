@@ -514,6 +514,12 @@ Users can have multiple independent capsules.
 Storage:
 
 - Each capsule has its own seed in platform secure storage.
+- Opening or refreshing an existing Capsule MUST import a usable local Ledger
+  or recovery-backup candidate through Core before reporting success or writing
+  a refreshed snapshot. Missing, blank or incompatible histories MUST NOT admit
+  a fresh runtime as recovered history. Retain existing files and allow retry;
+  a verified backup remains a valid fallback. Explicit seed-only recovery is
+  a separate identity-recovery action and does not reconstruct missing history.
 - A normal Ledger save MUST retain the owner and projection of its exported
   snapshot across asynchronous storage and Capsule switching. Foreground and
   worker saves MUST share the version/hash comparison and ordered publication

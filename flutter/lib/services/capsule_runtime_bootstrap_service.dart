@@ -74,12 +74,9 @@ class CapsuleRuntimeBootstrapService {
       ledgerCandidate,
       backupCandidate,
     );
-    final primaryLedgerRoot =
-        orderedCandidates.isNotEmpty
-            ? _parseLedgerRoot(orderedCandidates.first.json)
-            : null;
-    final ledgerJson =
-        orderedCandidates.isNotEmpty ? orderedCandidates.first.json : null;
+    if (orderedCandidates.isEmpty) return null;
+    final ledgerJson = orderedCandidates.first.json;
+    final primaryLedgerRoot = _parseLedgerRoot(ledgerJson);
     final isGenesis =
         _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
         stateGenesis ??
@@ -184,9 +181,6 @@ class CapsuleRuntimeBootstrapService {
       source: _LedgerSource.ledger,
     );
     final backupJson = await _fileStore.readBackup(dir);
-    final hasStoredHistory =
-        (storedLedgerJson?.trim().isNotEmpty ?? false) ||
-        (backupJson?.trim().isNotEmpty ?? false);
     var importedHistory = false;
 
     _LedgerCandidate? backupCandidate;
@@ -203,10 +197,8 @@ class CapsuleRuntimeBootstrapService {
       ledgerCandidate,
       backupCandidate,
     );
-    final primaryLedgerRoot =
-        orderedCandidates.isNotEmpty
-            ? _parseLedgerRoot(orderedCandidates.first.json)
-            : null;
+    if (orderedCandidates.isEmpty) return false;
+    final primaryLedgerRoot = _parseLedgerRoot(orderedCandidates.first.json);
     final isGenesis =
         _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
         _stateGenesis(state) ??
@@ -231,7 +223,7 @@ class CapsuleRuntimeBootstrapService {
       importedHistory = true;
       break;
     }
-    if (hasStoredHistory && !importedHistory) return false;
+    if (!importedHistory) return false;
 
     final exported = runtime.exportLedger();
     if (exported == null || exported.isEmpty) return false;

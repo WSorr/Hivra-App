@@ -194,6 +194,44 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Refuse normal Capsule activation or snapshot refresh without usable stored
+history. Missing/blank Ledger files and incompatible owner histories could
+produce an empty bootstrap; the old fallback also ignored a failed import.
+The owner must retain the existing files, seed and index, receive an unsuccessful
+activation, and retry the same Capsule after local history becomes usable.
+An explicit seed-only Recovery remains the separate choice to restore identity.
+
+The [storage contract](specification.md) owns the boundary. Reuse the existing
+bootstrap candidate selection and Core import, retaining verified-backup
+fallback and history-length checks. Remove empty-candidate success, the ignored
+legacy import result and the conditional exemption that let refresh publish
+without an import. Two bootstrap/persistence owners remain two; three success
+bypasses become zero. No file, service, DTO, API, store, permission, migration
+or runtime entity is introduced. No history reconstruction, new archive or V2
+mechanism is selected.
+
+Seven regressions fail on the prior source. They cover selected/legacy startup,
+absent/blank histories, incompatible owners, byte-preserved files/index/seeds,
+reopening the same store and retry after a readable history is restored. All 91
+focused tests and all 855 Flutter tests and analysis pass, including the
+unchanged explicit Recovery and selector journeys. Production code shrinks by
+13 lines. Exact `c9c28c8` ZIP/APK acceptance passed on Mac and physical Samsung:
+open the existing primary, switch to the existing secondary, cold process
+restart, reopen the secondary and return to the primary. Both runtimes retained
+their Capsule inventories, network, Starter/relationship counts and Ledger
+heads (Mac v121/v71, Samsung v17/v12). All installed Mac ZIP entries and the
+installed Android APK matched their packaged bytes; Samsung retained its
+original installation time and signer. Seven of nine Mac baseline files were
+unchanged, including every Ledger and metadata file. Two rewritten recovery
+envelopes still contained the same history as their primary Ledgers. The first
+Mac seed wait timed out; normal retry after owner Keychain approval opened the
+same Capsule. Cold reopen needed no further prompt. Temporary installer copies
+were removed. Invalid-history refusal and repair/retry remain source-test
+evidence; no working files were corrupted, new Capsule/plugin grant/message
+created, Jack opened, trade started or VPS changed during acceptance.
+
+### Qualified Opaque Package Storage Preservation
+
 Keep package storage values distinct from absence or read failure. Empty and
 whitespace strings are valid opaque `data-` values and must survive reopening
 and package replacement. A retained but invalid workspace must fail through
