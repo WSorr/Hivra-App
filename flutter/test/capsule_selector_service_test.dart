@@ -106,11 +106,17 @@ class _ScreenService extends CapsuleSelectorService {
   final List<CapsuleSelectorItem> items;
   final exports = <(String, String)>[];
   final imports = <(String, Uint8List?)>[];
+  Object? loadError;
+  int loadCalls = 0;
 
   _ScreenService(this.items) : super(_ActivationRuntime());
 
   @override
-  Future<List<CapsuleSelectorItem>> loadCapsules() async => items;
+  Future<List<CapsuleSelectorItem>> loadCapsules() async {
+    loadCalls += 1;
+    if (loadError != null) throw loadError!;
+    return items;
+  }
 
   @override
   bool validateMnemonic(String phrase) => phrase == 'public test';
@@ -613,6 +619,56 @@ void main() {
         find.textContaining('Exported:'),
         canceled ? findsNothing : findsOneWidget,
       );
+    });
+  }
+
+  for (final width in [390.0, 1200.0]) {
+    testWidgets('selector retries unavailable index reads at $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final service = _ScreenService([
+        _item(
+          pubKeyHex: 'aa' * 32,
+          displayKeyText: 'h1existing',
+          network: 'NESTE',
+          ledgerVersion: 7,
+          lastActive: DateTime.utc(2026, 11, 18),
+        ),
+      ])..loadError = const FileSystemException('storage unavailable');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CapsuleSelectorScreen(
+            autoSelectSingle: false,
+            service: service,
+            uiLog: _NoopUiLog(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(service.loadCalls, 1);
+      expect(find.textContaining('storage unavailable'), findsOneWidget);
+      expect(find.text('h1existing'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(service.loadCalls, 2);
+      expect(find.textContaining('storage unavailable'), findsOneWidget);
+      expect(find.text('h1existing'), findsNothing);
+
+      service.loadError = null;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(service.loadCalls, 3);
+      expect(find.textContaining('storage unavailable'), findsNothing);
+      expect(find.text('h1existing'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
   }
 

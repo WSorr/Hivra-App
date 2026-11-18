@@ -348,4 +348,123 @@ void main() {
     expect(index.activePubKeyHex, isNull);
     expect(index.capsules.keys.toSet(), equals({realCapsule}));
   });
+
+  for (final action in ['read', 'setActive', 'upsert', 'reconcile']) {
+    test(
+      'retains an unreadable index during $action and allows retry',
+      () async {
+        const capsuleA =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        const capsuleB =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        await store.upsert(
+          capsuleA,
+          isGenesis: true,
+          isNeste: false,
+          identityMode: 'legacy_nostr_owner',
+        );
+        await store.setActive(capsuleA);
+        final original = await store.read();
+        final root = Directory('${tempDocsDir.path}/capsules');
+        final capsuleDir = Directory('${root.path}/$capsuleA');
+        await capsuleDir.create();
+        await File(
+          '${capsuleDir.path}/ledger.json',
+        ).writeAsString('{"version":1}');
+        final file = File('${root.path}/capsules_index.json');
+        final before = await file.readAsBytes();
+
+        final locked = await Process.run('chmod', ['000', file.path]);
+        expect(locked.exitCode, 0, reason: locked.stderr.toString());
+        try {
+          await expectLater(
+            file.readAsBytes(),
+            throwsA(isA<FileSystemException>()),
+          );
+          Future<void> attempt() async {
+            switch (action) {
+              case 'read':
+                await store.read();
+              case 'setActive':
+                await store.setActive(capsuleB);
+              case 'upsert':
+                await store.upsert(capsuleB);
+              case 'reconcile':
+                await store.writePreservingActive(original);
+            }
+          }
+
+          await expectLater(attempt(), throwsA(isA<FileSystemException>()));
+        } finally {
+          final unlocked = await Process.run('chmod', ['600', file.path]);
+          expect(unlocked.exitCode, 0, reason: unlocked.stderr.toString());
+        }
+        expect(await file.readAsBytes(), before);
+        final reopened = CapsuleIndexStore(
+          dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+        );
+        final recovered = await reopened.read();
+        expect(recovered.activePubKeyHex, capsuleA);
+        expect(recovered.capsules.keys, [capsuleA]);
+        expect(
+          recovered.capsules[capsuleA]!.toMap(),
+          original.capsules[capsuleA]!.toMap(),
+        );
+        await reopened.upsert(capsuleB);
+        expect((await reopened.read()).capsules.keys, contains(capsuleB));
+      },
+    );
+  }
+
+  for (final recoverable in [false, true]) {
+    test('handles invalid index UTF-8 with recoverable=$recoverable', () async {
+      const capsuleHex =
+          'abababababababababababababababababababababababababababababababab';
+      final root = Directory('${tempDocsDir.path}/capsules');
+      await root.create();
+      if (recoverable) {
+        final capsuleDir = Directory('${root.path}/$capsuleHex');
+        await capsuleDir.create();
+        await File('${capsuleDir.path}/capsule_state.json').writeAsString(
+          '{"isGenesis":true,"isNeste":false,"identityMode":"legacy_nostr_owner"}',
+        );
+      }
+      final file = File('${root.path}/capsules_index.json');
+      const malformed = [0xc3, 0x28];
+      await file.writeAsBytes(malformed);
+
+      if (!recoverable) {
+        await expectLater(store.read(), throwsA(isA<FormatException>()));
+        expect(await file.readAsBytes(), malformed);
+        return;
+      }
+      final index = await store.read();
+      expect(index.activePubKeyHex, isNull);
+      expect(index.capsules.keys, [capsuleHex]);
+      expect(index.capsules[capsuleHex]!.isGenesis, isTrue);
+      expect(index.capsules[capsuleHex]!.isNeste, isFalse);
+      expect(index.capsules[capsuleHex]!.identityMode, 'legacy_nostr_owner');
+      expect((await store.read()).capsules.keys, [capsuleHex]);
+    });
+  }
+
+  test('retains a valid UTF-8 BOM index without rebuilding metadata', () async {
+    const capsuleHex =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    await store.upsert(capsuleHex, isGenesis: true, isNeste: false);
+    await store.setActive(capsuleHex);
+    final original = await store.read();
+    final file = File('${tempDocsDir.path}/capsules/capsules_index.json');
+    final encoded = [0xef, 0xbb, 0xbf, ...await file.readAsBytes()];
+    await file.writeAsBytes(encoded);
+
+    final index = await store.read();
+
+    expect(index.activePubKeyHex, capsuleHex);
+    expect(
+      index.capsules[capsuleHex]!.toMap(),
+      original.capsules[capsuleHex]!.toMap(),
+    );
+    expect(await file.readAsBytes(), encoded);
+  });
 }

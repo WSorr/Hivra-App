@@ -514,6 +514,11 @@ Users can have multiple independent capsules.
 Storage:
 
 - Each capsule has its own seed in platform secure storage.
+- A failed read of an existing Capsule index MUST propagate without rebuilding
+  or replacing that index. Read/modify/write operations MUST retain the saved
+  active selection and metadata until read access returns, then allow retry.
+  A missing or known malformed index retains directory-based recovery; invalid
+  UTF-8 is a content-format failure, not proof of unavailable storage access.
 - Opening or refreshing an existing Capsule MUST import a usable local Ledger
   or recovery-backup candidate through Core before reporting success or writing
   a refreshed snapshot. Missing, blank or incompatible histories MUST NOT admit

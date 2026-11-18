@@ -194,6 +194,48 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Preserve the saved Capsule index when its file cannot be read. A storage-access
+failure must reach the existing selector error/retry path rather than trigger
+directory reconstruction, clear the active selection or replace saved metadata.
+After read access returns, the same index must remain usable across read,
+selection, metadata upsert and reconciled write. Missing or known malformed
+indexes retain their existing directory-recovery behavior; no new archive,
+migration, identity-recovery or metadata-retention requirement is selected.
+
+The [storage contract](specification.md) owns the boundary. Keep
+`CapsuleIndexStore` as the single index owner and reuse its existing serialized
+read/modify/write path. Strictly decode file bytes before JSON parsing and catch
+only content-format errors. Compared with disabling all index recovery, this
+retains the accepted malformed-index journey. Unlike exception-text matching or
+a second reader, it uses the pinned Dart 3.13.3 implementation and standard
+[byte reader](https://api.dart.dev/dart-io/File/readAsBytes.html) /
+[strict decoder](https://api.dart.dev/dart-convert/Utf8Codec/decode.html).
+One changed host owner remains one and one index-recovery path remains one;
+no file, service, DTO, API, store, permission or runtime entity is added.
+
+Four regressions fail on the preceding source during actual temporary-file
+read denial with a writable parent. All 41 focused and 875 Flutter tests,
+analysis and repository review gates pass. Nine checks cover unchanged bytes
+and metadata, reopened-store retry, existing JSON/UTF-8 recovery, BOM handling
+and the selector's failure/retry journey at phone and desktop widths. Production
+changes two lines with no net growth. Working Capsule files and seeds were not
+fault-injected.
+
+Exact da4a9f8 Mac ZIP and Samsung APK passed opening the primary, switching to
+the secondary, cold process restart, secondary reopen and return. The three
+Mac and two Samsung identities and history heads remain unchanged (opened
+Ledger v121/v71 and v17/v12). Mac index identity, creation and network metadata
+remain intact; all three Ledger and state files are byte-identical and recovery
+envelopes contain the corresponding history. Normal selection updates only
+active/last-active index fields. Exact bytes, process replacement and native
+receipts belong to `capsule_index_read_preservation_20261118` in the existing
+acceptance record. Read-denial and malformed-input cases retain isolated
+fixture qualification; working files were not fault-injected. No new Capsule,
+grant, message, trading command, VPS change or release occurred, and no plugin
+workspace was opened for this smoke.
+
+### Qualified Stored-History Candidate Fallback
+
 Use the available usable history when indexed Capsule activation or refresh
 encounters malformed JSON or invalid UTF-8 in the other local copy. One bad
 input must not prevent the existing Core import from validating the remaining
