@@ -194,6 +194,36 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Use the available usable history when indexed Capsule activation or refresh
+encounters malformed JSON or invalid UTF-8 in the other local copy. One bad
+input must not prevent the existing Core import from validating the remaining
+candidate. Read-only selection retains source bytes; a refresh may publish only
+after successful Core import. Both unusable candidates still refuse activation.
+Filesystem, seed and unrelated runtime failures remain failures; no new repair,
+archive, migration or identity-recovery workflow is selected.
+
+The [storage contract](specification.md) owns this boundary. Reuse
+`CapsuleRuntimeBootstrapService` and `CapsuleFileStore`; consolidate the two
+read/decode preparation paths into one private candidate reader. Decode the
+existing file bytes explicitly so content errors remain distinct from I/O
+errors. This follows the pinned Dart 3.13.3 implementation and existing
+[byte reader](https://api.dart.dev/dart-io/File/readAsBytes.html) /
+[strict decoder](https://api.dart.dev/dart-convert/Utf8Codec/decode.html), rather
+than matching exception prose or making all file reads tolerant. Normal
+snapshot writes and runtime exports remain strict. Two changed host owners
+remain two; duplicate candidate preparation paths shrink from two to one.
+No file, service, DTO, API, store, permission or runtime entity is added.
+
+Six regressions fail on the preceding source. All 120 focused and 866 Flutter
+tests, analysis and repository review gates pass. Production code adds 15 lines.
+Qualification covers real temporary UTF-8 faults, malformed-input fallback,
+preserved source bytes, Core rejection, read failure/retry and refusal to overwrite an invalid
+current history or publish a malformed runtime export. Working Capsule files
+and seeds are not fault-injected. Exact Mac/Samsung acceptance is pending;
+no new Capsule, message, Jack opening, trading or VPS mutation is authorized.
+
+### Qualified Stored-History Admission
+
 Refuse normal Capsule activation or snapshot refresh without usable stored
 history. Missing/blank Ledger files and incompatible owner histories could
 produce an empty bootstrap; the old fallback also ignored a failed import.

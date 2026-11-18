@@ -289,6 +289,24 @@ void main() {
     bindings = _Bindings();
   });
   tearDown(() async => stand.delete(recursive: true));
+  test('normal snapshot save retains undecodable current history', () async {
+    final directory = await dst.capsuleDirForHex(owner, create: true);
+    await dst.ledgerFile(directory).writeAsBytes([0xff, 0xfe]);
+    final previousBackup = CapsuleBackupCodec.encodeBackupEnvelope(
+      ledgerJson: snapshot(2),
+    );
+    await dst.writeBackup(directory, previousBackup);
+    bindings.ledger = snapshot(3);
+
+    await expectLater(
+      importer.persistLedgerSnapshot(bindings),
+      throwsA(anyOf(isA<FileSystemException>(), isA<FormatException>())),
+    );
+    expect(await dst.ledgerFile(directory).readAsBytes(), [0xff, 0xfe]);
+    expect(await dst.readBackup(directory), previousBackup);
+    expect(await dst.stateFile(directory).exists(), isFalse);
+  });
+
   for (final active in [false, true]) {
     test(
       '${active ? 'selected' : 'legacy'} bootstrap retains invalid history and retries the same Capsule',

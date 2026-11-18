@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import '../ffi/capsule_runtime_bootstrap_runtime.dart';
@@ -53,23 +54,18 @@ class CapsuleRuntimeBootstrapService {
     final stateGenesis = _stateGenesis(state);
     final stateNeste = _stateNeste(state);
 
-    final ledgerCandidate = _ledgerCandidateForCapsule(
-      await _fileStore.readLedger(dir),
+    final ledgerCandidate = await _readLedgerCandidate(
+      dir,
       pubKeyHex,
       bytesToHex,
       source: _LedgerSource.ledger,
     );
-    _LedgerCandidate? backupCandidate;
-    final backupJson = await _fileStore.readBackup(dir);
-    if (backupJson != null) {
-      final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
-      backupCandidate = _ledgerCandidateForCapsule(
-        extracted,
-        pubKeyHex,
-        bytesToHex,
-        source: _LedgerSource.backup,
-      );
-    }
+    final backupCandidate = await _readLedgerCandidate(
+      dir,
+      pubKeyHex,
+      bytesToHex,
+      source: _LedgerSource.backup,
+    );
     final orderedCandidates = _orderedLedgerCandidates(
       ledgerCandidate,
       backupCandidate,
@@ -173,26 +169,20 @@ class CapsuleRuntimeBootstrapService {
 
     final dir = await _fileStore.capsuleDirForHex(pubKeyHex, create: true);
     final state = await _fileStore.readState(dir);
-    final storedLedgerJson = await _fileStore.readLedger(dir);
-    final ledgerCandidate = _ledgerCandidateForCapsule(
-      storedLedgerJson,
+    final ledgerCandidate = await _readLedgerCandidate(
+      dir,
       pubKeyHex,
       bytesToHex,
       source: _LedgerSource.ledger,
     );
-    final backupJson = await _fileStore.readBackup(dir);
     var importedHistory = false;
 
-    _LedgerCandidate? backupCandidate;
-    if (backupJson != null) {
-      final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
-      backupCandidate = _ledgerCandidateForCapsule(
-        extracted,
-        pubKeyHex,
-        bytesToHex,
-        source: _LedgerSource.backup,
-      );
-    }
+    final backupCandidate = await _readLedgerCandidate(
+      dir,
+      pubKeyHex,
+      bytesToHex,
+      source: _LedgerSource.backup,
+    );
     final orderedCandidates = _orderedLedgerCandidates(
       ledgerCandidate,
       backupCandidate,
@@ -284,6 +274,31 @@ class CapsuleRuntimeBootstrapService {
     }
 
     return false;
+  }
+
+  Future<_LedgerCandidate?> _readLedgerCandidate(
+    Directory directory,
+    String pubKeyHex,
+    String Function(Uint8List bytes) bytesToHex, {
+    required _LedgerSource source,
+  }) async {
+    try {
+      var raw =
+          source == _LedgerSource.ledger
+              ? await _fileStore.readLedger(directory)
+              : await _fileStore.readBackup(directory);
+      if (raw != null && source == _LedgerSource.backup) {
+        raw = CapsuleBackupCodec.tryExtractLedgerJson(raw);
+      }
+      return _ledgerCandidateForCapsule(
+        raw,
+        pubKeyHex,
+        bytesToHex,
+        source: source,
+      );
+    } on FormatException {
+      return null;
+    }
   }
 
   _LedgerCandidate? _ledgerCandidateForCapsule(

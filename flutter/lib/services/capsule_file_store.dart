@@ -152,7 +152,7 @@ class CapsuleFileStore {
   Future<String?> readLedger(Directory dir) async {
     final file = ledgerFile(dir);
     if (!await file.exists()) return null;
-    final raw = await file.readAsString();
+    final raw = utf8.decode(await file.readAsBytes());
     return raw.trim().isEmpty ? null : raw;
   }
 
@@ -163,7 +163,7 @@ class CapsuleFileStore {
   Future<String?> readBackup(Directory dir) async {
     final file = backupFile(dir);
     if (!await file.exists()) return null;
-    final raw = await file.readAsString();
+    final raw = utf8.decode(await file.readAsBytes());
     return raw.trim().isEmpty ? null : raw;
   }
 

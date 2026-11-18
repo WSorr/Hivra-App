@@ -12,11 +12,19 @@ import 'package:hivra_app/services/capsule_seed_store.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeCapsuleFileStore extends CapsuleFileStore {
-  _FakeCapsuleFileStore({this.state, this.ledgerJson, this.backupJson});
+  _FakeCapsuleFileStore({
+    this.state,
+    this.ledgerJson,
+    this.backupJson,
+    this.ledgerReadError,
+    this.backupReadError,
+  });
 
   final Map<String, dynamic>? state;
   final String? ledgerJson;
   final String? backupJson;
+  Object? ledgerReadError;
+  Object? backupReadError;
   String? writtenLedgerJson;
   String? writtenCoreProjectionJson;
   final Directory _dir = Directory(
@@ -35,10 +43,16 @@ class _FakeCapsuleFileStore extends CapsuleFileStore {
   Future<Map<String, dynamic>?> readState(Directory dir) async => state;
 
   @override
-  Future<String?> readLedger(Directory dir) async => ledgerJson;
+  Future<String?> readLedger(Directory dir) async {
+    if (ledgerReadError != null) throw ledgerReadError!;
+    return ledgerJson;
+  }
 
   @override
-  Future<String?> readBackup(Directory dir) async => backupJson;
+  Future<String?> readBackup(Directory dir) async {
+    if (backupReadError != null) throw backupReadError!;
+    return backupJson;
+  }
 
   @override
   Future<void> writeLedger(Directory dir, String ledgerJson) async {
@@ -420,6 +434,245 @@ void main() {
       expect(bootstrap.isGenesis, isFalse);
       expect(bootstrap.isNeste, isTrue);
     });
+
+    for (final brokenLedger in [true, false]) {
+      final broken = brokenLedger ? 'Ledger' : 'backup';
+      test(
+        'malformed $broken yields to the other history without hiding storage failures',
+        () async {
+          final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
+          final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+            ledgerJson: ledger,
+          );
+          for (final readFailure in [false, true]) {
+            final files = _FakeCapsuleFileStore(
+              ledgerJson: brokenLedger && !readFailure ? '{broken' : ledger,
+              backupJson: !brokenLedger && !readFailure ? '{broken' : backup,
+              ledgerReadError:
+                  brokenLedger && readFailure
+                      ? const FileSystemException('unavailable Ledger')
+                      : null,
+              backupReadError:
+                  !brokenLedger && readFailure
+                      ? const FileSystemException('unavailable backup')
+                      : null,
+            );
+            final service = CapsuleRuntimeBootstrapService(
+              files,
+              _FakeCapsuleSeedStore(seed),
+            );
+            if (readFailure) {
+              await expectLater(
+                service.loadRuntimeBootstrap(pubKeyHex, bytesToHex: bytesToHex),
+                throwsA(isA<FileSystemException>()),
+              );
+              expect(files.writtenLedgerJson, isNull);
+              continue;
+            }
+            final selected = await service.loadRuntimeBootstrap(
+              pubKeyHex,
+              bytesToHex: bytesToHex,
+            );
+            expect(selected!.ledgerImportCandidates, [ledger]);
+            expect(files.writtenLedgerJson, isNull);
+            final runtime = _FakeBootstrapRuntime(
+              seedRootPubkey: Uint8List.fromList(List.filled(32, 0xaa)),
+              seedNostrPubkey: Uint8List.fromList(List.filled(32, 0xbb)),
+              exportedLedger: ledger,
+              importResultsByLedger: {ledger: true},
+            );
+            expect(
+              await service.refreshCapsuleSnapshot(
+                runtime,
+                pubKeyHex,
+                bytesToHex: bytesToHex,
+              ),
+              isTrue,
+            );
+            expect(runtime.importAttempts, [ledger]);
+            expect(files.writtenLedgerJson, ledger);
+          }
+        },
+      );
+
+      test(
+        'invalid UTF-8 in $broken preserves independent readable history',
+        () async {
+          final root = await Directory.systemTemp.createTemp(
+            'hivra-bootstrap-fallback-',
+          );
+          addTearDown(() => root.delete(recursive: true));
+          final files = CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(
+              runtimeRootOverride: root.path,
+            ),
+          );
+          final directory = await files.capsuleDirForHex(
+            pubKeyHex,
+            create: true,
+          );
+          final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
+          final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+            ledgerJson: ledger,
+          );
+          final damaged =
+              brokenLedger
+                  ? files.ledgerFile(directory)
+                  : files.backupFile(directory);
+          final intact =
+              brokenLedger
+                  ? files.backupFile(directory)
+                  : files.ledgerFile(directory);
+          await damaged.writeAsBytes([0xff, 0xfe]);
+          final readable = brokenLedger ? backup : ledger;
+          await intact.writeAsString(readable);
+          final service = CapsuleRuntimeBootstrapService(
+            files,
+            _FakeCapsuleSeedStore(seed),
+          );
+          final selected = await service.loadRuntimeBootstrap(
+            pubKeyHex,
+            bytesToHex: bytesToHex,
+          );
+          expect(selected!.ledgerImportCandidates, [ledger]);
+          expect(await damaged.readAsBytes(), [0xff, 0xfe]);
+          expect(await intact.readAsString(), readable);
+        },
+      );
+    }
+
+    test(
+      'two unavailable histories refuse refresh and retry after read recovery',
+      () async {
+        final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
+        final files = _FakeCapsuleFileStore(
+          ledgerJson: ledger,
+          backupJson: CapsuleBackupCodec.encodeBackupEnvelope(
+            ledgerJson: ledger,
+          ),
+          ledgerReadError: const FileSystemException('unavailable Ledger'),
+          backupReadError: const FileSystemException('unavailable backup'),
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          files,
+          _FakeCapsuleSeedStore(seed),
+        );
+        final runtime = _FakeBootstrapRuntime(
+          seedRootPubkey: Uint8List.fromList(List.filled(32, 0xaa)),
+          seedNostrPubkey: Uint8List.fromList(List.filled(32, 0xbb)),
+          exportedLedger: ledger,
+          importResultsByLedger: {ledger: true},
+        );
+        await expectLater(
+          service.loadRuntimeBootstrap(pubKeyHex, bytesToHex: bytesToHex),
+          throwsA(isA<FileSystemException>()),
+        );
+        await expectLater(
+          service.refreshCapsuleSnapshot(
+            runtime,
+            pubKeyHex,
+            bytesToHex: bytesToHex,
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(files.writtenLedgerJson, isNull);
+        expect(runtime.createCapsuleCalled, isFalse);
+        files.backupReadError = null;
+        files.ledgerReadError = null;
+        final reopened = CapsuleRuntimeBootstrapService(
+          files,
+          _FakeCapsuleSeedStore(seed),
+        );
+        expect(
+          await reopened.refreshCapsuleSnapshot(
+            runtime,
+            pubKeyHex,
+            bytesToHex: bytesToHex,
+          ),
+          isTrue,
+        );
+        expect(runtime.importAttempts, [ledger]);
+        expect(files.writtenLedgerJson, ledger);
+      },
+    );
+
+    test(
+      'readable fallback still needs successful Core import before refresh',
+      () async {
+        final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
+        final files = _FakeCapsuleFileStore(
+          ledgerJson: '{broken',
+          backupJson: CapsuleBackupCodec.encodeBackupEnvelope(
+            ledgerJson: ledger,
+          ),
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          files,
+          _FakeCapsuleSeedStore(seed),
+        );
+        final runtime = _FakeBootstrapRuntime(
+          seedRootPubkey: Uint8List.fromList(List.filled(32, 0xaa)),
+          seedNostrPubkey: Uint8List.fromList(List.filled(32, 0xbb)),
+          exportedLedger: ledger,
+        );
+        expect(
+          await service.refreshCapsuleSnapshot(
+            runtime,
+            pubKeyHex,
+            bytesToHex: bytesToHex,
+          ),
+          isFalse,
+        );
+        expect(runtime.importAttempts, [ledger]);
+        expect(files.writtenLedgerJson, isNull);
+        expect(files.writtenCoreProjectionJson, isNull);
+      },
+    );
+
+    test('candidate read does not hide unrelated runtime failures', () async {
+      final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
+      final files = _FakeCapsuleFileStore(
+        ledgerReadError: StateError('unexpected runtime failure'),
+        backupJson: CapsuleBackupCodec.encodeBackupEnvelope(ledgerJson: ledger),
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        files,
+        _FakeCapsuleSeedStore(seed),
+      );
+      await expectLater(
+        service.loadRuntimeBootstrap(pubKeyHex, bytesToHex: bytesToHex),
+        throwsStateError,
+      );
+      expect(files.writtenLedgerJson, isNull);
+    });
+
+    test(
+      'malformed runtime export cannot replace valid imported history',
+      () async {
+        final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
+        final files = _FakeCapsuleFileStore(ledgerJson: ledger);
+        final service = CapsuleRuntimeBootstrapService(
+          files,
+          _FakeCapsuleSeedStore(seed),
+        );
+        final runtime = _FakeBootstrapRuntime(
+          seedRootPubkey: Uint8List.fromList(List.filled(32, 0xaa)),
+          seedNostrPubkey: Uint8List.fromList(List.filled(32, 0xbb)),
+          exportedLedger: '{broken',
+          importResultsByLedger: {ledger: true},
+        );
+        await expectLater(
+          service.refreshCapsuleSnapshot(
+            runtime,
+            pubKeyHex,
+            bytesToHex: bytesToHex,
+          ),
+          throwsFormatException,
+        );
+        expect(files.writtenLedgerJson, isNull);
+        expect(files.writtenCoreProjectionJson, isNull);
+      },
+    );
 
     test('accepts base64 owner field in stored ledger candidate', () async {
       final ledger = ledgerWithBase64Owner(
