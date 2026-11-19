@@ -4123,6 +4123,99 @@ fn capsule_state_and_incoming_offer_truth_survive_export_import() {
 }
 
 #[test]
+fn validated_core_backup_restores_relationships_and_pair_view_after_runtime_reset() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+    let seed = test_seed(149);
+    let owner = derived_pubkey(&seed);
+    let peer_root = derived_pubkey(&test_seed(150));
+    let peer_transport = PubKey::from([151u8; 32]);
+    let local_transport = PubKey::from(derive_nostr_public_key(&seed).unwrap());
+    let own_starter = StarterId::from(derive_starter_id(&seed, 0));
+    let mut ledger = Ledger::fresh_v5(owner);
+    let engine = crate::runtime_support::build_engine_for_ledger(&seed, &ledger);
+    for (kind, payload) in [
+        (
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(
+                Network::Neste.to_byte(),
+                CapsuleType::Leaf as u8,
+                [0u8; 32],
+            )
+            .to_bytes(),
+        ),
+        (
+            EventKind::StarterCreated,
+            StarterCreatedPayload {
+                starter_id: own_starter,
+                nonce: derive_starter_nonce(&seed, 0),
+                kind: StarterKind::Juice,
+                network: Network::Neste.to_byte(),
+            }
+            .to_bytes(),
+        ),
+        (
+            EventKind::RelationshipEstablished,
+            RelationshipEstablishedPayload {
+                peer_pubkey: peer_transport,
+                own_starter_id: own_starter,
+                peer_starter_id: StarterId::from([152u8; 32]),
+                kind: StarterKind::Juice,
+                invitation_id: [153u8; 32],
+                sender_pubkey: local_transport,
+                sender_starter_type: StarterKind::Juice,
+                sender_starter_id: own_starter,
+                peer_root_pubkey: Some(peer_root),
+                sender_root_pubkey: Some(owner),
+            }
+            .to_bytes(),
+        ),
+    ] {
+        let prepared = engine.prepare_domain_event(kind, payload, None).unwrap();
+        crate::runtime_support::append_v5_event(&engine, &mut ledger, prepared.event).unwrap();
+    }
+    let before_relationships =
+        hivra_core::relationship_current_view_v1(&ledger, Some(local_transport));
+    let before_pairs = hivra_core::pair_view_v1(&ledger, Some(local_transport));
+    assert_eq!(before_relationships.active_peer_count, 1);
+    assert_eq!(before_pairs.pairs.len(), 1);
+    assert!(before_pairs.pairs[0].blockers.is_empty());
+    let backup = CString::new(serde_json::to_string(&ledger).unwrap()).unwrap();
+    assert_eq!(
+        unsafe {
+            crate::ledger_api::hivra_validate_backup_ledger_v1(backup.as_ptr(), seed.0.as_ptr())
+        },
+        0,
+    );
+
+    // No platform seed store or operational pair evidence participates in Core import.
+    clear_runtime_state();
+    init_runtime_state(&seed, Network::Neste, CapsuleType::Leaf, CapsuleOwnerMode::Root)
+        .unwrap();
+    assert_eq!(
+        unsafe { crate::ledger_api::hivra_import_ledger(backup.as_ptr()) },
+        0,
+    );
+    let restored =
+        crate::runtime_support::parse_ledger_json(&export_runtime_ledger().unwrap()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&restored).unwrap(),
+        serde_json::to_value(&ledger).unwrap(),
+    );
+    assert_eq!(restored.head_commitment_v5(), ledger.head_commitment_v5());
+    assert_eq!(
+        hivra_core::relationship_current_view_v1(&restored, Some(local_transport)),
+        before_relationships,
+    );
+    assert_eq!(
+        hivra_core::pair_view_v1(&restored, Some(local_transport)),
+        before_pairs,
+    );
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
+    clear_runtime_state();
+}
+
+#[test]
 fn backup_ledger_validation_is_read_only_and_rejects_wrong_seed_or_history() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

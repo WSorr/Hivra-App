@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-11-18
+Status date: 2026-11-19
 
 This file is the Hivra control plane. It owns current decisions, development
 rules, the selected product outcome, and the integration boundary. Detailed
@@ -193,6 +193,48 @@ branch state; published artifacts and their signoff belong to
   delivered by the package; no host runtime change is required.
 
 ## Selected Product Outcome
+
+Recover Core history containing a relationship on macOS and Samsung, then
+reacquire operational pair evidence through the ordinary interface without
+sending Chat content. Keep the accepted Core-only export and separate seed
+custody: restore into an absent destination, preserve working Capsules and
+do not resume delegated effects.
+
+Native preparation reproduced a missing entry point: choosing a Chat contact
+does not request verification; only Send reaches the existing attestation
+exchange. An attestation-only receive also leaves the open Chat readiness
+unchanged. Selection must request the same exchange owner, and the existing
+passive-receive listener must refresh that projection when evidence arrives.
+The selected conversation must show that readiness on compact screens where
+the contact sidebar is hidden; reuse the same attested contact projection.
+Keep Send's current guard, the signed pair model, response cooldown and one
+exchange/store/transport path. Add no service, permission, background loop,
+schema, backup payload or message-send path. Late selection completion must
+not update a different selected peer or Capsule.
+
+Automated Core-history and peer-exchange recovery checks pass independently.
+Six widget checks cover the missing selection trigger, retry after failure,
+attestation-only readiness, asynchronous Capsule boundary and compact-screen
+status transitions. Native Core-only import preserved the exact Ledger v9,
+five starters and one relationship on macOS and Samsung. Contact selection
+reacquired two-root evidence without Chat content. Exact `b5e466c` ZIP/APK
+qualification passed on both devices: the recovered conversation displays
+`Ready to chat`, retains readiness across an actual process restart and returns
+to the same Capsule. The Mac Ledger remains byte-identical; both working
+Samsung Core heads are unchanged. All 892 Flutter tests, 114 FFI tests, analysis,
+review gates and CI pass. Evidence belongs to the
+core_recovery_relationship_qualification_20261118 entry in the existing acceptance
+record below.
+
+The two owner-authorized temporary test identities, their local seed records,
+test cards and encrypted backup were removed after qualification. Cleanup
+survived cold restart: three working Mac Capsules and two working Samsung
+Capsules remain. All 18 checked working Mac Capsule files and the original
+saved-card file are unchanged. No Chat content, trading action, renewed effect
+grant or VPS change occurred. This outcome is complete; no next outcome is
+selected by this qualification.
+
+### Qualified Pair-Evidence Read Preservation
 
 Retain saved pair evidence and automatic-response checkpoints when their file
 is unavailable. An existing empty or whitespace-only file must not become a
@@ -1041,7 +1083,7 @@ work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
-| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
+| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. Temporary test-Capsule deletion required four Keychain password entries in one owner-reported attempt; reducing repeated Mac authentication remains an unselected usability debt. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Native Mac and Samsung reads reconstructed their retained MNT SL results; Samsung 0.2.6 also retired the filled entry after complete flat evidence. Replacement, cold restart and return passed without rebuilding Capsule. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; historical SL reconciliation does not qualify them. |
 
@@ -1054,9 +1096,9 @@ is still open.
 
 The original Discovery delivery qualified install/open/return and restart on
 its recorded Mac/Samsung bytes. It did not qualify full trading outcomes,
-continuous operation or later host changes. The current all-frame market-history
-qualification is recorded in the selected outcome above; a successful 1m read
-alone does not close it.
+continuous operation or later host changes. Market-history qualification does
+not establish a completed live trade; a successful 1m read alone does not
+qualify every supported timeframe.
 Native Intel, a separate macOS account, long-term migration and complete User
 Lifetime qualification remain unconfirmed. They do not expand the required
 runtime matrix defined above.

@@ -8,9 +8,11 @@ import 'package:hivra_app/ffi/capsule_address_runtime.dart';
 import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/ffi/ledger_view_runtime.dart';
 import 'package:hivra_app/models/consensus_models.dart';
+import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/consensus_attested_guard_service.dart';
+import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
 import 'package:hivra_app/services/consensus_attestation_store.dart';
 import 'package:hivra_app/services/consensus_attestation_sync_service.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
@@ -182,6 +184,7 @@ void main() {
 
   group('ConsensusAttestationSyncService', () {
     late Directory tempDocsDir;
+    late CapsuleFileStore fileStore;
     late ConsensusAttestationStore store;
 
     final localRoot = 'a' * 64;
@@ -193,7 +196,7 @@ void main() {
       tempDocsDir = await Directory.systemTemp.createTemp(
         'hivra_attestation_test_',
       );
-      final fileStore = CapsuleFileStore(
+      fileStore = CapsuleFileStore(
         dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
       );
       store = ConsensusAttestationStore(fileStore: fileStore);
@@ -338,6 +341,130 @@ void main() {
       );
       expect(stored.any((item) => item.snapshotHashHex == '2' * 64), isFalse);
     });
+
+    test(
+      'Core-only recovery reacquires evidence from a ready peer after its persisted cooldown',
+      () async {
+        var now = DateTime.utc(2026, 7, 10, 12);
+        final localInbox = <Map<String, dynamic>>[];
+        final peerInbox = <Map<String, dynamic>>[];
+        var peerResponses = 0;
+
+        ConsensusAttestationSyncService syncFor(
+          String root,
+          String otherRoot,
+          List<Map<String, dynamic>> inbox,
+          List<Map<String, dynamic>> outbox,
+        ) => ConsensusAttestationSyncService(
+          runtime: _FakeRuntime(localRootHex: root),
+          consensus: _FakeConsensusRuntimeService(
+            peerHex: otherRoot,
+            snapshotHashHex: snapshotHash,
+          ),
+          store: ConsensusAttestationStore(fileStore: fileStore),
+          nowUtc: () => now,
+          sendWorkerRunner: (args) async {
+            if (root == peerRoot) peerResponses++;
+            outbox.add({'payload_json': args['payloadJson']});
+            return {'result': 0};
+          },
+          receiveWorkerRunner: (_) async {
+            final batch = List<Map<String, dynamic>>.of(inbox);
+            inbox.clear();
+            return {'result': batch.length, 'json': jsonEncode(batch)};
+          },
+        );
+
+        ConsensusAttestationExchangeService exchangeFor(
+          ConsensusAttestationSyncService sync,
+          String otherRoot,
+          String transport,
+        ) => ConsensusAttestationExchangeService(
+          sync: sync,
+          loadRelationships: () => [],
+          listTrustedCards:
+              () async => [
+                CapsuleAddressCard(
+                  rootKey: 'h1peer',
+                  rootHex: otherRoot,
+                  nostrNpub: 'npub1peer',
+                  nostrHex: transport,
+                ),
+              ],
+        );
+
+        final original = syncFor(localRoot, peerRoot, localInbox, peerInbox);
+        var peer = syncFor(peerRoot, localRoot, peerInbox, localInbox);
+        final localEvidence =
+            (await original.createLocalEvidence(peerRootHex: peerRoot))!;
+        final peerEvidence =
+            (await peer.createLocalEvidence(peerRootHex: localRoot))!;
+        final originalPair = [localEvidence, peerEvidence];
+        await store.merge(localRoot, originalPair);
+        await store.merge(peerRoot, originalPair);
+        expect(
+          (await peer.reserveAutomaticResponse(
+            peerEvidence: localEvidence,
+            localEvidence: peerEvidence,
+          )).canSend,
+          isTrue,
+        );
+        expect(
+          await peer.markAutomaticResponseDelivered(
+            peerEvidence: localEvidence,
+            localEvidence: peerEvidence,
+          ),
+          isTrue,
+        );
+
+        // Core-only import intentionally omits operational pair evidence.
+        // Simulate only that boundary in this test's disposable file store.
+        final directory = await fileStore.capsuleDirForHex(localRoot);
+        await fileStore.pairConsensusAttestationsFile(directory).delete();
+        final restored = syncFor(localRoot, peerRoot, localInbox, peerInbox);
+        peer = syncFor(peerRoot, localRoot, peerInbox, localInbox);
+        final peerExchange = exchangeFor(peer, localRoot, 'd' * 64);
+        final restoredExchange = exchangeFor(restored, peerRoot, peerTransport);
+        final guard = ConsensusAttestedGuardService(
+          consensus: _FakeConsensusRuntimeService(
+            peerHex: peerRoot,
+            snapshotHashHex: snapshotHash,
+          ),
+          attestations: restored,
+        );
+        expect((await guard.signable(peerRoot)).isSignable, isFalse);
+
+        now = now.add(const Duration(minutes: 14, seconds: 59));
+        final waiting = await restoredExchange.ensureForPeer(peerRoot);
+        final cooling = await peer.drainAndStore();
+        expect(waiting.isReady, isFalse);
+        expect(cooling.storedCount, 0);
+        expect(cooling.acceptedEvidence, hasLength(1));
+        await peerExchange.answerAcceptedEvidence(cooling.acceptedEvidence);
+        expect(peerResponses, 0);
+        expect((await guard.signable(peerRoot)).isSignable, isFalse);
+
+        now = now.add(const Duration(seconds: 1));
+        await restoredExchange.ensureForPeer(peerRoot);
+        final repeated = await peer.drainAndStore();
+        expect(repeated.storedCount, 0);
+        expect(repeated.acceptedEvidence, hasLength(1));
+        await peerExchange.answerAcceptedEvidence(repeated.acceptedEvidence);
+        expect(peerResponses, 1);
+        expect((await restored.drainAndStore()).storedCount, 1);
+        expect((await guard.signable(peerRoot)).isSignable, isTrue);
+
+        final reopened = syncFor(localRoot, peerRoot, localInbox, peerInbox);
+        expect(
+          (await reopened.loadVerifiedForPair(
+            peerRootHex: peerRoot,
+          )).map((evidence) => evidence.recordKey),
+          unorderedEquals(originalPair.map((evidence) => evidence.recordKey)),
+        );
+        expect(await store.load(peerRoot), hasLength(2));
+        expect(await store.load(localRoot), hasLength(2));
+      },
+    );
 
     test(
       'attested guard requires both pair roots to sign same snapshot',

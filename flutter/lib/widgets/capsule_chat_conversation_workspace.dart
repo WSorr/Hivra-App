@@ -17,6 +17,7 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
   final int deferredMessageCount;
   final TextEditingController peerController;
   final String? selectedPeerLabel;
+  final bool? selectedPeerIsSignable;
   final Map<String, String> contactLabels;
   final TextEditingController messageController;
   final VoidCallback onInputChanged;
@@ -39,6 +40,7 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
     required this.deferredMessageCount,
     required this.peerController,
     required this.selectedPeerLabel,
+    this.selectedPeerIsSignable,
     required this.contactLabels,
     required this.messageController,
     required this.onInputChanged,
@@ -69,6 +71,7 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
               _ConversationHeader(
                 peerHex: peerHex,
                 localLabel: selectedPeerLabel,
+                isSignable: selectedPeerIsSignable,
                 checkingForMessages: checkingForMessages,
                 onChooseContact: sending ? null : onChooseContact,
               ),
@@ -223,12 +226,14 @@ bool _sameTimeline(
 class _ConversationHeader extends StatelessWidget {
   final String peerHex;
   final String? localLabel;
+  final bool? isSignable;
   final bool checkingForMessages;
   final Future<void> Function()? onChooseContact;
 
   const _ConversationHeader({
     required this.peerHex,
     required this.localLabel,
+    required this.isSignable,
     required this.checkingForMessages,
     required this.onChooseContact,
   });
@@ -271,11 +276,21 @@ class _ConversationHeader extends StatelessWidget {
                         peerHex,
                       )
                       : 'Choose a trusted Capsule to begin',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xFF96A2B2),
                     fontSize: 12,
                   ),
                 ),
+                if (hasPeer && isSignable != null)
+                  Text(
+                    isSignable! ? 'Ready to chat' : 'Needs verification',
+                    style: TextStyle(
+                      color: isSignable! ? Colors.green : Colors.orange,
+                      fontSize: 12,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -288,10 +303,16 @@ class _ConversationHeader extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-          TextButton.icon(
-            onPressed: onChooseContact,
-            icon: const Icon(Icons.add_comment_outlined, size: 18),
-            label: Text(hasPeer ? 'Change' : 'New conversation'),
+          Flexible(
+            child: TextButton.icon(
+              onPressed: onChooseContact,
+              icon: const Icon(Icons.add_comment_outlined, size: 18),
+              label: Text(
+                hasPeer ? 'Change' : 'New conversation',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ),
         ],
       ),
