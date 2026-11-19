@@ -194,6 +194,33 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Delete one canonical Capsule without unlocking unrelated Capsules. The owner
+confirms removal in the existing selector, retains every other Capsule and
+returns to the selector. The removal contract belongs to
+[Specification](specification.md).
+
+The existing persistence owner scanned all private seeds for legacy aliases,
+then read another seed to choose a replacement active identity. Reuse its
+existing public-index reconciliation predicate to seal the private alias scan
+once every entry is `root_owner`, and remove replacement selection from deletion.
+Keep aliases derived from the selected seed and the mixed legacy-index scan;
+that compatibility path is needed only while identity reconciliation remains
+pending. Secret cleanup and read-back checks remain unchanged. No authentication
+policy, cache, storage format or native keystore adapter changes.
+
+Source regressions cover active/inactive deletion, unavailable unrelated seeds,
+an absent selected seed, derived transport aliases, legacy alias recovery and
+cleanup failure/retry. All 900 Flutter tests, analysis and review gates pass.
+One persistence owner and one deletion path remain; no production files or
+runtime entities were added. Native acceptance must measure Keychain requests while
+removing only an explicitly authorized disposable Capsule, verify the retained
+Capsules, and repeat after a cold process restart. Necessary access to the
+selected seed and shared secret vault may still require macOS authorization;
+source tests alone do not establish the native prompt count. Native acceptance
+is pending the owner's return; working identities must not be deleted for it.
+
+### Qualified Core Recovery And Chat Readiness
+
 Recover Core history containing a relationship on macOS and Samsung, then
 reacquire operational pair evidence through the ordinary interface without
 sending Chat content. Keep the accepted Core-only export and separate seed
@@ -1083,7 +1110,7 @@ work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
-| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. Temporary test-Capsule deletion required four Keychain password entries in one owner-reported attempt; reducing repeated Mac authentication remains an unselected usability debt. |
+| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. The selected outcome above addresses unnecessary access to unrelated Capsule seeds; native prompt reduction is not yet qualified. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Native Mac and Samsung reads reconstructed their retained MNT SL results; Samsung 0.2.6 also retired the filled entry after complete flat evidence. Replacement, cold restart and return passed without rebuilding Capsule. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; historical SL reconciliation does not qualify them. |
 

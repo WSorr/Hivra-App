@@ -17,6 +17,7 @@ import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
   final Map<String, int> readCounts = <String, int>{};
+  String? failReadKey;
   bool failDelete = false;
   bool failWrite = false;
 
@@ -50,6 +51,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     readCounts[key] = (readCounts[key] ?? 0) + 1;
+    if (key == failReadKey) throw StateError('Other Capsule seed is locked');
     return values[key];
   }
 
@@ -80,6 +82,11 @@ class _Bindings implements HivraBindings {
   final Set<String> importableLedgers = {};
   final List<String> importAttempts = [];
   int creations = 0;
+  bool runtimeActive = true;
+  bool failReset = false;
+  bool failLegacyDelete = false;
+  int resets = 0;
+  final List<Uint8List> deletedLegacySeeds = [];
   @override
   Uint8List? loadSeed() => loadedSeed;
   @override
@@ -96,6 +103,7 @@ class _Bindings implements HivraBindings {
     int ownerMode = HivraBindings.rootOwnerMode,
   }) {
     creations++;
+    runtimeActive = true;
     owner = Uint8List.fromList(seed);
     ledger = jsonEncode({'owner': owner.toList(), 'events': []});
     return true;
@@ -110,7 +118,28 @@ class _Bindings implements HivraBindings {
   }
 
   @override
-  Uint8List? capsuleRuntimeOwnerPublicKey() => Uint8List.fromList(owner);
+  Uint8List? capsuleRuntimeOwnerPublicKey() =>
+      runtimeActive ? Uint8List.fromList(owner) : null;
+  @override
+  bool resetCapsule() {
+    resets++;
+    if (failReset) return false;
+    runtimeActive = false;
+    loadedSeed = null;
+    return true;
+  }
+
+  @override
+  bool deleteInboundQuarantine(Uint8List capsuleId) => true;
+  @override
+  bool deleteSeedFor(Uint8List seed) {
+    if (failLegacyDelete) return false;
+    deletedLegacySeeds.add(Uint8List.fromList(seed));
+    return true;
+  }
+
+  @override
+  String? lastErrorMessage() => 'Simulated native cleanup failure';
   @override
   Uint8List? capsuleRootPublicKey() =>
       rootOwner ?? capsuleRuntimeOwnerPublicKey();
@@ -289,6 +318,171 @@ void main() {
     bindings = _Bindings();
   });
   tearDown(() async => stand.delete(recursive: true));
+
+  group('Capsule removal seed scope', () {
+    setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+    Future<String> capsule(
+      int byte, {
+      bool withSeed = true,
+      Uint8List? storedSeed,
+      String identityMode = 'root_owner',
+    }) async {
+      final key = byte.toRadixString(16).padLeft(2, '0') * 32;
+      final directory = await src.capsuleDirForHex(key, create: true);
+      await src.writeLedger(directory, snapshot(1, ownerByte: byte));
+      await CapsuleIndexStore(
+        dirs: srcDirs,
+      ).upsert(key, identityMode: identityMode);
+      if (withSeed) {
+        srcSecure.values['hivra.seed.$key'] = base64Encode(
+          storedSeed ?? Uint8List.fromList(List.filled(32, byte)),
+        );
+      }
+      return key;
+    }
+
+    for (final active in [false, true]) {
+      test(
+        '${active ? 'active' : 'inactive'} root-owner removal does not unlock other Capsules',
+        () async {
+          await capsule(0xaa);
+          final others = [
+            for (final byte in [0xbb, 0xcc, 0xee]) await capsule(byte),
+          ];
+          bindings.owner = Uint8List.fromList(
+            List.filled(32, active ? 0xaa : 0xbb),
+          );
+          await CapsuleIndexStore(
+            dirs: srcDirs,
+          ).setActive(active ? owner : others.first);
+          if (active) srcSecure.failReadKey = 'hivra.seed.${others.first}';
+          final before = {
+            for (final key in others)
+              key: await src.readLedger(await src.capsuleDirForHex(key)),
+          };
+
+          await exporter.deleteCapsule(
+            owner,
+            deleteLocalData: true,
+            hivra: bindings,
+          );
+
+          expect(await (await src.capsuleDirForHex(owner)).exists(), isFalse);
+          expect(srcSecure.values['hivra.seed.$owner'], isNull);
+          expect(bindings.resets, active ? 1 : 0);
+          expect(bindings.deletedLegacySeeds.single, orderedEquals(seed));
+          final remaining = await CapsuleIndexStore(dirs: srcDirs).read();
+          expect(remaining.capsules.keys, unorderedEquals(others));
+          expect(remaining.activePubKeyHex, active ? isNull : others.first);
+          for (final key in others) {
+            expect(srcSecure.readCounts['hivra.seed.$key'] ?? 0, 0);
+            expect(srcSecure.values['hivra.seed.$key'], isNotNull);
+            expect(
+              await src.readLedger(await src.capsuleDirForHex(key)),
+              before[key],
+            );
+          }
+        },
+      );
+    }
+
+    test(
+      'missing selected seed does not open other root-owner seeds',
+      () async {
+        await capsule(0xaa, withSeed: false);
+        final other = await capsule(0xbb);
+        srcSecure.failReadKey = 'hivra.seed.$other';
+        bindings.runtimeActive = false;
+
+        await exporter.deleteCapsule(
+          owner,
+          deleteLocalData: true,
+          hivra: bindings,
+        );
+
+        expect(srcSecure.readCounts['hivra.seed.$other'] ?? 0, 0);
+        expect(srcSecure.values['hivra.seed.$other'], isNotNull);
+        expect(bindings.deletedLegacySeeds, isEmpty);
+        expect(await (await src.capsuleDirForHex(owner)).exists(), isFalse);
+      },
+    );
+
+    test(
+      'root-owner removal still deletes its derived transport alias',
+      () async {
+        await capsule(0xaa);
+        final alias = 'dd' * 32;
+        srcSecure.values['hivra.seed.$alias'] = base64Encode(seed);
+        bindings.nostrKey = Uint8List.fromList(List.filled(32, 0xdd));
+
+        await exporter.deleteCapsule(
+          owner,
+          deleteLocalData: true,
+          hivra: bindings,
+        );
+
+        expect(srcSecure.values['hivra.seed.$owner'], isNull);
+        expect(srcSecure.values['hivra.seed.$alias'], isNull);
+      },
+    );
+
+    test('legacy alias can supply the missing selected root seed', () async {
+      await capsule(0xaa, withSeed: false);
+      final alias = await capsule(
+        0xdd,
+        storedSeed: seed,
+        identityMode: 'legacy_nostr_owner',
+      );
+      bindings.nostrKey = Uint8List.fromList(List.filled(32, 0xdd));
+      bindings.runtimeActive = false;
+
+      await exporter.deleteCapsule(
+        owner,
+        deleteLocalData: true,
+        hivra: bindings,
+      );
+
+      expect(srcSecure.values['hivra.seed.$alias'], isNull);
+      expect(await (await src.capsuleDirForHex(alias)).exists(), isFalse);
+      expect((await CapsuleIndexStore(dirs: srcDirs).read()).capsules, isEmpty);
+    });
+
+    for (final failure in ['runtime', 'legacy', 'secure']) {
+      test('$failure cleanup failure retains data and permits retry', () async {
+        await capsule(0xaa);
+        final other = await capsule(0xbb);
+        srcSecure.failReadKey = 'hivra.seed.$other';
+        bindings.failReset = failure == 'runtime';
+        bindings.failLegacyDelete = failure == 'legacy';
+        srcSecure.failDelete = failure == 'secure';
+
+        await expectLater(
+          exporter.deleteCapsule(owner, deleteLocalData: true, hivra: bindings),
+          throwsStateError,
+        );
+
+        expect(
+          await src.readLedger(await src.capsuleDirForHex(owner)),
+          isNotNull,
+        );
+        expect(srcSecure.values['hivra.seed.$owner'], base64Encode(seed));
+        expect(srcSecure.readCounts['hivra.seed.$other'] ?? 0, 0);
+        bindings.failReset = false;
+        bindings.failLegacyDelete = false;
+        srcSecure.failDelete = false;
+        await exporter.deleteCapsule(
+          owner,
+          deleteLocalData: true,
+          hivra: bindings,
+        );
+        expect(await (await src.capsuleDirForHex(owner)).exists(), isFalse);
+        expect(srcSecure.values['hivra.seed.$owner'], isNull);
+        expect(srcSecure.values['hivra.seed.$other'], isNotNull);
+        expect(srcSecure.readCounts['hivra.seed.$other'] ?? 0, 0);
+      });
+    }
+  });
   test('normal snapshot save retains undecodable current history', () async {
     final directory = await dst.capsuleDirForHex(owner, create: true);
     await dst.ledgerFile(directory).writeAsBytes([0xff, 0xfe]);
