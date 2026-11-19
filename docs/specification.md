@@ -642,6 +642,12 @@ Selector screen:
 - Seed recovery restores Capsule identity. Ledger history requires a verified
   backup or independently available transport history; the UI MUST state this
   distinction before recovery.
+- Capsule removal MUST complete secret cleanup before deleting private files.
+  A canonical `root_owner` index MUST NOT require reads of other Capsules' seeds
+  for deletion. Retain cleanup of aliases derived from the selected seed;
+  cross-Capsule legacy alias discovery is allowed only while identity
+  reconciliation is pending. Removal MUST NOT select or unlock a replacement
+  Capsule; preserve the active selection unless that identity is removed.
 - On macOS, Settings MUST expose an `Open local data folder` action so the
   canonical runtime can be inspected without requiring users to reveal or
   manually navigate the hidden `~/Library` directory.

@@ -1093,9 +1093,6 @@ class CapsulePersistenceService {
       }
     }
 
-    if (index.activePubKeyHex == null || index.activePubKeyHex!.isEmpty) {
-      index.activePubKeyHex = await _recoverActiveCapsuleHexFromIndex(index);
-    }
     await _writeIndex(index);
   }
 
@@ -1400,9 +1397,10 @@ class CapsulePersistenceService {
     CapsulePersistenceBindings? hivra,
   }) async {
     final keys = <String>{pubKeyHex};
+    final reconcileAliases = requiresCapsuleIdentityReconciliation(index);
 
     var baseSeed = await _loadSeedForCapsule(pubKeyHex);
-    if (baseSeed == null && hivra != null) {
+    if (baseSeed == null && hivra != null && reconcileAliases) {
       final targetEntry = index.capsules[pubKeyHex];
       for (final entry in index.capsules.values) {
         final candidateSeed = await _loadSeedForCapsule(entry.pubKeyHex);
@@ -1425,6 +1423,9 @@ class CapsulePersistenceService {
       if (rootHex != null && rootHex.isNotEmpty) keys.add(rootHex);
       if (nostrHex != null && nostrHex.isNotEmpty) keys.add(nostrHex);
     }
+
+    // Current root-owner identities need no private cross-Capsule alias scan.
+    if (!reconcileAliases) return keys;
 
     var changed = true;
     while (changed) {

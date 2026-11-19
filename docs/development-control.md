@@ -194,6 +194,44 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Delete one canonical Capsule without unlocking unrelated Capsules. The owner
+confirms removal in the existing selector, retains every other Capsule and
+returns to the selector. The removal contract belongs to
+[Specification](specification.md).
+
+The persistence owner reuses its public-index reconciliation predicate to seal
+private alias discovery once every entry is `root_owner`. Deletion no longer
+selects a replacement identity. Derived transport aliases and the mixed
+legacy-index scan remain; that compatibility path is needed only while identity
+reconciliation is pending. Verified secret cleanup still precedes file removal.
+The existing authentication policy, caches and native keystore adapter remain.
+
+Source regressions cover active/inactive deletion, unavailable unrelated seeds,
+an absent selected seed, derived transport aliases, legacy alias recovery and
+cleanup failure/retry. All 900 Flutter tests, 114 FFI tests, analysis and review
+gates pass. One persistence owner and one deletion path remain; no production
+files or runtime entities were added.
+
+Exact `bc2ff77` ZIP/APK qualification passed on Apple Silicon macOS and physical
+Samsung. One authorized disposable identity was recovered, opened, cold-started
+and removed through the ordinary interface. Mac deletion required one Keychain
+request, reported by the owner. Post-deletion cold launches retain exactly
+three working Mac Capsules and two Samsung Capsules with their original Core
+heads; the test identity does not reappear. All 50 pre-deletion working Mac
+files are byte-identical, ten existing card values are unchanged, and only the
+test card was removed. Deletion leaves the Mac active selection empty. Samsung
+also reopened retained history and showed only its two working cards.
+
+Both test copies, scoped secrets and internal backups were removed; no external
+test backup was created. Evidence belongs to
+`capsule_removal_seed_scope_20261119` in the existing acceptance record below.
+This qualifies healthy canonical-index removal in the tested account, not a
+fixed prompt count for every macOS environment. Legacy alias and native fault
+cases retain source-test evidence. Native qualification is complete; integration
+remains pending, and no next product outcome is selected.
+
+### Qualified Core Recovery And Chat Readiness
+
 Recover Core history containing a relationship on macOS and Samsung, then
 reacquire operational pair evidence through the ordinary interface without
 sending Chat content. Keep the accepted Core-only export and separate seed
@@ -1083,7 +1121,7 @@ work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
-| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. Temporary test-Capsule deletion required four Keychain password entries in one owner-reported attempt; reducing repeated Mac authentication remains an unselected usability debt. |
+| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. Healthy canonical-index deletion without unlocking unrelated Capsules is qualified in the selected outcome above; native failure retention remains source-test evidence. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Native Mac and Samsung reads reconstructed their retained MNT SL results; Samsung 0.2.6 also retired the filled entry after complete flat evidence. Replacement, cold restart and return passed without rebuilding Capsule. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; historical SL reconciliation does not qualify them. |
 
