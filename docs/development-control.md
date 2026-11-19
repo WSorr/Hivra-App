@@ -205,15 +205,22 @@ does not request verification; only Send reaches the existing attestation
 exchange. An attestation-only receive also leaves the open Chat readiness
 unchanged. Selection must request the same exchange owner, and the existing
 passive-receive listener must refresh that projection when evidence arrives.
+The selected conversation must show that readiness on compact screens where
+the contact sidebar is hidden; reuse the same attested contact projection.
 Keep Send's current guard, the signed pair model, response cooldown and one
 exchange/store/transport path. Add no service, permission, background loop,
 schema, backup payload or message-send path. Late selection completion must
 not update a different selected peer or Capsule.
 
 Automated Core-history and peer-exchange recovery checks pass independently.
-Four widget checks cover the missing selection trigger, retry after failure,
-attestation-only readiness and asynchronous Capsule boundary. Native
-relationship recovery and cold restart remain pending on the corrected bytes;
+Six widget checks cover the missing selection trigger, retry after failure,
+attestation-only readiness, asynchronous Capsule boundary and compact-screen
+status transitions. Native Core-only import preserved the exact Ledger v9,
+five starters and one relationship on macOS and Samsung. macOS reacquired
+two-root evidence through contact selection and retained readiness after a
+cold restart. The compact conversation hid that state; its existing header
+now displays the same attested projection. Exact native qualification remains
+pending on those final presentation bytes;
 the owner authorized two temporary test identities and one test relationship,
 followed by native cleanup. No working history, Chat send, trading action or
 VPS change is authorized by this qualification.

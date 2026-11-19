@@ -640,6 +640,10 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       deferredMessageCount: _deferredByConsensus,
       peerController: _peerController,
       selectedPeerLabel: _selectedPeerLabel,
+      selectedPeerIsSignable: _contacts.any(
+        (contact) =>
+            contact.peerHex == _peerController.text && contact.isSignable,
+      ),
       contactLabels: _contactLabels,
       messageController: _messageController,
       onInputChanged: () => setState(() {}),

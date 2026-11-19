@@ -29,9 +29,12 @@ void main() {
 
     tearDown(() => module.passiveReceive.pauseForeground());
 
-    Future<void> open(WidgetTester tester) async {
+    Future<void> open(
+      WidgetTester tester, {
+      Size size = const Size(1200, 900),
+    }) async {
       module = _RecoveryChatModule(capsuleHex, peerHex);
-      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      await tester.binding.setSurfaceSize(size);
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         MaterialApp(home: CapsuleChatPluginScreen(module: module)),
@@ -53,7 +56,7 @@ void main() {
       module.manualChecks.ready = true;
       module.attestationExchange.pending.complete(_readyExchange);
       await tester.pumpAndSettle();
-      expect(find.text('Ready to chat'), findsOneWidget);
+      expect(find.text('Ready to chat'), findsWidgets);
       expect(find.text('Needs verification'), findsNothing);
       expect(module.messageSends, 0);
     });
@@ -78,7 +81,7 @@ void main() {
       module.attestationExchange.pending.complete(_readyExchange);
       await tester.pumpAndSettle();
       expect(module.attestationExchange.requests, [peerHex, peerHex]);
-      expect(find.text('Ready to chat'), findsOneWidget);
+      expect(find.text('Ready to chat'), findsWidgets);
       expect(find.textContaining('Select it again to retry.'), findsNothing);
       expect(module.messageSends, 0);
     });
@@ -119,6 +122,46 @@ void main() {
         findsNothing,
       );
       expect(module.messageSends, 0);
+    });
+
+    testWidgets('compact conversation shows verification before any send', (
+      tester,
+    ) async {
+      await open(tester, size: const Size(390, 844));
+      await tester.tap(find.text('New conversation'));
+      await tester.pump();
+      expect(find.text('Needs verification'), findsOneWidget);
+      expect(find.text('Ready to chat'), findsNothing);
+      expect(module.messageSends, 0);
+
+      module.manualChecks.ready = true;
+      module.attestationExchange.pending.complete(_readyExchange);
+      await tester.pumpAndSettle();
+      expect(find.text('Ready to chat'), findsOneWidget);
+      expect(find.text('Needs verification'), findsNothing);
+      expect(module.messageSends, 0);
+    });
+
+    testWidgets('compact conversation reflects attestation-only receive', (
+      tester,
+    ) async {
+      await open(tester, size: const Size(390, 844));
+      await tester.tap(find.text('New conversation'));
+      await tester.pump();
+      expect(find.text('Needs verification'), findsOneWidget);
+
+      module.manualChecks.ready = true;
+      module.storedAttestations = 1;
+      await module.passiveReceive.trigger(
+        capsuleHex: capsuleHex,
+        reason: CapsulePassiveReceiveReason.manual,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Ready to chat'), findsOneWidget);
+      expect(find.text('Needs verification'), findsNothing);
+      expect(module.messageSends, 0);
+      module.attestationExchange.pending.complete(_readyExchange);
+      await tester.pumpAndSettle();
     });
   });
 

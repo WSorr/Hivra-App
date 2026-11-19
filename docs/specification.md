@@ -1504,7 +1504,8 @@ but cannot create, approve, or cache consensus truth.
 
 Selecting a Chat peer requests the existing pair-attestation exchange without
 sending message content. An attestation-only receive refreshes the displayed
-readiness. Sending content still requires the same current two-root guard;
+readiness, including the selected conversation header on compact screens.
+Sending content still requires the same current two-root guard;
 selection and recovery do not renew any application's effect authority.
 
 ### 8.5 Drone Consensus Guard Standard
