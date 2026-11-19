@@ -216,14 +216,23 @@ Automated Core-history and peer-exchange recovery checks pass independently.
 Six widget checks cover the missing selection trigger, retry after failure,
 attestation-only readiness, asynchronous Capsule boundary and compact-screen
 status transitions. Native Core-only import preserved the exact Ledger v9,
-five starters and one relationship on macOS and Samsung. macOS reacquired
-two-root evidence through contact selection and retained readiness after a
-cold restart. The compact conversation hid that state; its existing header
-now displays the same attested projection. Exact native qualification remains
-pending on those final presentation bytes;
-the owner authorized two temporary test identities and one test relationship,
-followed by native cleanup. No working history, Chat send, trading action or
-VPS change is authorized by this qualification.
+five starters and one relationship on macOS and Samsung. Contact selection
+reacquired two-root evidence without Chat content. Exact `b5e466c` ZIP/APK
+qualification passed on both devices: the recovered conversation displays
+`Ready to chat`, retains readiness across an actual process restart and returns
+to the same Capsule. The Mac Ledger remains byte-identical; both working
+Samsung Core heads are unchanged. All 892 Flutter tests, 114 FFI tests, analysis,
+review gates and CI pass. Evidence belongs to
+`core_recovery_relationship_qualification_20261118` in the existing acceptance
+record below.
+
+The two owner-authorized temporary test identities, their local seed records,
+test cards and encrypted backup were removed after qualification. Cleanup
+survived cold restart: three working Mac Capsules and two working Samsung
+Capsules remain. All 18 checked working Mac Capsule files and the original
+saved-card file are unchanged. No Chat content, trading action, renewed effect
+grant or VPS change occurred. This outcome is complete; no next outcome is
+selected by this qualification.
 
 ### Qualified Pair-Evidence Read Preservation
 
@@ -1074,7 +1083,7 @@ work.
 
 | Bounded outcome | Source behavior / remaining acceptance |
 | --- | --- |
-| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. |
+| Preserve private files when native secret cleanup fails | The existing removal path cleans secrets before files. Fault-injected module tests cover both retention choices, non-executable pending state and retry with a reopened registry; native Keychain failure is not exercised on working owner data. Temporary test-Capsule deletion required four Keychain password entries in one owner-reported attempt; reducing repeated Mac authentication remains an unselected usability debt. |
 | Use one peer address and retain concurrent card updates | Chat and pair-attestation exchange share the address owner; persistence delegates card writes and cleanup. Source tests cover precedence, concurrent mutation, reopen and corrupt-file behavior. Exact e265681 Mac/Samsung smoke qualified existing-card reimport, one Mac-to-Samsung message, cold process restart and return. Real contact/Capsule deletion and new invitation were excluded on owner data; those cases retain source-test evidence. Results: `address_consolidation_20261107` in the existing acceptance record below. |
 | Show Jack's actual completed trade and continue | Package-owned last-trade locator and pre-dispatch recovery use the common API. Native Mac and Samsung reads reconstructed their retained MNT SL results; Samsung 0.2.6 also retired the filled entry after complete flat evidence. Replacement, cold restart and return passed without rebuilding Capsule. Live new-cycle TP/closure/reentry and restart during a managed trade remain open; historical SL reconciliation does not qualify them. |
 
@@ -1087,9 +1096,9 @@ is still open.
 
 The original Discovery delivery qualified install/open/return and restart on
 its recorded Mac/Samsung bytes. It did not qualify full trading outcomes,
-continuous operation or later host changes. The current all-frame market-history
-qualification is recorded in the selected outcome above; a successful 1m read
-alone does not close it.
+continuous operation or later host changes. Market-history qualification does
+not establish a completed live trade; a successful 1m read alone does not
+qualify every supported timeframe.
 Native Intel, a separate macOS account, long-term migration and complete User
 Lifetime qualification remain unconfirmed. They do not expand the required
 runtime matrix defined above.
