@@ -1401,6 +1401,194 @@ void main() {
     },
   );
 
+  for (final target in ['local', 'selected', 'vps']) {
+    testWidgets('execution destination is visible before Start ($target)', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(360, 780));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final actions = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, _) async {
+              actions.add(action);
+              return {
+                ...presentation(),
+                'fields': [
+                  {
+                    'id': 'selection',
+                    'label': 'Selection',
+                    'type': 'text',
+                    'value': 'unchanged',
+                  },
+                ],
+                'actions': [
+                  {
+                    'id': 'start',
+                    'label': 'Begin workflow',
+                    'host': 'workspace.start',
+                  },
+                ],
+                'host_connection': {
+                  'target': target == 'vps' ? 'vps' : 'local',
+                  'selected': target != 'local',
+                  'installed': target != 'local',
+                  if (target != 'local') 'host': 'server.example',
+                  'health': target == 'vps' ? 'running' : 'not_started',
+                },
+                'execution': {
+                  'mode': target == 'vps' ? 'vps' : 'local',
+                  'active': false,
+                  'running': false,
+                },
+              };
+            },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+            }) async {
+              fail('Rendering must not connect a server');
+            },
+            useOnline: () async => fail('Rendering must not change execution'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final start = find.byKey(const ValueKey('plugin-action-start'));
+      final expected = target == 'local' ? 'this device' : 'VPS server.example';
+      expect(
+        find.descendant(of: start, matching: find.textContaining(expected)),
+        findsOneWidget,
+      );
+      final location = find.text(
+        'Execution location: ${target == 'vps' ? 'VPS server.example' : 'This device'}',
+      );
+      expect(location, findsOneWidget);
+      final choose = find.byKey(const ValueKey('workspace-target-vps'));
+      expect(
+        tester.getTopLeft(choose).dy,
+        lessThan(tester.getTopLeft(start).dy),
+      );
+      expect(tester.getBottomRight(start).dy, lessThan(780));
+      expect(actions, ['open']);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('running server does not hide expired workflow permission', (
+    tester,
+  ) async {
+    final expired = DateTime(2020, 2, 3, 4, 5).millisecondsSinceEpoch;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
+          runWorkspaceAction:
+              (_, _) async => {
+                ...presentation(),
+                'host_connection': {
+                  'target': 'vps',
+                  'host': 'server.example',
+                  'health': 'running',
+                },
+                'execution': {
+                  'mode': 'vps',
+                  'active': false,
+                  'running': false,
+                  'revoked': false,
+                  'expires_at_ms': expired,
+                },
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Permissions expired'), findsOneWidget);
+    expect(find.textContaining('04:05'), findsOneWidget);
+    expect(find.textContaining('Automatic cycle off.'), findsOneWidget);
+    expect(find.textContaining('VPS process is running'), findsOneWidget);
+    expect(find.textContaining('Permissions active'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final remote in [false, true]) {
+    testWidgets(
+      'Start permission names its destination and Cancel does not start ($remote)',
+      (tester) async {
+        final access = permission('https://one.example');
+        final scope = {
+          'version': 2,
+          'action': 'run',
+          'interval_seconds': 60,
+          'description': 'Owner workflow',
+          'access': access,
+        };
+        final observed = <String>[];
+        Map<String, dynamic> nextView() => {
+          ...presentation(),
+          'actions': [
+            {
+              'id': 'start',
+              'label': 'Begin workflow',
+              'host': 'workspace.start',
+            },
+          ],
+          'schedule': scope,
+          'access': access,
+          'execution': {'active': false, 'running': false},
+          'host_connection': {
+            'target': 'local',
+            'selected': remote,
+            if (remote) 'host': 'server.example',
+          },
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction: (action, _) async {
+                observed.add(action);
+                return nextView();
+              },
+              listSecrets:
+                  () async => [
+                    {'id': 'ref-token', 'label': 'Saved connection'},
+                  ],
+              configureExecution:
+                  ({
+                    required enabled,
+                    required expiresAtMs,
+                    expectedRevision,
+                    revoke = false,
+                    approvedScope,
+                    credentialBindings,
+                    settings = const {},
+                  }) async => fail('Cancel must not grant or start execution'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('plugin-action-start')));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            'Start on ${remote ? 'VPS server.example' : 'this device'}',
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(observed, remote ? ['open'] : ['open', 'start']);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets(
     'remote Start replaces execution with the selected settings without sending Start to the old runner',
     (tester) async {
@@ -1476,9 +1664,11 @@ void main() {
       await tester.enterText(find.byType(TextField), 'new-choice');
       await tester.pump(const Duration(seconds: 61));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Start'));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('plugin-action-start')),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Start'));
+      await tester.tap(find.byKey(const ValueKey('plugin-action-start')));
       await tester.pumpAndSettle();
       expect(actions, ['open', 'open']);
       expect(selected, {'selection': 'new-choice'});
@@ -1705,8 +1895,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('On this device · keep the app open'), findsOneWidget);
-      expect(find.textContaining('VPS execution ·'), findsNothing);
+      expect(find.text('Execution location: This device'), findsOneWidget);
+      expect(find.textContaining('Execution location: VPS'), findsNothing);
       expect(find.textContaining('Setup not confirmed'), findsOneWidget);
       final connect = find.text('Connect VPS');
       await tester.ensureVisible(connect);
@@ -1742,7 +1932,7 @@ void main() {
         findsOneWidget,
       );
       expect(opens, observedOpens);
-      expect(find.textContaining('VPS execution ·'), findsNothing);
+      expect(find.textContaining('Execution location: VPS'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );

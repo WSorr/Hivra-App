@@ -492,6 +492,13 @@ authorize network access through the common workspace API.
   ticks and app resume until another owner action or reopening; Start resumes
   workflow observation. Edits survive status refresh, errors cannot overwrite a
   newer action, and failed observations mark the view unavailable.
+  Current execution location and the existing device/VPS controls appear before
+  Start. The Start label and its existing permission form name the intended
+  destination. A selected VPS is the next Start target, not evidence that
+  execution has moved there. Server process health and workflow permission are
+  separate observations; an expired grant remains visibly expired even when
+  the server process is running. These are presentation rules over existing
+  host metadata, not additional package state or authorization steps.
   Local and headless execution share `PluginWorkspaceRuntime`, the same vault
   ports, workspace serialization/OS lease and package binding checks. Existing
   local/VPS custody still has one executor and no implicit local fallback.

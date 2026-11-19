@@ -194,6 +194,44 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Make a scheduled package's execution destination clear before Start. The owner
+can distinguish execution on this device from execution on a VPS, choose the
+next destination through the existing controls, and see that destination in
+the Start button and existing permission form. A running server process must
+not imply that an expired workflow permission is active. The generic workspace
+presentation contract belongs to [Plugin Host API](plugins/plugin_host_api_v1.md).
+
+Current execution assignment, the next selected destination, workflow permission
+and server process health remain distinct existing observations. Selection alone
+does not move execution or authorize Start. Reopening and polling must preserve
+that distinction; cancellation of the permission form grants nothing. The
+existing runtime owns handoff, grants, expiry and execution. The screen only
+presents those results; it does not renew authority, choose a strategy, infer
+service state or add a local fallback. Package-private state, retention and
+reconnection semantics do not change.
+
+Reuse the existing status panel, target callbacks and Start permission dialog
+instead of adding a destination record or another confirmation. The lower
+duplicate execution controls are removed; recovery and runtime update stay in
+the existing Advanced settings. Existing Flutter Wrap, button and Material
+localization mechanisms provide compact controls and readable local timestamps;
+no dependency, runtime owner, host API, schema or execution path is added.
+One screen and two destination-transition handlers remain one screen and two
+handlers; the existing grant/Start owner is unchanged.
+
+Focused widget regressions cover local execution, a selected but not yet adopted
+VPS, actual VPS execution, expired permission with a live server process, and
+cancellation before Start. The 360 x 780 layout keeps the destination controls
+above Start. All 906 Flutter tests, analysis and review gates pass. Local macOS
+and Android debug compilation passes; these source preflights are not exact
+packaged acceptance. Native acceptance of the new presentation remains pending.
+Native acceptance must reopen the existing Mac/Samsung workspace, verify the
+destination and permission presentation, cold-start and return to the same
+Capsule without Start, new grants or VPS mutations. Existing local trading must
+not be interrupted merely to inspect the new interface.
+
+### Qualified Capsule Removal Seed Scope
+
 Delete one canonical Capsule without unlocking unrelated Capsules. The owner
 confirms removal in the existing selector, retains every other Capsule and
 returns to the selector. The removal contract belongs to
@@ -227,8 +265,8 @@ test backup was created. Evidence belongs to
 `capsule_removal_seed_scope_20261119` in the existing acceptance record below.
 This qualifies healthy canonical-index removal in the tested account, not a
 fixed prompt count for every macOS environment. Legacy alias and native fault
-cases retain source-test evidence. Native qualification is complete; integration
-remains pending, and no next product outcome is selected.
+cases retain source-test evidence. PR #457 is merged in main `4d123a5`; main CI
+`44504520187` passed, and its completed branch was removed.
 
 ### Qualified Core Recovery And Chat Readiness
 
