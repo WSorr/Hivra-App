@@ -222,8 +222,8 @@ qualification passed on both devices: the recovered conversation displays
 `Ready to chat`, retains readiness across an actual process restart and returns
 to the same Capsule. The Mac Ledger remains byte-identical; both working
 Samsung Core heads are unchanged. All 892 Flutter tests, 114 FFI tests, analysis,
-review gates and CI pass. Evidence belongs to
-`core_recovery_relationship_qualification_20261118` in the existing acceptance
+review gates and CI pass. Evidence belongs to the
+core_recovery_relationship_qualification_20261118 entry in the existing acceptance
 record below.
 
 The two owner-authorized temporary test identities, their local seed records,
