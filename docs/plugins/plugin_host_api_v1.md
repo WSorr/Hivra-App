@@ -503,6 +503,10 @@ authorize network access through the common workspace API.
   ports, workspace serialization/OS lease and package binding checks. Existing
   local/VPS custody still has one executor and no implicit local fallback.
   Remote checkpoint presentation is read-only and does not take the action lease.
+  This status path returns the initial package view without servicing its
+  requests. A package can supply its complete configuration/actions in that
+  view while retaining the requests for normal execution; the host does not
+  reconstruct missing package controls or interpret its private checkpoint.
   Reading a v1 grant retains custody evidence; it never becomes v2 network
   authority, arms a timer or silently upgrades its scope. The owner must approve
   the new generic terms. The source change does not deploy or restart a VPS.

@@ -194,7 +194,8 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Make a scheduled package's execution destination clear before Start. The owner
+Make a scheduled package's execution destination clear before Start and retain
+its controls when observing the workspace without executing service requests. The owner
 can distinguish execution on this device from execution on a VPS, choose the
 next destination through the existing controls, and see that destination in
 the Start button and existing permission form. A running server process must
@@ -222,13 +223,28 @@ handlers; the existing grant/Start owner is unchanged.
 Focused widget regressions cover local execution, a selected but not yet adopted
 VPS, actual VPS execution, expired permission with a live server process, and
 cancellation before Start. The 360 x 780 layout keeps the destination controls
-above Start. All 906 Flutter tests, analysis and review gates pass. Local macOS
-and Android debug compilation passes; these source preflights are not exact
-packaged acceptance. Native acceptance of the new presentation remains pending.
-Native acceptance must reopen the existing Mac/Samsung workspace, verify the
-destination and permission presentation, cold-start and return to the same
-Capsule without Start, new grants or VPS mutations. Existing local trading must
-not be interrupted merely to inspect the new interface.
+above Start. All 906 Flutter tests, analysis and review gates pass. Exact
+`e912205` ZIP/APK qualification passed for the generic target/permission panel,
+reopening, cold process restart and return on Mac/Samsung. Three Mac and two
+Samsung Core heads are retained. Samsung shows its existing local workflow;
+Mac separately shows the VPS process alive and its permission expired.
+Results belong to `workspace_execution_clarity_20261119` in the existing
+acceptance record below. No Start, new grant, executor switch or VPS update was
+performed. The owner explicitly allowed app restart with the existing local
+workflow. Native Start and permission-dialog behavior remain excluded.
+
+Full Mac controls remain unqualified: Jack 0.2.7 emits an empty intermediate
+view while yielding recovery reads, whereas read-only remote status consumes
+the first view. The same outcome therefore includes a package-only correction:
+reuse Jack's existing presentation for the initial `open`, retaining subsequent
+continuations and their requests. The local 0.2.8 candidate passes 104 Jack
+tests and the plugin review. An isolated actual-WASM comparison with the
+published 0.2.7 shows full settings/Start in five pending-read cases while
+requests, continuation and checkpoint are identical; it dispatches no network.
+This is local development evidence, not canonical CI bytes or VPS acceptance.
+Candidate commit/CI and an authorized package rollout remain pending. The
+current prohibition on VPS changes and trading commands remains in force.
+No host API, strategy, grant or recovery path is replaced by this repair.
 
 ### Qualified Capsule Removal Seed Scope
 
