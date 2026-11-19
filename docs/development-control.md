@@ -233,18 +233,26 @@ acceptance record below. No Start, new grant, executor switch or VPS update was
 performed. The owner explicitly allowed app restart with the existing local
 workflow. Native Start and permission-dialog behavior remain excluded.
 
-Full Mac controls remain unqualified: Jack 0.2.7 emits an empty intermediate
-view while yielding recovery reads, whereas read-only remote status consumes
-the first view. The same outcome therefore includes a package-only correction:
-reuse Jack's existing presentation for the initial `open`, retaining subsequent
-continuations and their requests. The local 0.2.8 candidate passes 104 Jack
-tests and the plugin review. An isolated actual-WASM comparison with the
-published 0.2.7 shows full settings/Start in five pending-read cases while
-requests, continuation and checkpoint are identical; it dispatches no network.
-This is local development evidence, not canonical CI bytes or VPS acceptance.
-Candidate commit/CI and an authorized package rollout remain pending. The
-current prohibition on VPS changes and trading commands remains in force.
-No host API, strategy, grant or recovery path is replaced by this repair.
+The same outcome includes a package-only correction: Jack 0.2.7 emits an empty
+intermediate view while yielding recovery reads, whereas read-only remote
+status consumes the first view. Jack 0.2.8 reuses its existing presentation for
+the initial `open`, retaining subsequent continuations and their requests.
+All 104 Jack tests, plugin review and canonical CI at `4d399c0` pass. Five
+isolated actual-WASM comparisons using the canonical package show full
+settings/Start while requests, continuation and checkpoint remain identical;
+the probe dispatches no network. No host API, strategy, grant or recovery path
+is replaced by this repair.
+
+The canonical 0.2.8 package is installed on Mac through the normal replacement
+path, with the owner's approved checkpoint return and 24-hour access to the
+same saved keys. Repeat opening retains ACH-USDT / 1m / 1 USDT / 20% and shows
+the selected VPS as the next Start destination while the automatic cycle is
+off. Samsung's separate local permission is confirmed revoked and its cycle
+off; its original Capsule is retained. The owner requested an ACH VPS run,
+but the final financial Start remains an owner handoff. Full controls on the
+new remote package and the new runner's effective settings remain unqualified
+until that Start is observed. No new Start, exchange trading command, host
+runtime update, merge or release has been performed by this repair.
 
 ### Qualified Capsule Removal Seed Scope
 
