@@ -127,10 +127,12 @@ not evaluate, stop or expose the replacement's package, credentials, checkpoint
 or grant. The client renders only its own saved checkpoint through the common
 read-only executor, with execution disabled in the package invocation. The
 saved permission terms remain available for a later owner Start; no dispatch,
-write, scheduler or local fallback is admitted by observation. A transport
-failure, including an older runtime's generic rejection, is unavailable rather
-than proof of replacement. Both views keep the existing VPS selected and a new
-Start available without root reconnection. Only a new authorized Start follows
+write, scheduler or local fallback is admitted by observation. A replacement
+reported by status applies even after a successful adoption acknowledgement.
+A failed request or a status response without a workspace view presents
+retained settings with unavailable status. This includes an older runtime's
+generic rejection. Both views keep the existing VPS selected and a new Start
+available without root reconnection. Only a new authorized Start follows
 the existing setup/adoption path; retrying observation never replaces a runner.
 
 Full revocation remains reachable when first workspace open fails, including

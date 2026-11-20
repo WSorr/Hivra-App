@@ -720,7 +720,8 @@ void main() {
         );
         final calls = <String>[];
         var removeDuringReturn = false;
-        var legacy = false;
+        var observation = 'replaced-on-adopt';
+        const observationError = 'Test observation unavailable';
         final unused = UnusedWorkspacePorts();
         final remote = PluginWorkspaceRemoteService(
           files: f.files,
@@ -731,17 +732,35 @@ void main() {
             final input = Map<String, dynamic>.from(
               jsonDecode(utf8.decode(payload)) as Map,
             );
-            calls.add(input['command'] as String);
-            if (legacy && ['status', 'adopt'].contains(input['command'])) {
+            final operation = input['command'] as String;
+            calls.add(operation);
+            if (observation == 'legacy' && operation == 'adopt') {
               throw StateError(
                 'VPS operation failed; no remote success acknowledged',
               );
             }
-            final result = await runner.dispatch(input);
-            if (removeDuringReturn && input['command'] == 'return') {
+            final response = switch ((observation, operation)) {
+              ('replaced-on-status' || 'unobserved' || 'ready', 'adopt') => {
+                'binding': oldBinding,
+                'runner': {'state': 'running', 'execution_controls': 4},
+                'view': null,
+              },
+              ('unobserved' || 'ready', 'status') => {
+                'binding': oldBinding,
+                'runner': {'state': 'running', 'execution_controls': 4},
+                'view':
+                    observation == 'ready'
+                        ? {...presentation(), 'title': 'Fresh VPS view'}
+                        : null,
+                if (observation == 'unobserved')
+                  'observation_error': observationError,
+              },
+              _ => await runner.dispatch(input),
+            };
+            if (removeDuringReturn && operation == 'return') {
               f.registry.installed = false;
             }
-            return jsonEncode({'ok': true, 'result': result});
+            return jsonEncode({'ok': true, 'result': response});
           },
         );
         final module = PluginRuntimeModule(
@@ -760,17 +779,40 @@ void main() {
           workspaceRemote: remote,
         );
         final retainedWorkspace = await f.state();
-        for (final unavailable in [false, true]) {
-          legacy = unavailable;
+        f.newSchema = true;
+        f.requestOnOpen = true;
+        for (final (scenario, health, commands) in const [
+          ('replaced-on-adopt', 'replaced', ['adopt']),
+          ('legacy', 'unavailable', ['adopt']),
+          ('replaced-on-status', 'replaced', ['adopt', 'status']),
+          ('unobserved', 'unavailable', ['adopt', 'status']),
+          ('ready', 'running', ['adopt', 'status']),
+        ]) {
+          observation = scenario;
+          calls.clear();
           final view = await module.runWorkspaceAction(
             record: f.registry.record,
             action: 'open',
           );
           expect(
-            view['host_connection']['health'],
-            unavailable ? 'unavailable' : 'replaced',
+            view['host_connection'],
+            containsPair('health', health),
+            reason: scenario,
           );
-          expect(view['execution']['running'], isFalse);
+          expect(view['host_connection']['target'], 'vps');
+          expect(view['host_connection']['saved'], isTrue);
+          expect(
+            view['host_connection']['observation_error'],
+            scenario == 'unobserved' ? observationError : null,
+          );
+          expect(
+            view['title'],
+            scenario == 'ready' ? 'Fresh VPS view' : presentation()['title'],
+          );
+          if (scenario != 'ready') {
+            expect(view['execution']['running'], isFalse);
+          }
+          expect(calls, commands);
           expect(await f.state(), retainedWorkspace);
           expect(
             await serverFiles.files.readPluginState(
@@ -781,7 +823,11 @@ void main() {
             currentGrant,
           );
         }
-        legacy = false;
+        expect(f.sends, 0);
+        f.newSchema = false;
+        f.requestOnOpen = false;
+        observation = 'replaced-on-adopt';
+        calls.clear();
         removeDuringReturn = true;
         await expectLater(
           module.useWorkspaceOnline(f.registry.record),
@@ -811,7 +857,7 @@ void main() {
           ))!['selected'],
           isFalse,
         );
-        expect(calls, ['adopt', 'adopt', 'return', 'return']);
+        expect(calls, ['return', 'return']);
         expect(f.sends, 0);
         expect(
           await serverFiles.files.readPluginState(
