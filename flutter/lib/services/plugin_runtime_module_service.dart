@@ -363,20 +363,26 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
             executorId: c['executor_id'] as String,
           ),
         });
-        if (adoption['runner']?['state'] == 'replaced') {
+        result =
+            adoption['runner']?['state'] == 'replaced'
+                ? adoption
+                : await _remote.request(
+                  c,
+                  action == 'open' ? 'status' : 'action',
+                  action == 'open'
+                      ? const {}
+                      : {'action': action, 'settings': settings},
+                );
+        if (result['runner']?['state'] == 'replaced') {
           if (action != 'open') {
             throw StateError(
               'Previous assignment replaced; use Start for a new assignment',
             );
           }
           unavailable = 'replaced';
-        } else {
-          result = await _remote.request(
-            c,
-            action == 'open' ? 'status' : 'action',
-            action == 'open'
-                ? const {}
-                : {'action': action, 'settings': settings},
+        } else if (result['view'] is! Map) {
+          throw StateError(
+            'VPS observation unavailable; its lifecycle is not verified',
           );
         }
       } catch (_) {
@@ -393,11 +399,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           readOnly: true,
         );
       } else {
-        if (result?['view'] is! Map) {
-          throw StateError(
-            'VPS observation unavailable; its lifecycle is not verified',
-          );
-        }
         view = Map<String, dynamic>.from(result!['view'] as Map);
       }
       if (activeCapsuleRootHex() != owner ||
