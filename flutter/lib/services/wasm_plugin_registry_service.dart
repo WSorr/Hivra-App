@@ -91,9 +91,20 @@ class WasmPluginRegistryService {
 
   Future<List<WasmPluginRecord>> _loadPluginsUnlocked() async {
     final file = await _registryFile();
-    if (!await file.exists()) {
-      await _cleanupUnreferencedFiles(const <WasmPluginRecord>[]);
-      return const <WasmPluginRecord>[];
+    final type = await FileSystemEntity.type(file.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) {
+      // Type lookup also reports notFound on lookup errors.
+      final RandomAccessFile opened;
+      try {
+        opened = await file.open();
+      } on PathNotFoundException {
+        await _cleanupUnreferencedFiles(const <WasmPluginRecord>[]);
+        return const <WasmPluginRecord>[];
+      }
+      await opened.close();
+    }
+    if (type != FileSystemEntityType.file) {
+      throw const FormatException('Plugin registry must be a regular file');
     }
 
     final decoded = jsonDecode(await file.readAsString());

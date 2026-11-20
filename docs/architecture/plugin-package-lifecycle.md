@@ -100,11 +100,11 @@ Every serialized load repairs the managed directory:
   rewrite; pending-removal records retain their cleanup obligation;
 - duplicate `plugin_id` records retain one active package;
 - unreferenced `.wasm`, `.zip`, and atomic temporary files are deleted;
-- malformed registry state, including non-object entries or missing record/file
-  identities, fails closed before repair, binding or mutation. The complete
-  inventory is parsed before file reconciliation; invalid entries are never
-  silently dropped or treated as proof that package files are unreferenced.
-  The damaged registry and managed files remain untouched for recovery.
+- an empty inventory can start with a confirmed absent registry. A non-regular
+  registry path, failed read or malformed inventory stops repair, binding and
+  mutation. The complete inventory, including all record and file identities,
+  is validated before file reconciliation. The registry and managed files
+  remain available for recovery.
 
 This recovery is idempotent. Package or temporary-file cleanup may be retried
 after restart without changing the committed registry result.
