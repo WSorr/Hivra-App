@@ -141,6 +141,66 @@ void main() {
     await expectLater(service.loadPlugins(), throwsA(isA<FormatException>()));
   });
 
+  test('unavailable registry path preserves packages until retry', () async {
+    final source = await _createPluginPackage(tempDocsDir, version: '1.0.0');
+    final record = await service.installPluginFromFile(source);
+    final plugins = await service.pluginsDirectory();
+    final registry = File('${plugins.path}/registry.json');
+    final stored = File('${plugins.path}/${record.storedFileName}');
+    final bytes = await stored.readAsBytes();
+    final savedRegistry = await registry.rename(
+      '${tempDocsDir.path}/saved-registry.json',
+    );
+    final reopened = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+    );
+
+    Future<void> expectReadUnavailable() async {
+      Object? failure;
+      try {
+        await reopened.loadPlugins();
+      } catch (error) {
+        failure = error;
+      }
+      expect(
+        await stored.exists(),
+        isTrue,
+        reason: 'An unavailable inventory must retain installed packages',
+      );
+      expect(await stored.readAsBytes(), bytes);
+      expect(failure, isA<FormatException>());
+      await expectLater(
+        reopened.resolveRuntimeBinding(record.pluginId!),
+        throwsFormatException,
+      );
+    }
+
+    final directory = await Directory(registry.path).create();
+    await expectReadUnavailable();
+    await directory.delete();
+
+    final link = await Link(
+      registry.path,
+    ).create('${tempDocsDir.path}/missing-registry.json');
+    await expectReadUnavailable();
+    await link.delete();
+
+    await savedRegistry.rename(registry.path);
+    await IOOverrides.runZoned(
+      expectReadUnavailable,
+      fseGetType:
+          (path, followLinks) async =>
+              path == registry.path
+                  ? FileSystemEntityType.notFound
+                  : FileSystemEntity.typeSync(path, followLinks: followLinks),
+    );
+    expect(
+      (await reopened.resolveRuntimeBinding(record.pluginId!)).packageId,
+      record.id,
+    );
+    expect(await stored.readAsBytes(), bytes);
+  });
+
   test(
     'incomplete registry entries never admit execution or destructive cleanup',
     () async {
