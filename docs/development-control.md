@@ -244,9 +244,17 @@ Source qualification passes 912 Flutter tests, analysis and review gates.
 The existing headless fixture also passes with the canonical Jack 0.2.8 WASM
 and a separately built native process, using synthetic service responses and
 temporary data. Installer tests execute Connect, first bootstrap and explicit
-runtime update in isolation and verify assignment preservation. Exact ZIP/APK
-qualification and native Mac/Samsung smoke remain pending; these tests do not
-establish that the current live runtime implements the new status response.
+runtime update in isolation and verify assignment preservation. Exact `de5b26c`
+ZIP/APK qualification retains three Mac and two Samsung Capsule heads. Mac
+reopening, Retry, cold restart and return preserve its saved ACH settings,
+VPS selection and available Start without root reconnection. Samsung opens its
+current MNT assignment; the first cold-reopen observation was unavailable, then
+Retry restored the same VPS view without root reconnection or a new grant. Its
+older Jack 0.2.7 has a minimal retained view on that failure; the cause of the
+failed observation is unconfirmed. No financial controls were exercised and
+the live process remains PID 217894 with no restarts. Live Connect/replacement
+and the new server's precise `replaced` response remain outside native signoff;
+updating that running executor is explicitly excluded from this repair.
 
 ### Qualified Capsule Removal Seed Scope
 
