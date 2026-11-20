@@ -850,12 +850,14 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       builder:
           (sheetContext) => StatefulBuilder(
             builder: (context, setModalState) {
-              return Container(
+              final media = MediaQuery.of(context);
+              return SingleChildScrollView(
                 padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                  bottom: media.padding.bottom + media.viewInsets.bottom + 16,
                   left: 16,
                   right: 16,
                   top: 16,
