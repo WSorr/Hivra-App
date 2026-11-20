@@ -194,6 +194,70 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
+Connect to a VPS without replacing its current assignment, and reopen a
+superseded workspace with its own saved settings and a usable new Start.
+The owner retains the saved SSH connection, package checkpoint and original
+permission terms when another device or Capsule starts on the same server.
+The current MNT workflow on the owner's VPS is outside this repair's mutations.
+The implemented contract belongs to [Plugin Host API](plugins/plugin_host_api_v1.md).
+
+Connection, assignment and service health are separate observations. Connect
+prepares SSH access and bootstraps a missing native runtime; it does not install
+a package, transfer exchange credentials, stop a current process or alter its
+binding/grant. The existing explicit runtime-update action remains separate
+and retains the current assignment's data and permission terms. Only an
+explicit owner Start enters the existing setup/adoption path to replace the
+managed package and assignment. There is one replacement owner, with Connect's
+second entry removed; no command, service, state file or persistent schema is added.
+
+After replacement, a prior connection can observe only that its own binding
+is no longer current. It cannot obtain the replacement's view, keys, state or
+grant, and ordinary requests stay bound to the current assignment. The common
+read-only executor renders this Capsule's retained opaque checkpoint without
+network/AI requests, credential access, writes or scheduling. That presentation
+keeps the saved VPS selected for a new Start and preserves matching permission
+terms; it is not a local execution fallback or current exchange evidence.
+Package-specific strategy and state interpretation remain in the package.
+
+The server returns `replaced` through the existing status/adoption response.
+Transport failure is separately unavailable; old runtimes without this response
+cannot establish the precise reason. Both outcomes retain the new Start and
+clearly label the saved view. Definitive replacement status requires the new
+server source; a running older executor is not updated implicitly by Connect.
+Retry and cold opening repeat the same observation without changing custody.
+A new Start reuses matching owner access and the existing connection, freezes
+the selected settings, and performs one replacement. Already accepted service
+actions remain at the service for the owner to manage.
+
+The generic execution-location UI and Jack 0.2.8 initial-view correction already
+have exact Mac/Samsung and canonical-package evidence in
+`workspace_execution_clarity_20261119` of the existing acceptance record below.
+The later device-change check confirmed the next defect: Connect replaced the
+Mac assignment before Start; after the owner started Samsung's MNT assignment,
+Mac opening failed with a generic VPS error and no Start. This repair preserves
+that evidence and adds source/fixture qualification before requesting exact
+artifacts. Native validation must retain the current MNT process, use the
+existing Capsules, avoid financial Start/Stop, and distinguish the older live
+runtime's unavailable response from the new explicit replaced response.
+
+Source qualification passes 912 Flutter tests, analysis and review gates.
+The existing headless fixture also passes with the canonical Jack 0.2.8 WASM
+and a separately built native process, using synthetic service responses and
+temporary data. Installer tests execute Connect, first bootstrap and explicit
+runtime update in isolation and verify assignment preservation. Exact `de5b26c`
+ZIP/APK qualification retains three Mac and two Samsung Capsule heads. Mac
+reopening, Retry, cold restart and return preserve its saved ACH settings,
+VPS selection and available Start without root reconnection. Samsung opens its
+current MNT assignment; the first cold-reopen observation was unavailable, then
+Retry restored the same VPS view without root reconnection or a new grant. Its
+older Jack 0.2.7 has a minimal retained view on that failure; the cause of the
+failed observation is unconfirmed. No financial controls were exercised and
+the live process remains PID 217894 with no restarts. Live Connect/replacement
+and the new server's precise `replaced` response remain outside native signoff;
+updating that running executor is explicitly excluded from this repair.
+
+### Qualified Capsule Removal Seed Scope
+
 Delete one canonical Capsule without unlocking unrelated Capsules. The owner
 confirms removal in the existing selector, retains every other Capsule and
 returns to the selector. The removal contract belongs to
@@ -227,8 +291,8 @@ test backup was created. Evidence belongs to
 `capsule_removal_seed_scope_20261119` in the existing acceptance record below.
 This qualifies healthy canonical-index removal in the tested account, not a
 fixed prompt count for every macOS environment. Legacy alias and native fault
-cases retain source-test evidence. Native qualification is complete; integration
-remains pending, and no next product outcome is selected.
+cases retain source-test evidence. PR #457 is merged in main `4d123a5`; main CI
+`44504520187` passed, and its completed branch was removed.
 
 ### Qualified Core Recovery And Chat Readiness
 

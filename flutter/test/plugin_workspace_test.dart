@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -389,6 +390,7 @@ void main() {
               required port,
               required password,
               required trustPeer,
+              bool reinstall = false,
             }) async {
               fail('Cancelling reconnection must not change the VPS');
             },
@@ -452,6 +454,7 @@ void main() {
                   required port,
                   required password,
                   required trustPeer,
+                  bool reinstall = false,
                 }) async => fail('Revocation must not install a server'),
           ),
         ),
@@ -587,7 +590,7 @@ void main() {
   );
 
   test(
-    'old device returns only its sealed handoff through the normal module',
+    'replaced and unavailable workspaces retain only their own checkpoint and recovery',
     () async {
       final f = await Fixture.create();
       final serverFiles = await Fixture.create();
@@ -649,8 +652,21 @@ void main() {
             scheduleTimers: false,
           ),
         );
+        final displaced = await runner.dispatch({
+          ...oldBinding,
+          'command': 'status',
+        });
+        expect(displaced['binding'], oldBinding);
+        expect(displaced['runner']['state'], 'replaced');
+        expect(displaced['view'], isNull);
+        expect(jsonEncode(displaced), isNot(contains(newBinding['owner'])));
         await expectLater(
-          runner.dispatch({...oldBinding, 'command': 'status'}),
+          runner.dispatch({
+            ...oldBinding,
+            'command': 'action',
+            'action': 'run',
+            'settings': const {},
+          }),
           throwsStateError,
         );
         final request = {
@@ -704,6 +720,7 @@ void main() {
         );
         final calls = <String>[];
         var removeDuringReturn = false;
+        var legacy = false;
         final unused = UnusedWorkspacePorts();
         final remote = PluginWorkspaceRemoteService(
           files: f.files,
@@ -715,6 +732,11 @@ void main() {
               jsonDecode(utf8.decode(payload)) as Map,
             );
             calls.add(input['command'] as String);
+            if (legacy && ['status', 'adopt'].contains(input['command'])) {
+              throw StateError(
+                'VPS operation failed; no remote success acknowledged',
+              );
+            }
             final result = await runner.dispatch(input);
             if (removeDuringReturn && input['command'] == 'return') {
               f.registry.installed = false;
@@ -737,10 +759,29 @@ void main() {
           readActiveCapsuleRootHex: () => f.owner,
           workspaceRemote: remote,
         );
-        await expectLater(
-          module.runWorkspaceAction(record: f.registry.record, action: 'open'),
-          throwsStateError,
-        );
+        final retainedWorkspace = await f.state();
+        for (final unavailable in [false, true]) {
+          legacy = unavailable;
+          final view = await module.runWorkspaceAction(
+            record: f.registry.record,
+            action: 'open',
+          );
+          expect(
+            view['host_connection']['health'],
+            unavailable ? 'unavailable' : 'replaced',
+          );
+          expect(view['execution']['running'], isFalse);
+          expect(await f.state(), retainedWorkspace);
+          expect(
+            await serverFiles.files.readPluginState(
+              currentDirectory,
+              serverFiles.registry.record.pluginId!,
+              'workspace-execution.v1.json',
+            ),
+            currentGrant,
+          );
+        }
+        legacy = false;
         removeDuringReturn = true;
         await expectLater(
           module.useWorkspaceOnline(f.registry.record),
@@ -770,7 +811,7 @@ void main() {
           ))!['selected'],
           isFalse,
         );
-        expect(calls, ['adopt', 'return', 'return']);
+        expect(calls, ['adopt', 'adopt', 'return', 'return']);
         expect(f.sends, 0);
         expect(
           await serverFiles.files.readPluginState(
@@ -788,8 +829,9 @@ void main() {
           ),
           currentGrant,
         );
+        final afterReturn = [...calls];
         await module.useWorkspaceOnline(f.registry.record);
-        expect(calls, ['adopt', 'return', 'return']);
+        expect(calls, afterReturn);
 
         // A runtime update may install a new package while this owner's old
         // sealed receipt still names the previous digest. A fresh authorized
@@ -1089,6 +1131,146 @@ void main() {
     });
   }
 
+  for (final operation in ['connect', 'bootstrap', 'update']) {
+    test(
+      'VPS $operation changes only its authorized installation scope',
+      () async {
+        final home = await Directory.systemTemp.createTemp('hivra_connect_');
+        addTearDown(() => home.delete(recursive: true));
+        final base = '${home.path}/runtime';
+        final data = '${home.path}/data';
+        final ssh = '${home.path}/ssh';
+        final commands = Directory('${home.path}/commands');
+        await commands.create();
+        await Directory(data).create();
+        await Directory(ssh).create();
+        final calls = File('${home.path}/service-calls');
+        await calls.writeAsString('');
+        final archive =
+            Archive()
+              ..addFile(
+                ArchiveFile.string(
+                  'bin/hivra-workspace-runner',
+                  'candidate runtime',
+                ),
+              )
+              ..addFile(
+                ArchiveFile.string('bin/libhivra_ffi.so', 'candidate library'),
+              )
+              ..addFile(
+                ArchiveFile.string(
+                  'hivra-workspace-runner.service',
+                  'candidate unit',
+                ),
+              );
+        final bytes = GZipEncoder().encode(TarEncoder().encode(archive))!;
+        final protected = <File, List<int>>{};
+        if (operation != 'bootstrap') {
+          await Directory('$base/current/bin').create(recursive: true);
+          for (final path in [
+            '$base/current/bin/hivra-workspace-runner',
+            '$base/control',
+            '$data/runner.json',
+            '$data/credentials.json',
+          ]) {
+            final f = File(path);
+            await f.writeAsString('retained ${f.uri.pathSegments.last}');
+            protected[f] = await f.readAsBytes();
+          }
+          await Process.run('chmod', [
+            '755',
+            '$base/current/bin/hivra-workspace-runner',
+          ]);
+        }
+        final keys = File('$ssh/authorized_keys');
+        await keys.writeAsString('retained owner key\n');
+        for (final entry
+            in <String, String>{
+              'id': 'if [ "\$1" = -u ]; then printf 0; fi',
+              'uname':
+                  'if [ "\$1" = -s ]; then printf Linux; else printf x86_64; fi',
+              'flock': 'exit 0',
+              'systemctl': 'printf "%s\\n" "\$*" >> "\$HIVRA_TEST_CONTROL_LOG"',
+              'useradd': 'exit 91',
+              'runuser': 'exit 92',
+              'sha256sum':
+                  Platform.isMacOS
+                      ? 'exec /usr/bin/shasum -a 256 "\$@"'
+                      : 'exec /usr/bin/sha256sum "\$@"',
+              'install':
+                  'if [ "\$1" = -d ]; then for last do :; done; exec /usr/bin/install -d -m 700 "\$last"; fi\nexec /usr/bin/install "\$@"',
+            }.entries) {
+          final f = File('${commands.path}/${entry.key}');
+          await f.writeAsString('#!/bin/sh\n${entry.value}\n');
+          await Process.run('chmod', ['755', f.path]);
+        }
+        final script = PluginWorkspaceRemoteService.installationScript(
+              bytes,
+              sha256.convert(bytes).toString(),
+              'ssh-ed25519 AAAA hivra-workspace-${'f' * 64}',
+              'f' * 64,
+              reinstall: operation == 'update',
+            )
+            .replaceAll('/opt/hivra-workspace', base)
+            .replaceAll('/var/lib/hivra-workspace', data)
+            .replaceAll('/root/.ssh', ssh)
+            .replaceAll(
+              '/etc/systemd/system/hivra-workspace-runner.service',
+              '${home.path}/service',
+            );
+        final result = await Process.run(
+          '/bin/sh',
+          ['-c', script],
+          environment: {
+            'PATH': '${commands.path}:${Platform.environment['PATH']}',
+            'HIVRA_TEST_CONTROL_LOG': calls.path,
+          },
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        expect(jsonDecode(result.stdout as String), {'connected': true});
+        expect(await keys.readAsString(), contains('retained owner key'));
+        expect(
+          await keys.readAsString(),
+          contains('hivra-workspace-${'f' * 64}'),
+        );
+        final serviceCalls = await calls.readAsString();
+        if (operation == 'connect') {
+          expect(serviceCalls, isEmpty);
+          for (final f in protected.entries) {
+            expect(await f.key.readAsBytes(), f.value);
+          }
+        } else {
+          expect(
+            await File(
+              '$base/current/bin/hivra-workspace-runner',
+            ).readAsString(),
+            'candidate runtime',
+          );
+          if (operation == 'bootstrap') {
+            expect(serviceCalls, isNot(contains('start ')));
+            expect(serviceCalls, isNot(contains('stop ')));
+            expect(File('$data/runner.json').existsSync(), isFalse);
+            expect(File('$data/credentials.json').existsSync(), isFalse);
+          } else {
+            expect(
+              serviceCalls,
+              contains('stop hivra-workspace-runner.service'),
+            );
+            expect(
+              serviceCalls,
+              contains('start hivra-workspace-runner.service'),
+            );
+            for (final f in protected.entries.where(
+              (e) => e.key.path.startsWith(data),
+            )) {
+              expect(await f.key.readAsBytes(), f.value);
+            }
+          }
+        }
+      },
+    );
+  }
+
   test('status before adoption does not initialize a workspace', () async {
     final f = await Fixture.create();
     addTearDown(f.close);
@@ -1115,6 +1297,52 @@ void main() {
     expect(f.sends, 0);
     expect((await f.files.capsuleDirForHex(f.owner)).existsSync(), isFalse);
   });
+
+  test(
+    'read-only local presentation retains delegated state without execution',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      await f.runtime().releaseWorkspaceToVps(
+        f.registry.record,
+        executorId: 'e' * 64,
+      );
+      final before = await f.state();
+      final grant = await f.runtime().readWorkspaceExecution(
+        f.registry.record,
+        enforceHost: false,
+      );
+      f.requestOnOpen = true;
+      f.onReadSecrets =
+          () async => fail('Observation must not open credentials');
+      final view = await f.runtime().runWorkspaceAction(
+        record: f.registry.record,
+        action: 'open',
+        readOnly: true,
+      );
+      expect(view['title'], f.registry.record.displayName);
+      expect(view['execution']['running'], isFalse);
+      expect(f.executionSeen.last['running'], isFalse);
+      expect(f.executionSeen.last['enabled'], isFalse);
+      expect(await f.state(), before);
+      expect(
+        await f.runtime().readWorkspaceExecution(
+          f.registry.record,
+          enforceHost: false,
+        ),
+        grant,
+      );
+      expect(f.sends, 0);
+      await expectLater(
+        f.runtime().runWorkspaceAction(
+          record: f.registry.record,
+          action: 'run',
+        ),
+        throwsStateError,
+      );
+    },
+  );
 
   test(
     'Start wakes the package immediately; observation never starts a second cycle',
@@ -1401,6 +1629,332 @@ void main() {
     },
   );
 
+  for (final health in ['replaced', 'unavailable']) {
+    testWidgets(
+      'previous VPS assignment keeps a new Start without reconnection ($health)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(390, 844));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final access = permission('https://one.example');
+        final deadline = DateTime.now().millisecondsSinceEpoch + 3600000;
+        var started = false;
+        final configuration = <Map<String, dynamic>>[];
+        final actions = <String>[];
+        Map<String, dynamic> view() => {
+          ...presentation(),
+          'fields': [
+            {
+              'id': 'selection',
+              'label': 'Owner selection',
+              'type': 'text',
+              'value': 'retained-choice',
+            },
+          ],
+          'actions': [
+            {
+              'id': 'begin_owner_workflow',
+              'label': 'Start application',
+              'host': 'workspace.start',
+            },
+          ],
+          'schedule': {
+            'version': 2,
+            'action': 'run',
+            'interval_seconds': 60,
+            'description': 'Owner workflow',
+            'access': access,
+          },
+          'execution': {
+            'active': true,
+            'enabled': true,
+            'running': started,
+            'revision': 1,
+            'expires_at_ms': deadline,
+            'access': access,
+            'credentials': {
+              'default': {'token': 'saved-reference'},
+            },
+          },
+          'host_connection': {
+            'target': 'vps',
+            'host': 'server.example',
+            'port': 22,
+            'saved': true,
+            'health': started ? 'running' : health,
+          },
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction: (action, settings) async {
+                actions.add(action);
+                return view();
+              },
+              listSecrets:
+                  () async =>
+                      throw StateError('Matching access must be reused'),
+              connectVps:
+                  ({
+                    required host,
+                    required port,
+                    required password,
+                    required trustPeer,
+                    bool reinstall = false,
+                  }) async => fail('Start must not reconnect'),
+              configureExecution: ({
+                required enabled,
+                required expiresAtMs,
+                expectedRevision,
+                revoke = false,
+                approvedScope,
+                credentialBindings,
+                settings = const {},
+              }) async {
+                expect(enabled, isTrue);
+                expect(expiresAtMs, deadline);
+                expect(expectedRevision, 1);
+                expect(approvedScope?['start_action'], 'begin_owner_workflow');
+                expect(credentialBindings, isNull);
+                configuration.add(Map<String, dynamic>.from(settings));
+                started = true;
+                return view();
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            health == 'replaced'
+                ? 'Previous assignment replaced'
+                : 'Previous assignment unavailable',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('Execution location: This device'),
+          findsNothing,
+        );
+        expect(find.text('Retry opening plugin'), findsNothing);
+        final selection = find.byKey(const ValueKey('plugin-field-selection'));
+        await tester.scrollUntilVisible(
+          selection,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.enterText(selection, 'new-choice');
+        final start = find.byKey(
+          const ValueKey('plugin-action-begin_owner_workflow'),
+        );
+        await tester.scrollUntilVisible(
+          start,
+          -300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(start);
+        await tester.pumpAndSettle();
+        expect(configuration, [
+          {'selection': 'new-choice'},
+        ]);
+        expect(find.text('Plugin permissions'), findsNothing);
+        expect(find.text('VPS process is running'), findsOneWidget);
+        expect(actions, ['open']);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  for (final target in ['local', 'selected', 'vps']) {
+    testWidgets('execution destination is visible before Start ($target)', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(360, 780));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final actions = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (action, _) async {
+              actions.add(action);
+              return {
+                ...presentation(),
+                'fields': [
+                  {
+                    'id': 'selection',
+                    'label': 'Selection',
+                    'type': 'text',
+                    'value': 'unchanged',
+                  },
+                ],
+                'actions': [
+                  {
+                    'id': 'start',
+                    'label': 'Begin workflow',
+                    'host': 'workspace.start',
+                  },
+                ],
+                'host_connection': {
+                  'target': target == 'vps' ? 'vps' : 'local',
+                  'selected': target != 'local',
+                  'saved': target != 'local',
+                  if (target != 'local') 'host': 'server.example',
+                  'health': target == 'vps' ? 'running' : 'not_started',
+                },
+                'execution': {
+                  'mode': target == 'vps' ? 'vps' : 'local',
+                  'active': false,
+                  'running': false,
+                },
+              };
+            },
+            connectVps: ({
+              required host,
+              required port,
+              required password,
+              required trustPeer,
+              bool reinstall = false,
+            }) async {
+              fail('Rendering must not connect a server');
+            },
+            useOnline: () async => fail('Rendering must not change execution'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final start = find.byKey(const ValueKey('plugin-action-start'));
+      final expected = target == 'local' ? 'this device' : 'VPS server.example';
+      expect(
+        find.descendant(of: start, matching: find.textContaining(expected)),
+        findsOneWidget,
+      );
+      final location = find.text(
+        'Execution location: ${target == 'vps' ? 'VPS server.example' : 'This device'}',
+      );
+      expect(location, findsOneWidget);
+      final choose = find.byKey(const ValueKey('workspace-target-vps'));
+      expect(
+        tester.getTopLeft(choose).dy,
+        lessThan(tester.getTopLeft(start).dy),
+      );
+      expect(tester.getBottomRight(start).dy, lessThan(780));
+      expect(actions, ['open']);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('running server does not hide expired workflow permission', (
+    tester,
+  ) async {
+    final expired = DateTime(2020, 2, 3, 4, 5).millisecondsSinceEpoch;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
+          runWorkspaceAction:
+              (_, _) async => {
+                ...presentation(),
+                'host_connection': {
+                  'target': 'vps',
+                  'host': 'server.example',
+                  'health': 'running',
+                },
+                'execution': {
+                  'mode': 'vps',
+                  'active': false,
+                  'running': false,
+                  'revoked': false,
+                  'expires_at_ms': expired,
+                },
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Permissions expired'), findsOneWidget);
+    expect(find.textContaining('04:05'), findsOneWidget);
+    expect(find.textContaining('Automatic cycle off.'), findsOneWidget);
+    expect(find.textContaining('VPS process is running'), findsOneWidget);
+    expect(find.textContaining('Permissions active'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final remote in [false, true]) {
+    testWidgets(
+      'Start permission names its destination and Cancel does not start ($remote)',
+      (tester) async {
+        final access = permission('https://one.example');
+        final scope = {
+          'version': 2,
+          'action': 'run',
+          'interval_seconds': 60,
+          'description': 'Owner workflow',
+          'access': access,
+        };
+        final observed = <String>[];
+        Map<String, dynamic> nextView() => {
+          ...presentation(),
+          'actions': [
+            {
+              'id': 'start',
+              'label': 'Begin workflow',
+              'host': 'workspace.start',
+            },
+          ],
+          'schedule': scope,
+          'access': access,
+          'execution': {'active': false, 'running': false},
+          'host_connection': {
+            'target': 'local',
+            'selected': remote,
+            if (remote) 'host': 'server.example',
+          },
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PluginWorkspaceScreen(
+              capabilities: const ['workspace.schedule'],
+              runWorkspaceAction: (action, _) async {
+                observed.add(action);
+                return nextView();
+              },
+              listSecrets:
+                  () async => [
+                    {'id': 'ref-token', 'label': 'Saved connection'},
+                  ],
+              configureExecution:
+                  ({
+                    required enabled,
+                    required expiresAtMs,
+                    expectedRevision,
+                    revoke = false,
+                    approvedScope,
+                    credentialBindings,
+                    settings = const {},
+                  }) async => fail('Cancel must not grant or start execution'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('plugin-action-start')));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            'Start on ${remote ? 'VPS server.example' : 'this device'}',
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(observed, remote ? ['open'] : ['open', 'start']);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets(
     'remote Start replaces execution with the selected settings without sending Start to the old runner',
     (tester) async {
@@ -1476,9 +2030,11 @@ void main() {
       await tester.enterText(find.byType(TextField), 'new-choice');
       await tester.pump(const Duration(seconds: 61));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Start'));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('plugin-action-start')),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Start'));
+      await tester.tap(find.byKey(const ValueKey('plugin-action-start')));
       await tester.pumpAndSettle();
       expect(actions, ['open', 'open']);
       expect(selected, {'selection': 'new-choice'});
@@ -1687,7 +2243,7 @@ void main() {
                   'selected': true,
                   'host': 'server.example',
                   'port': 22,
-                  'installed': false,
+                  'saved': false,
                   'health': 'setup_unconfirmed',
                 },
               };
@@ -1697,6 +2253,7 @@ void main() {
               required port,
               required password,
               required trustPeer,
+              bool reinstall = false,
             }) async {
               connections++;
               throw busy;
@@ -1705,9 +2262,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('On this device · keep the app open'), findsOneWidget);
-      expect(find.textContaining('VPS execution ·'), findsNothing);
-      expect(find.textContaining('Setup not confirmed'), findsOneWidget);
+      expect(find.text('Execution location: This device'), findsOneWidget);
+      expect(find.textContaining('Execution location: VPS'), findsNothing);
+      expect(
+        find.textContaining('No assignment started from this Capsule'),
+        findsOneWidget,
+      );
       final connect = find.text('Connect VPS');
       await tester.ensureVisible(connect);
       await tester.tap(connect);
@@ -1742,7 +2302,7 @@ void main() {
         findsOneWidget,
       );
       expect(opens, observedOpens);
-      expect(find.textContaining('VPS execution ·'), findsNothing);
+      expect(find.textContaining('Execution location: VPS'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );
@@ -1765,7 +2325,7 @@ void main() {
                   'host_connection': {
                     'host': 'server.example',
                     'port': 22,
-                    'installed': false,
+                    'saved': false,
                   },
                 };
               },
@@ -1774,6 +2334,7 @@ void main() {
                 required port,
                 required password,
                 required trustPeer,
+                bool reinstall = false,
               }) async {
                 expect(host, 'server.example');
                 expect(port, 22);
@@ -3675,6 +4236,7 @@ class Fixture {
   Future<void> Function()? onReadSecrets, onSend;
   final actions = <String>[];
   final settingsSeen = <Map<String, dynamic>>[];
+  final executionSeen = <Map<String, dynamic>>[];
   final received = <Map<String, dynamic>>[];
   Fixture(this.home, this.files, this.origin) : url = '$origin/action';
   static Future<Fixture> create({String origin = 'https://one.example'}) async {
@@ -3745,6 +4307,9 @@ class Fixture {
           Map<String, dynamic>.from(
             request.args['settings'] as Map? ?? const {},
           ),
+        );
+        executionSeen.add(
+          Map<String, dynamic>.from(request.args['execution'] as Map),
         );
         actions.add(action);
         await onInvoke?.call(action);

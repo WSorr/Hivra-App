@@ -203,7 +203,7 @@ class PluginWorkspaceRuntime {
         saved == null
             ? null
             : Map<String, dynamic>.from(jsonDecode(saved) as Map);
-    final control = await _readExecution(record, owner);
+    final control = await _readExecution(record, owner, enforceHost: !readOnly);
     final invocationRevision = control?['revision'];
     final effectiveSettings =
         settings.isNotEmpty
@@ -230,7 +230,15 @@ class PluginWorkspaceRuntime {
       Map<String, dynamic>? result,
     }) async {
       await bound('workspace.continue');
-      final current = await _readExecution(record, owner);
+      final current = await _readExecution(
+        record,
+        owner,
+        enforceHost: !readOnly,
+      );
+      final ownsExecution =
+          (current?['executor'] ?? 'local') == executionHost &&
+          (executionHost != 'vps' ||
+              current?['executor_id'] == executionIdentity);
       final response = await pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: pluginHostApiSchemaVersion,
@@ -245,11 +253,13 @@ class PluginWorkspaceRuntime {
             'observed_at_ms': DateTime.now().toUtc().millisecondsSinceEpoch,
             'execution': {
               'enabled':
+                  ownsExecution &&
                   current?['version'] == 2 &&
                   (current != null && workspaceExecutionEnabled(current)) &&
                   workspaceExecutionIsActive(current),
               'scope': current?['version'] == 2 ? current!['scope'] : null,
               'running':
+                  ownsExecution &&
                   current?['scope']?['action'] != null &&
                   current?['version'] == 2 &&
                   workspaceExecutionEnabled(current!) &&
@@ -353,12 +363,19 @@ class PluginWorkspaceRuntime {
       final requests = output['requests'] as List;
       if (readOnly || requests.isEmpty) {
         final view = currentView!;
-        final current = await _readExecution(record, owner);
+        final current = await _readExecution(
+          record,
+          owner,
+          enforceHost: !readOnly,
+        );
         if (current != null) {
           view['execution'] = _executionPresentation(
             current,
             _cycleObservations['$owner::$pluginId'],
           );
+          if (readOnly && (current['executor'] ?? 'local') != executionHost) {
+            view['execution']['running'] = false;
+          }
           if (!readOnly) _armScheduledExecution(record, owner, current);
         }
         return view;
@@ -761,20 +778,6 @@ class PluginWorkspaceRuntime {
       return null;
     }
     return Map<String, dynamic>.from(control);
-  }
-
-  /// Installation may rebind only a completely ended host grant.
-  static void validateInactiveWorkspaceGrant(
-    dynamic control,
-    String owner,
-    String pluginId,
-  ) {
-    validateWorkspaceExecutionControl(control, owner, pluginId);
-    if (control['executor'] != 'local' ||
-        control['expires_at_ms'] != 0 ||
-        workspaceExecutionEnabled(control)) {
-      throw StateError('Return remote authority before package replacement');
-    }
   }
 
   /// Called by the host transport, never by WASM. The source stays detached

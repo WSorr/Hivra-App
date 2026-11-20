@@ -109,14 +109,29 @@ service availability; it cannot undo an admitted request or an exchange order.
 The existing local/VPS custody mechanism prevents two scheduled executors for
 the same grant. Package-defined scheduling needs no host trading state machine.
 
-Selecting a VPS address is not execution handoff. The host presents the actual
-executor from the current grant; a selected but unacknowledged VPS leaves local
-execution labelled local and setup explicitly unconfirmed. Root-authenticated
-installation prepares the owner's chosen server installation. An explicit Start
-replaces its one managed runner with the current package and selected settings;
-the device that installed the previous runner is not a server owner. Existing
-server-authorized SSH keys may request a new Start, while ordinary observation,
-Stop and removal remain bound to the current installation.
+Selecting or connecting a VPS is not execution handoff. Connect registers the
+Capsule's SSH access and installs a native runtime only when none exists. It
+does not stop an existing process, upload a package or service credentials,
+change its binding, or end its grant. Runtime update is a separate explicit
+operation that preserves the current assignment's data and permission terms.
+An explicit Start replaces the one managed runner with the current package and
+selected settings; the device that installed the previous runner is not a
+server owner. Existing server-authorized SSH keys may request a new Start,
+while ordinary observation, Stop and removal remain bound to the current
+installation. The host connection metadata marks saved access separately from assignment
+health. Runtime installation and Start use the existing installation lock.
+
+When status or adoption addresses a replaced binding, the server returns that
+queried binding with `runner.state: replaced` and no workspace view. It does
+not evaluate, stop or expose the replacement's package, credentials, checkpoint
+or grant. The client renders only its own saved checkpoint through the common
+read-only executor, with execution disabled in the package invocation. The
+saved permission terms remain available for a later owner Start; no dispatch,
+write, scheduler or local fallback is admitted by observation. A transport
+failure, including an older runtime's generic rejection, is unavailable rather
+than proof of replacement. Both views keep the existing VPS selected and a new
+Start available without root reconnection. Only a new authorized Start follows
+the existing setup/adoption path; retrying observation never replaces a runner.
 
 Full revocation remains reachable when first workspace open fails, including
 SSH authentication or an unavailable VPS. The existing custody owner saves
@@ -134,7 +149,7 @@ is sent. Only successful root authentication permits saving the confirmed pin;
 rejection or failed authentication keeps the old binding. This updates the same
 connection and executor identity, not execution permission or package state.
 
-A replaced device may use the same authenticated `return` command with its
+A replaced device may also use the same authenticated `return` command with its
 original `handoff_id` to retrieve that Capsule/package's already sealed
 checkpoint. It cannot end or observe the replacement's active grant. The
 existing custody owner verifies the handoff in both return phases; restoration
@@ -149,7 +164,9 @@ update; earlier forced SSH commands reject requests from a replaced device.
 
 The existing setup path stops/drains the service, seals its old grant through
 the canonical authority owner, installs the current package and adopts only the
-new owner Start. Where the server already has that Capsule/package checkpoint,
+new owner Start. An identical setup without a checkpoint or credential payload
+only acknowledges the existing binding; it does not alter authority or state.
+Where the server already has that Capsule/package checkpoint,
 it retains those opaque bytes instead of restoring a stale device copy. The
 package receives its own `workspace.start` action ID (carried as
 `scope.start_action`) with the new settings; service interpretation and recovery
@@ -351,7 +368,7 @@ observation refreshes. This is an in-memory presentation only: grant changes,
 package replacement and process shutdown invalidate it. Completion is not a
 claim that a provider accepted an effect; the package's result retains that
 distinction. No service history or effect journal is persisted by this projection.
-Remote `status` presents the package's latest atomic opaque checkpoint without
+For a current assignment, remote `status` presents the package's latest atomic opaque checkpoint without
 waiting for a workflow's state lease. It invokes `open` once with the current
 owner/package checks and grant metadata, but saves no returned state, dispatches
 no capability requests and does not arm scheduling. The package owns the view
@@ -492,10 +509,21 @@ authorize network access through the common workspace API.
   ticks and app resume until another owner action or reopening; Start resumes
   workflow observation. Edits survive status refresh, errors cannot overwrite a
   newer action, and failed observations mark the view unavailable.
+  Current execution location and the existing device/VPS controls appear before
+  Start. The Start label and its existing permission form name the intended
+  destination. A selected VPS is the next Start target, not evidence that
+  execution has moved there. Server process health and workflow permission are
+  separate observations; an expired grant remains visibly expired even when
+  the server process is running. These are presentation rules over existing
+  host metadata, not additional package state or authorization steps.
   Local and headless execution share `PluginWorkspaceRuntime`, the same vault
   ports, workspace serialization/OS lease and package binding checks. Existing
   local/VPS custody still has one executor and no implicit local fallback.
   Remote checkpoint presentation is read-only and does not take the action lease.
+  This status path returns the initial package view without servicing its
+  requests. A package can supply its complete configuration/actions in that
+  view while retaining the requests for normal execution; the host does not
+  reconstruct missing package controls or interpret its private checkpoint.
   Reading a v1 grant retains custody evidence; it never becomes v2 network
   authority, arms a timer or silently upgrades its scope. The owner must approve
   the new generic terms. The source change does not deploy or restart a VPS.
