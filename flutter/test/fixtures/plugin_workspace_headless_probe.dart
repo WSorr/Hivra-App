@@ -813,6 +813,35 @@ Future<void> _checkInstalledWasm(
       'credentials': jsonDecode(keys),
     };
     final prior = await WorkspaceRunner.setup(root, installation);
+    final beforeUnstartedSetup =
+        await File('${root.path}/runner.json').readAsBytes();
+    final beforeUnstartedWorkspace = await files.readPluginState(
+      directory,
+      record.pluginId!,
+      'workspace.v1.json',
+    );
+    var unstartedRejected = false;
+    try {
+      await WorkspaceRunner.setup(root, {
+        ...installation,
+        'executor_id': '9' * 64,
+      });
+    } on StateError {
+      unstartedRejected = true;
+    }
+    if (!unstartedRejected ||
+        base64Encode(await File('${root.path}/runner.json').readAsBytes()) !=
+            base64Encode(beforeUnstartedSetup) ||
+        await files.readPluginState(
+              directory,
+              record.pluginId!,
+              'workspace.v1.json',
+            ) !=
+            beforeUnstartedWorkspace) {
+      throw StateError(
+        'Setup without owner Start changed the existing assignment',
+      );
+    }
     final grant = Map<String, dynamic>.from(
       (await runtime().readWorkspaceExecution(record))!,
     );
@@ -953,11 +982,10 @@ Future<void> _checkInstalledWasm(
         scheduleTimers: false,
       ),
     );
-    try {
-      await server.dispatch({...prior, 'command': 'status'});
-      throw StateError('Old device still controls the replacement');
-    } on StateError catch (error) {
-      if (error.message == 'Old device still controls the replacement') rethrow;
+    final displaced = await server.dispatch({...prior, 'command': 'status'});
+    if (displaced['runner']['state'] != 'replaced' ||
+        displaced['view'] != null) {
+      throw StateError('Old device observed the replacement workspace');
     }
     final invalid = jsonDecode(jsonEncode(start)) as Map<String, dynamic>;
     invalid['checkpoint']['execution']['handoff_id'] = '9' * 64;

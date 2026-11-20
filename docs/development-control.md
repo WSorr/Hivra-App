@@ -194,65 +194,59 @@ branch state; published artifacts and their signoff belong to
 
 ## Selected Product Outcome
 
-Make a scheduled package's execution destination clear before Start and retain
-its controls when observing the workspace without executing service requests. The owner
-can distinguish execution on this device from execution on a VPS, choose the
-next destination through the existing controls, and see that destination in
-the Start button and existing permission form. A running server process must
-not imply that an expired workflow permission is active. The generic workspace
-presentation contract belongs to [Plugin Host API](plugins/plugin_host_api_v1.md).
+Connect to a VPS without replacing its current assignment, and reopen a
+superseded workspace with its own saved settings and a usable new Start.
+The owner retains the saved SSH connection, package checkpoint and original
+permission terms when another device or Capsule starts on the same server.
+The current MNT workflow on the owner's VPS is outside this repair's mutations.
+The implemented contract belongs to [Plugin Host API](plugins/plugin_host_api_v1.md).
 
-Current execution assignment, the next selected destination, workflow permission
-and server process health remain distinct existing observations. Selection alone
-does not move execution or authorize Start. Reopening and polling must preserve
-that distinction; cancellation of the permission form grants nothing. The
-existing runtime owns handoff, grants, expiry and execution. The screen only
-presents those results; it does not renew authority, choose a strategy, infer
-service state or add a local fallback. Package-private state, retention and
-reconnection semantics do not change.
+Connection, assignment and service health are separate observations. Connect
+prepares SSH access and bootstraps a missing native runtime; it does not install
+a package, transfer exchange credentials, stop a current process or alter its
+binding/grant. The existing explicit runtime-update action remains separate
+and retains the current assignment's data and permission terms. Only an
+explicit owner Start enters the existing setup/adoption path to replace the
+managed package and assignment. There is one replacement owner, with Connect's
+second entry removed; no command, service, state file or persistent schema is added.
 
-Reuse the existing status panel, target callbacks and Start permission dialog
-instead of adding a destination record or another confirmation. The lower
-duplicate execution controls are removed; recovery and runtime update stay in
-the existing Advanced settings. Existing Flutter Wrap, button and Material
-localization mechanisms provide compact controls and readable local timestamps;
-no dependency, runtime owner, host API, schema or execution path is added.
-One screen and two destination-transition handlers remain one screen and two
-handlers; the existing grant/Start owner is unchanged.
+After replacement, a prior connection can observe only that its own binding
+is no longer current. It cannot obtain the replacement's view, keys, state or
+grant, and ordinary requests stay bound to the current assignment. The common
+read-only executor renders this Capsule's retained opaque checkpoint without
+network/AI requests, credential access, writes or scheduling. That presentation
+keeps the saved VPS selected for a new Start and preserves matching permission
+terms; it is not a local execution fallback or current exchange evidence.
+Package-specific strategy and state interpretation remain in the package.
 
-Focused widget regressions cover local execution, a selected but not yet adopted
-VPS, actual VPS execution, expired permission with a live server process, and
-cancellation before Start. The 360 x 780 layout keeps the destination controls
-above Start. All 906 Flutter tests, analysis and review gates pass. Exact
-`e912205` ZIP/APK qualification passed for the generic target/permission panel,
-reopening, cold process restart and return on Mac/Samsung. Three Mac and two
-Samsung Core heads are retained. Samsung shows its existing local workflow;
-Mac separately shows the VPS process alive and its permission expired.
-Results belong to `workspace_execution_clarity_20261119` in the existing
-acceptance record below. No Start, new grant, executor switch or VPS update was
-performed. The owner explicitly allowed app restart with the existing local
-workflow. Native Start and permission-dialog behavior remain excluded.
+The server returns `replaced` through the existing status/adoption response.
+Transport failure is separately unavailable; old runtimes without this response
+cannot establish the precise reason. Both outcomes retain the new Start and
+clearly label the saved view. Definitive replacement status requires the new
+server source; a running older executor is not updated implicitly by Connect.
+Retry and cold opening repeat the same observation without changing custody.
+A new Start reuses matching owner access and the existing connection, freezes
+the selected settings, and performs one replacement. Already accepted service
+actions remain at the service for the owner to manage.
 
-The same outcome includes a package-only correction: Jack 0.2.7 emits an empty
-intermediate view while yielding recovery reads, whereas read-only remote
-status consumes the first view. Jack 0.2.8 reuses its existing presentation for
-the initial `open`, retaining subsequent continuations and their requests.
-All 104 Jack tests, plugin review and canonical CI at `4d399c0` pass. Five
-isolated actual-WASM comparisons using the canonical package show full
-settings/Start while requests, continuation and checkpoint remain identical;
-the probe dispatches no network. No host API, strategy, grant or recovery path
-is replaced by this repair.
+The generic execution-location UI and Jack 0.2.8 initial-view correction already
+have exact Mac/Samsung and canonical-package evidence in
+`workspace_execution_clarity_20261119` of the existing acceptance record below.
+The later device-change check confirmed the next defect: Connect replaced the
+Mac assignment before Start; after the owner started Samsung's MNT assignment,
+Mac opening failed with a generic VPS error and no Start. This repair preserves
+that evidence and adds source/fixture qualification before requesting exact
+artifacts. Native validation must retain the current MNT process, use the
+existing Capsules, avoid financial Start/Stop, and distinguish the older live
+runtime's unavailable response from the new explicit replaced response.
 
-The canonical 0.2.8 package is installed on Mac through the normal replacement
-path, with the owner's approved checkpoint return and 24-hour access to the
-same saved keys. Repeat opening retains ACH-USDT / 1m / 1 USDT / 20% and shows
-the selected VPS as the next Start destination while the automatic cycle is
-off. Samsung's separate local permission is confirmed revoked and its cycle
-off; its original Capsule is retained. The owner requested an ACH VPS run,
-but the final financial Start remains an owner handoff. Full controls on the
-new remote package and the new runner's effective settings remain unqualified
-until that Start is observed. No new Start, exchange trading command, host
-runtime update, merge or release has been performed by this repair.
+Source qualification passes 912 Flutter tests, analysis and review gates.
+The existing headless fixture also passes with the canonical Jack 0.2.8 WASM
+and a separately built native process, using synthetic service responses and
+temporary data. Installer tests execute Connect, first bootstrap and explicit
+runtime update in isolation and verify assignment preservation. Exact ZIP/APK
+qualification and native Mac/Samsung smoke remain pending; these tests do not
+establish that the current live runtime implements the new status response.
 
 ### Qualified Capsule Removal Seed Scope
 

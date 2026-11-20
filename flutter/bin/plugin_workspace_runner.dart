@@ -267,9 +267,23 @@ class WorkspaceRunner {
           enforceHost: false,
           allowRemoteRecoveryBinding: true,
         );
-        if (checkpoint != null &&
-            priorGrant?['handoff_id'] ==
-                checkpoint['execution']?['handoff_id']) {
+        replacing =
+            previous['owner'] != input['owner'] ||
+            previous['plugin_id'] != input['plugin_id'] ||
+            previous['executor_id'] != input['executor_id'] ||
+            previous['package_digest'] != input['package_digest'];
+        if (checkpoint == null) {
+          // An identical empty request only acknowledges the existing binding.
+          // It cannot replace a binding, change secrets or end an assignment.
+          if (!replacing && credentials == null) {
+            return previous;
+          }
+          throw StateError(
+            'An existing assignment can be replaced only by Start',
+          );
+        }
+        if (priorGrant?['handoff_id'] ==
+            checkpoint['execution']?['handoff_id']) {
           // Lost setup acknowledgement: validate the original frozen request,
           // never restore stale source state or execute Start twice.
           await priorRuntime.adoptWorkspaceFromLocal(
@@ -278,26 +292,12 @@ class WorkspaceRunner {
           );
           return previous;
         }
-        replacing =
-            previous['owner'] != input['owner'] ||
-            previous['plugin_id'] != input['plugin_id'] ||
-            previous['executor_id'] != input['executor_id'] ||
-            previous['package_digest'] != input['package_digest'];
-        final rootInstall =
-            Platform.environment['HIVRA_WORKSPACE_EXECUTOR_ID'] == null;
-        if ((checkpoint != null || (rootInstall && replacing)) &&
-            priorGrant != null) {
+        if (priorGrant != null) {
           // The system service is already stopped and drained by the installer.
           // End authority through its existing owner, preserving opaque evidence.
           await priorRuntime.returnWorkspaceToLocal(priorRecord);
-        } else if (replacing) {
-          PluginWorkspaceRuntime.validateInactiveWorkspaceGrant(
-            priorGrant,
-            previous['owner'] as String,
-            previous['plugin_id'] as String,
-          );
         }
-        if (replacing && (checkpoint != null || rootInstall)) {
+        if (replacing) {
           for (final r in priorRecords.where(
             (r) => r.pluginId != input['plugin_id'],
           )) {
@@ -553,6 +553,30 @@ class WorkspaceRunner {
         request['package_digest'] == binding['package_digest'] &&
         request['executor_id'] == binding['executor_id'];
     final recovery = !current && request['command'] == 'return';
+    if (!current &&
+        (request['command'] == 'status' || request['command'] == 'adopt')) {
+      final adoption = request['command'] == 'adopt';
+      if (request.length != (adoption ? 7 : 6) ||
+          (adoption && request['checkpoint'] is! Map) ||
+          !['owner', 'executor_id', 'package_digest'].every(
+            (key) =>
+                request[key] is String &&
+                RegExp(r'^[0-9a-f]{64}$').hasMatch(request[key]),
+          ) ||
+          request['package_id'] is! String ||
+          (request['package_id'] as String).isEmpty ||
+          request['plugin_id'] is! String ||
+          !RegExp(r'^[a-z][a-z0-9.-]{0,127}$').hasMatch(request['plugin_id'])) {
+        throw const FormatException('Invalid assignment observation');
+      }
+      // Report only the queried assignment's displacement. Never expose or
+      // evaluate the current owner's package, checkpoint or permissions.
+      return {
+        'binding': {for (final key in binding.keys) key: request[key]},
+        'runner': {'state': 'replaced', 'execution_controls': 4},
+        'view': null,
+      };
+    }
     if (!current && !recovery) {
       throw StateError('Workspace request binding mismatch');
     }

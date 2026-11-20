@@ -35,6 +35,7 @@ class PluginWorkspaceScreen extends StatefulWidget {
     required int port,
     required String password,
     required Future<bool> Function(String) trustPeer,
+    bool reinstall,
   })?
   connectVps;
   final Future<void> Function()? useOnline;
@@ -249,7 +250,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       setState(() {
         _view = view;
         _edited = preserveEdits;
-        _observationUnavailable = false;
+        _observationUnavailable = const {
+          'replaced',
+          'unavailable',
+        }.contains(view['host_connection']?['health']);
       });
       _refresh?.cancel();
       _refresh = null;
@@ -332,10 +336,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     var port = _view?['host_connection']?['port']?.toString() ?? '22';
     var password = '';
     var connected = false;
-    var returnedOnline = false;
     if (!reinstall &&
         !restoreAccess &&
-        _view?['host_connection']?['installed'] == true) {
+        _view?['host_connection']?['saved'] == true) {
       setState(() => _busy = true);
       try {
         await widget.connectVps!(
@@ -387,10 +390,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             children: [
                               Text(
                                 reinstall
-                                    ? 'End VPS execution authority and install the runtime bundled with this Capsule. Package state and already accepted external effects are retained. Website and VPN are not changed. Root password is never saved. Resume execution only after a separate Start confirmation.'
+                                    ? 'Update the Hivra runtime bundled with this Capsule. The existing assignment, permissions and package data are retained; an active assignment may resume after the service restart. Website and VPN are not changed. Root password is never saved.'
                                     : restoreAccess
-                                    ? 'Use the root password for this same VPS to restore access. This reinstalls the bundled workspace runner after checking the server identity and Capsule binding. Accepted external effects are not undone; unexpired execution permissions may resume. Website and VPN are not changed. Root password is never saved; no new execution permission is granted.'
-                                    : 'Linux x86-64 with systemd. One managed installation; website and VPN are not changed. To restore an existing connection, enter the original VPS address. Root password is used only for installation, never saved. No new execution permission is granted; existing unexpired permissions may resume.',
+                                    ? 'Use the root password for this same VPS to repair its saved SSH access after checking the server identity. The current assignment keeps running. No package, exchange credentials or new execution permission is installed. Root password is never saved.'
+                                    : 'Linux x86-64 with systemd. Connect prepares SSH access and installs a runtime only if none exists. It leaves the current assignment running. Start replaces the assignment with this package and your selected settings. Website and VPN are not changed. Root password is never saved.',
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
@@ -454,21 +457,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         _busy = true;
         _error = null;
       });
-      if (reinstall) {
-        final returnOnline = widget.useOnline;
-        if (returnOnline == null) {
-          throw StateError(
-            'VPS authority must end before updating its runtime',
-          );
-        }
-        await returnOnline();
-        returnedOnline = true;
-        if (!mounted) return;
-      }
       await widget.connectVps!(
         host: host,
         port: int.parse(port),
         password: password,
+        reinstall: reinstall,
         trustPeer: (fingerprint) async {
           if (!mounted) return false;
           return await showDialog<bool>(
@@ -512,7 +505,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         });
       }
     }
-    if (mounted && (connected || returnedOnline)) {
+    if (mounted && connected) {
       final connectionError = _error;
       await _run('open');
       if (mounted && connectionError != null) {
@@ -1096,12 +1089,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         fields.any((f) => f['advanced'] == true) ||
         (_supportsExecution &&
             widget.connectVps != null &&
-            view?['host_connection']?['installed'] == true);
+            view?['host_connection']?['saved'] == true);
     final health = switch (view?['host_connection']?['health']) {
       'not_started' => 'Execution has not moved to this VPS',
-      'setup_unconfirmed' => 'Setup not confirmed',
+      'setup_unconfirmed' => 'No assignment started from this Capsule',
       'running' => 'VPS process is running',
       'detached' => 'Execution authority ended',
+      'replaced' => 'Previous assignment replaced',
+      'unavailable' => 'Previous assignment unavailable',
       _ => 'Checking connection',
     };
 
@@ -1148,8 +1143,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               : _busy ||
                   _choosing ||
                   (_observationUnavailable &&
-                      !_remoteSelected &&
-                      action['host'] == 'workspace.start')
+                      (!_remoteSelected || action['host'] != 'workspace.start'))
               ? null
               : () => _run(action['id'] as String);
       final key = ValueKey('plugin-action-${action['id']}');
@@ -1259,7 +1253,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         Text(
                           switch (view['host_connection']['target']) {
                             'vps' =>
-                              'Execution location: VPS ${view['host_connection']['host'] ?? ''}',
+                              _observationUnavailable
+                                  ? 'Previous assignment: VPS ${view['host_connection']['host'] ?? ''}'
+                                  : 'Execution location: VPS ${view['host_connection']['host'] ?? ''}',
                             'local' => 'Execution location: This device',
                             _ => 'Execution location unavailable',
                           },
@@ -1318,7 +1314,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                       : Icons.cloud_outlined,
                                 ),
                                 label: Text(
-                                  view['host_connection']['installed'] == true
+                                  view['host_connection']['saved'] == true
                                       ? 'Use VPS ${view['host_connection']['host']}'
                                       : 'Connect VPS',
                                 ),
@@ -1330,7 +1326,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                       ],
                       if (_observationUnavailable) ...[
                         Text(
-                          'Last received data; current status is unavailable. Connection loss does not stop remote execution.',
+                          view['host_connection']?['health'] == 'replaced'
+                              ? 'This assignment was replaced. Saved data below belongs to your previous assignment. Start creates a new assignment on this VPS.'
+                              : 'Current VPS status is unavailable. The assignment may have been replaced from another device. Saved data below is not the current VPS workflow. Connection loss does not stop remote execution.',
                           style: TextStyle(color: colors.error),
                         ),
                         const SizedBox(height: 12),
@@ -1483,7 +1481,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 if (field['advanced'] == true) _field(field),
                               if (_supportsExecution &&
                                   widget.connectVps != null &&
-                                  view['host_connection']?['installed'] == true)
+                                  view['host_connection']?['host'] != null)
                                 TextButton(
                                   onPressed:
                                       _busy || _choosing
@@ -1494,8 +1492,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 ),
                               if (_supportsExecution &&
                                   widget.connectVps != null &&
-                                  widget.useOnline != null &&
-                                  view['host_connection']?['installed'] == true)
+                                  view['host_connection']?['host'] != null)
                                 TextButton(
                                   onPressed:
                                       _busy || _choosing

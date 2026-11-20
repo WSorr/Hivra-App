@@ -590,12 +590,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         required port,
                         required password,
                         required trustPeer,
+                        bool reinstall = false,
                       }) => _pluginRuntime.connectWorkspaceVps(
                         record: record,
                         host: host,
                         port: port,
                         password: password,
                         trustPeer: trustPeer,
+                        reinstall: reinstall,
                       ),
                   useOnline: () => _pluginRuntime.useWorkspaceOnline(record),
                   configureExecution: ({

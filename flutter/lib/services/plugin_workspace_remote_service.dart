@@ -116,6 +116,7 @@ class PluginWorkspaceRemoteService {
     required String password,
     required Future<bool> Function(String fingerprint) trustPeer,
     required bool Function() stillOwned,
+    bool reinstall = false,
   }) async {
     final previous = await connection(owner, record.pluginId!);
     if (previous != null &&
@@ -132,7 +133,8 @@ class PluginWorkspaceRemoteService {
       await _save({...previous, 'selected': true});
       return;
     }
-    // First installation or explicit repair needs the bundled native runtime.
+    // Bootstrap a missing runtime or explicitly update it; Connect never installs
+    // a workspace package or changes an existing runner binding.
     final archive =
         (await rootBundle.load(
           'assets/workspace_runner/$_archive',
@@ -214,8 +216,6 @@ class PluginWorkspaceRemoteService {
         'if [ -f /var/lib/hivra-workspace/runner.json ]; then cat /var/lib/hivra-workspace/runner.json; else printf "{}"; fi',
         const [],
       );
-      // Root-authenticated setup prepares this owner's chosen installation.
-      // The server ends the old grant; device identity is not server ownership.
       if (_json(existing).isNotEmpty &&
           _json(existing)['package_digest'] is! String) {
         throw StateError('Invalid VPS installation binding');
@@ -233,15 +233,14 @@ class PluginWorkspaceRemoteService {
       );
       if (!stillOwned()) throw StateError('Capsule or package changed');
       await _save(c);
-      final input = await _setupInput(c, record);
-      if (!stillOwned()) throw StateError('Capsule or package changed');
       final public =
           'ssh-ed25519 ${base64Encode(identity.toPublicKey().encode())} hivra-workspace-${c['executor_id']}';
       final script = installationScript(
         archive,
         sha256.convert(archive).toString(),
         public,
-        input,
+        c['executor_id'] as String,
+        reinstall: reinstall,
       );
       final result = _json(
         await _execute(
@@ -251,20 +250,17 @@ class PluginWorkspaceRemoteService {
           timeout: const Duration(minutes: 3),
         ),
       );
-      _checkBinding(c, result, digest: input['package_digest'] as String);
-      await _save({
-        ...c,
-        'package_id': result['package_id'],
-        'package_digest': result['package_digest'],
-      });
+      if (result['connected'] != true) {
+        throw StateError('VPS connection was not acknowledged');
+      }
       if (!stillOwned()) {
         throw StateError(
-          'Capsule changed; VPS installed without trading authority',
+          'Capsule changed; VPS access prepared without a new assignment',
         );
       }
     } catch (_) {
       throw StateError(
-        'VPS connection/installation failed. Check the address, root login and server fingerprint. No trading Start is implied; retry uses the same installation.',
+        'VPS connection was not completed. Check the address, root login and server fingerprint. Connect does not replace the current assignment; Start is separate.',
       );
     } finally {
       client.close();
@@ -606,16 +602,18 @@ class PluginWorkspaceRemoteService {
     List<int> archive,
     String digest,
     String publicKey,
-    Map<String, dynamic> setup,
-  ) {
-    if (sha256.convert(archive).toString() != digest ||
+    String executorId, {
+    bool reinstall = false,
+  }) {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(executorId) ||
+        sha256.convert(archive).toString() != digest ||
         !RegExp(
           r'^ssh-ed25519 [A-Za-z0-9+/=]+ hivra-workspace-[0-9a-f]{64}$',
         ).hasMatch(publicKey)) {
       throw StateError('Invalid installation input');
     }
     final keyLine =
-        'restrict,command="/opt/hivra-workspace/control ${setup['executor_id']}" $publicKey';
+        'restrict,command="/opt/hivra-workspace/control $executorId" $publicKey';
     return '''set -eu
 umask 077
 [ "\$(id -u)" = 0 ]
@@ -627,10 +625,15 @@ data=/var/lib/hivra-workspace
 for path in "\$base" "\$data"; do [ ! -L "\$path" ]; done
 mkdir -p "\$base"
 chmod 755 "\$base"
-id hivra-workspace >/dev/null 2>&1 || useradd --system --home-dir "\$data" --shell /usr/sbin/nologin hivra-workspace
-install -d -m 700 -o hivra-workspace -g hivra-workspace "\$data"
+[ ! -L "\$base/current" ]
 exec 9>"\$base/install.lock"
 flock -n 9
+if [ "${reinstall ? 1 : 0}" = 1 ] || [ ! -x "\$base/current/bin/hivra-workspace-runner" ]; then
+  # A normal Connect cannot repair a missing binary beneath a retained binding.
+  # The explicit runtime update owns that operation.
+  [ "${reinstall ? 1 : 0}" = 1 ] || [ ! -f "\$data/runner.json" ]
+id hivra-workspace >/dev/null 2>&1 || useradd --system --home-dir "\$data" --shell /usr/sbin/nologin hivra-workspace
+install -d -m 700 -o hivra-workspace -g hivra-workspace "\$data"
 [ ! -L "\$base/staging" ] && [ ! -L "\$base/current" ] && [ ! -L "\$base/previous" ]
 rm -rf "\$base/staging"
 mkdir -m 700 "\$base/staging"
@@ -656,7 +659,9 @@ printf '%s  %s\\n' '$digest' "\$base/staging/runner.tar.gz" | sha256sum -c - >/d
 tar -xzf "\$base/staging/runner.tar.gz" -C "\$base/staging" --no-same-owner
 rm "\$base/staging/runner.tar.gz"
 chmod 755 "\$base" "\$base/staging" "\$base/staging/bin" "\$base/staging/bin/hivra-workspace-runner"
-systemctl stop hivra-workspace-runner.service 2>/dev/null || true
+if [ -f "\$data/runner.json" ]; then
+  systemctl stop hivra-workspace-runner.service
+fi
 rm -rf "\$base/previous"
 if [ -d "\$base/current" ]; then mv "\$base/current" "\$base/previous"; fi
 mv "\$base/staging" "\$base/current"
@@ -669,6 +674,12 @@ umask 077
 [ "\$#" = 1 ]
 case "\$1" in *[!0-9a-f]*|'') exit 64 ;; esac
 [ "\${#1}" = 64 ]
+case "\${SSH_ORIGINAL_COMMAND:-}" in
+  setup|uninstall)
+    exec 9>/opt/hivra-workspace/install.lock
+    flock -n 9
+    ;;
+esac
 if [ "\${SSH_ORIGINAL_COMMAND:-}" = uninstall ] && [ ! -f /var/lib/hivra-workspace/runner.json ]; then
   receipt=/opt/hivra-workspace/uninstall.json
   if [ -f /opt/hivra-workspace/uninstall.next ]; then
@@ -706,21 +717,23 @@ case "\${SSH_ORIGINAL_COMMAND:-}" in
 esac
 HIVRA_CONTROL
 chmod 700 "\$base/control"
+systemctl daemon-reload
+systemctl enable hivra-workspace-runner.service >/dev/null 2>&1
+if [ -f "\$data/runner.json" ]; then
+  systemctl start hivra-workspace-runner.service
+fi
+fi
 [ ! -L /root/.ssh ]
 install -d -m 700 /root/.ssh
 [ ! -L /root/.ssh/authorized_keys ]
 touch /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 [ ! -L /root/.ssh/authorized_keys.hivra.next ]
-awk '\$NF != "hivra-workspace-${setup['executor_id']}" { print }' /root/.ssh/authorized_keys > /root/.ssh/authorized_keys.hivra.next
+awk '\$NF != "hivra-workspace-$executorId" { print }' /root/.ssh/authorized_keys > /root/.ssh/authorized_keys.hivra.next
 printf '%s\\n' '$keyLine' >> /root/.ssh/authorized_keys.hivra.next
 chmod 600 /root/.ssh/authorized_keys.hivra.next
 mv /root/.ssh/authorized_keys.hivra.next /root/.ssh/authorized_keys
-rm -f "\$base/uninstall.json" "\$base/uninstall.next"
-printf '%s' '${base64Encode(utf8.encode('${jsonEncode(setup)}\n'))}' | base64 -d | runuser -u hivra-workspace -- "\$base/current/bin/hivra-workspace-runner" setup "\$data"
-systemctl daemon-reload
-systemctl enable hivra-workspace-runner.service >/dev/null 2>&1
-systemctl start hivra-workspace-runner.service
+printf '%s\\n' '{"connected":true}'
 ''';
   }
 }

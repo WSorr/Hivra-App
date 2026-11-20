@@ -224,6 +224,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     required int port,
     required String password,
     required Future<bool> Function(String) trustPeer,
+    bool reinstall = false,
   }) async {
     final owner = activeCapsuleRootHex();
     if (owner == null) throw StateError('Open a Capsule first');
@@ -252,6 +253,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       port: port,
       password: password,
       trustPeer: trustPeer,
+      reinstall: reinstall,
       stillOwned: () => activeCapsuleRootHex() == owner,
     );
   }
@@ -346,28 +348,57 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       if (c == null || c['executor_id'] != grant!['executor_id']) {
         throw StateError('Assigned VPS is unavailable; no local fallback');
       }
-      if (action != 'open' ||
-          grant['revoked'] == true ||
-          grant['expires_at_ms'] == null) {
-        await _requireExecutionControls(c);
+      Map<String, dynamic>? result;
+      String? unavailable;
+      try {
+        if (action != 'open' ||
+            grant['revoked'] == true ||
+            grant['expires_at_ms'] == null) {
+          await _requireExecutionControls(c);
+        }
+        // Preserve exact lost-acknowledgement recovery on the existing path.
+        final adoption = await _remote.request(c, 'adopt', {
+          'checkpoint': await releaseWorkspaceToVps(
+            record,
+            executorId: c['executor_id'] as String,
+          ),
+        });
+        if (adoption['runner']?['state'] == 'replaced') {
+          if (action != 'open') {
+            throw StateError(
+              'Previous assignment replaced; use Start for a new assignment',
+            );
+          }
+          unavailable = 'replaced';
+        } else {
+          result = await _remote.request(
+            c,
+            action == 'open' ? 'status' : 'action',
+            action == 'open'
+                ? const {}
+                : {'action': action, 'settings': settings},
+          );
+        }
+      } catch (_) {
+        if (action != 'open') rethrow;
+        unavailable = 'unavailable';
       }
-      // Recover a lost adoption acknowledgement with the exact frozen source
-      // checkpoint. Server replay never restores older state or renews authority.
-      await _remote.request(c, 'adopt', {
-        'checkpoint': await releaseWorkspaceToVps(
-          record,
-          executorId: c['executor_id'] as String,
-        ),
-      });
-      final result = await _remote.request(
-        c,
-        action == 'open' ? 'status' : 'action',
-        action == 'open' ? const {} : {'action': action, 'settings': settings},
-      );
-      if (result['view'] is! Map) {
-        throw StateError(
-          'VPS observation unavailable; its lifecycle is not verified',
+      final Map<String, dynamic> view;
+      if (unavailable != null) {
+        // This is this Capsule's own retained view, not the other executor's
+        // account state. The common read-only path cannot dispatch or schedule.
+        view = await super.runWorkspaceAction(
+          record: record,
+          action: 'open',
+          readOnly: true,
         );
+      } else {
+        if (result?['view'] is! Map) {
+          throw StateError(
+            'VPS observation unavailable; its lifecycle is not verified',
+          );
+        }
+        view = Map<String, dynamic>.from(result!['view'] as Map);
       }
       if (activeCapsuleRootHex() != owner ||
           (await registry.resolveRuntimeBinding(record.pluginId!)).packageId !=
@@ -375,17 +406,18 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         throw StateError('Capsule or package changed');
       }
       return {
-        ...Map<String, dynamic>.from(result['view'] as Map),
+        ...view,
         'host_connection': {
           'target': 'vps',
           'host': c['host'],
           'port': c['port'],
-          'installed': c['package_id'] != null,
-          'health': result['runner']['state'],
-          'observation_error': result['observation_error'],
+          'saved': true,
+          'health': unavailable ?? result!['runner']['state'],
+          'observation_error': result?['observation_error'],
         },
       };
     }
+
     final view = await super.runWorkspaceAction(
       record: record,
       action: action,
@@ -399,7 +431,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         'selected': c?['selected'] == true,
         'host': c?['host'],
         'port': c?['port'],
-        'installed': c?['package_id'] != null,
+        'saved': c != null,
         'health':
             c?['package_id'] == null ? 'setup_unconfirmed' : 'not_started',
       },
