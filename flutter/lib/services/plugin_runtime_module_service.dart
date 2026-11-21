@@ -287,7 +287,8 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     WasmPluginRecord record,
   ) => _workspaceSecretReferences(
     record,
-    (owner, _) => _secretVault.listReferences(owner),
+    (owner, _) =>
+        _secretVault.listReferences(owner, pluginId: record.pluginId!),
   );
 
   Future<List<Map<String, String>>> saveWorkspaceSecretReferences(

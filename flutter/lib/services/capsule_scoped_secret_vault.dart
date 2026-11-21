@@ -64,7 +64,7 @@ class CapsuleScopedSecretVault {
                 16,
                 (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
               ).join(),
-          secretName: 'secret',
+          secretName: secret['secret_name']?.trim() ?? '',
           label: secret['label']?.trim(),
           secretValue: secret['value']?.trim() ?? '',
         ),
@@ -114,13 +114,20 @@ class CapsuleScopedSecretVault {
 
   /// Owner-facing metadata only, reusing this process's unlocked vault.
   /// Neither the picker nor a package receives secret values.
-  Future<List<Map<String, String>>> listReferences(String capsuleHex) {
+  Future<List<Map<String, String>>> listReferences(
+    String capsuleHex, {
+    required String pluginId,
+  }) {
     final owner = _capsuleHex(capsuleHex);
+    final plugin = _identifier('plugin_id', pluginId);
     return _locked(() async {
       final entries = await _loadEntries();
       return [
         for (final entry in entries.values)
-          if (entry.capsuleHex == owner) entry.reference,
+          if (entry.capsuleHex == owner &&
+              entry.pluginId == plugin &&
+              entry.providerId == 'owner')
+            entry.reference,
       ]..sort((a, b) => a['label']!.compareTo(b['label']!));
     });
   }
@@ -351,6 +358,7 @@ class _VaultEntry {
   Map<String, String> get reference => {
     'id': scopeKey,
     'label': label ?? '$providerId / $accountId / $secretName',
+    'secret_name': secretName,
   };
 
   Map<String, dynamic> toJson() => <String, dynamic>{

@@ -22,8 +22,17 @@ The common plugin permission form can select an existing reference or accept a
 new service token/key from the owner. It never asks for the device password.
 New fields from one Allow decision are saved together through the same vault
 writer. Their account identifiers are opaque local reference identities, not
-host-validated external account facts. An optional owner label is display
-metadata; existing entries without labels retain their original references.
+host-validated external account facts. Each picker lists owner-saved references
+for the active Capsule, the installed plugin's stable ID, and the declared
+credential alias and field. The vault uses its existing secret name for that
+field identity. The form shows the owner label alongside the protected service
+destination. Executor keys are outside these choices.
+
+Older owner-saved entries with a generic secret name keep their original IDs.
+The picker offers one only when the prior field binding or an exact declared
+label identifies a single field without a conflict. Unclassified entries stay
+in the vault, with new input available through Add new secret. This fallback
+serves only the old generic entries and can be removed once they are retired.
 
 The form holds new values only in memory. Cancel writes nothing. A failed
 native write produces no references and no execution grant. Saving a secret

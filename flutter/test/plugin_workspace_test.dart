@@ -2321,7 +2321,11 @@ void main() {
               },
               listSecrets:
                   () async => [
-                    {'id': 'ref-token', 'label': 'Saved connection'},
+                    {
+                      'id': 'ref-token',
+                      'label': 'Saved connection',
+                      'secret_name': 'default:token',
+                    },
                   ],
               configureExecution:
                   ({
@@ -3766,6 +3770,132 @@ void main() {
       }
     },
   );
+  testWidgets('permission picker separates saved keys by declared field', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final access = permission('https://exchange.example');
+    access['credentials'] = {
+      'default': [
+        {'id': 'api_key', 'label': 'API key'},
+        {'id': 'secret_key', 'label': 'Secret key'},
+      ],
+    };
+    final view = {
+      ...presentation(),
+      'access': access,
+      'actions': [
+        {'id': 'link', 'label': 'Connect', 'host': 'workspace.authorize'},
+      ],
+      'execution': {
+        'active': false,
+        'credentials': {
+          'default': {'api_key': 'conflicting', 'secret_key': 'saved-signer'},
+        },
+      },
+    };
+    Map<String, Map<String, String>>? granted;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['credentials.use'],
+          listSecrets:
+              () async => [
+                {
+                  'id': 'legacy-api',
+                  'label': 'API key',
+                  'secret_name': 'secret',
+                },
+                {
+                  'id': 'conflicting',
+                  'label': 'Secret key',
+                  'secret_name': 'secret',
+                },
+                {
+                  'id': 'saved-signer',
+                  'label': 'Personal signer',
+                  'secret_name': 'secret',
+                },
+                {
+                  'id': 'another-signer',
+                  'label': 'Backup signer',
+                  'secret_name': 'default:secret_key',
+                },
+                {
+                  'id': 'trading-api',
+                  'label': 'Trading account',
+                  'secret_name': 'default:api_key',
+                },
+                {
+                  'id': 'other-alias',
+                  'label': 'API key',
+                  'secret_name': 'other:api_key',
+                },
+                {
+                  'id': 'unknown',
+                  'label': 'Unassigned',
+                  'secret_name': 'secret',
+                },
+              ],
+          configureExecution: ({
+            required enabled,
+            required expiresAtMs,
+            expectedRevision,
+            revoke = false,
+            approvedScope,
+            credentialBindings,
+            settings = const {},
+          }) async {
+            granted = credentialBindings;
+            return view;
+          },
+          runWorkspaceAction: (_, _) async => view,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+
+    Finder picker(String field) =>
+        find.byKey(ValueKey('plugin-secret-default-$field'));
+    DropdownButton<String> dropdown(String field) => tester.widget(
+      find.descendant(
+        of: picker(field),
+        matching: find.byType(DropdownButton<String>),
+      ),
+    );
+    final request = dropdown('api_key');
+    final signing = dropdown('secret_key');
+    expect(request.items!.map((item) => item.value), [
+      'legacy-api',
+      'trading-api',
+    ]);
+    expect(signing.items!.map((item) => item.value), [
+      'saved-signer',
+      'another-signer',
+    ]);
+    expect(request.value, isNull);
+    expect(signing.value, 'saved-signer');
+
+    await tester.tap(picker('api_key'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('exchange.example'), findsWidgets);
+    final tradingAccount = find.textContaining('Trading account').last;
+    expect(
+      tester.widget<Text>(tradingAccount).data,
+      contains('exchange.example'),
+    );
+    await tester.tap(tradingAccount);
+    await tester.pumpAndSettle();
+    expect(granted, isNull);
+    await tester.tap(find.text('Allow'));
+    await tester.pumpAndSettle();
+    expect(granted, {
+      'default': {'api_key': 'trading-api', 'secret_key': 'saved-signer'},
+    });
+  });
   testWidgets(
     'permission form identifies an incomplete credential without exposing values',
     (tester) async {
@@ -3881,7 +4011,11 @@ void main() {
               saveSecrets: (secrets) async {
                 writes++;
                 expect(secrets, [
-                  {'label': 'My service', 'value': 'test-only-secret'},
+                  {
+                    'secret_name': 'default:token',
+                    'label': 'My service',
+                    'value': 'test-only-secret',
+                  },
                 ]);
                 if (outcome == 'fail') {
                   throw StateError('Secure storage unavailable');
@@ -4032,7 +4166,11 @@ void main() {
             listSecrets: () async {
               secretPickers++;
               return [
-                {'id': 'ref-token', 'label': 'Service / account / token'},
+                {
+                  'id': 'ref-token',
+                  'label': 'Service / account / token',
+                  'secret_name': 'default:token',
+                },
               ];
             },
             configureExecution: ({
@@ -4081,7 +4219,7 @@ void main() {
         find.byKey(const ValueKey('plugin-secret-default-token')),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Service / account / token').last);
+      await tester.tap(find.textContaining('Service / account / token').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Allow'));
       await tester.pumpAndSettle();

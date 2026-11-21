@@ -79,6 +79,18 @@ void main() {
     vault = CapsuleScopedSecretVault(secureStorage: storage);
   });
 
+  Future<List<Map<String, String>>> saveConnection(
+    String capsule,
+    String plugin,
+    String value,
+  ) => vault.addReferences(
+    capsuleHex: capsule,
+    pluginId: plugin,
+    secrets: [
+      {'secret_name': 'default:token', 'label': 'Connection', 'value': value},
+    ],
+  );
+
   test('isolates secrets by capsule plugin provider and account', () async {
     await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
     await _save(vault, capsuleB, pluginA, 'account-a', 'key-b');
@@ -92,12 +104,24 @@ void main() {
   });
 
   test(
-    'owner selects metadata references without exposing values or another Capsule',
+    'owner picker exposes only its plugin connections in the active Capsule',
     () async {
-      await _save(vault, capsuleA, pluginA, 'account-a', 'secret-a');
-      await _save(vault, capsuleB, pluginB, 'account-b', 'secret-b');
-      final references = await vault.listReferences(capsuleA);
-      expect(references.length, 1);
+      final expected = await saveConnection(capsuleA, pluginA, 'secret-a');
+      await saveConnection(capsuleA, pluginB, 'secret-b');
+      await saveConnection(capsuleB, pluginA, 'secret-c');
+      await vault.saveSecret(
+        capsuleHex: capsuleA,
+        pluginId: pluginA,
+        providerId: 'workspace-vps',
+        accountId: 'primary',
+        secretName: 'ssh_key',
+        secretValue: 'synthetic-ssh-key',
+      );
+      final references = await vault.listReferences(
+        capsuleA,
+        pluginId: pluginA,
+      );
+      expect(references, expected);
       expect(jsonEncode(references), isNot(contains('secret-a')));
       expect(
         await vault.resolveReferences(capsuleA, {
@@ -130,27 +154,30 @@ void main() {
   test(
     'one vault unlock serves both plugin pickers and dispatch until restart',
     () async {
-      await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
-      await _save(vault, capsuleA, pluginB, 'account-b', 'key-b');
+      final first = await saveConnection(capsuleA, pluginA, 'key-a');
+      final second = await saveConnection(capsuleA, pluginB, 'key-b');
       vault = CapsuleScopedSecretVault(secureStorage: storage);
       final before = storage.reads;
-      final references = await vault.listReferences(capsuleA);
+      expect(await vault.listReferences(capsuleA, pluginId: pluginA), first);
       expect(storage.reads - before, 1);
       storage.beforeRead =
           () async => throw StateError('Unexpected Keychain prompt');
-      expect(await vault.listReferences(capsuleA), references);
-      expect(await vault.listReferences(capsuleB), isEmpty);
-      for (final reference in references) {
+      expect(await vault.listReferences(capsuleA, pluginId: pluginB), second);
+      expect(await vault.listReferences(capsuleB, pluginId: pluginA), isEmpty);
+      for (final reference in [...first, ...second]) {
         expect(
           await vault.resolveReferences(capsuleA, {'key': reference['id']!}),
           contains('key'),
         );
       }
       await vault.deletePlugin(pluginA, capsuleHexes: {capsuleA});
-      expect(await vault.listReferences(capsuleA), hasLength(1));
+      expect(await vault.listReferences(capsuleA, pluginId: pluginA), isEmpty);
       storage.beforeRead = null;
       final restarted = CapsuleScopedSecretVault(secureStorage: storage);
-      expect(await restarted.listReferences(capsuleA), hasLength(1));
+      expect(
+        await restarted.listReferences(capsuleA, pluginId: pluginB),
+        second,
+      );
       expect(storage.reads - before, 2);
     },
   );
@@ -212,7 +239,10 @@ void main() {
         final corrupted = Map<String, String>.from(storage.values);
         vault = CapsuleScopedSecretVault(secureStorage: storage);
 
-        await expectLater(vault.listReferences(capsuleA), throwsStateError);
+        await expectLater(
+          vault.listReferences(capsuleA, pluginId: pluginA),
+          throwsStateError,
+        );
         await expectLater(
           _load(vault, capsuleA, pluginA, 'account-a'),
           throwsStateError,
@@ -222,13 +252,7 @@ void main() {
           throwsStateError,
         );
         await expectLater(
-          vault.addReferences(
-            capsuleHex: capsuleA,
-            pluginId: pluginA,
-            secrets: [
-              {'label': 'New connection', 'value': 'new-key'},
-            ],
-          ),
+          saveConnection(capsuleA, pluginA, 'new-key'),
           throwsStateError,
         );
         await expectLater(
@@ -261,49 +285,66 @@ void main() {
   });
 
   test(
-    'owner adds labelled references atomically alongside legacy entries',
+    'owner saves field roles atomically and retains legacy references on restart',
     () async {
-      await _save(vault, capsuleA, pluginA, 'account-a', 'key-a');
+      await vault.saveSecret(
+        capsuleHex: capsuleA,
+        pluginId: pluginA,
+        providerId: 'owner',
+        accountId: 'legacy-account',
+        secretName: 'secret',
+        secretValue: 'legacy-token',
+      );
+      final legacy = await vault.listReferences(capsuleA, pluginId: pluginA);
       final before = storage.writes;
       final references = await vault.addReferences(
         capsuleHex: capsuleA,
         pluginId: pluginA,
         secrets: [
-          {'label': 'Personal connection', 'value': 'new-token'},
-          {'label': 'Signing key', 'value': 'new-key'},
+          {
+            'secret_name': 'default:token',
+            'label': 'Personal connection',
+            'value': 'new-token',
+          },
+          {
+            'secret_name': 'default:key',
+            'label': 'Signing key',
+            'value': 'new-key',
+          },
         ],
       );
       expect(storage.writes - before, 1);
       expect(references.map((r) => r['id']).toSet().length, 2);
+      expect(references.map((r) => r['secret_name']), [
+        'default:token',
+        'default:key',
+      ]);
       expect(jsonEncode(references), isNot(contains('new-token')));
       vault = CapsuleScopedSecretVault(secureStorage: storage);
-      expect(await vault.listReferences(capsuleA), containsAll(references));
-      expect(await vault.listReferences(capsuleB), isEmpty);
+      expect(
+        await vault.listReferences(capsuleA, pluginId: pluginA),
+        unorderedEquals([...legacy, ...references]),
+      );
+      expect(await vault.listReferences(capsuleB, pluginId: pluginA), isEmpty);
       expect(
         await vault.resolveReferences(capsuleA, {
           'token': references[0]['id']!,
           'key': references[1]['id']!,
+          'legacy': legacy.single['id']!,
         }),
-        {'token': 'new-token', 'key': 'new-key'},
+        {'token': 'new-token', 'key': 'new-key', 'legacy': 'legacy-token'},
       );
-      expect(await _load(vault, capsuleA, pluginA, 'account-a'), 'key-a');
     },
   );
 
   test('failed native storage write returns no usable reference', () async {
     storage.failWrite = true;
     await expectLater(
-      vault.addReferences(
-        capsuleHex: capsuleA,
-        pluginId: pluginA,
-        secrets: [
-          {'label': 'Connection', 'value': 'test-token'},
-        ],
-      ),
+      saveConnection(capsuleA, pluginA, 'test-token'),
       throwsStateError,
     );
     storage.failWrite = false;
-    expect(await vault.listReferences(capsuleA), isEmpty);
+    expect(await vault.listReferences(capsuleA, pluginId: pluginA), isEmpty);
   });
   test(
     'a changed Capsule or package during native unlock prevents a write',
@@ -318,7 +359,11 @@ void main() {
         capsuleHex: capsuleA,
         pluginId: pluginA,
         secrets: [
-          {'label': 'Connection', 'value': 'test-token'},
+          {
+            'secret_name': 'default:token',
+            'label': 'Connection',
+            'value': 'test-token',
+          },
         ],
         authorize: () async {
           if (!stillAuthorized) throw StateError('Capsule or package changed');
@@ -331,7 +376,7 @@ void main() {
       await rejected;
       expect(storage.writes, 0);
       storage.beforeRead = null;
-      expect(await vault.listReferences(capsuleA), isEmpty);
+      expect(await vault.listReferences(capsuleA, pluginId: pluginA), isEmpty);
     },
   );
 }

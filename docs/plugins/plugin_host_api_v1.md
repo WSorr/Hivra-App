@@ -332,10 +332,10 @@ Access descriptor, authorized once on the plugin screen for the workflow:
 ```
 
 A null/absent credential grants only unprotected requests. Each named alias
-lists the fields the package needs. The owner selects a Keychain reference for
-each field from this Capsule's existing secrets. The host resolves only that
-mapping; the package cannot select or import a vault entry. Values never enter
-settings, private state or WASM input. Grant metadata is bound to the current
+lists the fields the package needs. The owner selects an eligible Keychain
+reference for each field in the common permission form. The host resolves only
+that mapping; the package cannot select or import a vault entry. Values never
+enter settings, private state or WASM input. Grant metadata is bound to the current
 owner, package ID/digest, executor and exact network scope in the existing
 `workspace-execution.v1.json`; its `credentials` map contains references only.
 Local dispatch resolves them through the existing Capsule-scoped vault. An
