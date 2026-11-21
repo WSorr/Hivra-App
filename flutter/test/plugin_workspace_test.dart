@@ -2355,10 +2355,14 @@ void main() {
   }
 
   testWidgets(
-    'remote Start replaces execution with the selected settings without sending Start to the old runner',
+    'remote Start applies the selected settings while resumed status is pending',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       final actions = <String>[];
-      Map<String, dynamic>? selected;
+      final starts = <Map<String, dynamic>>[];
+      final pendingStatus = Completer<Map<String, dynamic>>();
+      final pendingStart = Completer<Map<String, dynamic>>();
       final access = permission('https://one.example');
       final scope = {
         'version': 2,
@@ -2367,18 +2371,39 @@ void main() {
         'description': 'Owner workflow',
         'access': access,
       };
-      Map<String, dynamic> view() => {
+      Map<String, dynamic> view(String symbol, int revision) => {
         ...presentation(),
+        'summary': 'Running $symbol on VPS',
         'fields': [
           {
-            'id': 'selection',
+            'id': 'symbol',
+            'type': 'choice',
+            'label': 'Instrument',
+            'value': symbol,
+            'source': {'action': 'instruments'},
+          },
+          {
+            'id': 'timeframes',
             'type': 'text',
-            'label': 'Selection',
-            'value': 'old-choice',
+            'label': 'Timeframe',
+            'value': '1m',
+          },
+          {
+            'id': 'entry_margin',
+            'type': 'number',
+            'label': 'Entry margin',
+            'value': 1.0,
+          },
+          {
+            'id': 'stop_percent',
+            'type': 'number',
+            'label': 'Stop budget',
+            'value': 20.0,
           },
         ],
         'actions': [
           {'id': 'start', 'label': 'Start', 'host': 'workspace.start'},
+          {'id': 'stop', 'label': 'Stop new entries', 'settings': false},
         ],
         'schedule': scope,
         'execution': {
@@ -2386,7 +2411,7 @@ void main() {
           'enabled': true,
           'active': true,
           'running': true,
-          'revision': 1,
+          'revision': revision,
           'expires_at_ms': null,
           'access': access,
           'credentials': {
@@ -2405,10 +2430,15 @@ void main() {
             capabilities: const ['workspace.schedule'],
             runWorkspaceAction: (action, settings) async {
               actions.add(action);
-              if (actions.length > 1) {
-                throw const SocketException('Old executor unavailable');
-              }
-              return view();
+              return actions.length == 1
+                  ? view('ZIL-USDT', 2)
+                  : pendingStatus.future;
+            },
+            loadLocalChoices: (action, _, _) async {
+              expect(action, 'instruments');
+              return {
+                'options': ['ZIL-USDT', 'ACH-USDT'],
+              };
             },
             configureExecution: ({
               required enabled,
@@ -2419,25 +2449,58 @@ void main() {
               credentialBindings,
               settings = const {},
             }) async {
-              selected = settings;
-              return view();
+              expect(enabled, isTrue);
+              expect(revoke, isFalse);
+              expect(expectedRevision, 2);
+              expect(approvedScope?['start_action'], 'start');
+              starts.add(settings);
+              return pendingStart.future;
             },
           ),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'new-choice');
-      await tester.pump(const Duration(seconds: 61));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('plugin-action-start')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('plugin-action-start')));
-      await tester.pumpAndSettle();
-      expect(actions, ['open', 'open']);
-      expect(selected, {'selection': 'new-choice'});
-      await tester.pumpWidget(const SizedBox());
+      final instrument = find.byKey(const ValueKey('plugin-field-symbol'));
+      final start = find.byKey(const ValueKey('plugin-action-start'));
+      try {
+        await tester.ensureVisible(instrument);
+        await tester.tap(instrument);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('ACH-USDT'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(start);
+        await tester.pumpAndSettle();
+
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+        expect(actions, ['open', 'open']);
+        await tester.tap(start);
+        await tester.pump();
+        expect(starts, [
+          {
+            'symbol': 'ACH-USDT',
+            'timeframes': '1m',
+            'entry_margin': 1.0,
+            'stop_percent': 20.0,
+          },
+        ]);
+
+        pendingStart.complete(view('ACH-USDT', 3));
+        await tester.pumpAndSettle();
+        pendingStatus.complete(view('ZIL-USDT', 2));
+        await tester.pumpAndSettle();
+        expect(find.text('Running ACH-USDT on VPS'), findsOneWidget);
+        expect(find.text('Running ZIL-USDT on VPS'), findsNothing);
+        expect(actions, ['open', 'open']);
+        expect(starts, hasLength(1));
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+      }
     },
   );
 
@@ -2781,6 +2844,7 @@ void main() {
     'scheduled observation preserves owner draft edits until an explicit package action',
     (tester) async {
       final actions = <String>[];
+      final pendingStatus = Completer<void>();
       Map<String, dynamic>? submitted;
       await tester.pumpWidget(
         MaterialApp(
@@ -2788,6 +2852,9 @@ void main() {
             capabilities: const ['workspace.schedule'],
             runWorkspaceAction: (action, settings) async {
               actions.add(action);
+              if (action == 'open' && actions.length > 1) {
+                await pendingStatus.future;
+              }
               if (action == 'apply') submitted = settings;
               return {
                 ...presentation(),
@@ -2810,10 +2877,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       final field = find.byKey(const ValueKey('plugin-field-limit'));
-      await tester.enterText(field, '2.5');
       await tester.pump(const Duration(seconds: 16));
+      expect(actions, ['open', 'open']);
+      await tester.enterText(field, '2.5');
+      await tester.pump(const Duration(seconds: 15));
+      expect(actions, ['open', 'open']);
+      pendingStatus.complete();
       await tester.pumpAndSettle();
-      expect(actions.where((a) => a == 'open').length, greaterThan(1));
       expect(tester.widget<TextField>(field).controller!.text, '2.5');
       expect(submitted, isNull);
       await tester.tap(find.byKey(const ValueKey('plugin-action-apply')));
