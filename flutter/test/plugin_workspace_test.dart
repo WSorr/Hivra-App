@@ -412,12 +412,77 @@ void main() {
       expect(returned, isFalse);
       await tester.tap(find.text('Recover local access'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Return to online'));
+      await tester.tap(find.text('Return to this device'));
       await tester.pumpAndSettle();
       expect(returned, isTrue);
       expect(find.text('Unrelated application'), findsOneWidget);
       expect(actions, ['open', 'open']);
       expect(find.text('Recover local access'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a saved VPS view keeps return confirmation and describes unavailable revocation',
+    (tester) async {
+      var returns = 0;
+      final saved = {
+        ...presentation(),
+        'execution': {'mode': 'local', 'running': false},
+        'host_connection': {
+          'target': 'vps',
+          'health': 'unavailable',
+          'saved': true,
+          'host': 'server.example',
+        },
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PluginWorkspaceScreen(
+            capabilities: const ['workspace.schedule'],
+            runWorkspaceAction: (_, _) async => saved,
+            connectVps:
+                ({
+                  required host,
+                  required port,
+                  required password,
+                  required trustPeer,
+                  bool reinstall = false,
+                }) async => fail('No VPS connection expected'),
+            useOnline: () async {
+              returns++;
+            },
+            configureExecution: ({
+              required enabled,
+              required expiresAtMs,
+              expectedRevision,
+              revoke = false,
+              approvedScope,
+              credentialBindings,
+              settings = const {},
+            }) async {
+              expect(enabled, isFalse);
+              expect(revoke, isTrue);
+              return saved;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Return from VPS'));
+      await tester.pumpAndSettle();
+      expect(returns, 0);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(returns, 0);
+      await tester.tap(find.text('Revoke plugin permissions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved workspace'), findsOneWidget);
+      expect(find.text('Retry connection'), findsOneWidget);
+      await tester.tap(find.text('Return from VPS'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Return to this device'));
+      await tester.pumpAndSettle();
+      expect(returns, 1);
     },
   );
 
@@ -1391,6 +1456,140 @@ void main() {
   );
 
   test(
+    'delegated choices read locally without state, secrets or changes to execution',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      final runtime = f.runtime();
+      await runtime.releaseWorkspaceToVps(
+        f.registry.record,
+        executorId: 'e' * 64,
+      );
+      final before = await f.state();
+      final grant = await runtime.readWorkspaceExecution(
+        f.registry.record,
+        enforceHost: false,
+      );
+      f.onReadSecrets = () async => fail('Choices must not open credentials');
+      final readAccess = {
+        'version': 2,
+        'network': [
+          {
+            'origin': f.origin,
+            'methods': ['GET'],
+          },
+        ],
+      };
+      Future<Map<String, dynamic>> load({bool approved = false}) =>
+          runtime.runWorkspaceAction(
+            record: f.registry.record,
+            action: 'run',
+            choiceAccess: readAccess,
+            choiceAccessApproved: approved,
+          );
+
+      f.method = 'GET';
+      await load();
+      expect(f.sends, 1);
+      expect(f.executionSeen.last, {
+        'running': false,
+        'enabled': false,
+        'scope': null,
+      });
+      expect(await f.state(), before);
+      expect(
+        await runtime.readWorkspaceExecution(
+          f.registry.record,
+          enforceHost: false,
+        ),
+        grant,
+      );
+
+      f.method = 'POST';
+      await expectLater(load(approved: true), throwsStateError);
+      f.method = 'GET';
+      f.credential = 'default';
+      await expectLater(load(approved: true), throwsStateError);
+      f.credential = null;
+      expect(f.sends, 1);
+
+      final expiredAt = DateTime.now().millisecondsSinceEpoch - 1000;
+      await f.changeGrant((grant) => grant['expires_at_ms'] = expiredAt);
+      await load();
+      expect(f.sends, 1);
+      expect(f.received.last['outcome'], 'not_dispatched');
+      await load(approved: true);
+      expect(f.sends, 2);
+      expect(await f.state(), before);
+      expect(
+        await runtime.readWorkspaceExecution(
+          f.registry.record,
+          enforceHost: false,
+        ),
+        {...grant!, 'expires_at_ms': expiredAt},
+      );
+
+      f.onInvoke = (_) async {
+        f.registry.digest = 'd' * 64;
+      };
+      await expectLater(load(approved: true), throwsStateError);
+      expect(f.sends, 2);
+    },
+  );
+
+  test(
+    'authorized local Start applies prepared settings once before the new cycle',
+    () async {
+      final f = await Fixture.create();
+      addTearDown(f.close);
+      await f.enable();
+      final runtime = f.runtime();
+      final prior = (await runtime.readWorkspaceExecution(f.registry.record))!;
+      final before = await f.state();
+      final selection = {'symbol': 'NEW', 'interval': 120};
+      Future<Map<String, dynamic>> start(String action) =>
+          runtime.setWorkspaceExecution(
+            record: f.registry.record,
+            enabled: true,
+            expiresAtMs: null,
+            expectedRevision: prior['revision'] as int,
+            approvedScope: {...f.schedule, 'start_action': action},
+            settings: selection,
+          );
+
+      await expectLater(start('run'), throwsStateError);
+      expect(f.sends, 0);
+      expect(await f.state(), before);
+      expect(await runtime.readWorkspaceExecution(f.registry.record), prior);
+
+      f.actions.clear();
+      await start('start');
+      expect(f.actions, ['start', 'open']);
+      expect((await f.state())['prepared_settings'], selection);
+      final grant = (await runtime.readWorkspaceExecution(f.registry.record))!;
+      expect(grant['scope']['interval_seconds'], 120);
+      expect(grant['scope']['start_action'], isNull);
+      expect(grant['settings'], selection);
+      await expectLater(
+        runtime.runScheduledWorkspaceCycle(
+          f.registry.record,
+          expectedRevision: prior['revision'] as int,
+        ),
+        throwsStateError,
+      );
+      expect(f.sends, 0);
+      await runtime.runScheduledWorkspaceCycle(
+        f.registry.record,
+        expectedRevision: grant['revision'] as int,
+      );
+      expect(f.sends, 1);
+      expect(f.actions.where((a) => a == 'start'), hasLength(1));
+      expect(f.settingsSeen.last, selection);
+    },
+  );
+
+  test(
     'Start wakes the package immediately; observation never starts a second cycle',
     () async {
       final f = await Fixture.create();
@@ -1646,6 +1845,26 @@ void main() {
               g['revision']++;
             });
           }
+          if (!revoke) {
+            await expectLater(
+              module.setWorkspaceExecution(
+                record: f.registry.record,
+                enabled: true,
+                expiresAtMs: null,
+                expectedRevision: 1,
+                approvedScope: f.schedule,
+                credentialBindings: {
+                  'default': {'token': 'ref-token'},
+                },
+              ),
+              throwsStateError,
+            );
+            expect(
+              calls,
+              isEmpty,
+              reason: 'A permissions edit must not replace the runner',
+            );
+          }
           final operation = module.setWorkspaceExecution(
             record: f.registry.record,
             enabled: true,
@@ -1675,25 +1894,47 @@ void main() {
     },
   );
 
-  for (final health in ['replaced', 'unavailable']) {
+  for (final scenario in ['running', 'replaced', 'unavailable', 'expired']) {
     testWidgets(
-      'previous VPS assignment keeps a new Start without reconnection ($health)',
+      'VPS next Start settings are editable without stopping or reconnecting ($scenario)',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(390, 844));
         addTearDown(() => tester.binding.setSurfaceSize(null));
+        final expired = scenario == 'expired';
+        final health = expired ? 'replaced' : scenario;
         final access = permission('https://one.example');
-        final deadline = DateTime.now().millisecondsSinceEpoch + 3600000;
+        final readAccess = {
+          'version': 2,
+          'network': [
+            {
+              'origin': 'https://one.example',
+              'methods': ['GET'],
+            },
+          ],
+        };
+        final deadline =
+            DateTime.now().millisecondsSinceEpoch +
+            (expired ? -3600000 : 3600000);
         var started = false;
         final configuration = <Map<String, dynamic>>[];
         final actions = <String>[];
+        final choices = <String>[];
         Map<String, dynamic> view() => {
           ...presentation(),
           'fields': [
             {
               'id': 'selection',
               'label': 'Owner selection',
-              'type': 'text',
+              'type': 'choice',
               'value': 'retained-choice',
+              'source': {'action': 'select_item', 'access': readAccess},
+            },
+            {
+              'id': 'period',
+              'label': 'Period',
+              'type': 'choice',
+              'value': 'all',
+              'source': {'action': 'select_period'},
             },
           ],
           'actions': [
@@ -1702,6 +1943,8 @@ void main() {
               'label': 'Start application',
               'host': 'workspace.start',
             },
+            if (health == 'running' && !started)
+              {'id': 'stop', 'label': 'Stop new entries', 'settings': false},
           ],
           'schedule': {
             'version': 2,
@@ -1711,9 +1954,9 @@ void main() {
             'access': access,
           },
           'execution': {
-            'active': true,
-            'enabled': true,
-            'running': started,
+            'active': !expired,
+            'enabled': !expired,
+            'running': started || health == 'running',
             'revision': 1,
             'expires_at_ms': deadline,
             'access': access,
@@ -1736,6 +1979,15 @@ void main() {
               runWorkspaceAction: (action, settings) async {
                 actions.add(action);
                 return view();
+              },
+              loadLocalChoices: (action, access, approved) async {
+                choices.add(action);
+                expect(approved, expired && action == 'select_item');
+                return {
+                  if (action == 'select_period')
+                    'message': 'All uses six frames; 1m is separate.',
+                  'options': action == 'select_item' ? ['new-choice'] : ['1m'],
+                };
               },
               listSecrets:
                   () async =>
@@ -1771,11 +2023,11 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(
-          find.text(
-            health == 'replaced'
-                ? 'Previous assignment replaced'
-                : 'Previous assignment unavailable',
-          ),
+          find.text(switch (health) {
+            'replaced' => 'Previous assignment replaced',
+            'unavailable' => 'Previous assignment unavailable',
+            _ => 'VPS process is running',
+          }),
           findsOneWidget,
         );
         expect(
@@ -1789,7 +2041,39 @@ void main() {
           300,
           scrollable: find.byType(Scrollable).first,
         );
-        await tester.enterText(selection, 'new-choice');
+        await tester.ensureVisible(selection);
+        await tester.pumpAndSettle();
+        await tester.tap(selection);
+        await tester.pumpAndSettle();
+        if (expired) {
+          expect(choices, isEmpty);
+          await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+          await tester.pumpAndSettle();
+          expect(choices, isEmpty);
+          await tester.tap(selection);
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(FilledButton, 'Allow'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.widgetWithText(ListTile, 'new-choice'));
+        await tester.pumpAndSettle();
+        final period = find.byKey(const ValueKey('plugin-field-period'));
+        await tester.ensureVisible(period);
+        await tester.pumpAndSettle();
+        await tester.tap(period);
+        await tester.pumpAndSettle();
+        expect(
+          find.text('All uses six frames; 1m is separate.'),
+          findsOneWidget,
+        );
+        await tester.tap(find.widgetWithText(ListTile, '1m'));
+        await tester.pumpAndSettle();
+        expect(choices, ['select_item', 'select_period']);
+        if (expired) {
+          expect(configuration, isEmpty);
+          expect(actions, ['open']);
+          return;
+        }
         final start = find.byKey(
           const ValueKey('plugin-action-begin_owner_workflow'),
         );
@@ -1798,11 +2082,12 @@ void main() {
           -300,
           scrollable: find.byType(Scrollable).first,
         );
+        await tester.ensureVisible(start);
         await tester.pumpAndSettle();
         await tester.tap(start);
         await tester.pumpAndSettle();
         expect(configuration, [
-          {'selection': 'new-choice'},
+          {'selection': 'new-choice', 'period': '1m'},
         ]);
         expect(find.text('Plugin permissions'), findsNothing);
         expect(find.text('VPS process is running'), findsOneWidget);
@@ -1811,6 +2096,73 @@ void main() {
       },
     );
   }
+
+  testWidgets('Stop keeps the draft even with a missing numeric input', (
+    tester,
+  ) async {
+    final stop = find.byKey(const ValueKey('plugin-action-stop'));
+    var stopped = false;
+    final submitted = <Map<String, dynamic>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          runWorkspaceAction: (action, settings) async {
+            if (action == 'stop') {
+              submitted.add(settings);
+              stopped = true;
+            }
+            return {
+              ...presentation(),
+              'fields': [
+                {
+                  'id': 'symbol',
+                  'label': 'Instrument',
+                  'type': 'text',
+                  'value': 'MNT-USDT',
+                },
+                {
+                  'id': 'period',
+                  'label': 'Timeframe',
+                  'type': 'text',
+                  'value': 'all',
+                },
+                {
+                  'id': 'margin',
+                  'label': 'Margin',
+                  'type': 'number',
+                  'value': 1.0,
+                },
+              ],
+              'actions': [
+                if (!stopped)
+                  {
+                    'id': 'stop',
+                    'label': 'Stop new entries',
+                    'settings': false,
+                  },
+              ],
+            };
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final symbol = find.byKey(const ValueKey('plugin-field-symbol'));
+    final period = find.byKey(const ValueKey('plugin-field-period'));
+    final margin = find.byKey(const ValueKey('plugin-field-margin'));
+    await tester.enterText(symbol, 'ACH-USDT');
+    await tester.enterText(period, '1m');
+    await tester.enterText(margin, '');
+    await tester.ensureVisible(stop);
+    await tester.pumpAndSettle();
+    await tester.tap(stop);
+    await tester.pumpAndSettle();
+    expect(submitted, [<String, dynamic>{}]);
+    expect(tester.widget<TextField>(symbol).controller!.text, 'ACH-USDT');
+    expect(tester.widget<TextField>(period).controller!.text, '1m');
+    expect(tester.widget<TextField>(margin).controller!.text, isEmpty);
+    expect(stop, findsNothing);
+  });
 
   for (final target in ['local', 'selected', 'vps']) {
     testWidgets('execution destination is visible before Start ($target)', (
@@ -1987,6 +2339,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('plugin-action-start')));
         await tester.pumpAndSettle();
+        expect(observed, ['open']);
         expect(
           find.text(
             'Start on ${remote ? 'VPS server.example' : 'this device'}',
@@ -1995,7 +2348,7 @@ void main() {
         );
         await tester.tap(find.text('Cancel'));
         await tester.pumpAndSettle();
-        expect(observed, remote ? ['open'] : ['open', 'start']);
+        expect(observed, ['open']);
         await tester.pumpWidget(const SizedBox());
       },
     );
@@ -2549,7 +2902,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(submitted?['limit'], 1.25);
         expect(find.text('Current observation'), findsOneWidget);
-        expect(find.text('Current status'), findsOneWidget);
+        expect(find.text('Last action result'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
       }
@@ -3622,6 +3975,7 @@ void main() {
               settings = const {},
             }) async {
               grants++;
+              if (approvedScope?['start_action'] == 'start') starts++;
               selected = credentialBindings ?? selected;
               execution = {
                 'enabled': true,
@@ -3636,7 +3990,9 @@ void main() {
             },
             runWorkspaceAction: (action, settings) async {
               if (action == 'link') connections++;
-              if (action == 'start') starts++;
+              if (action == 'start') {
+                fail('The host must apply Start under its grant');
+              }
               if (action == 'open') opens++;
               return view();
             },
@@ -4363,6 +4719,7 @@ class Fixture {
           request.args['state'] as Map? ?? {},
         );
         var requests = <Map<String, dynamic>>[];
+        if (action == 'start') state['prepared_settings'] = settingsSeen.last;
         if (action == 'run') {
           state['private_schema'] = {'pending': true};
           requests = [this.request()];
@@ -4395,7 +4752,13 @@ class Fixture {
                   received.isEmpty
                       ? 'Ready'
                       : received.last['outcome'] ?? 'accepted',
-              if (registry.scheduled) 'schedule': schedule,
+              if (registry.scheduled)
+                'schedule': {
+                  ...schedule,
+                  if (action == 'start' &&
+                      settingsSeen.last['interval'] != null)
+                    'interval_seconds': settingsSeen.last['interval'],
+                },
             },
             'requests': requests,
           },

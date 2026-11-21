@@ -640,6 +640,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         action: action,
                         settings: settings,
                       ),
+                  loadLocalChoices: (action, access, approved) {
+                    if (_pluginRuntime.activeCapsuleRootHex() !=
+                        workspaceOwner) {
+                      throw StateError('Capsule changed; reopen the plugin');
+                    }
+                    return _pluginRuntime.runWorkspaceAction(
+                      record: record,
+                      action: action,
+                      choiceAccess: access,
+                      choiceAccessApproved: approved,
+                    );
+                  },
                 ),
           ),
         );

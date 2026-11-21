@@ -500,7 +500,15 @@ Future<void> _checkInstalledWasm(
             throw StateError('No network mutations in this fixture');
           }
           dynamic data;
-          if (uri.path.endsWith('/uid')) {
+          if (uri.path.endsWith('/contracts')) {
+            if (headers.containsKey('X-BX-APIKEY')) {
+              throw StateError('Instrument choices opened a saved account');
+            }
+            data = [
+              {'symbol': 'MNT-USDT', 'status': 1, 'apiStateOpen': 'true'},
+              {'symbol': 'ACH-USDT', 'status': 1, 'apiStateOpen': 'true'},
+            ];
+          } else if (uri.path.endsWith('/uid')) {
             data = {'uid': '123456789'};
           } else if (uri.path.endsWith('/order')) {
             final exit = uri.queryParameters['clientOrderId'] == 'c' * 40;
@@ -866,7 +874,7 @@ Future<void> _checkInstalledWasm(
           'start_action': 'start',
           'interval_seconds': 60,
         },
-        'settings': {...settings, 'symbol': 'MNT-USDT'},
+        'settings': {...settings, 'symbol': 'MNT-USDT', 'timeframes': '1m'},
       },
       // This stale client copy must not replace the newer server checkpoint.
       'workspace': jsonEncode(seed), 'effects': null,
@@ -940,6 +948,7 @@ Future<void> _checkInstalledWasm(
             )
             as Map;
     if (current['engine']['settings']['symbol'] != 'MNT-USDT' ||
+        current['engine']['settings']['timeframes'] != '1m' ||
         current['engine']['entry'] != null ||
         current['last_trade'] == null ||
         !_sameJson(current['intents'], outstanding['intents']) ||
@@ -987,6 +996,42 @@ Future<void> _checkInstalledWasm(
         displaced['view'] != null) {
       throw StateError('Old device observed the replacement workspace');
     }
+    final retainedGrant = await runtime().readWorkspaceExecution(
+      record,
+      enforceHost: false,
+    );
+    final fields = (reopenedView['fields'] as List).cast<Map>();
+    for (final id in ['symbol', 'timeframes']) {
+      final field = fields.singleWhere((field) => field['id'] == id);
+      final source = field['source'] as Map;
+      final choices = await runtime().runWorkspaceAction(
+        record: record,
+        action: source['action'] as String,
+        choiceAccess:
+            (source['access'] as Map?)?.cast<String, dynamic>() ??
+            const {'version': 2, 'network': []},
+      );
+      final option = id == 'symbol' ? 'ACH-USDT' : '1m';
+      if (!(choices['options'] as List).contains(option)) {
+        throw StateError('Fresh choice $option was unavailable');
+      }
+    }
+    if (!_sameJson(
+          await runtime().readWorkspaceExecution(record, enforceHost: false),
+          retainedGrant,
+        ) ||
+        await files.readPluginState(
+              directory,
+              record.pluginId!,
+              'workspace.v1.json',
+            ) !=
+            beforeReplay ||
+        writes != 0) {
+      throw StateError('Choice loading changed execution or package state');
+    }
+    stdout.writeln(
+      'actual-WASM choices after replacement PASS; synthetic public reads only',
+    );
     final invalid = jsonDecode(jsonEncode(start)) as Map<String, dynamic>;
     invalid['checkpoint']['execution']['handoff_id'] = '9' * 64;
     invalid['checkpoint']['execution']['settings']['symbol'] = 'invalid';

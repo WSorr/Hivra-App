@@ -357,7 +357,14 @@ interval_seconds, description, access}`; it reuses an active matching grant,
 including its expiry and secret connections. It asks for permission only when
 required access is absent or broader. Permissions need no schedule; `running`
 means a scheduled workflow, while `enabled` means the owner's access is enabled.
-In the local source, explicit Start schedules its first wake immediately; the
+The local host invokes the package's declared Start action after owner
+confirmation or reuse of matching access. Start prepares the opaque workspace
+and interval before the host admits a cycle. Its preparation dispatches no
+capability requests. The host checks the approved action and grant revision,
+then saves the workspace before enabling the new grant under the existing
+leases. Failed preparation retains the previous plan. A queued wake for an old
+grant revision cannot start after replacement.
+Local Start schedules its first wake immediately. The
 configured interval separates subsequent completed cycles. Reopening a workspace
 or restoring an existing scheduler retains the interval and does not add an
 extra immediate action. Merely connecting credentials without a schedule runs
@@ -387,8 +394,12 @@ Choice fields use `source.action` through the same action executor and return
 `view.options`. An optional `source.access` declares the access needed to load
 those choices. The host reuses a matching active grant, or opens the same owner
 permission dialog before loading. Cancel dispatches nothing. A choice grant
-creates no schedule and never implies connected credentials or Start. There is
-no field-specific executor or service lookup.
+creates no schedule and never implies connected credentials or Start. When a
+VPS owns the assignment, the same action executor loads choices on the device
+from the installed package with no workspace state or settings. It admits only
+capability description and public GETs within the declared choice scope. These
+reads reuse matching active owner access or the same dialog's approval for this
+chooser, without changing the assignment grant or writing package state.
 
 HTTP permits exact HTTPS origins and explicit methods (GET, HEAD, POST, PUT,
 PATCH, DELETE, OPTIONS). Origin permission covers paths at that origin; the
@@ -506,10 +517,11 @@ authorize network access through the common workspace API.
   Choice sources declare a package action, never a named service request.
   Host action markers are only `workspace.authorize`, `workspace.start`,
   `workspace.stop`; capability checks use the resolved installed binding.
-  Opening sends no draft settings. Automatic status reads run only for a running
-  workflow. Explicit package results and failures remain visible across timer
-  ticks and app resume until another owner action or reopening; Start resumes
-  workflow observation. Edits survive status refresh, errors cannot overwrite a
+  Opening and actions declaring `settings: false` send no draft settings and
+  preserve edits. Automatic status reads run only for a running
+  workflow. Explicit package results and failures remain visible as the last
+  action across timer ticks and app resume. Refresh status, reopening and Start
+  resume workflow observation. Edits survive status refresh, errors cannot overwrite a
   newer action, and failed observations mark the view unavailable.
   Current execution location and the existing device/VPS controls appear before
   Start. The Start label and its existing permission form name the intended

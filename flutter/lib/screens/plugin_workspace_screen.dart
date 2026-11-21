@@ -15,6 +15,12 @@ typedef PluginWorkspaceAction =
 class PluginWorkspaceScreen extends StatefulWidget {
   final List<String> capabilities;
   final PluginWorkspaceAction runWorkspaceAction;
+  final Future<Map<String, dynamic>> Function(
+    String action,
+    Map<String, dynamic> access,
+    bool approved,
+  )?
+  loadLocalChoices;
   final Future<List<Map<String, String>>> Function()? listSecrets;
   final Future<List<Map<String, String>>> Function(
     List<Map<String, String>> secrets,
@@ -44,6 +50,7 @@ class PluginWorkspaceScreen extends StatefulWidget {
     super.key,
     this.capabilities = const [],
     required this.runWorkspaceAction,
+    this.loadLocalChoices,
     this.listSecrets,
     this.saveSecrets,
     this.configureExecution,
@@ -123,6 +130,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       _view?['host_connection']?['target'] == 'vps' ||
       _view?['host_connection']?['selected'] == true;
 
+  bool get _assignedToVps =>
+      _view?['host_connection']?['target'] == 'vps' ||
+      _view?['execution']?['mode'] == 'vps';
+
   String? get _startDestination {
     final connection = _view?['host_connection'];
     if (connection is! Map) return null;
@@ -143,7 +154,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     final descriptor = (_view?['actions'] as List? ?? const []).where(
       (a) => (a as Map)['id'] == action,
     );
-    final hostAction = descriptor.isEmpty ? null : descriptor.single['host'];
+    final selectedAction = descriptor.singleOrNull;
+    final hostAction = selectedAction?['host'];
     if (hostAction == 'workspace.stop' && widget.configureExecution != null) {
       await _stopExecution();
       return;
@@ -155,14 +167,16 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       return;
     }
     final generation = ++_presentationGeneration;
-    final preserveEdits = action == 'open' && _edited;
+    final submitSettings =
+        action != 'open' && selectedAction?['settings'] != false;
+    final preserveEdits = !submitSettings && _edited;
     if (hostAction == 'workspace.authorize' &&
         !_hasAccess(Map<String, dynamic>.from(_view!['access'] as Map))) {
       setState(() => _choosing = true);
       try {
         final granted = await _authorize(
           Map<String, dynamic>.from(_view!['access'] as Map),
-          settings: _settings(),
+          settings: submitSettings ? _settings() : const {},
         );
         if (!granted) return;
       } catch (error) {
@@ -177,25 +191,20 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       _busy = true;
       _error = null;
       _actionResultVisible = action != 'open' && hostAction == null;
-      if (action != 'open') _edited = true;
     });
     try {
-      final settings = action == 'open' ? <String, dynamic>{} : _settings();
-      final remoteStart = hostAction == 'workspace.start' && _remoteSelected;
-      // The new server process invokes the package Start after installation.
-      // Never send selected settings to the previous runner before replacement.
-      var view =
-          remoteStart
-              ? _view!
-              : await widget.runWorkspaceAction(action, settings);
-      if (!mounted || generation != _presentationGeneration) return;
+      final settings = submitSettings ? _settings() : <String, dynamic>{};
+      final Map<String, dynamic> view;
       if (hostAction == 'workspace.start') {
         final configure = widget.configureExecution;
-        if (configure == null || view['schedule'] is! Map) {
+        final schedule = _view?['schedule'];
+        if (configure == null || schedule is! Map) {
           throw StateError('Scheduled execution is not available in this host');
         }
-        final scope = Map<String, dynamic>.from(view['schedule'] as Map);
-        if (remoteStart) scope['start_action'] = action;
+        final scope = {
+          ...schedule.cast<String, dynamic>(),
+          'start_action': action,
+        };
         final access = Map<String, dynamic>.from(scope['access'] as Map);
         if (!_hasAccess(access)) {
           setState(() {
@@ -213,7 +222,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             _busy = true;
           });
           if (!granted) return;
-          view = await widget.runWorkspaceAction('open', const {});
+          view = _view!;
         } else {
           view = await configure(
             enabled: true,
@@ -223,8 +232,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             settings: settings,
           );
         }
-        if (!mounted || generation != _presentationGeneration) return;
+      } else {
+        view = await widget.runWorkspaceAction(action, settings);
       }
+      if (!mounted || generation != _presentationGeneration) return;
       final ids = <String>{};
       for (final raw in view['fields'] as List) {
         final field = raw as Map;
@@ -250,10 +261,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       setState(() {
         _view = view;
         _edited = preserveEdits;
-        _observationUnavailable = const {
-          'replaced',
-          'unavailable',
-        }.contains(view['host_connection']?['health']);
+        _observationUnavailable = _isSavedView(view);
       });
       _refresh?.cancel();
       _refresh = null;
@@ -270,7 +278,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       if (!mounted || generation != _presentationGeneration) return;
       setState(() {
         _error = _describeError(error);
-        if (action == 'open' || error is! FormatException) {
+        if (action == 'open' ||
+            (_remoteSelected && error is! FormatException)) {
           _observationUnavailable = true;
         }
       });
@@ -283,6 +292,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       }
     }
   }
+
+  bool _isSavedView(Map view) => const {
+    'replaced',
+    'unavailable',
+  }.contains(view['host_connection']?['health']);
 
   Future<void> _stopExecution({bool revoke = true}) async {
     // Both revocation intents supersede stale reads and share one host path.
@@ -302,7 +316,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         setState(() {
           _view = stopped;
           _error = null;
-          _observationUnavailable = false;
+          _observationUnavailable = _isSavedView(stopped);
         });
       }
     } catch (error) {
@@ -516,31 +530,35 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
 
   Future<void> _useOnline() async {
     if (_busy || _choosing || widget.useOnline == null) return;
-    final remote = _view == null || _view?['execution']?['mode'] == 'vps';
+    final remote = _view == null || _assignedToVps;
     if (remote) {
-      final accepted =
-          await showDialog<bool>(
-            context: context,
-            builder:
-                (context) => AlertDialog(
-                  title: const Text('Return execution control to this app?'),
-                  content: const Text(
-                    'Retrieve this workspace after ending its VPS authority. If another device already replaced it, recover its ended handoff without changing the new runner. Previously accepted external effects remain. Local cycles require a new Start; the app must remain open.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Return to online'),
-                    ),
-                  ],
+      setState(() => _choosing = true);
+      bool? accepted;
+      try {
+        accepted = await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Return execution control to this app?'),
+                content: const Text(
+                  'Retrieve this workspace after ending its VPS authority. If another device already replaced it, recover its ended handoff without changing the new runner. Previously accepted external effects remain. Local cycles require a new Start; the app must remain open.',
                 ),
-          ) ??
-          false;
-      if (!accepted || !mounted) return;
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Return to this device'),
+                  ),
+                ],
+              ),
+        );
+      } finally {
+        if (mounted) setState(() => _choosing = false);
+      }
+      if (accepted != true || !mounted) return;
     }
     setState(() {
       _busy = true;
@@ -606,10 +624,16 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     Map<String, dynamic> access, {
     Map<String, dynamic>? scope,
     Map<String, dynamic> settings = const {},
+    bool forChoice = false,
   }) async {
     final configure = widget.configureExecution;
     if (configure == null) throw StateError('Owner permissions unavailable');
+    final generation = _presentationGeneration;
+    final expectedRevision = _view?['execution']?['revision'] as int?;
     final declarations = access['credentials'] as Map? ?? const {};
+    if (forChoice && declarations.isNotEmpty) {
+      throw StateError('Local choices require public read access');
+    }
     final references =
         declarations.isEmpty
             ? <Map<String, String>>[]
@@ -664,7 +688,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           }
         }
       }
-      if (!untilRevoked) {
+      if (!forChoice && !untilRevoked) {
         final duration = double.tryParse(hours);
         if (duration == null ||
             !duration.isFinite ||
@@ -698,6 +722,17 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 'Start on $startDestination',
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
+                              if (scope?['start_action'] != null)
+                                for (final field
+                                    in (_view?['fields'] as List? ?? const [])
+                                        .cast<Map>())
+                                  if (field['advanced'] != true &&
+                                      settings.containsKey(field['id']))
+                                    Text(
+                                      '${field['label']} ${settings[field['id']]}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                               const SizedBox(height: 12),
                             ],
                             Text(_accessText(access)),
@@ -784,14 +819,16 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                     ? 'Connect secrets to this Capsule in Keychain first.'
                                     : 'Choose Add new secret to save a connection in secure storage.',
                               ),
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('Until revoked'),
-                              value: untilRevoked,
-                              onChanged:
-                                  (value) => update(() => untilRevoked = value),
-                            ),
-                            if (!untilRevoked)
+                            if (!forChoice)
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Until revoked'),
+                                value: untilRevoked,
+                                onChanged:
+                                    (value) =>
+                                        update(() => untilRevoked = value),
+                              ),
+                            if (!forChoice && !untilRevoked)
                               TextFormField(
                                 initialValue: hours,
                                 decoration: const InputDecoration(
@@ -805,8 +842,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                     (value) => update(() => hours = value),
                               ),
                             const SizedBox(height: 12),
-                            const Text(
-                              'This permission covers the plugin workflow. The plugin handles service logic; the service owns its account state. Revocation blocks new requests and cannot undo accepted actions.',
+                            Text(
+                              forChoice
+                                  ? 'Allow public reads while this choice is open.'
+                                  : 'This permission covers the plugin workflow. The plugin handles service logic; the service owns its account state. Revocation blocks new requests and cannot undo accepted actions.',
                             ),
                             if (permissionIssue() case final issue?) ...[
                               const SizedBox(height: 12),
@@ -836,7 +875,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               ),
         ) ??
         false;
-    if (!accepted || !mounted) return false;
+    if (!accepted || !mounted || generation != _presentationGeneration) {
+      return false;
+    }
+    if (forChoice) return true;
     final additions = <Map<String, String>>[];
     final targets = <(String, String)>[];
     for (final entry in declarations.entries) {
@@ -853,7 +895,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
     if (additions.isNotEmpty) {
       final saved = await widget.saveSecrets!(additions);
-      if (!mounted) return false;
+      if (!mounted || generation != _presentationGeneration) return false;
       if (saved.length != targets.length ||
           saved.any((r) => r['id']?.isNotEmpty != true)) {
         throw StateError('Secret connection was not saved');
@@ -869,10 +911,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
               ? null
               : DateTime.now().millisecondsSinceEpoch +
                   (double.parse(hours) * 3600000).round(),
-      expectedRevision: _view?['execution']?['revision'] as int?,
+      expectedRevision: expectedRevision,
       approvedScope:
           scope ??
-          {
+          ({
             if (_view?['execution']?['running'] == true)
               ...?_view?['execution']?['scope'] as Map?,
             'version': 2,
@@ -880,11 +922,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             'description':
                 _view?['execution']?['scope']?['description'] ??
                 'Owner-granted plugin access',
-          },
+          }..remove('start_action')),
       credentialBindings: selected,
       settings: settings,
     );
-    if (!mounted) return false;
+    if (!mounted || generation != _presentationGeneration) return false;
     setState(() => _view = view);
     return true;
   }
@@ -914,20 +956,29 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   Future<void> _choose(Map field) async {
     if (_busy || _choosing) return;
     final id = field['id'] as String;
-    Future<List<String>> load() => Future.sync(() {
-      final action = field['source']?['action'];
+    final source = field['source'] as Map;
+    final action = source['action'];
+    final access = (source['access'] as Map?)?.cast<String, dynamic>();
+    final loadLocal =
+        _view?['host_connection']?['target'] == 'vps'
+            ? widget.loadLocalChoices
+            : null;
+    var approved = false;
+    Future<Map<String, dynamic>> load() async {
       if (action is! String) throw StateError('Choice source is unavailable');
-      return widget
-          .runWorkspaceAction(action, const {})
-          .then((view) => List<String>.from(view['options'] as List));
-    });
-    Future<List<String>>? options;
+      return loadLocal == null
+          ? widget.runWorkspaceAction(action, const {})
+          : loadLocal(
+            action,
+            access ?? const {'version': 2, 'network': []},
+            approved,
+          );
+    }
+
+    Future<Map<String, dynamic>>? options;
     var query = '';
     setState(() => _choosing = true);
     try {
-      final rawAccess = field['source']?['access'];
-      final access =
-          rawAccess is Map ? Map<String, dynamic>.from(rawAccess) : null;
       if (access != null && !_hasAccess(access)) {
         final granted = await _authorize(
           access,
@@ -936,8 +987,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             'access': access,
             'description': 'Load ${field['label']} choices',
           },
+          forChoice: loadLocal != null,
         );
         if (!granted || !mounted) return;
+        approved = true;
       }
       if (!mounted) return;
       final selected = await showDialog<String>(
@@ -966,7 +1019,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                           ),
                           const SizedBox(height: 12),
                           Expanded(
-                            child: FutureBuilder<List<String>>(
+                            child: FutureBuilder<Map<String, dynamic>>(
                               future: options ??= load(),
                               builder: (context, snapshot) {
                                 if (snapshot.connectionState !=
@@ -991,30 +1044,44 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                     ],
                                   );
                                 }
+                                final hint =
+                                    snapshot.data?['message'] as String?;
                                 final matches =
-                                    (snapshot.data ?? const <String>[])
+                                    (snapshot.data?['options'] as List? ??
+                                            const [])
+                                        .cast<String>()
                                         .where(
                                           (s) =>
                                               s.toUpperCase().contains(query),
                                         )
                                         .toList();
-                                if (matches.isEmpty) {
-                                  return const Center(
-                                    child: Text('No matching choices'),
-                                  );
-                                }
+                                final hasHint = hint != null && hint.isNotEmpty;
                                 return ListView.builder(
-                                  itemCount: matches.length,
-                                  itemBuilder:
-                                      (context, index) => ListTile(
-                                        title: Text(matches[index]),
-                                        selected:
-                                            matches[index] == _fields[id]!.text,
-                                        onTap:
-                                            () => Navigator.of(
-                                              context,
-                                            ).pop(matches[index]),
-                                      ),
+                                  itemCount:
+                                      (hasHint ? 1 : 0) +
+                                      (matches.isEmpty ? 1 : matches.length),
+                                  itemBuilder: (context, index) {
+                                    if (hasHint && index == 0) {
+                                      return Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: Text(hint),
+                                      );
+                                    }
+                                    if (matches.isEmpty) {
+                                      return const ListTile(
+                                        title: Text('No matching choices'),
+                                      );
+                                    }
+                                    final option =
+                                        matches[index - (hasHint ? 1 : 0)];
+                                    return ListTile(
+                                      title: Text(option),
+                                      selected: option == _fields[id]!.text,
+                                      onTap:
+                                          () =>
+                                              Navigator.of(context).pop(option),
+                                    );
+                                  },
                                 );
                               },
                             ),
@@ -1038,6 +1105,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           _error = null;
         });
       }
+    } catch (error) {
+      if (mounted) setState(() => _error = _describeError(error));
     } finally {
       if (mounted) setState(() => _choosing = false);
     }
@@ -1049,6 +1118,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final execution = view?['execution'];
+    final statusTitle =
+        _observationUnavailable
+            ? 'Saved workspace'
+            : _actionResultVisible
+            ? 'Last action result'
+            : _error != null
+            ? 'Last known status'
+            : 'Current status';
     final expiry = execution?['expires_at_ms'];
     final accessExpired =
         execution?['active'] == false &&
@@ -1240,7 +1317,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                       child: const Text('Recover local access'),
                     ),
                   if (view != null) ...[
-                    panel('Current status', [
+                    panel(statusTitle, [
                       if (_edited) ...[
                         Text(
                           'Changes not applied. The observation below uses the previous settings.',
@@ -1302,7 +1379,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                       ? Icons.devices_outlined
                                       : Icons.check_circle_outline,
                                 ),
-                                label: const Text('Use this device'),
+                                label: Text(
+                                  _assignedToVps
+                                      ? 'Return from VPS'
+                                      : 'Use this device',
+                                ),
                               ),
                               OutlinedButton.icon(
                                 key: const ValueKey('workspace-target-vps'),
@@ -1332,6 +1413,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                           style: TextStyle(color: colors.error),
                         ),
                         const SizedBox(height: 12),
+                        if (accessExpired)
+                          Text(
+                            'Saved permission expired at ${_displayTime(expiry)}.',
+                          ),
                       ],
                       if (!_observationUnavailable &&
                           _supportsExecution &&
@@ -1377,6 +1462,17 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                           children: [
                             for (var i = 0; i < actions.length; i++)
                               actionButton(actions[i], i == 0),
+                            if (_actionResultVisible &&
+                                !_observationUnavailable &&
+                                execution?['running'] == true &&
+                                !actions.any((a) => a['id'] == 'open'))
+                              OutlinedButton(
+                                onPressed:
+                                    _busy || _choosing
+                                        ? null
+                                        : () => _run('open'),
+                                child: const Text('Refresh status'),
+                              ),
                           ],
                         ),
                         if (_remoteSelected &&

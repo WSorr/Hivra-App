@@ -181,6 +181,7 @@ class PluginWorkspaceContractHandler implements PluginHostContractHandler {
       if (action is! Map ||
           action['id'] is! String ||
           action['label'] is! String ||
+          (action['settings'] != null && action['settings'] is! bool) ||
           (action['host'] != null &&
               !const {
                 'workspace.authorize',

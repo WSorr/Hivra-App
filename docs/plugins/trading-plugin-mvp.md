@@ -68,7 +68,9 @@ quality is measured separately from actual closed-trade outcomes.
 5. After initial setup, the primary controls are the chosen instrument, margin
    per entry, and Start/Stop. Start, stop, or update with one user action each
    in either mode; do not expose a whitelist, scanner, runner ID, or session
-   hash as a prerequisite. On VPS, Start replaces the previous managed runner
+   hash as a prerequisite. Start stays available while new entries are active.
+   Selecting the next instrument and timeframe remains available from the
+   retained view after replacement. On VPS, Start replaces the previous managed runner
    with this package and the selected instrument/settings, independent of which
    authorized device installed it. Replacement ends the previous execution
    assignment. It neither cancels accepted exchange orders nor waits for their
@@ -89,6 +91,10 @@ quality is measured separately from actual closed-trade outcomes.
 6. See the exact provider order ID and current provider state: pending, open,
    partially filled, filled, cancelled, rejected, or unknown. Entry acceptance
    is not reported as a fill, protected position, or PnL.
+   Refresh during an active assignment reads the running symbol and parameters.
+   Refresh order and Open orders read the existing order context. These actions
+   preserve drafts for the next Start. An idle market inspection may use draft
+   settings for a preview before Start.
    Refresh current open orders for the selected instrument and connected
    account inside the plugin. Keep this read-only list distinct from the
    managed entry: manual orders are visible, never automatically adopted or
@@ -96,7 +102,8 @@ quality is measured separately from actual closed-trade outcomes.
    provider evidence rather than presenting cached rows as current.
 7. Reopen the app or restart the runner under the same assignment. The same
    order is reconciled, not submitted again. This recovery does not extend an
-   assignment ended by replacement. Stop prevents new entries but does not
+   assignment ended by replacement. Stop preserves the form for the next Start
+   and prevents new entries but does not
    cancel a pending exchange order or close a position. The existing order stays
    visible and may still fill; its filled position remains managed. Cancel order
    and Close position are separate explicit actions. Never silently presume an order was
