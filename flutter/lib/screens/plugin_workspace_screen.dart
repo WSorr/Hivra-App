@@ -641,11 +641,52 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     if (!mounted) return false;
     final selected = <String, Map<String, String>>{};
     final previous = _view?['execution']?['credentials'] as Map? ?? const {};
+    final fields = {
+      for (final entry in declarations.entries)
+        for (final field in entry.value as List)
+          '${entry.key}:${field['id']}': (
+            label: (field['label'] as String).trim().toLowerCase(),
+            previous: previous[entry.key]?[field['id']],
+          ),
+    };
+    final choices = <String, List<Map<String, String>>>{};
+    for (final reference in references) {
+      var slot = reference['secret_name'];
+      if (slot == 'secret') {
+        // Older owner-saved entries have no field in their vault scope.
+        final bound = {
+          for (final field in fields.entries)
+            if (field.value.previous == reference['id']) field.key,
+        };
+        final label = reference['label']?.trim().toLowerCase();
+        final named = {
+          for (final field in fields.entries)
+            if (field.value.label == label) field.key,
+        };
+        if (bound.isNotEmpty && named.isNotEmpty) {
+          slot = bound.intersection(named).singleOrNull;
+        } else {
+          slot = (bound.isEmpty ? named : bound).singleOrNull;
+        }
+      }
+      if (slot != null && fields.containsKey(slot)) {
+        choices.putIfAbsent(slot, () => []).add(reference);
+      }
+    }
+    final destinations = <String, Set<String>>{};
+    for (final network in access['network'] as List) {
+      if (network['credential'] case final String alias) {
+        destinations
+            .putIfAbsent(alias, () => {})
+            .add(Uri.parse(network['origin'] as String).authority);
+      }
+    }
     for (final entry in declarations.entries) {
       selected[entry.key as String] = {};
       for (final field in entry.value as List) {
         final id = previous[entry.key]?[field['id']];
-        if (references.any((r) => r['id'] == id)) {
+        if (choices['${entry.key}:${field['id']}']?.any((r) => r['id'] == id) ==
+            true) {
           selected[entry.key]![field['id'] as String] = id as String;
         }
       }
@@ -754,11 +795,16 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                         value: newSecret,
                                         child: Text('Add new secret…'),
                                       ),
-                                    for (final reference in references)
+                                    for (final reference
+                                        in choices['${entry.key}:${field['id']}'] ??
+                                            const [])
                                       DropdownMenuItem(
                                         value: reference['id'],
                                         child: Text(
-                                          reference['label']!,
+                                          [
+                                            reference['label']!,
+                                            ...?destinations[entry.key],
+                                          ].join(' · '),
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
@@ -813,7 +859,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                   ),
                                 ],
                               ],
-                            if (declarations.isNotEmpty && references.isEmpty)
+                            if (declarations.isNotEmpty && choices.isEmpty)
                               Text(
                                 widget.saveSecrets == null
                                     ? 'Connect secrets to this Capsule in Keychain first.'
@@ -888,6 +934,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         final id = field['id'] as String;
         targets.add((alias, id));
         additions.add({
+          'secret_name': '$alias:$id',
           'label': names[alias]![id]!.trim(),
           'value': values[alias]![id]!.trim(),
         });
