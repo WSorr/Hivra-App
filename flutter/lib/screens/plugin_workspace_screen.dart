@@ -68,6 +68,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   Map<String, dynamic>? _view;
   String? _error;
   bool _busy = false;
+  bool _refreshingStatus = false;
   bool _edited = false;
   bool _observationUnavailable = false;
   bool _choosing = false;
@@ -112,8 +113,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         _view?['execution']?['running'] == true &&
         !_actionResultVisible &&
         !_busy &&
-        !_choosing) {
-      _run('open');
+        !_choosing &&
+        !_refreshingStatus) {
+      _run('open', background: true);
     }
   }
 
@@ -150,7 +152,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         '${labels.formatTimeOfDay(TimeOfDay.fromDateTime(time), alwaysUse24HourFormat: true)}';
   }
 
-  Future<void> _run(String action) async {
+  Future<void> _run(String action, {bool background = false}) async {
     final descriptor = (_view?['actions'] as List? ?? const []).where(
       (a) => (a as Map)['id'] == action,
     );
@@ -166,10 +168,20 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         const {'workspace.start'}.contains(hostAction)) {
       return;
     }
-    final generation = ++_presentationGeneration;
+    final previousView = _view;
+    final previousError = _error;
+    final generation =
+        background ? _presentationGeneration : ++_presentationGeneration;
+    bool canPresent() =>
+        mounted &&
+        generation == _presentationGeneration &&
+        (!background ||
+            (!_busy &&
+                !_choosing &&
+                identical(_view, previousView) &&
+                _error == previousError));
     final submitSettings =
         action != 'open' && selectedAction?['settings'] != false;
-    final preserveEdits = !submitSettings && _edited;
     if (hostAction == 'workspace.authorize' &&
         !_hasAccess(Map<String, dynamic>.from(_view!['access'] as Map))) {
       setState(() => _choosing = true);
@@ -187,11 +199,16 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       }
       if (!mounted || generation != _presentationGeneration) return;
     }
-    setState(() {
-      _busy = true;
-      _error = null;
-      _actionResultVisible = action != 'open' && hostAction == null;
-    });
+    if (background) {
+      // A status read must not take input away from the owner.
+      _refreshingStatus = true;
+    } else {
+      setState(() {
+        _busy = true;
+        _error = null;
+        _actionResultVisible = action != 'open' && hostAction == null;
+      });
+    }
     try {
       final settings = submitSettings ? _settings() : <String, dynamic>{};
       final Map<String, dynamic> view;
@@ -235,7 +252,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       } else {
         view = await widget.runWorkspaceAction(action, settings);
       }
-      if (!mounted || generation != _presentationGeneration) return;
+      if (!canPresent()) return;
+      final preserveEdits = !submitSettings && _edited;
       final ids = <String>{};
       for (final raw in view['fields'] as List) {
         final field = raw as Map;
@@ -262,6 +280,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         _view = view;
         _edited = preserveEdits;
         _observationUnavailable = _isSavedView(view);
+        if (background) _error = null;
       });
       _refresh?.cancel();
       _refresh = null;
@@ -275,7 +294,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         );
       }
     } catch (error) {
-      if (!mounted || generation != _presentationGeneration) return;
+      if (!canPresent()) return;
       setState(() {
         _error = _describeError(error);
         if (action == 'open' ||
@@ -284,7 +303,9 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         }
       });
     } finally {
-      if (mounted && generation == _presentationGeneration) {
+      if (background) {
+        _refreshingStatus = false;
+      } else if (canPresent()) {
         setState(() {
           _busy = false;
           _choosing = false;

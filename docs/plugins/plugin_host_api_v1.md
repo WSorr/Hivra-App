@@ -518,11 +518,12 @@ authorize network access through the common workspace API.
   Host action markers are only `workspace.authorize`, `workspace.start`,
   `workspace.stop`; capability checks use the resolved installed binding.
   Opening and actions declaring `settings: false` send no draft settings and
-  preserve edits. Automatic status reads run only for a running
-  workflow. Explicit package results and failures remain visible as the last
-  action across timer ticks and app resume. Refresh status, reopening and Start
-  resume workflow observation. Edits survive status refresh, errors cannot overwrite a
-  newer action, and failed observations mark the view unavailable.
+  preserve edits. Automatic status reads run only for a running workflow and
+  leave the configuration and Start available. Newer owner actions supersede
+  pending observations. Explicit package results and failures remain visible as
+  the last action across timer ticks and app resume. Refresh status, reopening
+  and Start resume workflow observation. Edits survive status refresh, and
+  failed observations mark the view unavailable.
   Current execution location and the existing device/VPS controls appear before
   Start. The Start label and its existing permission form name the intended
   destination. A selected VPS is the next Start target, not evidence that
