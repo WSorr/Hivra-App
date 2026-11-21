@@ -37,28 +37,25 @@ is recovery work and cannot roll back or invalidate the committed record.
 - Native file-picker staging uses the file-backed selection's copy operation;
   catalog SHA-256 verification consumes the staged file as a stream. Neither
   operation buffers the whole unadmitted archive in Dart before package
-  preflight. Existing package/archive bounds, digest validation, retirement
-  ordering and durable registry publication remain unchanged.
+  preflight. Package bounds and digest validation precede registry publication.
 - The existing registry is read before a candidate package is staged.
 - Preflight inspects the staged bytes that would become active.
 - Source-catalog identity, version, and package-kind validation runs before the
   registry commit.
 - Source installation copies or downloads one temporary candidate, checks its
-  checksum, inspects the package and matches its catalog metadata before asking
-  the application module to retire the previous executor. Local and HTTP inputs
-  use the same validation/retirement handoff. The existing package preflight
+  checksum, inspects the package and matches its catalog metadata. Local and
+  HTTP inputs use the same validation. The existing package preflight
   result resolves manifest or legacy filename versions for both this check and
   registry admission; the registry validates its own staged copy before commit.
-  Rejected candidates never stop the previous workflow. A failed authenticated
-  retirement keeps the existing registration and permits ordinary retry; it
-  does not authorize activating the candidate or restarting an old workflow.
 - A failed preflight, validation, or registry write removes only the staged
   candidate and preserves the previous active record and package.
 - An update atomically replaces the active record for the same `plugin_id`.
   Superseded package deletion occurs only after the new registry is durable.
-- The application module returns any assigned VPS authority and restores its
-  opaque checkpoint before activating a replacement. A transport failure keeps
-  the previous registration and retained state available for retry.
+- A successful install cancels local scheduling for the superseded package.
+  The previous VPS grant keeps its original package binding. Opening the new
+  version presents the saved workspace without contacting the previous runner.
+  The owner can confirm Start with the new version's access on the assigned VPS.
+  That Start validates the target and uses the existing replacement path.
 
 ## Remove
 
@@ -116,11 +113,12 @@ refreshing the public catalog does not establish the local installed inventory.
 Raw registry errors and file content are not displayed or logged by this path.
 
 A lost VPS return acknowledgement can outlive a package update. The host may
-read an old grant only for authenticated retirement; that does not admit package
-execution. If the server rebound an ended grant to new package bytes, accepting
-its return also requires the original handoff identity and the stored immutable
-checkpoint digest. Opaque workspace state and effect evidence are restored
-without interpreting plugin-private fields, and the local grant remains ended.
+read an old grant for authenticated retirement or a new authorized Start;
+ordinary package actions still require the current grant. If the server rebound
+an ended grant to new package bytes, accepting its return also requires the
+original handoff identity and the stored immutable checkpoint digest. Opaque
+workspace state and effect evidence are restored without interpreting
+plugin-private fields, and the local grant remains ended.
 
 ## Failure Invariants
 
@@ -129,7 +127,7 @@ without interpreting plugin-private fields, and the local grant remains ended.
 | Before package staging | Previous registry and packages remain unchanged |
 | During staging or preflight | Candidate is absent or recoverable as an orphan; previous registration remains active |
 | Catalog metadata rejection | Candidate is removed; previous active version remains active |
-| Source candidate fails checksum, package or catalog validation | Previous execution is not retired; registration, grants, secrets and saved state are untouched |
+| Source candidate fails checksum, package or catalog validation | Previous registration, execution, grants, secrets and saved state are preserved |
 | Registry commit failure | Previous registry and packages remain active |
 | Interruption after install/update commit | New record and package are active; superseded package may remain as a recoverable orphan |
 | Removal intent cannot be committed | Previous active record and package remain; cleanup has not started |

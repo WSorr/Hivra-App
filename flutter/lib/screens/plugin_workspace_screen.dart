@@ -317,6 +317,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
   bool _isSavedView(Map view) => const {
     'replaced',
     'unavailable',
+    'package_updated',
   }.contains(view['host_connection']?['health']);
 
   Future<void> _stopExecution({bool revoke = true}) async {
@@ -1235,13 +1236,15 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         (_supportsExecution &&
             widget.connectVps != null &&
             view?['host_connection']?['saved'] == true);
-    final health = switch (view?['host_connection']?['health']) {
+    final connectionHealth = view?['host_connection']?['health'];
+    final health = switch (connectionHealth) {
       'not_started' => 'Execution has not moved to this VPS',
       'setup_unconfirmed' => 'No assignment started from this Capsule',
       'running' => 'VPS process is running',
       'detached' => 'Execution authority ended',
       'replaced' => 'Previous assignment replaced',
       'unavailable' => 'Previous assignment unavailable',
+      'package_updated' => 'Package updated',
       _ => 'Checking connection',
     };
 
@@ -1357,7 +1360,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                     ),
                   if (_observationUnavailable && revokeControl != null)
                     revokeControl,
-                  if ((view == null || _observationUnavailable) && !_busy)
+                  if ((view == null ||
+                          (_observationUnavailable &&
+                              connectionHealth != 'package_updated')) &&
+                      !_busy)
                     OutlinedButton(
                       onPressed: _choosing ? null : () => _run('open'),
                       child: Text(
@@ -1415,7 +1421,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                             'Local execution requires this app to stay open.',
                           ),
                         ],
-                        if (view['host_connection']['host'] != null) ...[
+                        if (view['host_connection']['target'] == 'vps' ||
+                            view['host_connection']['host'] != null) ...[
                           const SizedBox(height: 6),
                           Text(
                             view['host_connection']['target'] == 'vps'
@@ -1474,12 +1481,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                         const SizedBox(height: 12),
                       ],
                       if (_observationUnavailable) ...[
-                        Text(
-                          view['host_connection']?['health'] == 'replaced'
-                              ? 'This assignment was replaced. Saved data below belongs to your previous assignment. Start creates a new assignment on this VPS.'
-                              : 'Current VPS status is unavailable. The assignment may have been replaced from another device. Saved data below is not the current VPS workflow. Connection loss does not stop remote execution.',
-                          style: TextStyle(color: colors.error),
-                        ),
+                        Text(switch (connectionHealth) {
+                          'package_updated' =>
+                            'Confirm Start to replace the previous VPS assignment with this version.',
+                          'replaced' =>
+                            'This assignment was replaced. Saved data below belongs to your previous assignment. Start creates a new assignment on this VPS.',
+                          _ =>
+                            'Current VPS status is unavailable. The assignment may have been replaced from another device. Saved data below is not the current VPS workflow. Connection loss does not stop remote execution.',
+                        }, style: TextStyle(color: colors.error)),
                         const SizedBox(height: 12),
                         if (accessExpired)
                           Text(

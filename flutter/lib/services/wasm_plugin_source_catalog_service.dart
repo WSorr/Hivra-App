@@ -120,9 +120,8 @@ class WasmPluginSourceCatalogService {
   }
 
   Future<WasmPluginRecord> installFromSourceEntry(
-    WasmPluginSourceCatalogEntry entry, {
-    Future<void> Function(String? pluginId)? beforeInstall,
-  }) async {
+    WasmPluginSourceCatalogEntry entry,
+  ) async {
     if (entry.packageKind != 'zip') {
       throw const FormatException('Installed plugins require a ZIP package');
     }
@@ -188,7 +187,6 @@ class WasmPluginSourceCatalogService {
         version: inspected.resolvedVersion(fileName),
         packageKind: inspected.packageKind,
       );
-      await beforeInstall?.call(inspected.pluginId);
       return await _registry.installPluginFromFile(
         tempFile,
         validateRecord:

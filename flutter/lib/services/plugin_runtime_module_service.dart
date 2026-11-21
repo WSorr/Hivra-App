@@ -105,7 +105,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     );
     if (current.isEmpty) return;
     if (!current.single.removalPending) {
-      await _retireWorkspacePackage(record.pluginId, uninstall: true);
+      await _returnAssignmentsForRemoval(record.pluginId);
     }
     // Stop admission first, then let in-flight continuations fail before
     // deleting state; otherwise a late write can recreate an uninstalled plugin.
@@ -143,35 +143,34 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     final inspected = await const WasmPluginPackagePreflightService().inspect(
       file,
     );
-    Future<WasmPluginRecord> install() async {
-      await _retireWorkspacePackage(inspected.pluginId);
-      return registry.installPluginFromFile(
+    return _finishInstallation(
+      registry.installPluginFromFile(
         file,
         validateRecord: (record) {
           if (record.pluginId != inspected.pluginId) {
             throw StateError('Installation input changed');
           }
         },
-      );
-    }
-
-    return install();
+      ),
+    );
   }
 
   Future<WasmPluginRecord> installPluginFromSource(
     WasmPluginSourceCatalogEntry entry,
-  ) {
-    Future<WasmPluginRecord> install() => sourceCatalog.installFromSourceEntry(
-      entry,
-      beforeInstall: _retireWorkspacePackage,
-    );
-    return install();
+  ) => _finishInstallation(sourceCatalog.installFromSourceEntry(entry));
+
+  Future<WasmPluginRecord> _finishInstallation(
+    Future<WasmPluginRecord> installation,
+  ) async {
+    final record = await installation;
+    if (record.contractKind == pluginWorkspaceContractKind &&
+        record.pluginId != null) {
+      stopWorkspaceScheduling(pluginId: record.pluginId);
+    }
+    return record;
   }
 
-  Future<void> _retireWorkspacePackage(
-    String? pluginId, {
-    bool uninstall = false,
-  }) async {
+  Future<void> _returnAssignmentsForRemoval(String? pluginId) async {
     final records = (await registry.loadPlugins()).where(
       (r) =>
           r.pluginId == pluginId &&
@@ -196,7 +195,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         final c = await _remote.connection(owner, record.pluginId!);
         if (c == null || c['executor_id'] != grant!['executor_id']) {
           throw StateError(
-            'Reconnect the assigned VPS before updating/removing this package',
+            'Reconnect the assigned VPS before removing this package',
           );
         }
         final result = await _remote.request(c, 'return', {
@@ -208,12 +207,8 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           checkpoint: Map<String, dynamic>.from(result['checkpoint'] as Map),
           ownerCapsuleHex: owner,
         );
-        if (uninstall) {
-          await _remote.uninstall(c);
-        }
+        await _remote.uninstall(c);
       }
-      // Replacement never inherits the old package's execution grant, including
-      // grants in inactive Capsules. The runtime rejects the old binding.
     }
     stopWorkspaceScheduling(pluginId: record.pluginId);
   }
@@ -330,6 +325,15 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     return references;
   }
 
+  // Package installation does not change the existing VPS grant.
+  bool _isPreviousPackageAssignment(
+    WasmPluginRecord record,
+    Map<String, dynamic>? grant,
+  ) => grant?['executor'] == 'vps' && grant?['package_id'] != record.id;
+
+  static const _updatedPackageStart =
+      'Confirm a new Start on the assigned VPS to use the updated package';
+
   @override
   Future<Map<String, dynamic>> runWorkspaceAction({
     required WasmPluginRecord record,
@@ -356,49 +360,56 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     );
     final c = await _remote.connection(owner, record.pluginId!);
     if (grant?['executor'] == 'vps') {
-      if (c == null || c['executor_id'] != grant!['executor_id']) {
-        throw StateError('Assigned VPS is unavailable; no local fallback');
-      }
+      final previousPackage = _isPreviousPackageAssignment(record, grant);
+      final connection = c?['executor_id'] == grant!['executor_id'] ? c : null;
       Map<String, dynamic>? result;
       String? unavailable;
-      try {
-        if (action != 'open' ||
-            grant['revoked'] == true ||
-            grant['expires_at_ms'] == null) {
-          await _requireExecutionControls(c);
+      if (previousPackage) {
+        if (action != 'open') throw StateError(_updatedPackageStart);
+        unavailable = 'package_updated';
+      } else {
+        if (connection == null) {
+          throw StateError('Assigned VPS is unavailable; no local fallback');
         }
-        // Preserve exact lost-acknowledgement recovery on the existing path.
-        final adoption = await _remote.request(c, 'adopt', {
-          'checkpoint': await releaseWorkspaceToVps(
-            record,
-            executorId: c['executor_id'] as String,
-          ),
-        });
-        result =
-            adoption['runner']?['state'] == 'replaced'
-                ? adoption
-                : await _remote.request(
-                  c,
-                  action == 'open' ? 'status' : 'action',
-                  action == 'open'
-                      ? const {}
-                      : {'action': action, 'settings': settings},
-                );
-        if (result['runner']?['state'] == 'replaced') {
-          if (action != 'open') {
+        try {
+          if (action != 'open' ||
+              grant['revoked'] == true ||
+              grant['expires_at_ms'] == null) {
+            await _requireExecutionControls(connection);
+          }
+          // Preserve exact lost-acknowledgement recovery on the existing path.
+          final adoption = await _remote.request(connection, 'adopt', {
+            'checkpoint': await releaseWorkspaceToVps(
+              record,
+              executorId: connection['executor_id'] as String,
+            ),
+          });
+          result =
+              adoption['runner']?['state'] == 'replaced'
+                  ? adoption
+                  : await _remote.request(
+                    connection,
+                    action == 'open' ? 'status' : 'action',
+                    action == 'open'
+                        ? const {}
+                        : {'action': action, 'settings': settings},
+                  );
+          if (result['runner']?['state'] == 'replaced') {
+            if (action != 'open') {
+              throw StateError(
+                'Previous assignment replaced; use Start for a new assignment',
+              );
+            }
+            unavailable = 'replaced';
+          } else if (result['view'] is! Map) {
             throw StateError(
-              'Previous assignment replaced; use Start for a new assignment',
+              'VPS observation unavailable; its lifecycle is not verified',
             );
           }
-          unavailable = 'replaced';
-        } else if (result['view'] is! Map) {
-          throw StateError(
-            'VPS observation unavailable; its lifecycle is not verified',
-          );
+        } catch (_) {
+          if (action != 'open') rethrow;
+          unavailable = 'unavailable';
         }
-      } catch (_) {
-        if (action != 'open') rethrow;
-        unavailable = 'unavailable';
       }
       final Map<String, dynamic> view;
       if (unavailable != null) {
@@ -419,11 +430,24 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       }
       return {
         ...view,
+        if (previousPackage) ...{
+          'actions': [
+            if (connection?['selected'] == true)
+              for (final action in view['actions'] as List)
+                if (action['host'] == 'workspace.start') action,
+          ],
+          'execution': {
+            'active': false,
+            'enabled': false,
+            'running': false,
+            'revision': grant['revision'],
+          },
+        },
         'host_connection': {
           'target': 'vps',
-          'host': c['host'],
-          'port': c['port'],
-          'saved': true,
+          'host': connection?['host'],
+          'port': connection?['port'],
+          'saved': connection != null,
           'health': unavailable ?? result!['runner']['state'],
           'observation_error': result?['observation_error'],
         },
@@ -472,9 +496,21 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     );
     var c = await _remote.connection(owner, record.pluginId!);
     if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
-    if (enabled &&
-        approvedScope?['start_action'] is String &&
-        c?['selected'] == true) {
+    final startsOnVps =
+        approvedScope?['start_action'] is String && c?['selected'] == true;
+    final previousPackage = _isPreviousPackageAssignment(record, grant);
+    if (enabled && previousPackage) {
+      if (!startsOnVps ||
+          c?['executor_id'] != grant?['executor_id'] ||
+          credentialBindings == null ||
+          expectedRevision != grant?['revision']) {
+        throw StateError(_updatedPackageStart);
+      }
+      // Check the assigned target before changing the retained grant.
+      await _requireExecutionControls(c!, requireReplacement: true);
+      if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
+    }
+    if (enabled && startsOnVps) {
       if (credentialBindings == null &&
           expectedRevision != null &&
           expectedRevision != grant?['revision']) {
