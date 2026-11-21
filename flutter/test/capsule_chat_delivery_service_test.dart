@@ -1860,6 +1860,123 @@ void main() {
   });
 
   test(
+    'paired Chat retains a lost acknowledgement and deduplicates both directions after restart',
+    () async {
+      final home = await Directory.systemTemp.createTemp('hivra-chat-pair-');
+      addTearDown(() => home.delete(recursive: true));
+      final files = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+      );
+      final roots = ['a' * 64, 'b' * 64];
+      final routes = ['1' * 64, '2' * 64];
+      final relay = <String, Map<String, Object?>>{};
+      var online = false;
+      var sends = 0;
+      CapsuleChatDeliveryService chat(int side) {
+        final owner = roots[side];
+        final peer = roots[1 - side];
+        return CapsuleChatDeliveryService(
+          runtime: _FakeRuntime(
+            capsuleRootKey: _hexToBytes(owner),
+            workerBootstrap: {'activeCapsuleHex': owner},
+          ),
+          manualChecks: _FakeManualConsensusCheckService([
+            ManualConsensusCheck(
+              peerHex: peer,
+              peerLabel: 'Paired Capsule',
+              invitationCount: 1,
+              relationshipCount: 1,
+              hashHex: 'f' * 64,
+              canonicalJson: '{}',
+              blockingFacts: const [],
+            ),
+          ]),
+          listTrustedCards:
+              () async => [
+                CapsuleAddressCard(
+                  rootKey: peer,
+                  rootHex: peer,
+                  nostrNpub: routes[1 - side],
+                  nostrHex: routes[1 - side],
+                ),
+              ],
+          deliveryInboxStore: CapsuleDeliveryInboxStore(
+            fileStore: files,
+            loadTimelineSeed:
+                (_) async => Uint8List.fromList(List<int>.filled(32, side + 1)),
+          ),
+          deferredInboxStore: CapsuleChatDeferredInboxStore(fileStore: files),
+          sendWorkerRunner: (args) async {
+            sends++;
+            expect(
+              _bytesToHex(args['toPubkey'] as Uint8List),
+              routes[1 - side],
+            );
+            relay[peer] = {
+              'event_id': 'event-$side',
+              'from_hex': routes[side],
+              'payload_json': args['payloadJson'],
+              'timestamp_ms': side + 1,
+            };
+            return {'result': -1003, 'lastError': 'Relay acknowledgement lost'};
+          },
+          receiveWorkerRunner:
+              (_) async =>
+                  online
+                      ? {
+                        'result': 1,
+                        'json': jsonEncode([relay[owner]]),
+                      }
+                      : {'result': -1003, 'lastError': 'Network unavailable'},
+          acknowledgeWorkerRunner: (_) async => {'result': 0},
+        );
+      }
+
+      final ids = ['3' * 64, '4' * 64];
+      const time = '2026-11-21T08:00:00.000Z';
+      for (final side in [0, 1]) {
+        final text = 'Message $side';
+        final reply = await chat(side).sendCanonicalEnvelopeWithTimeline(
+          capsuleRootHex: roots[side],
+          peerHex: roots[1 - side],
+          canonicalEnvelopeJson: jsonEncode({
+            'message_text': text,
+            'created_at_utc': time,
+            'envelope_hash_hex': ids[side],
+          }),
+          envelopeHashHex: ids[side],
+          messageText: text,
+          createdAtUtc: time,
+          authorize: () async {},
+        );
+        expect(reply.code, -1003);
+        final restarted = chat(side);
+        expect((await restarted.drainAndFilter()).code, -1003);
+        expect(
+          (await restarted.loadCachedMessagesDurably()).single.deliveryState,
+          CapsuleChatMessageDeliveryState.ambiguous,
+        );
+      }
+      online = true;
+      for (final side in [0, 1]) {
+        // A relay can redeliver after the receiver restarts, even after a local acknowledgement.
+        for (var restart = 0; restart < 2; restart++) {
+          final reopened = chat(side);
+          expect((await reopened.drainAndFilter()).code, 1);
+          final messages = await reopened.loadCachedMessagesDurably();
+          expect(messages.map((message) => message.id), unorderedEquals(ids));
+          final incoming = messages.singleWhere(
+            (message) => message.id == ids[1 - side],
+          );
+          expect(incoming.fromHex, roots[1 - side]);
+          expect(incoming.toHex, roots[side]);
+        }
+      }
+      expect(sends, 2);
+    },
+  );
+
+  test(
     'chat send uses canonical invitation projection for transport endpoint',
     () async {
       const peerRootHex =

@@ -226,7 +226,10 @@ Future<void> main(List<String> args) async {
       enabled: true,
       expiresAtMs: null,
       expectedRevision: previous?['revision'] as int?,
-      approvedScope: Map<String, dynamic>.from(view['schedule'] as Map),
+      approvedScope: {
+        ...(view['schedule'] as Map).cast<String, dynamic>(),
+        'start_action': 'start',
+      },
       credentialBindings: {
         'account': {'token': 'fixture-reference'},
       },
@@ -234,7 +237,7 @@ Future<void> main(List<String> args) async {
         'repository': 'fixture/public',
         'community': 'general',
         'instructions': 'Use public source facts',
-        'interval_minutes': 1,
+        'interval_minutes': 2,
         'mode': 'news_and_replies',
       },
     );
@@ -278,7 +281,8 @@ Future<void> main(List<String> args) async {
       throw StateError('Plugin retained product history: $stored');
     }
     final grantData = await runtime().readWorkspaceExecution(record);
-    if ((grantData!['settings'] as Map)['repository'] != 'fixture/public') {
+    if ((grantData!['settings'] as Map)['repository'] != 'fixture/public' ||
+        grantData['scope']['interval_seconds'] != 120) {
       throw StateError('Owner settings were not retained');
     }
     await runtime().setWorkspaceExecution(

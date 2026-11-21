@@ -121,6 +121,8 @@ class PluginWorkspaceRuntime {
     required String action,
     Map<String, dynamic> settings = const {},
     bool readOnly = false,
+    Map<String, dynamic>? choiceAccess,
+    bool choiceAccessApproved = false,
   }) async {
     final owner = _readActiveCapsuleRootHex()?.trim().toLowerCase();
     final pluginId = record.pluginId;
@@ -129,6 +131,7 @@ class PluginWorkspaceRuntime {
         pluginId == null ||
         record.contractKind != pluginWorkspaceContractKind ||
         (readOnly && action != 'open') ||
+        (choiceAccessApproved && choiceAccess == null) ||
         !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(action)) {
       throw StateError('Installed workspace and active Capsule are required');
     }
@@ -136,15 +139,16 @@ class PluginWorkspaceRuntime {
     final ownedSettings = Map<String, dynamic>.from(
       jsonDecode(jsonEncode(settings)) as Map,
     );
-    if (readOnly) {
-      // Atomic checkpoints can be presented while an effect awaits its result.
-      // Observation neither writes package state nor dispatches continuations.
+    if (readOnly || choiceAccess != null) {
+      // Presentation and choice loading never take the action lease or write.
       return _runWorkspaceOwned(
         owner,
         record,
         action,
         ownedSettings,
         readOnly: true,
+        choiceAccess: choiceAccess,
+        choiceAccessApproved: choiceAccessApproved,
       );
     }
     final key = '$owner::$pluginId';
@@ -179,6 +183,10 @@ class PluginWorkspaceRuntime {
     String action,
     Map<String, dynamic> settings, {
     bool readOnly = false,
+    Map<String, dynamic>? choiceAccess,
+    bool choiceAccessApproved = false,
+    Future<void> Function(Map<String, dynamic>, Map<String, dynamic>?)?
+    saveStart,
   }) async {
     final pluginId = record.pluginId!;
     final directory = await _fileStore.capsuleDirForHex(
@@ -192,7 +200,7 @@ class PluginWorkspaceRuntime {
     }
     final persistent = initial.capabilities.contains('state.plugin.read_write');
     final saved =
-        persistent
+        persistent && choiceAccess == null
             ? await _fileStore.readPluginState(
               directory,
               pluginId,
@@ -206,7 +214,9 @@ class PluginWorkspaceRuntime {
     final control = await _readExecution(record, owner, enforceHost: !readOnly);
     final invocationRevision = control?['revision'];
     final effectiveSettings =
-        settings.isNotEmpty
+        choiceAccess != null
+            ? const <String, dynamic>{}
+            : settings.isNotEmpty
             ? settings
             : Map<String, dynamic>.from(
               control?['settings'] as Map? ?? const {},
@@ -236,6 +246,7 @@ class PluginWorkspaceRuntime {
         enforceHost: !readOnly,
       );
       final ownsExecution =
+          choiceAccess == null &&
           (current?['executor'] ?? 'local') == executionHost &&
           (executionHost != 'vps' ||
               current?['executor_id'] == executionIdentity);
@@ -257,7 +268,10 @@ class PluginWorkspaceRuntime {
                   current?['version'] == 2 &&
                   (current != null && workspaceExecutionEnabled(current)) &&
                   workspaceExecutionIsActive(current),
-              'scope': current?['version'] == 2 ? current!['scope'] : null,
+              'scope':
+                  choiceAccess == null && current?['version'] == 2
+                      ? current!['scope']
+                      : null,
               'running':
                   ownsExecution &&
                   current?['scope']?['action'] != null &&
@@ -284,7 +298,7 @@ class PluginWorkspaceRuntime {
           output['state'] == null
               ? null
               : Map<String, dynamic>.from(output['state'] as Map);
-      if (!readOnly && persistent && state != null) {
+      if (!readOnly && saveStart == null && persistent && state != null) {
         await _fileStore.writePluginState(
           directory,
           pluginId,
@@ -296,10 +310,11 @@ class PluginWorkspaceRuntime {
       return output;
     }
 
-    Future<Map<String, dynamic>> accessFor(Map<String, dynamic> request) async {
+    Future<void> accessFor(Map<String, dynamic> request) async {
       final current = await _readExecution(
         record,
         owner,
+        enforceHost: choiceAccess == null,
         requiredCapabilities: {
           if (request['kind'] == 'ai.infer')
             'inference.request'
@@ -312,16 +327,16 @@ class PluginWorkspaceRuntime {
       if (!_isStillOwnedBy(owner) ||
           current == null ||
           current['version'] != 2 ||
-          !workspaceExecutionEnabled(current) ||
           current['revision'] != invocationRevision ||
-          !workspaceExecutionIsActive(current) ||
-          !PluginCapabilityDispatcher.allows(
-            current['scope']['access'] as Map,
-            request,
-          )) {
+          (!choiceAccessApproved &&
+              (!workspaceExecutionEnabled(current) ||
+                  !workspaceExecutionIsActive(current) ||
+                  !PluginCapabilityDispatcher.allows(
+                    current['scope']['access'] as Map,
+                    request,
+                  )))) {
         throw StateError('Owner access is absent, revoked, expired or changed');
       }
-      return Map<String, dynamic>.from(current['scope']['access'] as Map);
     }
 
     Future<Map<String, String>> secrets(Map<String, dynamic> request) async {
@@ -359,9 +374,16 @@ class PluginWorkspaceRuntime {
     }
 
     var output = await invoke(action);
+    if (saveStart != null) {
+      if ((output['requests'] as List).isNotEmpty) {
+        throw StateError('Start may only prepare the scheduled workflow');
+      }
+      await saveStart(currentView!, persistent ? state : null);
+      return currentView!;
+    }
     for (var steps = 0; steps < 512; steps++) {
       final requests = output['requests'] as List;
-      if (readOnly || requests.isEmpty) {
+      if ((readOnly && choiceAccess == null) || requests.isEmpty) {
         final view = currentView!;
         final current = await _readExecution(
           record,
@@ -383,6 +405,15 @@ class PluginWorkspaceRuntime {
       final request = Map<String, dynamic>.from(requests.single as Map);
       final kind = request['kind'] as String;
       final continuation = request['continuation'] as String;
+      if (choiceAccess != null &&
+          kind != 'api.describe' &&
+          !(kind == 'http.request' &&
+              request['method'] == 'GET' &&
+              request['credential'] == null &&
+              request['auth'] == null &&
+              request['body'] == null)) {
+        throw StateError('Local choices can only read public data');
+      }
       Map<String, dynamic> result;
       switch (kind) {
         case 'runtime.yield':
@@ -439,11 +470,12 @@ class PluginWorkspaceRuntime {
           }
         case 'http.request':
           final access =
-              control?['version'] == 2
+              choiceAccess ??
+              (control?['version'] == 2
                   ? Map<String, dynamic>.from(
                     control!['scope']['access'] as Map,
                   )
-                  : <String, dynamic>{'version': 2, 'network': []};
+                  : <String, dynamic>{'version': 2, 'network': []});
           result = await _capabilities.http(
             request,
             access: access,
@@ -548,6 +580,7 @@ class PluginWorkspaceRuntime {
     if (enabled && previous?['revision'] != expectedRevision) {
       throw StateError('Execution authority changed; review Start again');
     }
+    String? startAction;
     final Map<String, dynamic> control;
     if (enabled) {
       if (approvedScope == null) {
@@ -557,6 +590,9 @@ class PluginWorkspaceRuntime {
         jsonDecode(jsonEncode(approvedScope)) as Map,
       );
       validateWorkspaceExecutionSchedule(scope);
+      if (executionHost == 'local' && releaseToExecutorId == null) {
+        startAction = scope.remove('start_action') as String?;
+      }
       if (scope['version'] != 2) {
         throw StateError('A common permission scope is required');
       }
@@ -631,13 +667,14 @@ class PluginWorkspaceRuntime {
         'revision': (previous['revision'] as int) + 1,
       };
     }
-    if (utf8.encode(jsonEncode(control)).length > 8192) {
-      throw StateError('Permission metadata exceeds bound');
-    }
-    if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
-    await _serialize(
-      '$owner::${record.pluginId}::execution',
+    final key = '$owner::${record.pluginId}';
+    Future<void> saveControl([Map<String, dynamic>? workspace]) => _serialize(
+      '$key::execution',
       () => _withWorkspaceLease(owner, record, () async {
+        final encoded = jsonEncode(control);
+        if (utf8.encode(encoded).length > 8192) {
+          throw StateError('Permission metadata exceeds bound');
+        }
         final current = await _readExecution(
           record,
           owner,
@@ -665,14 +702,62 @@ class PluginWorkspaceRuntime {
           owner,
           create: true,
         );
-        await _fileStore.writePluginState(
-          directory,
-          record.pluginId!,
-          _executionFile,
-          jsonEncode(control),
-        );
+        if (workspace == null) {
+          await _fileStore.writePluginState(
+            directory,
+            record.pluginId!,
+            _executionFile,
+            encoded,
+          );
+          return;
+        }
+        // A torn write must leave the old grant unable to run the new plan.
+        if (current != null && workspaceExecutionEnabled(current)) {
+          await _fileStore.writePluginState(
+            directory,
+            record.pluginId!,
+            _executionFile,
+            jsonEncode({
+              ...current,
+              workspaceExecutionFlag(current): false,
+              'revision': control['revision'],
+            }),
+          );
+        }
+        await _fileStore.restorePluginCheckpoint(directory, record.pluginId!, {
+          'workspace.v1.json': jsonEncode(workspace),
+          _executionFile: encoded,
+        }, replaceSealed: true);
       }, authorityOnly: true),
     );
+    if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
+    if (startAction == null) {
+      await saveControl();
+    } else {
+      final scope = control['scope'] as Map<String, dynamic>;
+      await _serialize(
+        key,
+        () => _withWorkspaceLease(owner, record, () async {
+          await _runWorkspaceOwned(
+            owner,
+            record,
+            startAction!,
+            settings,
+            saveStart: (view, workspace) async {
+              final prepared = view['schedule'];
+              if (scope['action'] == null ||
+                  prepared is! Map ||
+                  prepared['action'] != scope['action']) {
+                throw StateError('Start changed the approved workflow');
+              }
+              scope['interval_seconds'] = prepared['interval_seconds'];
+              validateWorkspaceExecutionSchedule(scope);
+              await saveControl(workspace);
+            },
+          );
+        }),
+      );
+    }
     _armScheduledExecution(record, owner, control, runImmediately: enabled);
     if (releaseToExecutorId != null) {
       stopWorkspaceScheduling(pluginId: record.pluginId);
@@ -690,34 +775,48 @@ class PluginWorkspaceRuntime {
 
   /// Both the foreground timer and a headless host enter this same path.
   Future<Map<String, dynamic>> runScheduledWorkspaceCycle(
-    WasmPluginRecord record,
-  ) async {
+    WasmPluginRecord record, {
+    int? expectedRevision,
+  }) async {
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (owner == null) throw StateError('An active Capsule is required');
-    final control = await _readExecution(record, owner);
-    if (control == null) throw StateError('Start has not been authorized');
-    final scope = Map<String, dynamic>.from(control['scope'] as Map);
-    var view = await runWorkspaceAction(
-      record: record,
-      action: scope['action'] as String,
-      settings: Map<String, dynamic>.from(control['settings'] as Map),
+    final key = '$owner::${record.pluginId}';
+    return _serialize(
+      key,
+      () => _withWorkspaceLease(owner, record, () async {
+        final control = await _readExecution(record, owner);
+        if (control == null ||
+            !workspaceExecutionIsActive(control) ||
+            !workspaceExecutionEnabled(control) ||
+            control['scope']['action'] == null ||
+            (expectedRevision != null &&
+                control['revision'] != expectedRevision)) {
+          throw StateError('Scheduled execution authority changed');
+        }
+        final view = await _runWorkspaceOwned(
+          owner,
+          record,
+          control['scope']['action'] as String,
+          Map<String, dynamic>.from(control['settings'] as Map),
+        );
+        final latest = await _readExecution(record, owner);
+        if (latest != null &&
+            latest['revision'] == control['revision'] &&
+            _isStillOwnedBy(owner)) {
+          final observed = {
+            'last_checked_at_ms': DateTime.now().millisecondsSinceEpoch,
+            'last_result': ['message', 'details']
+                .map((key) => view[key])
+                .whereType<String>()
+                .where((text) => text.isNotEmpty)
+                .join('\n\n'),
+          };
+          _cycleObservations[key] = observed;
+          view['execution'] = _executionPresentation(latest, observed);
+        }
+        return view;
+      }),
     );
-    final latest = await _readExecution(record, owner);
-    if (latest != null &&
-        latest['revision'] == control['revision'] &&
-        _isStillOwnedBy(owner)) {
-      final observed = {
-        'last_checked_at_ms': DateTime.now().millisecondsSinceEpoch,
-        'last_result': ['message', 'details']
-            .map((key) => view[key])
-            .whereType<String>()
-            .where((text) => text.isNotEmpty)
-            .join('\n\n'),
-      };
-      _cycleObservations['$owner::${record.pluginId}'] = observed;
-      view['execution'] = _executionPresentation(latest, observed);
-    }
-    return view;
   }
 
   Future<Map<String, dynamic>?> _readExecution(
@@ -1391,7 +1490,10 @@ class PluginWorkspaceRuntime {
               _clearSchedule(key);
               return;
             }
-            await runScheduledWorkspaceCycle(record);
+            await runScheduledWorkspaceCycle(
+              record,
+              expectedRevision: control['revision'] as int,
+            );
           } catch (_) {
             if (!identical(_scheduledGenerations[key], generation)) return;
             // Do not render network URLs, credentials or arbitrary provider text.

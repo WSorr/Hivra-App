@@ -335,7 +335,17 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     required String action,
     Map<String, dynamic> settings = const {},
     bool readOnly = false,
+    Map<String, dynamic>? choiceAccess,
+    bool choiceAccessApproved = false,
   }) async {
+    if (choiceAccess != null) {
+      return super.runWorkspaceAction(
+        record: record,
+        action: action,
+        choiceAccess: choiceAccess,
+        choiceAccessApproved: choiceAccessApproved,
+      );
+    }
     final owner = activeCapsuleRootHex();
     if (owner == null) throw StateError('Open a Capsule first');
     final grant = await super.readWorkspaceExecution(
@@ -461,7 +471,9 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     );
     var c = await _remote.connection(owner, record.pluginId!);
     if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
-    if (enabled && approvedScope?['action'] != null && c?['selected'] == true) {
+    if (enabled &&
+        approvedScope?['start_action'] is String &&
+        c?['selected'] == true) {
       if (credentialBindings == null &&
           expectedRevision != null &&
           expectedRevision != grant?['revision']) {
@@ -521,7 +533,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     if (grant?['executor'] == 'vps') {
       if (credentialBindings != null) {
         throw StateError(
-          'Return execution to this Capsule before reconnecting Keychain secrets',
+          'Start a new assignment to use different connections on the VPS, or return execution to this Capsule first',
         );
       }
       if (!enabled) {
