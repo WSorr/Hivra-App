@@ -168,7 +168,6 @@ void main() {
 
   test('raw source entries never download or enter installation', () async {
     var downloads = 0;
-    var installs = 0;
     final bounded = WasmPluginSourceCatalogService(
       registry: registry,
       dataDirs: dataDirs,
@@ -192,15 +191,11 @@ void main() {
             packageKind: 'wasm',
             sha256Hex: null,
           ),
-          beforeInstall: (_) async {
-            installs++;
-          },
         ),
         throwsA(isA<FormatException>()),
       );
     }
     expect(downloads, 0);
-    expect(installs, 0);
     expect(await registry.loadPlugins(), isEmpty);
   });
 
@@ -636,7 +631,6 @@ void main() {
         final activeFile = File('${tempDocsDir.path}/active.zip');
         await activeFile.writeAsBytes(packageBytes, flush: true);
         final active = await registry.installPluginFromFile(activeFile);
-        var retirements = 0;
         final installing = service.installFromSourceEntry(
           WasmPluginSourceCatalogEntry(
             id: 'large',
@@ -647,17 +641,12 @@ void main() {
             packageKind: 'zip',
             sha256Hex: expected,
           ),
-          beforeInstall: (_) async {
-            retirements++;
-          },
         );
         if (tamperTail) {
           await expectLater(installing, throwsA(isA<FormatException>()));
-          expect(retirements, 0);
           expect((await registry.loadPlugins()).single.id, active.id);
         } else {
           final replacement = await installing;
-          expect(retirements, 1);
           expect(replacement.id, isNot(active.id));
           expect(replacement.pluginVersion, '0.1.0');
           final plugins = await registry.pluginsDirectory();
@@ -973,7 +962,6 @@ void main() {
           '${tempDocsDir.path}/candidate${fault == 'filename' ? '-0.2.0' : ''}.zip',
         );
         await source.writeAsBytes(candidate, flush: true);
-        var retirements = 0;
         await expectLater(
           service.installFromSourceEntry(
             WasmPluginSourceCatalogEntry(
@@ -988,13 +976,9 @@ void main() {
               packageKind: 'zip',
               sha256Hex: sha256.convert(candidate).toString(),
             ),
-            beforeInstall: (_) async {
-              retirements++;
-            },
           ),
           throwsA(isA<FormatException>()),
         );
-        expect(retirements, 0);
         expect(await registryFile.readAsString(), before);
         expect((await registry.loadPlugins()).single.id, active.id);
         expect(
@@ -1006,89 +990,6 @@ void main() {
       });
     }
   }
-
-  for (final remote in [false, true]) {
-    test(
-      'failed retirement preserves the package and permits retry ($remote)',
-      () async {
-        final source = File('${tempDocsDir.path}/candidate.zip');
-        await source.writeAsBytes(packageBytes, flush: true);
-        final active = await registry.installPluginFromFile(source);
-        final entry = WasmPluginSourceCatalogEntry(
-          id: 'candidate',
-          pluginId: active.pluginId!,
-          displayName: 'Candidate',
-          version: '0.1.0',
-          downloadUrl:
-              remote
-                  ? 'http://127.0.0.1:${server.port}/packages/demo-plugin.zip'
-                  : source.uri.toString(),
-          packageKind: 'zip',
-          sha256Hex: packageSha256Hex,
-        );
-        await expectLater(
-          service.installFromSourceEntry(
-            entry,
-            beforeInstall: (_) async {
-              expect((await registry.loadPlugins()).single.id, active.id);
-              throw StateError('Previous executor is unavailable');
-            },
-          ),
-          throwsStateError,
-        );
-        final reopened = WasmPluginRegistryService(dataDirs: dataDirs);
-        expect((await reopened.loadPlugins()).single.id, active.id);
-        var retirements = 0;
-        final replacement = await WasmPluginSourceCatalogService(
-          registry: reopened,
-          dataDirs: dataDirs,
-        ).installFromSourceEntry(
-          entry,
-          beforeInstall: (pluginId) async {
-            expect(pluginId, active.pluginId);
-            expect((await reopened.loadPlugins()).single.id, active.id);
-            retirements++;
-          },
-        );
-        expect(retirements, 1);
-        expect((await reopened.loadPlugins()).single.id, replacement.id);
-        expect(replacement.id, isNot(active.id));
-      },
-    );
-  }
-
-  test(
-    'source changes during retirement cannot replace the verified candidate',
-    () async {
-      final source = File('${tempDocsDir.path}/candidate.zip');
-      await source.writeAsBytes(packageBytes, flush: true);
-      var retirements = 0;
-      final installed = await service.installFromSourceEntry(
-        WasmPluginSourceCatalogEntry(
-          id: 'candidate',
-          pluginId: 'hivra.contract.moltbook-ambassador.v1',
-          displayName: 'Candidate',
-          version: '0.1.0',
-          downloadUrl: source.uri.toString(),
-          packageKind: 'zip',
-          sha256Hex: packageSha256Hex,
-        ),
-        beforeInstall: (_) async {
-          retirements++;
-          await source.writeAsBytes(mismatchPluginPackageBytes, flush: true);
-        },
-      );
-      expect(retirements, 1);
-      expect(installed.pluginId, 'hivra.contract.moltbook-ambassador.v1');
-      final pluginsDir = await registry.pluginsDirectory();
-      expect(
-        await File(
-          '${pluginsDir.path}/${installed.storedFileName}',
-        ).readAsBytes(),
-        packageBytes,
-      );
-    },
-  );
 }
 
 String _catalogJson({

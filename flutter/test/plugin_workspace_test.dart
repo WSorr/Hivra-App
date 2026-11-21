@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/ffi/hivra_bindings.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/models/wasm_plugin_models.dart';
@@ -26,6 +27,7 @@ import 'package:hivra_app/services/plugin_workspace_runtime.dart';
 import 'package:hivra_app/services/ui_event_log_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
+import 'package:hivra_app/services/wasm_plugin_runtime_service.dart';
 import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';
 
 import '../bin/plugin_workspace_runner.dart';
@@ -134,6 +136,382 @@ void main() {
       );
     }
   }
+
+  test(
+    'Discovery updates an assigned package before owner Start',
+    () => HttpOverrides.runZoned(
+      () async {
+        final f = await Fixture.create();
+        addTearDown(f.close);
+        final fixtures = Platform.environment['HIVRA_JACK_UPGRADE_FIXTURES'];
+        final plugin =
+            fixtures == null
+                ? 'hivra.contract.upgrade-fixture.v1'
+                : 'hivra.contract.jack-ventura.v1';
+        final dirs = UserVisibleDataDirectoryService(homeOverride: f.home.path);
+        final registry = WasmPluginRegistryService(dataDirs: dirs);
+        final source = WasmPluginSourceCatalogService(
+          registry: registry,
+          dataDirs: dirs,
+        );
+        final wasm = WasmPluginRuntimeService(
+          invokeJson: HivraBindings.invokeInstalledWasmJson,
+        );
+        if (fixtures != null) {
+          final previousDirectory = Directory.current;
+          Directory.current = fixtures;
+          addTearDown(() => Directory.current = previousDirectory);
+        }
+        const start = {
+          'id': 'start',
+          'label': 'Start workflow',
+          'host': 'workspace.start',
+        };
+        final executorId = 'e' * 64;
+        f.requestOnOpen = true;
+        f.newSchema = true;
+        final host =
+            fixtures == null
+                ? f
+                    .runtime(
+                      runtimeRegistry: registry,
+                      workspaceActions: [
+                        start,
+                        {'id': 'run', 'label': 'Run workflow'},
+                      ],
+                    )
+                    .pluginHostApi
+                : PluginHostApiService(
+                  handlers: [],
+                  resolveRuntimeBinding: registry.resolveRuntimeBinding,
+                  resolveRuntimeInvoke:
+                      (request, binding) =>
+                          wasm.invoke(request: request, binding: binding),
+                );
+        final oldArchive = await _workspaceUpgradeArchive(
+          f,
+          plugin,
+          '0.2.7',
+          fixtures,
+        );
+        final newArchive = await _workspaceUpgradeArchive(
+          f,
+          plugin,
+          '0.2.9',
+          fixtures,
+        );
+        final newDigest =
+            sha256.convert(await newArchive.readAsBytes()).toString();
+        final old = await registry.installPluginFromFile(oldArchive);
+        expect(old.pluginVersion, '0.2.7');
+        final directory = await f.files.capsuleDirForHex(f.owner, create: true);
+        const oldSettings = {
+          'symbol': 'ZIL-USDT',
+          'timeframes': '1m',
+          'entry_margin': 1.0,
+          'stop_percent': 20.0,
+          'detection_length': 3,
+          'margin': 6.9,
+        };
+        final newSettings = {...oldSettings, 'symbol': 'ACH-USDT'};
+        final workspace = jsonEncode({
+          'version': 2,
+          'new_entries': true,
+          'intents': {},
+          'engine': {
+            'version': 1,
+            'settings': oldSettings,
+            'frames': [],
+            'complete': false,
+            'account': {
+              'symbol': 'ZIL-USDT',
+              'endpoint': 'LIVE',
+              'account_id': 'a' * 64,
+              'account_label': 'Synthetic account',
+              'available_margin': 10.0,
+              'long_leverage': 10,
+              'short_leverage': 10,
+              'price_precision': 6,
+              'quantity_precision': 0,
+              'min_quantity': 1.0,
+              'min_notional': 1.0,
+              'observed_at_ms': DateTime.now().millisecondsSinceEpoch,
+            },
+          },
+        });
+        const executionFile = 'workspace-execution.v1.json';
+        const workspaceFile = 'workspace.v1.json';
+        const connectionFile = PluginWorkspaceRemoteService.connectionFile;
+        Future<String?> readState(String file) =>
+            f.files.readPluginState(directory, plugin, file);
+        await f.files.writePluginState(
+          directory,
+          plugin,
+          workspaceFile,
+          workspace,
+        );
+        final local = PluginWorkspaceRuntime(
+          registry: registry,
+          pluginHostApi: host,
+          fileStore: f.files,
+          readActiveCapsuleRootHex: () => f.owner,
+          scheduleTimers: false,
+        );
+        final oldView = await local.runWorkspaceAction(
+          record: old,
+          action: 'open',
+          readOnly: true,
+        );
+        Map<String, dynamic> startScope(Map<String, dynamic> view) => {
+          ...view['schedule'] as Map,
+          'start_action':
+              (view['actions'] as List).singleWhere(
+                (a) => a['host'] == 'workspace.start',
+              )['id'],
+        };
+        Map<String, Map<String, String>> references(
+          Map<String, dynamic> scope,
+        ) => {
+          for (final alias in (scope['access']['credentials'] as Map).entries)
+            alias.key: {
+              for (final field in alias.value as List)
+                field['id']: 'test-${field['id']}',
+            },
+        };
+        final oldScope = startScope(oldView);
+        final oldReferences = references(oldScope);
+        await local.setWorkspaceExecution(
+          record: old,
+          enabled: true,
+          expiresAtMs: null,
+          approvedScope: oldScope,
+          credentialBindings: oldReferences,
+          releaseToExecutorId: executorId,
+          settings: oldSettings,
+        );
+        final checkpoint = await local.releaseWorkspaceToVps(
+          old,
+          executorId: executorId,
+        );
+        final oldBinding = <String, dynamic>{
+          'owner': f.owner,
+          'plugin_id': plugin,
+          'executor_id': executorId,
+          'package_digest': checkpoint['package_digest'],
+        };
+        final isolatedRunner = await f.home.createTemp('runner-');
+        final runnerRegistry = WasmPluginRegistryService(
+          dataDirs: UserVisibleDataDirectoryService(
+            runtimeRootOverride: isolatedRunner.path,
+          ),
+        );
+        final ports = UnusedWorkspacePorts();
+        var binding = {...oldBinding, 'package_id': 'server-package-027'};
+        if (fixtures != null) {
+          final connections = {
+            for (final entry in oldReferences.entries)
+              entry.key: entry.value.map(
+                (field, _) => MapEntry(field, 'synthetic-$field'),
+              ),
+          };
+          binding = await WorkspaceRunner.setup(isolatedRunner, {
+            ...oldBinding,
+            'package': base64Encode(await oldArchive.readAsBytes()),
+            'credentials': {'version': 3, 'connections': connections},
+            'checkpoint': checkpoint,
+          });
+        }
+        await f.files.writePluginState(
+          directory,
+          plugin,
+          connectionFile,
+          jsonEncode({
+            ...binding,
+            'host': 'runner.invalid',
+            'port': 22,
+            'fingerprint': 'SHA256:${'A' * 43}',
+            'selected': true,
+          }),
+        );
+        Future<List<String?>> snapshot() => Future.wait([
+          readState(executionFile),
+          readState(workspaceFile),
+          readState(connectionFile),
+        ]);
+        final before = await snapshot();
+        final calls = <String>[];
+        var reachable = false;
+        final remote = PluginWorkspaceRemoteService(
+          files: f.files,
+          vault: ports,
+          registry: registry,
+          requestTransport: (_, command, payload) async {
+            final body = Map<String, dynamic>.from(
+              jsonDecode(utf8.decode(payload)) as Map,
+            );
+            final operation = command == 'request' ? body['command'] : command;
+            calls.add(operation as String);
+            expect(operation, isIn(['status', 'setup', 'adopt']));
+            if (!reachable) {
+              throw const SocketException('Isolated runner unavailable');
+            }
+            if (operation == 'setup') {
+              expect(body['package_digest'], newDigest);
+              expect(body['checkpoint']['execution']['settings'], newSettings);
+              expect(
+                body['checkpoint']['execution']['handoff_id'],
+                isNot(checkpoint['execution']['handoff_id']),
+              );
+              binding =
+                  fixtures == null
+                      ? {
+                        ...oldBinding,
+                        'package_digest': newDigest,
+                        'package_id': 'server-package-029',
+                      }
+                      : await WorkspaceRunner.setup(isolatedRunner, body);
+              return jsonEncode(binding);
+            }
+            final result =
+                fixtures == null
+                    ? {
+                      'binding': binding,
+                      'runner': {'state': 'running', 'execution_controls': 4},
+                      'view': {
+                        ...presentation(),
+                        'execution': {'mode': 'vps', 'running': true},
+                      },
+                    }
+                    : await WorkspaceRunner(
+                      root: isolatedRunner,
+                      registry: runnerRegistry,
+                      binding: binding,
+                      runtime: WorkspaceRunner.runtimeFor(
+                        isolatedRunner,
+                        binding,
+                        runnerRegistry,
+                        scheduleTimers: false,
+                      ),
+                    ).dispatch(body);
+            return jsonEncode({'ok': true, 'result': result});
+          },
+        );
+        PluginRuntimeModule module() => PluginRuntimeModule(
+          registry: registry,
+          sourceCatalog: source,
+          manualChecks: ports,
+          pluginHostApi: host,
+          attestationExchange: ports,
+          chatDelivery: ports,
+          passiveReceive: ports,
+          contactLabels: ports,
+          uiLog: ports,
+          fileStore: f.files,
+          secretVault: ports,
+          readActiveCapsuleRootHex: () => f.owner,
+          workspaceRemote: remote,
+          capabilities: PluginCapabilityDispatcher(
+            send: (_, _, _, _) async => fail('Unexpected service request'),
+          ),
+        );
+        final catalogFile = await File(
+          '${f.home.path}/catalog.json',
+        ).writeAsString(
+          jsonEncode({
+            'schema': 'hivra.plugin.catalog',
+            'version': 1,
+            'source_id': 'fixture',
+            'source_name': 'Isolated Discovery',
+            'entries': [
+              {
+                'id': 'workspace',
+                'plugin_id': plugin,
+                'display_name': 'Workspace',
+                'version': '0.2.9',
+                'download_url': newArchive.uri.toString(),
+                'package_kind': 'zip',
+                'sha256_hex': newDigest,
+              },
+            ],
+          }),
+        );
+        final catalog = await source.fetchCatalogWithFallback(
+          localCatalogPathOverride: catalogFile.path,
+        );
+        final updated = await module().installPluginFromSource(
+          catalog.entries.single,
+        );
+        expect((await registry.loadPlugins()).single.id, updated.id);
+        expect(updated.pluginVersion, '0.2.9');
+        expect(updated.id, isNot(old.id));
+        final reopened = module();
+        final view = await reopened.runWorkspaceAction(
+          record: updated,
+          action: 'open',
+        );
+        expect(view['host_connection']['health'], 'package_updated');
+        expect(view['execution']['active'], isFalse);
+        expect(view['execution']['running'], isFalse);
+        expect(view['actions'], hasLength(1));
+        final scope = startScope(view);
+        final revision = view['execution']['revision'] as int;
+        Future<Map<String, dynamic>> confirmStart({
+          bool confirmed = true,
+          int? expectedRevision,
+        }) => reopened.setWorkspaceExecution(
+          record: updated,
+          enabled: true,
+          expiresAtMs: null,
+          expectedRevision: expectedRevision ?? revision,
+          approvedScope: scope,
+          credentialBindings: confirmed ? references(scope) : null,
+          settings: newSettings,
+        );
+        await expectLater(
+          reopened.runWorkspaceAction(record: updated, action: 'start'),
+          throwsStateError,
+        );
+        await expectLater(confirmStart(confirmed: false), throwsStateError);
+        await expectLater(
+          confirmStart(expectedRevision: revision - 1),
+          throwsStateError,
+        );
+        expect(calls, isEmpty);
+        expect(await snapshot(), before);
+        await expectLater(confirmStart(), throwsA(isA<SocketException>()));
+        expect(calls, ['status']);
+        expect(await snapshot(), before);
+        calls.clear();
+        reachable = true;
+        final started = await confirmStart();
+        expect(calls.first, 'status');
+        expect(calls.where((operation) => operation != 'status'), [
+          'setup',
+          'adopt',
+        ]);
+        expect(started['host_connection']['health'], 'running');
+        expect(started['execution']['running'], isTrue);
+        expect(
+          jsonDecode((await readState(executionFile))!)['package_id'],
+          updated.id,
+        );
+        expect(await readState(workspaceFile), workspace);
+        if (fixtures != null) {
+          final runnerPackage = (await runnerRegistry.loadPlugins()).single;
+          final runnerGrant = await WorkspaceRunner.runtimeFor(
+            isolatedRunner,
+            binding,
+            runnerRegistry,
+            scheduleTimers: false,
+          ).readWorkspaceExecution(runnerPackage);
+          expect(runnerPackage.pluginVersion, '0.2.9');
+          expect(runnerGrant?['settings'], newSettings);
+        }
+      },
+      createHttpClient:
+          (_) => fail('Isolated upgrade must not contact service endpoints'),
+    ),
+  );
 
   for (final authority in ['local', 'vps', 'corrupt']) {
     test(
@@ -420,6 +798,75 @@ void main() {
       expect(find.text('Recover local access'), findsNothing);
     },
   );
+
+  testWidgets('updated package requires confirmation on the saved VPS', (
+    tester,
+  ) async {
+    final pending = {
+      ...presentation(),
+      'execution': {'active': false, 'revision': 7},
+      'host_connection': {
+        'target': 'vps',
+        'health': 'package_updated',
+        'saved': true,
+        'host': 'runner.invalid',
+      },
+      'actions': [
+        {'id': 'start', 'label': 'Start Jack', 'host': 'workspace.start'},
+      ],
+      'schedule': {
+        'version': 2,
+        'action': 'run',
+        'interval_seconds': 60,
+        'access': {'version': 2, 'network': [], 'credentials': {}},
+      },
+    };
+    var starts = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PluginWorkspaceScreen(
+          capabilities: const ['workspace.schedule'],
+          runWorkspaceAction: (action, _) async {
+            expect(action, 'open');
+            return pending;
+          },
+          configureExecution: ({
+            required enabled,
+            required expiresAtMs,
+            expectedRevision,
+            revoke = false,
+            approvedScope,
+            credentialBindings,
+            settings = const {},
+          }) async {
+            starts++;
+            expect(enabled, isTrue);
+            expect(expectedRevision, 7);
+            expect(approvedScope?['start_action'], 'start');
+            expect(credentialBindings, isEmpty);
+            return presentation();
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Package updated'), findsOneWidget);
+    final start = find.text('Start Jack on VPS runner.invalid');
+    expect(start, findsOneWidget);
+    expect(starts, 0);
+    await tester.ensureVisible(start);
+    await tester.tap(start);
+    await tester.pumpAndSettle();
+    expect(find.text('Start on VPS runner.invalid'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(starts, 0);
+    await tester.tap(start);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('plugin-confirm-permissions')));
+    await tester.pumpAndSettle();
+    expect(starts, 1);
+  });
 
   testWidgets(
     'a saved VPS view keeps return confirmation and describes unavailable revocation',
@@ -4681,6 +5128,41 @@ void main() {
   );
 }
 
+Future<File> _workspaceUpgradeArchive(
+  Fixture f,
+  String plugin,
+  String version,
+  String? fixtures,
+) async {
+  if (fixtures != null) {
+    return File('$fixtures/jack_ventura_plugin-$version.zip');
+  }
+  final manifest = utf8.encode(
+    jsonEncode({
+      'schema': 'hivra.plugin.manifest',
+      'version': 1,
+      'plugin_id': plugin,
+      'plugin_version': version,
+      'contract': {'kind': pluginWorkspaceContractKind},
+      'runtime': {
+        'abi': 'hivra_host_abi_v2',
+        'entry_export': 'hivra_evaluate_v1',
+      },
+      'capabilities': f.registry.record.capabilities,
+    }),
+  );
+  const module = [0, 97, 115, 109, 1, 0, 0, 0];
+  final archive =
+      Archive()
+        ..addFile(
+          ArchiveFile('plugin/manifest.json', manifest.length, manifest),
+        )
+        ..addFile(ArchiveFile('plugin/module.wasm', module.length, module));
+  return File(
+    '${f.home.path}/workspace-$version.zip',
+  ).writeAsBytes(ZipEncoder().encode(archive)!);
+}
+
 Map<String, dynamic> permission(String origin) => {
   'version': 2,
   'credentials': {
@@ -4888,8 +5370,10 @@ class Fixture {
     bool scheduleTimers = false,
     String executionHost = 'local',
     String? executionIdentity,
+    WasmPluginRegistryService? runtimeRegistry,
+    List<Map<String, dynamic>> workspaceActions = const [],
   }) => PluginWorkspaceRuntime(
-    registry: registry,
+    registry: runtimeRegistry ?? registry,
     infer: infer,
     fileStore: files,
     readActiveCapsuleRootHex: () => owner,
@@ -4910,7 +5394,8 @@ class Fixture {
     ),
     pluginHostApi: PluginHostApiService(
       handlers: [],
-      resolveRuntimeBinding: registry.resolveRuntimeBinding,
+      resolveRuntimeBinding:
+          (runtimeRegistry ?? registry).resolveRuntimeBinding,
       resolveRuntimeInvoke: (request, binding) async {
         final action = request.args['action'] as String;
         settingsSeen.add(
@@ -4956,6 +5441,7 @@ class Fixture {
             'context': {'package_selected': 'opaque'},
             'view': {
               ...presentation(),
+              'actions': workspaceActions,
               'message':
                   received.isEmpty
                       ? 'Ready'

@@ -569,10 +569,16 @@ class PluginWorkspaceRuntime {
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(releaseToExecutorId))) {
       throw StateError('Invalid VPS execution target');
     }
+    final releasing = releaseToExecutorId != null;
+    final approvedReplacement =
+        releasing &&
+        approvedScope?['start_action'] is String &&
+        credentialBindings != null;
     final previous = await _readExecution(
       record,
       owner,
-      enforceHost: releaseToExecutorId == null,
+      enforceHost: !releasing,
+      allowRemoteRecoveryBinding: approvedReplacement,
     );
     if (settings.isEmpty && previous?['settings'] is Map) {
       settings = Map<String, dynamic>.from(previous!['settings'] as Map);
@@ -678,7 +684,8 @@ class PluginWorkspaceRuntime {
         final current = await _readExecution(
           record,
           owner,
-          enforceHost: releaseToExecutorId == null,
+          enforceHost: !releasing,
+          allowRemoteRecoveryBinding: approvedReplacement,
         );
         if (current?['revision'] != previous?['revision']) {
           throw StateError('Execution authority changed during confirmation');
