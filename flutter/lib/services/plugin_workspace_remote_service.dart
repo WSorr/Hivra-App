@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart' as cryptography;
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/wasm_plugin_models.dart';
@@ -116,21 +117,48 @@ class PluginWorkspaceRemoteService {
     required String password,
     required Future<bool> Function(String fingerprint) trustPeer,
     required bool Function() stillOwned,
+    required Future<void> Function(Future<void> Function() save) saveAuthorized,
+    String? assignedExecutorId,
     bool reinstall = false,
   }) async {
-    final previous = await connection(owner, record.pluginId!);
-    if (previous != null &&
-        (previous['host'] != host || previous['port'] != port)) {
-      throw StateError('Return to online mode before connecting another VPS');
+    final pluginId = record.pluginId!;
+    final previous = await connection(owner, pluginId);
+    final addressChanged =
+        previous != null &&
+        (previous['host'] != host || previous['port'] != port);
+    if (assignedExecutorId != null &&
+        assignedExecutorId != previous?['executor_id']) {
+      throw StateError('Saved access does not match the assigned VPS');
     }
+    if (addressChanged && (reinstall || password.isEmpty)) {
+      throw StateError('Use Restore VPS access to change its address');
+    }
+    Future<void> saveConnection(Map<String, dynamic> c, {String? newKey}) =>
+        saveAuthorized(() async {
+          if (!mapEquals(previous, await connection(owner, pluginId)) ||
+              !stillOwned()) {
+            throw StateError('Saved VPS connection changed');
+          }
+          if (newKey != null) {
+            await vault.saveSecret(
+              capsuleHex: owner,
+              pluginId: pluginId,
+              providerId: 'workspace-vps',
+              accountId: 'primary',
+              secretName: 'ssh_key',
+              secretValue: newKey,
+            );
+          }
+          if (!stillOwned()) throw StateError('Capsule changed');
+          await _save(c);
+        });
     if (password.isEmpty) {
       if (previous == null) {
         throw StateError('Connect this VPS with its owner credentials first');
       }
-      if (!stillOwned()) throw StateError('Capsule changed');
       // Selecting a saved server does not inspect or control its old runner.
       // The owner's later Start performs the one authoritative replacement.
-      await _save({...previous, 'selected': true});
+      await saveConnection({...previous, 'selected': true});
       return;
     }
     // Bootstrap a missing runtime or explicitly update it; Connect never installs
@@ -143,31 +171,19 @@ class PluginWorkspaceRemoteService {
       'assets/workspace_runner/SHA256SUMS.txt',
     );
     verifyDistribution(archive, sums);
-    final seed = await cryptography.Ed25519().newKeyPair();
-    final data = await seed.extract();
-    final generated = OpenSSHEd25519KeyPair(
-      Uint8List.fromList(data.publicKey.bytes),
-      Uint8List.fromList([...data.bytes, ...data.publicKey.bytes]),
-      'hivra-workspace',
-    );
     final previousKey = previous == null ? null : await _key(previous);
-    final repairingMissingKey =
-        previous != null &&
-        previousKey == null &&
-        previous['host'] == host &&
-        previous['port'] == port;
-    // A saved connection can outlive its Keychain entry. When the user
-    // supplies the root password for that same VPS, repair the key in place:
-    // preserve the executor identity so the existing runner remains the one
-    // authoritative executor, while replacing only its authorized SSH key.
-    final pem =
-        previous == null || repairingMissingKey
-            ? generated.toPem()
-            : previousKey;
-    if (pem == null) {
-      throw StateError(
-        'VPS key unavailable; enter the root password for the original VPS',
-      );
+    final String pem;
+    if (previousKey != null) {
+      pem = previousKey;
+    } else {
+      final seed = await cryptography.Ed25519().newKeyPair();
+      final data = await seed.extract();
+      pem =
+          OpenSSHEd25519KeyPair(
+            Uint8List.fromList(data.publicKey.bytes),
+            Uint8List.fromList([...data.bytes, ...data.publicKey.bytes]),
+            'hivra-workspace',
+          ).toPem();
     }
     final identity = SSHKeyPair.fromPem(pem).single;
     var peer = previous?['fingerprint'] as String?;
@@ -182,7 +198,10 @@ class PluginWorkspaceRemoteService {
       onPasswordRequest: () => password,
       onVerifyHostKey: (_, fingerprint) async {
         final actual = utf8.decode(fingerprint);
+        if (!stillOwned()) return false;
         if (peer == actual) return true;
+        // Moving an assigned endpoint requires proof of the same VPS identity.
+        if (addressChanged && assignedExecutorId != null) return false;
         // Explicit root recovery may confirm a changed server identity.
         // Saved-key access below remains pinned and never offers this choice.
         if (!await trustPeer(actual) || !stillOwned()) return false;
@@ -197,7 +216,17 @@ class PluginWorkspaceRemoteService {
       }
       final c =
           previous != null
-              ? {...previous, 'fingerprint': peer, 'selected': true}
+              ? {
+                ...previous,
+                'host': host,
+                'port': port,
+                'fingerprint': peer,
+                'selected': true,
+                if (addressChanged && peer != previous['fingerprint']) ...{
+                  'package_id': null,
+                  'package_digest': null,
+                },
+              }
               : <String, dynamic>{
                 'owner': owner,
                 'plugin_id': record.pluginId,
@@ -221,18 +250,10 @@ class PluginWorkspaceRemoteService {
         throw StateError('Invalid VPS installation binding');
       }
       if (!stillOwned()) throw StateError('Capsule changed');
-      // Persist key/pin before installation: a lost acknowledgement can be
-      // recovered using the same identity, not by creating another runner.
-      await vault.saveSecret(
-        capsuleHex: owner,
-        pluginId: record.pluginId!,
-        providerId: 'workspace-vps',
-        accountId: 'primary',
-        secretName: 'ssh_key',
-        secretValue: pem,
-      );
-      if (!stillOwned()) throw StateError('Capsule or package changed');
-      await _save(c);
+      final newKey = previousKey == null ? pem : null;
+      // Keep the previous address available until the new endpoint acknowledges
+      // access. At the same endpoint, retain the key for an installer retry.
+      if (!addressChanged) await saveConnection(c, newKey: newKey);
       final public =
           'ssh-ed25519 ${base64Encode(identity.toPublicKey().encode())} hivra-workspace-${c['executor_id']}';
       final script = installationScript(
@@ -253,6 +274,7 @@ class PluginWorkspaceRemoteService {
       if (result['connected'] != true) {
         throw StateError('VPS connection was not acknowledged');
       }
+      if (addressChanged) await saveConnection(c, newKey: newKey);
       if (!stillOwned()) {
         throw StateError(
           'Capsule changed; VPS access prepared without a new assignment',
@@ -317,14 +339,12 @@ class PluginWorkspaceRemoteService {
   }
 
   Future<Map<String, dynamic>> ensurePackage(
-    String owner,
+    Map<String, dynamic> c,
     WasmPluginRecord record, {
     Map<String, Map<String, String>>? credentialBindings,
     Map<String, dynamic>? checkpoint,
     required Future<void> Function() authorize,
   }) async {
-    final c = await connection(owner, record.pluginId!);
-    if (c == null) throw StateError('Connect your VPS first');
     final input = await _setupInput(
       c,
       record,
@@ -332,13 +352,8 @@ class PluginWorkspaceRemoteService {
     );
     if (checkpoint != null) input['checkpoint'] = checkpoint;
     await authorize();
-    final result = _json(
+    return _json(
       await _exchange(c, 'setup', utf8.encode('${jsonEncode(input)}\n')),
-    );
-    return rememberBinding(
-      c,
-      result,
-      digest: input['package_digest'] as String,
     );
   }
 

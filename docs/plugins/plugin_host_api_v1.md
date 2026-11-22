@@ -171,6 +171,16 @@ is sent. Only successful root authentication permits saving the confirmed pin;
 rejection or failed authentication keeps the old binding. This updates the same
 connection and executor identity, not execution permission or package state.
 
+**Restore VPS access** accepts a corrected address or port in the existing
+connection. A changed endpoint for a retained assignment must present the
+previously pinned fingerprint before password authentication. With local
+custody, the owner may also confirm a different server identity. A changed
+endpoint is saved after the server acknowledges access. Changing the server
+identity at a different endpoint clears its cached package binding. Restoration
+uses Connect's existing installer. **Update VPS runtime** targets the saved
+endpoint. Start verifies its selected connection before changing authority and
+uses that same connection for setup.
+
 A replaced device may also use the same authenticated `return` command with its
 original `handoff_id` to retrieve that Capsule/package's already sealed
 checkpoint. It cannot end or observe the replacement's active grant. The

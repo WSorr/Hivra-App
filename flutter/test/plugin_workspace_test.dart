@@ -2589,7 +2589,7 @@ void main() {
   test(
     'remote Start sends the selected settings and expiry in one setup',
     () async {
-      for (final fault in ['none', 'secret', 'stale']) {
+      for (final fault in ['none', 'secret', 'stale', 'destination']) {
         final revoke = fault != 'none';
         final nextDeadline =
             DateTime.now().add(const Duration(hours: 2)).millisecondsSinceEpoch;
@@ -2645,6 +2645,15 @@ void main() {
                   g['revision']++;
                 });
           }
+          if (fault == 'destination') {
+            unused.beforeResolve =
+                () => f.files.writePluginState(
+                  dir,
+                  f.registry.record.pluginId!,
+                  PluginWorkspaceRemoteService.connectionFile,
+                  jsonEncode({...connection, 'host': 'different.example'}),
+                );
+          }
           final remote = PluginWorkspaceRemoteService(
             files: f.files,
             vault: unused,
@@ -2694,6 +2703,7 @@ void main() {
             trustPeer:
                 (_) async => throw StateError('Saved pin must not be replaced'),
             stillOwned: () => true,
+            saveAuthorized: (save) => save(),
           );
           expect(
             calls,
@@ -3706,6 +3716,100 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets('Restore saves a corrected VPS address after acknowledgement', (
+    tester,
+  ) async {
+    var savedHost = 'old.example';
+    var savedPort = 22;
+    var attempts = 0;
+    final actions = <String>[];
+    Widget workspace() => MaterialApp(
+      home: PluginWorkspaceScreen(
+        capabilities: const ['workspace.schedule'],
+        runWorkspaceAction: (action, _) async {
+          actions.add(action);
+          return {
+            ...presentation(),
+            'execution': {'mode': 'vps', 'running': false, 'active': false},
+            'host_connection': {
+              'target': 'vps',
+              'selected': true,
+              'host': savedHost,
+              'port': savedPort,
+              'saved': true,
+              'health': 'unavailable',
+            },
+          };
+        },
+        connectVps: ({
+          required host,
+          required port,
+          required password,
+          required trustPeer,
+          bool reinstall = false,
+        }) async {
+          expect(host, 'correct.example');
+          expect(port, 2222);
+          expect(password, 'synthetic-test-password');
+          expect(reinstall, isFalse);
+          if (++attempts == 1) throw StateError('Access was not acknowledged');
+          savedHost = host;
+          savedPort = port;
+        },
+      ),
+    );
+    await tester.pumpWidget(workspace());
+    await tester.pumpAndSettle();
+    Future<void> openForm(String title) async {
+      final control = find.text(title);
+      await tester.ensureVisible(control);
+      await tester.pumpAndSettle();
+      await tester.tap(control);
+      await tester.pumpAndSettle();
+    }
+
+    await openForm('Advanced settings');
+    await openForm('Update VPS runtime');
+    final ip = find.widgetWithText(TextField, 'VPS IP or hostname');
+    final port = find.widgetWithText(TextField, 'SSH port');
+    expect(tester.widget<TextField>(ip).readOnly, isTrue);
+    expect(tester.widget<TextField>(port).readOnly, isTrue);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    for (final action in ['Cancel', 'Restore securely', 'Restore securely']) {
+      if (find.text('Restore VPS access').evaluate().isEmpty) {
+        await openForm('Advanced settings');
+      }
+      await openForm('Restore VPS access');
+      expect(tester.widget<TextField>(ip).readOnly, isFalse);
+      expect(tester.widget<TextField>(port).readOnly, isFalse);
+      expect(tester.widget<TextField>(ip).controller!.text, 'old.example');
+      expect(tester.widget<TextField>(port).controller!.text, '22');
+      await tester.enterText(ip, 'correct.example');
+      await tester.enterText(port, '2222');
+      await tester.enterText(
+        find.byWidgetPredicate((w) => w is TextField && w.obscureText),
+        'synthetic-test-password',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(action));
+      await tester.pumpAndSettle();
+      if (action == 'Cancel') expect(attempts, 0);
+      if (attempts < 2) {
+        expect(find.text('Use VPS old.example'), findsOneWidget);
+      }
+    }
+    expect(attempts, 2);
+    expect(find.text('Use VPS correct.example'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(workspace());
+    await tester.pumpAndSettle();
+    expect(find.text('Use VPS correct.example'), findsOneWidget);
+    expect(actions, ['open', 'open', 'open']);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   for (final trust in [false, true]) {
     testWidgets(

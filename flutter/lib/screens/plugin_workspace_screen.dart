@@ -446,13 +446,13 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                                 reinstall
                                     ? 'Update the Hivra runtime bundled with this Capsule. The existing assignment, permissions and package data are retained; an active assignment may resume after the service restart. Website and VPN are not changed. Root password is never saved.'
                                     : restoreAccess
-                                    ? 'Use the root password for this same VPS to repair its saved SSH access after checking the server identity. The current assignment keeps running. No package, exchange credentials or new execution permission is installed. Root password is never saved.'
+                                    ? 'Enter the correct VPS address, SSH port and root password. If execution is assigned to a VPS, a changed address must match its saved server fingerprint. A new assignment requires Start. Root password is never saved.'
                                     : 'Linux x86-64 with systemd. Connect prepares SSH access and installs a runtime only if none exists. It leaves the current assignment running. Start replaces the assignment with this package and your selected settings. Website and VPN are not changed. Root password is never saved.',
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
                                 initialValue: host,
-                                readOnly: reinstall || restoreAccess,
+                                readOnly: reinstall,
                                 decoration: const InputDecoration(
                                   labelText: 'VPS IP or hostname',
                                 ),
@@ -461,7 +461,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                               ),
                               TextFormField(
                                 initialValue: port,
-                                readOnly: reinstall || restoreAccess,
+                                readOnly: reinstall,
                                 decoration: const InputDecoration(
                                   labelText: 'SSH port',
                                 ),
