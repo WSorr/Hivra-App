@@ -2284,10 +2284,12 @@ void main() {
   );
 
   test(
-    'remote Start uses one setup with the new selection; revoked Start sends no setup',
+    'remote Start sends the selected settings and expiry in one setup',
     () async {
       for (final fault in ['none', 'secret', 'stale']) {
         final revoke = fault != 'none';
+        final nextDeadline =
+            DateTime.now().add(const Duration(hours: 2)).millisecondsSinceEpoch;
         final f = await Fixture.create();
         try {
           final bytes = utf8.encode('synthetic package transport');
@@ -2353,6 +2355,10 @@ void main() {
                 expect(body['checkpoint']['execution']['settings'], {
                   'selection': 'new-choice',
                 });
+                expect(
+                  body['checkpoint']['execution']['expires_at_ms'],
+                  nextDeadline,
+                );
                 expect(
                   body['checkpoint']['execution']['executor_id'],
                   'f' * 64,
@@ -2435,7 +2441,7 @@ void main() {
           final operation = module.setWorkspaceExecution(
             record: f.registry.record,
             enabled: true,
-            expiresAtMs: null,
+            expiresAtMs: nextDeadline,
             expectedRevision: 1,
             approvedScope: {
               ...f.schedule,
@@ -2461,14 +2467,28 @@ void main() {
     },
   );
 
-  for (final scenario in ['running', 'replaced', 'unavailable', 'expired']) {
+  for (final scenario in [
+    'running',
+    'replaced',
+    'unavailable',
+    'expired',
+    'new duration',
+    'invalid duration',
+  ]) {
     testWidgets(
       'VPS next Start settings are editable without stopping or reconnecting ($scenario)',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(390, 844));
         addTearDown(() => tester.binding.setSurfaceSize(null));
         final expired = scenario == 'expired';
-        final health = expired ? 'replaced' : scenario;
+        final newDuration = scenario == 'new duration';
+        final invalidDuration = scenario == 'invalid duration';
+        final health =
+            expired
+                ? 'replaced'
+                : newDuration || invalidDuration
+                ? 'running'
+                : scenario;
         final access = permission('https://one.example');
         final readAccess = {
           'version': 2,
@@ -2483,6 +2503,7 @@ void main() {
             DateTime.now().millisecondsSinceEpoch +
             (expired ? -3600000 : 3600000);
         var started = false;
+        late int submittedAt;
         final configuration = <Map<String, dynamic>>[];
         final actions = <String>[];
         final choices = <String>[];
@@ -2577,7 +2598,19 @@ void main() {
                 settings = const {},
               }) async {
                 expect(enabled, isTrue);
-                expect(expiresAtMs, deadline);
+                expect(invalidDuration, isFalse);
+                expect(
+                  expiresAtMs,
+                  newDuration
+                      ? inInclusiveRange(
+                        submittedAt +
+                            const Duration(minutes: 90).inMilliseconds,
+                        DateTime.now()
+                            .add(const Duration(minutes: 90))
+                            .millisecondsSinceEpoch,
+                      )
+                      : deadline,
+                );
                 expect(expectedRevision, 1);
                 expect(approvedScope?['start_action'], 'begin_owner_workflow');
                 expect(credentialBindings, isNull);
@@ -2641,6 +2674,30 @@ void main() {
           expect(actions, ['open']);
           return;
         }
+        if (newDuration || invalidDuration) {
+          final duration = find.byKey(
+            const ValueKey('plugin-next-start-duration'),
+          );
+          await tester.scrollUntilVisible(
+            duration,
+            300,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.ensureVisible(duration);
+          await tester.enterText(duration, invalidDuration ? '0' : '1.5');
+          await tester.pumpAndSettle();
+          expect(configuration, isEmpty);
+          final input = tester.widget<InputDecorator>(
+            find.descendant(
+              of: duration,
+              matching: find.byType(InputDecorator),
+            ),
+          );
+          expect(
+            input.decoration.errorText,
+            invalidDuration ? isNotNull : isNull,
+          );
+        }
         final start = find.byKey(
           const ValueKey('plugin-action-begin_owner_workflow'),
         );
@@ -2651,8 +2708,15 @@ void main() {
         );
         await tester.ensureVisible(start);
         await tester.pumpAndSettle();
+        submittedAt = DateTime.now().millisecondsSinceEpoch;
         await tester.tap(start);
         await tester.pumpAndSettle();
+        if (invalidDuration) {
+          expect(configuration, isEmpty);
+          expect(actions, ['open']);
+          await tester.pumpWidget(const SizedBox());
+          return;
+        }
         expect(configuration, [
           {'selection': 'new-choice', 'period': '1m'},
         ]);

@@ -361,10 +361,14 @@ issues another grant nor restarts a schedule. Package actions cannot carry
 independent `access`. Connecting after Stop/revocation does not inherit the ended
 schedule; an explicit permissions edit may retain an already running workflow.
 Start uses `schedule: {version: 2, action,
-interval_seconds, description, access}`; it reuses an active matching grant,
-including its expiry and secret connections. It asks for permission only when
-required access is absent or broader. Permissions need no schedule; `running`
-means a scheduled workflow, while `enabled` means the owner's access is enabled.
+interval_seconds, description, access}`. By default Start preserves the
+absolute expiry and secret connections of an active matching grant. While
+editing the next VPS Start's settings, the owner may enter a duration in hours.
+The same Start submits the chosen settings and deadline, calculated from the
+time of submission, using the current secret connections. Start asks for
+permission when required access is absent or broader. Permissions may exist
+independently of a schedule. `running` indicates a scheduled workflow and
+`enabled` indicates that the owner's access is enabled.
 The local host invokes the package's declared Start action after owner
 confirmation or reuse of matching access. Start prepares the opaque workspace
 and interval before the host admits a cycle. Its preparation dispatches no
