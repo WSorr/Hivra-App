@@ -932,9 +932,11 @@ void main() {
               )
               as Map<String, dynamic>;
 
-      await expectLater(revoke(app), throwsStateError);
+      if (scenario != 'empty root') {
+        await expectLater(revoke(app), throwsStateError);
+        expect((await control())['revoked'], isTrue);
+      }
       expect((await control())['executor'], 'vps');
-      expect((await control())['revoked'], isTrue);
       // Replace the runtime on this test endpoint while preserving its installation.
       if (scenario != 'empty root') {
         await runner.start();
@@ -2216,6 +2218,14 @@ void main() {
     expect(readiness['ok'], isTrue);
     expect(readiness['result']['runner']['state'], 'not_started');
     expect(readiness['result']['view'], isNull);
+    expect(await vacant.list().isEmpty, isTrue);
+    final adoption = await WorkspaceRunner.request(vacant, {
+      ...binding,
+      'command': 'adopt',
+      'checkpoint': <String, dynamic>{},
+    });
+    expect(adoption['result']['runner']['state'], 'not_started');
+    expect(adoption['result']['view'], isNull);
     expect(await vacant.list().isEmpty, isTrue);
     await expectLater(
       WorkspaceRunner.request(vacant, {...request, 'handoff_id': 'invalid'}),

@@ -130,7 +130,8 @@ saved permission terms remain available for a later owner Start; no dispatch,
 write, scheduler or local fallback is admitted by observation. A replacement
 reported by status applies even after a successful adoption acknowledgement.
 An installed runtime with an empty private data directory answers `status`
-with `not_started` and its execution controls before the service has a socket.
+and acknowledgement-only `adopt` with `not_started` and its execution controls
+before the service has a socket.
 A failed request, including a stored assignment with an unreachable process,
 presents retained settings with unavailable status. Both views keep the existing
 VPS selected and a new Start available without root reconnection.

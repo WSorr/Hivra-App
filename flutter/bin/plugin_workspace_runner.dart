@@ -749,7 +749,8 @@ class WorkspaceRunner {
   ) async {
     final scopedRevoke =
         input['command'] == 'execution' && input.containsKey('handoff_id');
-    if (input['command'] == 'status' && await _isVacantRoot(root)) {
+    if (const {'status', 'adopt'}.contains(input['command']) &&
+        await _isVacantRoot(root)) {
       _validateObservation(input);
       return {
         'ok': true,
