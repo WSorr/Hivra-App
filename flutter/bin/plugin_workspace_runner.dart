@@ -106,7 +106,7 @@ Future<void> main(List<String> args) async {
 
 class WorkspaceRunner {
   static const _socketName = 'runner.sock';
-  static const _executionControls = 5;
+  static const _executionControls = workspaceHandoffRevocationControls;
   static final Set<String> _ownedRoots = {};
   final Directory root;
   final PluginWorkspaceRuntime runtime;
@@ -219,22 +219,9 @@ class WorkspaceRunner {
             utf8.encode(jsonEncode(credentials)).length > 8192)) {
       throw const FormatException('Invalid protected credential record');
     }
-    final ownedRoot = await root.resolveSymbolicLinks();
-    if (!_ownedRoots.add(ownedRoot)) {
-      throw StateError('Runner already owns this data directory');
-    }
-    RandomAccessFile? lease;
+    final (ownedRoot, lease) = await _acquireRunnerLease(root);
     File? incoming;
     try {
-      final lockPath = '${root.path}/runner.lock';
-      if (![
-        FileSystemEntityType.file,
-        FileSystemEntityType.notFound,
-      ].contains(await FileSystemEntity.type(lockPath, followLinks: false))) {
-        throw StateError('Regular runner lease required');
-      }
-      lease = await File(lockPath).open(mode: FileMode.append);
-      await lease.lock(FileLock.exclusive);
       final registry = WasmPluginRegistryService(
         dataDirs: UserVisibleDataDirectoryService(
           runtimeRootOverride: root.path,
@@ -429,7 +416,7 @@ class WorkspaceRunner {
           await incoming.delete();
         }
       } finally {
-        await lease?.close();
+        await lease.close();
         _ownedRoots.remove(ownedRoot);
       }
     }
@@ -460,6 +447,32 @@ class WorkspaceRunner {
     return matching.single;
   }
 
+  static Future<(String, RandomAccessFile)> _acquireRunnerLease(
+    Directory root,
+  ) async {
+    final ownedRoot = await root.resolveSymbolicLinks();
+    if (!_ownedRoots.add(ownedRoot)) {
+      throw StateError('Runner already owns this data directory');
+    }
+    RandomAccessFile? lease;
+    try {
+      final lockPath = '$ownedRoot/runner.lock';
+      if (![
+        FileSystemEntityType.file,
+        FileSystemEntityType.notFound,
+      ].contains(await FileSystemEntity.type(lockPath, followLinks: false))) {
+        throw StateError('Regular runner lease required');
+      }
+      lease = await File(lockPath).open(mode: FileMode.append);
+      await lease.lock(FileLock.exclusive);
+      return (ownedRoot, lease);
+    } catch (_) {
+      await lease?.close();
+      _ownedRoots.remove(ownedRoot);
+      rethrow;
+    }
+  }
+
   Future<void> start() async {
     if (_lease != null || _closing) throw StateError('Runner already started');
     if (await FileSystemEntity.type(root.path, followLinks: false) !=
@@ -470,23 +483,9 @@ class WorkspaceRunner {
     if (stat.mode & 0x3f != 0) {
       throw StateError('Runner directory must be private (0700)');
     }
-    final ownedRoot = await root.resolveSymbolicLinks();
-    if (!_ownedRoots.add(ownedRoot)) {
-      throw StateError('Runner already owns this data directory');
-    }
     // Acquire before removing a stale socket. A second process must neither
     // execute cycles nor disconnect the existing owner.
-    RandomAccessFile? lease;
-    try {
-      lease = await File(
-        '${root.path}/runner.lock',
-      ).open(mode: FileMode.append);
-      await lease.lock(FileLock.exclusive);
-    } catch (_) {
-      await lease?.close();
-      _ownedRoots.remove(ownedRoot);
-      rethrow;
-    }
+    final (ownedRoot, lease) = await _acquireRunnerLease(root);
     _ownedRoot = ownedRoot;
     _lease = lease;
     try {
@@ -549,6 +548,8 @@ class WorkspaceRunner {
     if (_closing) throw StateError('Workspace runner is closing');
     final command = request['command'];
     final byHandoff = command == 'status' && request.containsKey('handoff_id');
+    final scopedRevoke =
+        command == 'execution' && request.containsKey('handoff_id');
     final sameWorkspace =
         request['owner'] == binding['owner'] &&
         request['plugin_id'] == binding['plugin_id'] &&
@@ -557,6 +558,11 @@ class WorkspaceRunner {
     var current =
         sameWorkspace && request['package_id'] == binding['package_id'];
     WasmPluginRecord? matchedRecord;
+    if ((command == 'status' || command == 'adopt') &&
+        await _hasNoCapsuleData()) {
+      _validateObservation(request);
+      return _unobservedAssignment(request, 'not_started');
+    }
     if (byHandoff ||
         (!current && (command == 'status' || command == 'adopt'))) {
       _validateObservation(request);
@@ -568,7 +574,7 @@ class WorkspaceRunner {
       }
       if (!current) return _unobservedAssignment(request, 'replaced');
     }
-    if (!current && command != 'return') {
+    if (!current && command != 'return' && !scopedRevoke) {
       throw StateError('Workspace request binding mismatch');
     }
     final recovery = !current && command == 'return';
@@ -583,6 +589,7 @@ class WorkspaceRunner {
         await runtime.adoptWorkspaceFromLocal(
           record: record,
           checkpoint: Map<String, dynamic>.from(request['checkpoint'] as Map),
+          acknowledgementOnly: true,
         );
       case 'status':
         if (!byHandoff && request.length != 6) throw const FormatException();
@@ -663,27 +670,11 @@ class WorkspaceRunner {
           'checkpoint': checkpoint,
         };
       case 'execution':
-        // Old clients retain their existing Stop command. Start and full
-        // revocation require explicit terms; no default 24-hour authority.
-        final legacyStop =
-            request.length == 9 &&
-            request['enabled'] == false &&
-            request.keys.toSet().containsAll({'enabled', 'settings', 'scope'});
-        if ((!legacyStop &&
-                (request.length != 12 ||
-                    !request.containsKey('expires_at_ms') ||
-                    !request.containsKey('expected_revision') ||
-                    !request.containsKey('scope') ||
-                    (request['expires_at_ms'] != null &&
-                        request['expires_at_ms'] is! int) ||
-                    (request['expected_revision'] != null &&
-                        request['expected_revision'] is! int) ||
-                    request['revoke'] is! bool)) ||
-            request['enabled'] is! bool ||
-            request['settings'] is! Map ||
-            (request['scope'] != null && request['scope'] is! Map)) {
-          throw const FormatException();
+        _validateExecutionRequest(request);
+        if (scopedRevoke && await _hasNoCapsuleData()) {
+          return _acknowledgeAbsentHandoff(request);
         }
+        if (!current) throw StateError('Workspace request binding mismatch');
         view = await runtime.setWorkspaceExecution(
           record: record,
           enabled: request['enabled'] as bool,
@@ -695,6 +686,7 @@ class WorkspaceRunner {
                   ? null
                   : Map<String, dynamic>.from(request['scope'] as Map),
           settings: Map<String, dynamic>.from(request['settings'] as Map),
+          expectedHandoffId: request['handoff_id'] as String?,
         );
       case 'forget':
         if (request.length != 6) throw const FormatException();
@@ -755,26 +747,27 @@ class WorkspaceRunner {
     Directory root,
     Map<String, dynamic> input,
   ) async {
-    if (input['command'] == 'status' &&
-        await FileSystemEntity.type(
-              '${root.path}/runner.json',
-              followLinks: false,
-            ) ==
-            FileSystemEntityType.notFound &&
-        await FileSystemEntity.type(root.path, followLinks: false) ==
-            FileSystemEntityType.directory &&
-        (await root.stat()).mode & 0x3f == 0 &&
-        !await root
-            .list(followLinks: false)
-            .any(
-              (entry) =>
-                  entry is! File || entry.path != '${root.path}/runner.lock',
-            )) {
+    final scopedRevoke =
+        input['command'] == 'execution' && input.containsKey('handoff_id');
+    if (input['command'] == 'status' && await _isVacantRoot(root)) {
       _validateObservation(input);
       return {
         'ok': true,
         'result': _unobservedAssignment(input, 'not_started'),
       };
+    }
+    if (scopedRevoke && await _isVacantRoot(root)) {
+      _validateExecutionRequest(input);
+      final (ownedRoot, lease) = await _acquireRunnerLease(root);
+      try {
+        // Setup may have prepared an assignment while we acquired the lease.
+        if (await _isVacantRoot(root)) {
+          return {'ok': true, 'result': _acknowledgeAbsentHandoff(input)};
+        }
+      } finally {
+        await lease.close();
+        _ownedRoots.remove(ownedRoot);
+      }
     }
     final socket = await Socket.connect(
       InternetAddress(
@@ -801,6 +794,31 @@ class WorkspaceRunner {
     'executor_id',
   };
 
+  static Future<bool> _isVacantRoot(Directory root) async =>
+      await FileSystemEntity.type(root.path, followLinks: false) ==
+          FileSystemEntityType.directory &&
+      (await root.stat()).mode & 0x3f == 0 &&
+      !await root
+          .list(followLinks: false)
+          .any(
+            (entry) =>
+                entry is! File || entry.path != '${root.path}/runner.lock',
+          );
+
+  Future<bool> _hasNoCapsuleData() async {
+    final ownedRoot = _ownedRoot;
+    if (_lease == null || ownedRoot == null) return false;
+    final capsules =
+        await UserVisibleDataDirectoryService(
+          runtimeRootOverride: ownedRoot,
+        ).capsulesDirectory();
+    // A failed directory read cannot establish absence.
+    final hasCapsules = await Directory(
+      ownedRoot,
+    ).list(followLinks: false).any((entry) => entry.path == capsules.path);
+    return !_closing && !hasCapsules;
+  }
+
   static void _validateObservation(Map<String, dynamic> request) {
     final byHandoff =
         request['command'] == 'status' && request.containsKey('handoff_id');
@@ -824,6 +842,49 @@ class WorkspaceRunner {
       throw const FormatException('Invalid assignment observation');
     }
   }
+
+  static void _validateExecutionRequest(Map<String, dynamic> request) {
+    // Old clients retain their Stop command. Start and full revocation
+    // require explicit terms.
+    final scopedRevoke = request.containsKey('handoff_id');
+    final legacyStop =
+        !scopedRevoke &&
+        request.length == 9 &&
+        request['enabled'] == false &&
+        request.keys.toSet().containsAll({'enabled', 'settings', 'scope'});
+    if ((!legacyStop &&
+            (request.length != (scopedRevoke ? 13 : 12) ||
+                !request.containsKey('expires_at_ms') ||
+                !request.containsKey('expected_revision') ||
+                !request.containsKey('scope') ||
+                (request['expires_at_ms'] != null &&
+                    request['expires_at_ms'] is! int) ||
+                (request['expected_revision'] != null &&
+                    request['expected_revision'] is! int) ||
+                request['revoke'] is! bool)) ||
+        request['enabled'] is! bool ||
+        request['settings'] is! Map ||
+        (request['scope'] != null && request['scope'] is! Map)) {
+      throw const FormatException();
+    }
+    if (scopedRevoke) {
+      if (request['enabled'] != false || request['revoke'] != true) {
+        throw const FormatException('A handoff requires full revocation');
+      }
+      _validateObservation({
+        for (final key in _observationBinding) key: request[key],
+        'command': 'status',
+        'handoff_id': request['handoff_id'],
+      });
+    }
+  }
+
+  static Map<String, dynamic> _acknowledgeAbsentHandoff(
+    Map<String, dynamic> request,
+  ) => {
+    ..._unobservedAssignment(request, 'not_started'),
+    'handoff_id': request['handoff_id'],
+  };
 
   static Map<String, dynamic> _unobservedAssignment(
     Map<String, dynamic> request,

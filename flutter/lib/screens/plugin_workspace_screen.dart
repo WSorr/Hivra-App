@@ -1273,7 +1273,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             view?['host_connection']?['saved'] == true);
     final connectionHealth = view?['host_connection']?['health'];
     final health = switch (connectionHealth) {
-      'not_started' => 'Execution has not moved to this VPS',
+      'not_started' => 'No running assignment on this VPS',
       'setup_unconfirmed' => 'No assignment started from this Capsule',
       'running' => 'VPS process is running',
       'detached' => 'Execution authority ended',
@@ -1517,6 +1517,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                       ],
                       if (_observationUnavailable) ...[
                         Text(switch (connectionHealth) {
+                          'not_started' =>
+                            'Use Revoke plugin permissions to clear the saved assignment.',
                           'package_updated' =>
                             'Confirm Start to replace the previous VPS assignment with this version.',
                           'replaced' =>

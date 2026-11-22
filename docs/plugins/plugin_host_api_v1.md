@@ -148,9 +148,20 @@ SSH authentication or an unavailable VPS. The existing custody owner saves
 local revocation before contacting the remote executor, including a retained
 remote grant from a replaced package. Enabling execution still requires the
 current package binding. If remote stop is not acknowledged, the UI reports
-that uncertainty; local revocation cannot prove
-that an unreachable executor stopped. A later recovered handoff carries the
-revoked permission and retained opaque state, without renewing execution.
+that uncertainty; local revocation cannot prove that an unreachable executor
+stopped. A later recovered handoff carries the revoked permission and retained
+opaque state without renewing execution.
+
+Execution controls 6 let Revoke identify the saved `handoff_id`. A freshly
+installed runtime with an empty data directory, or a registered runner without
+Capsule data, can acknowledge its absence while holding the same lease as
+`setup`. Only the matching reply from the pinned VPS closes that locally
+revoked handoff. The saved connection, opaque checkpoint and unresolved
+effect evidence are retained. An older runtime requires **Update VPS runtime**
+before it can provide this acknowledgement. Failure to confirm absence leaves
+the binding available for recovery. A socket `adopt` can acknowledge a grant
+already installed by Start and carry its revocation. Initial adoption belongs
+to `setup`.
 
 Saved-key connections strictly require the saved SSH server fingerprint. During
 explicit root-authenticated installation/recovery, a new or changed fingerprint

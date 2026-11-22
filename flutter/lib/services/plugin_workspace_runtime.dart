@@ -538,6 +538,7 @@ class PluginWorkspaceRuntime {
     Map<String, Map<String, String>>? credentialBindings,
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
+    String? expectedHandoffId,
   }) async {
     approvedScope =
         approvedScope == null
@@ -688,7 +689,9 @@ class PluginWorkspaceRuntime {
           enforceHost: !releasing,
           allowRemoteRecoveryBinding: approvedReplacement,
         );
-        if (current?['revision'] != previous?['revision']) {
+        if (current?['revision'] != previous?['revision'] ||
+            (expectedHandoffId != null &&
+                current?['handoff_id'] != expectedHandoffId)) {
           throw StateError('Execution authority changed during confirmation');
         }
         if (enabled &&
@@ -1006,6 +1009,7 @@ class PluginWorkspaceRuntime {
   Future<void> adoptWorkspaceFromLocal({
     required WasmPluginRecord record,
     required Map<String, dynamic> checkpoint,
+    bool acknowledgementOnly = false,
   }) async {
     final owner = activeCapsuleRootHex()?.trim().toLowerCase();
     if (executionHost != 'vps' || owner == null) {
@@ -1103,6 +1107,9 @@ class PluginWorkspaceRuntime {
       await resumeWorkspaceScheduling(record);
       return;
     }
+    if (acknowledgementOnly) {
+      throw StateError('VPS has not adopted this assignment through Start');
+    }
     try {
       await _serialize(
         key,
@@ -1138,19 +1145,20 @@ class PluginWorkspaceRuntime {
   /// Record Stop even if the peer is unavailable or adoption was not delivered.
   /// Acknowledging a later explicit Start may clear it only at the same source
   /// revision; a concurrent Stop wins. This grant never runs locally.
-  Future<void> setReleasedWorkspaceEntries(
+  Future<int> setReleasedWorkspaceEntries(
     WasmPluginRecord record, {
     required String executorId,
     required bool enabled,
     bool revoke = false,
     int? expectedRevision,
+    String? absentHandoffId,
   }) async {
     if (enabled && revoke) throw StateError('Start cannot revoke authority');
     final owner = activeCapsuleRootHex();
     if (executionHost != 'local' || owner == null) {
       throw StateError('Local custody is required');
     }
-    await _serialize(
+    return _serialize(
       '$owner::${record.pluginId}::execution',
       () => _withWorkspaceLease(owner, record, () async {
         final control = await _readExecution(
@@ -1164,21 +1172,39 @@ class PluginWorkspaceRuntime {
             control['executor_id'] != executorId ||
             (expectedRevision != null &&
                 expectedRevision != control['revision']) ||
+            (absentHandoffId != null &&
+                (enabled ||
+                    !revoke ||
+                    expectedRevision == null ||
+                    control['revoked'] != true ||
+                    control['handoff_id'] != absentHandoffId)) ||
             !_isStillOwnedBy(owner)) {
           throw StateError('Remote authority changed');
         }
         final directory = await _fileStore.capsuleDirForHex(owner);
+        final revision = (control['revision'] as int) + 1;
+        final updated = {
+          ...control,
+          workspaceExecutionFlag(control): enabled,
+          if (revoke || enabled) 'revoked': revoke,
+          'revision': revision,
+        };
+        if (absentHandoffId != null) {
+          // Close only the revoked assignment acknowledged by this VPS.
+          updated
+            ..['executor'] = 'local'
+            ..['expires_at_ms'] = 0
+            ..remove('executor_id')
+            ..remove('handoff_id')
+            ..remove('handoff_digest');
+        }
         await _fileStore.writePluginState(
           directory,
           record.pluginId!,
           _executionFile,
-          jsonEncode({
-            ...control,
-            workspaceExecutionFlag(control): enabled,
-            if (revoke || enabled) 'revoked': revoke,
-            'revision': (control['revision'] as int) + 1,
-          }),
+          jsonEncode(updated),
         );
+        return revision;
       }, authorityOnly: true),
     );
   }
