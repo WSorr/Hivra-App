@@ -300,6 +300,10 @@ void main() {
           'package_digest': checkpoint['package_digest'],
         };
         final isolatedRunner = await f.home.createTemp('runner-');
+        expect(
+          (await Process.run('chmod', ['700', isolatedRunner.path])).exitCode,
+          0,
+        );
         final runnerRegistry = WasmPluginRegistryService(
           dataDirs: UserVisibleDataDirectoryService(
             runtimeRootOverride: isolatedRunner.path,
@@ -1943,6 +1947,7 @@ void main() {
       'executor_id': 'e' * 64,
     };
     final vacant = await f.home.createTemp('vacant-');
+    expect((await Process.run('chmod', ['700', vacant.path])).exitCode, 0);
     final request = {...binding, 'command': 'status'};
     final readiness = await WorkspaceRunner.request(vacant, request);
     expect(readiness['ok'], isTrue);
