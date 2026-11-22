@@ -314,11 +314,16 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     }
   }
 
-  bool _isSavedView(Map view) => const {
-    'replaced',
-    'unavailable',
-    'package_updated',
-  }.contains(view['host_connection']?['health']);
+  bool _isSavedView(Map view) {
+    final connection = view['host_connection'];
+    return const {
+          'replaced',
+          'unavailable',
+          'package_updated',
+        }.contains(connection?['health']) ||
+        (connection?['target'] == 'vps' &&
+            connection?['health'] == 'not_started');
+  }
 
   Future<void> _stopExecution({bool revoke = true}) async {
     // Both revocation intents supersede stale reads and share one host path.

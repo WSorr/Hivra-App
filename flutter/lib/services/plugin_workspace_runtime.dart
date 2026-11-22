@@ -328,13 +328,12 @@ class PluginWorkspaceRuntime {
           current == null ||
           current['version'] != 2 ||
           current['revision'] != invocationRevision ||
-          (!choiceAccessApproved &&
-              (!workspaceExecutionEnabled(current) ||
-                  !workspaceExecutionIsActive(current) ||
-                  !PluginCapabilityDispatcher.allows(
-                    current['scope']['access'] as Map,
-                    request,
-                  )))) {
+          !workspaceExecutionEnabled(current) ||
+          !workspaceExecutionIsActive(current) ||
+          !PluginCapabilityDispatcher.allows(
+            current['scope']['access'] as Map,
+            request,
+          )) {
         throw StateError('Owner access is absent, revoked, expired or changed');
       }
     }
@@ -480,9 +479,11 @@ class PluginWorkspaceRuntime {
             request,
             access: access,
             readCredentials: () => secrets(request),
-            authorize: () async {
-              await accessFor(request);
-            },
+            // A temporary chooser approval is bound to the displayed package.
+            authorize:
+                choiceAccessApproved
+                    ? () => bound('network.http')
+                    : () => accessFor(request),
           );
         case 'storage.read':
         case 'storage.write':
@@ -884,6 +885,29 @@ class PluginWorkspaceRuntime {
       return null;
     }
     return Map<String, dynamic>.from(control);
+  }
+
+  /// Accept transport acknowledgement only for the still-current local handoff.
+  Future<T> confirmWorkspaceHandoff<T>(
+    WasmPluginRecord record,
+    Map<String, dynamic> expected,
+    Future<T> Function() confirm,
+  ) {
+    final owner = expected['owner'] as String;
+    return _serialize(
+      '$owner::${record.pluginId}::execution',
+      () => _withWorkspaceLease(owner, record, () async {
+        final current = await _readExecution(record, owner, enforceHost: false);
+        if (!_isStillOwnedBy(owner) ||
+            current?['executor'] != 'vps' ||
+            current?['executor_id'] != expected['executor_id'] ||
+            current?['package_digest'] != expected['package_digest'] ||
+            current?['handoff_id'] != expected['handoff_id']) {
+          throw StateError('VPS assignment changed before acknowledgement');
+        }
+        return confirm();
+      }, authorityOnly: true),
+    );
   }
 
   /// Called by the host transport, never by WASM. The source stays detached

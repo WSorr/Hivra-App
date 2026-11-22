@@ -106,6 +106,7 @@ Future<void> main(List<String> args) async {
 
 class WorkspaceRunner {
   static const _socketName = 'runner.sock';
+  static const _executionControls = 5;
   static final Set<String> _ownedRoots = {};
   final Directory root;
   final PluginWorkspaceRuntime runtime;
@@ -546,42 +547,32 @@ class WorkspaceRunner {
 
   Future<Map<String, dynamic>> dispatch(Map<String, dynamic> request) async {
     if (_closing) throw StateError('Workspace runner is closing');
-    final current =
+    final command = request['command'];
+    final byHandoff = command == 'status' && request.containsKey('handoff_id');
+    final sameWorkspace =
         request['owner'] == binding['owner'] &&
         request['plugin_id'] == binding['plugin_id'] &&
-        request['package_id'] == binding['package_id'] &&
         request['package_digest'] == binding['package_digest'] &&
         request['executor_id'] == binding['executor_id'];
-    final recovery = !current && request['command'] == 'return';
-    if (!current &&
-        (request['command'] == 'status' || request['command'] == 'adopt')) {
-      final adoption = request['command'] == 'adopt';
-      if (request.length != (adoption ? 7 : 6) ||
-          (adoption && request['checkpoint'] is! Map) ||
-          !['owner', 'executor_id', 'package_digest'].every(
-            (key) =>
-                request[key] is String &&
-                RegExp(r'^[0-9a-f]{64}$').hasMatch(request[key]),
-          ) ||
-          request['package_id'] is! String ||
-          (request['package_id'] as String).isEmpty ||
-          request['plugin_id'] is! String ||
-          !RegExp(r'^[a-z][a-z0-9.-]{0,127}$').hasMatch(request['plugin_id'])) {
-        throw const FormatException('Invalid assignment observation');
+    var current =
+        sameWorkspace && request['package_id'] == binding['package_id'];
+    WasmPluginRecord? matchedRecord;
+    if (byHandoff ||
+        (!current && (command == 'status' || command == 'adopt'))) {
+      _validateObservation(request);
+      current = false;
+      if (byHandoff && sameWorkspace) {
+        matchedRecord = await _record();
+        final grant = await runtime.readWorkspaceExecution(matchedRecord);
+        current = grant?['handoff_id'] == request['handoff_id'];
       }
-      // Report only the queried assignment's displacement. Never expose or
-      // evaluate the current owner's package, checkpoint or permissions.
-      return {
-        'binding': {for (final key in binding.keys) key: request[key]},
-        'runner': {'state': 'replaced', 'execution_controls': 4},
-        'view': null,
-      };
+      if (!current) return _unobservedAssignment(request, 'replaced');
     }
-    if (!current && !recovery) {
+    if (!current && command != 'return') {
       throw StateError('Workspace request binding mismatch');
     }
-    final record = await _record();
-    final command = request['command'];
+    final recovery = !current && command == 'return';
+    final record = matchedRecord ?? await _record();
     Map<String, dynamic>? view;
     String? observationError;
     switch (command) {
@@ -594,7 +585,7 @@ class WorkspaceRunner {
           checkpoint: Map<String, dynamic>.from(request['checkpoint'] as Map),
         );
       case 'status':
-        if (request.length != 6) throw const FormatException();
+        if (!byHandoff && request.length != 6) throw const FormatException();
         try {
           // A fresh installation is not a second workspace. Until adoption,
           // health checks must not initialize package state and obstruct import.
@@ -667,7 +658,7 @@ class WorkspaceRunner {
           'runner': {
             'state': 'detached',
             'started_at_ms': _startedAt,
-            'execution_controls': 4,
+            'execution_controls': _executionControls,
           },
           'checkpoint': checkpoint,
         };
@@ -720,17 +711,21 @@ class WorkspaceRunner {
         }
         return {
           'binding': binding,
-          'runner': {'state': 'detached', 'execution_controls': 4},
+          'runner': {
+            'state': 'detached',
+            'execution_controls': _executionControls,
+          },
         };
       default:
         throw const FormatException('Unsupported workspace command');
     }
     return {
       'binding': binding,
+      if (byHandoff) 'handoff_id': request['handoff_id'],
       'runner': {
         'state': 'running',
         'started_at_ms': _startedAt,
-        'execution_controls': 4,
+        'execution_controls': _executionControls,
       },
       'view': view,
       if (observationError != null) 'observation_error': observationError,
@@ -760,6 +755,27 @@ class WorkspaceRunner {
     Directory root,
     Map<String, dynamic> input,
   ) async {
+    if (input['command'] == 'status' &&
+        await FileSystemEntity.type(
+              '${root.path}/runner.json',
+              followLinks: false,
+            ) ==
+            FileSystemEntityType.notFound &&
+        await FileSystemEntity.type(root.path, followLinks: false) ==
+            FileSystemEntityType.directory &&
+        (await root.stat()).mode & 0x3f == 0 &&
+        !await root
+            .list(followLinks: false)
+            .any(
+              (entry) =>
+                  entry is! File || entry.path != '${root.path}/runner.lock',
+            )) {
+      _validateObservation(input);
+      return {
+        'ok': true,
+        'result': _unobservedAssignment(input, 'not_started'),
+      };
+    }
     final socket = await Socket.connect(
       InternetAddress(
         '${root.path}/$_socketName',
@@ -776,6 +792,47 @@ class WorkspaceRunner {
       socket.destroy();
     }
   }
+
+  static const _observationBinding = {
+    'owner',
+    'plugin_id',
+    'package_id',
+    'package_digest',
+    'executor_id',
+  };
+
+  static void _validateObservation(Map<String, dynamic> request) {
+    final byHandoff =
+        request['command'] == 'status' && request.containsKey('handoff_id');
+    final adopt = request['command'] == 'adopt';
+    if (request.length != (adopt || byHandoff ? 7 : 6) ||
+        (adopt && request['checkpoint'] is! Map) ||
+        ![
+          'owner',
+          'executor_id',
+          'package_digest',
+          if (byHandoff) 'handoff_id',
+        ].every(
+          (key) =>
+              request[key] is String &&
+              RegExp(r'^[0-9a-f]{64}$').hasMatch(request[key]),
+        ) ||
+        request['package_id'] is! String ||
+        (request['package_id'] as String).isEmpty ||
+        request['plugin_id'] is! String ||
+        !RegExp(r'^[a-z][a-z0-9.-]{0,127}$').hasMatch(request['plugin_id'])) {
+      throw const FormatException('Invalid assignment observation');
+    }
+  }
+
+  static Map<String, dynamic> _unobservedAssignment(
+    Map<String, dynamic> request,
+    String state,
+  ) => {
+    'binding': {for (final key in _observationBinding) key: request[key]},
+    'runner': {'state': state, 'execution_controls': _executionControls},
+    'view': null,
+  };
 }
 
 void _verifyTransportIdentity(Map<String, dynamic> input) {

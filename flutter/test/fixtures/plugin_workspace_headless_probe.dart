@@ -1132,33 +1132,50 @@ Future<void> _checkProductionProcess(
       'package': base64Encode(packageBytes),
       'credentials': null,
     };
-    Future<Map<String, dynamic>> setup(
+    Future<Map<String, dynamic>> runCommand(
+      String command,
       Map<String, dynamic> input, {
       String? authorizedExecutor,
     }) async {
-      final installer = await Process.start(
+      final invocation = await Process.start(
         executable.path,
-        ['setup', root.path],
+        [command, root.path],
         environment:
             authorizedExecutor == null
                 ? null
                 : {'HIVRA_WORKSPACE_EXECUTOR_ID': authorizedExecutor},
       );
-      final output = installer.stdout.transform(utf8.decoder).join();
-      final errors = installer.stderr.transform(utf8.decoder).join();
-      installer.stdin.writeln(jsonEncode(input));
-      await installer.stdin.close();
-      final code = await installer.exitCode.timeout(
+      final output = invocation.stdout.transform(utf8.decoder).join();
+      final errors = invocation.stderr.transform(utf8.decoder).join();
+      invocation.stdin.writeln(jsonEncode(input));
+      await invocation.stdin.close();
+      final code = await invocation.exitCode.timeout(
         const Duration(seconds: 30),
       );
       final raw = await output;
-      if (code != 0) throw StateError('Runner setup failed: ${await errors}');
+      if (code != 0) {
+        throw StateError('Runner $command failed: ${await errors}');
+      }
       return Map<String, dynamic>.from(jsonDecode(raw) as Map);
     }
 
-    final config = await setup(installation);
+    final vacant = await runCommand('request', {
+      'owner': owner,
+      'plugin_id': fixtureRecord.pluginId,
+      'package_digest': installation['package_digest'],
+      'package_id': fixtureRecord.id,
+      'executor_id': installation['executor_id'],
+      'command': 'status',
+    }, authorizedExecutor: 'f' * 64);
+    if (vacant['ok'] != true ||
+        vacant['result']['runner']['state'] != 'not_started' ||
+        vacant['result']['view'] != null ||
+        !await root.list().isEmpty) {
+      throw StateError('Installed runner did not report an empty workspace');
+    }
+    final config = await runCommand('setup', installation);
     final record = (await registry.loadPlugins()).single;
-    final repeated = await setup(installation);
+    final repeated = await runCommand('setup', installation);
     if (jsonEncode(config) != jsonEncode(repeated) ||
         await files.readPluginState(
               await files.capsuleDirForHex(owner),
@@ -1171,7 +1188,7 @@ Future<void> _checkProductionProcess(
       );
     }
     try {
-      await setup({
+      await runCommand('setup', {
         ...installation,
         'executor_id': 'e' * 64,
       }, authorizedExecutor: 'f' * 64);
@@ -1282,7 +1299,7 @@ Future<void> _checkProductionProcess(
 
     process = await start();
     try {
-      await setup(installation);
+      await runCommand('setup', installation);
       throw StateError('Setup replaced a live production installation');
     } on StateError catch (error) {
       if (!error.message.toString().startsWith('Runner setup failed:')) rethrow;
@@ -1368,7 +1385,8 @@ Future<void> _checkProductionProcess(
       idle.destroy();
       partial.destroy();
     }
-    if (jsonEncode(await setup(installation)) != jsonEncode(config) ||
+    if (jsonEncode(await runCommand('setup', installation)) !=
+            jsonEncode(config) ||
         await files.readPluginState(
               capsule,
               record.pluginId!,
