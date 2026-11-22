@@ -340,6 +340,9 @@ void main() {
         ]);
         final before = await snapshot();
         final calls = <String>[];
+        final catalogOrigin =
+            fixtures == null ? f.origin : 'https://open-api.bingx.com';
+        var catalogReads = 0;
         var reachable = false;
         final remote = PluginWorkspaceRemoteService(
           files: f.files,
@@ -411,7 +414,25 @@ void main() {
           readActiveCapsuleRootHex: () => f.owner,
           workspaceRemote: remote,
           capabilities: PluginCapabilityDispatcher(
-            send: (_, _, _, _) async => fail('Unexpected service request'),
+            send: (method, uri, _, body) async {
+              expect(method, 'GET');
+              expect(uri.origin, catalogOrigin);
+              expect(body, isNull);
+              catalogReads++;
+              return {
+                'status': 200,
+                'body': jsonEncode({
+                  'code': 0,
+                  'data': [
+                    {
+                      'symbol': newSettings['symbol'],
+                      'status': 1,
+                      'apiStateOpen': 'true',
+                    },
+                  ],
+                }),
+              };
+            },
           ),
         );
         final catalogFile = await File(
@@ -453,6 +474,37 @@ void main() {
         expect(view['execution']['active'], isFalse);
         expect(view['execution']['running'], isFalse);
         expect(view['actions'], hasLength(1));
+        final choice =
+            fixtures == null
+                ? {
+                  'action': 'run',
+                  'access': {
+                    'version': 2,
+                    'network': [
+                      {
+                        'origin': catalogOrigin,
+                        'methods': ['GET'],
+                      },
+                    ],
+                  },
+                }
+                : (view['fields'] as List).singleWhere(
+                      (field) => field['id'] == 'symbol',
+                    )['source']
+                    as Map;
+        f.method = 'GET';
+        final choices = await reopened.runWorkspaceAction(
+          record: updated,
+          action: choice['action'] as String,
+          choiceAccess: Map<String, dynamic>.from(choice['access'] as Map),
+          choiceAccessApproved: true,
+        );
+        expect(catalogReads, 1);
+        if (fixtures != null) {
+          expect(choices['options'], contains(newSettings['symbol']));
+        }
+        expect(calls, isEmpty);
+        expect(await snapshot(), before);
         final scope = startScope(view);
         final revision = view['execution']['revision'] as int;
         Future<Map<String, dynamic>> confirmStart({

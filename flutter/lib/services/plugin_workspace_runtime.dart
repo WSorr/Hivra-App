@@ -328,13 +328,12 @@ class PluginWorkspaceRuntime {
           current == null ||
           current['version'] != 2 ||
           current['revision'] != invocationRevision ||
-          (!choiceAccessApproved &&
-              (!workspaceExecutionEnabled(current) ||
-                  !workspaceExecutionIsActive(current) ||
-                  !PluginCapabilityDispatcher.allows(
-                    current['scope']['access'] as Map,
-                    request,
-                  )))) {
+          !workspaceExecutionEnabled(current) ||
+          !workspaceExecutionIsActive(current) ||
+          !PluginCapabilityDispatcher.allows(
+            current['scope']['access'] as Map,
+            request,
+          )) {
         throw StateError('Owner access is absent, revoked, expired or changed');
       }
     }
@@ -480,9 +479,11 @@ class PluginWorkspaceRuntime {
             request,
             access: access,
             readCredentials: () => secrets(request),
-            authorize: () async {
-              await accessFor(request);
-            },
+            // A temporary chooser approval is bound to the displayed package.
+            authorize:
+                choiceAccessApproved
+                    ? () => bound('network.http')
+                    : () => accessFor(request),
           );
         case 'storage.read':
         case 'storage.write':
