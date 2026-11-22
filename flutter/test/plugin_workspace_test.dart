@@ -744,6 +744,271 @@ void main() {
     );
   }
 
+  for (final scenario in [
+    'absent',
+    'empty root',
+    'offline',
+    'wrong handoff',
+    'other grant',
+  ]) {
+    test('VPS revocation preserves local recovery data ($scenario)', () async {
+      final source = await Fixture.create();
+      addTearDown(source.close);
+      final server = await Fixture.create(headless: true);
+      addTearDown(server.close);
+      const host = '127.0.0.1';
+      final executor = 'e' * 64;
+      final pin = 'SHA256:${'A' * 43}';
+      final record = source.registry.record;
+      final plugin = record.pluginId!;
+      final registry = WasmPluginRegistryService(
+        dataDirs: UserVisibleDataDirectoryService(
+          homeOverride: source.home.path,
+        ),
+      );
+      final packages = await registry.pluginsDirectory(create: true);
+      final package = File('${packages.path}/${record.storedFileName}');
+      await package.writeAsString('fixture package');
+      await File(
+        '${packages.path}/registry.json',
+      ).writeAsString(jsonEncode([record.toJson()]));
+      source.registry.digest =
+          (await registry.resolveRuntimeBinding(plugin)).packageDigestHex!;
+      server.registry.digest = source.registry.digest;
+      await source.enable();
+      final checkpoint = await source.runtime().releaseWorkspaceToVps(
+        record,
+        executorId: executor,
+      );
+      final handoff = checkpoint['execution']['handoff_id'];
+      final local = await source.files.capsuleDirForHex(source.owner);
+      const workspace = '{"private_state":{"pending":"keep"}}';
+      const journal = '{"operations":[{"state":"unresolved"}]}';
+      await source.files.writePluginState(
+        local,
+        plugin,
+        'workspace.v1.json',
+        workspace,
+      );
+      await source.files.writePluginState(
+        local,
+        plugin,
+        'external_effects.v1.json',
+        journal,
+      );
+      final connection = {
+        'owner': source.owner,
+        'plugin_id': plugin,
+        'executor_id': executor,
+        'package_id': 'remote-package',
+        'package_digest': source.registry.digest,
+        'selected': true,
+        'host': host,
+        'port': 22,
+        'fingerprint': pin,
+      };
+      final connectionJson = jsonEncode(connection);
+      await source.files.writePluginState(
+        local,
+        plugin,
+        PluginWorkspaceRemoteService.connectionFile,
+        connectionJson,
+      );
+      final serverBinding = {
+        'owner': server.owner,
+        'plugin_id': plugin,
+        'package_id': server.registry.record.id,
+        'package_digest': server.registry.digest,
+        'executor_id': scenario == 'other grant' ? executor : 'f' * 64,
+      };
+      final root = server.home;
+      expect((await Process.run('chmod', ['700', root.path])).exitCode, 0);
+      final serverDirectory = await server.files.capsuleDirForHex(server.owner);
+      if (scenario == 'other grant') {
+        await server.enable();
+        await server.changeGrant((grant) {
+          grant['executor'] = 'vps';
+          grant['executor_id'] = executor;
+          grant['handoff_id'] = '9' * 64;
+        });
+        // Status and revocation address the same installation, but an older
+        // handoff must not stop its newer grant.
+        connection['package_id'] = server.registry.record.id;
+        await source.files.writePluginState(
+          local,
+          plugin,
+          PluginWorkspaceRemoteService.connectionFile,
+          jsonEncode(connection),
+        );
+      }
+      final before = await server.files.readPluginState(
+        serverDirectory,
+        plugin,
+        'workspace-execution.v1.json',
+      );
+      final runner = WorkspaceRunner(
+        root: root,
+        runtime: server.runtime(
+          executionHost: 'vps',
+          executionIdentity: serverBinding['executor_id'] as String,
+        ),
+        registry: server.registry,
+        binding: serverBinding,
+      );
+      var updated = false;
+      final commands = <String>[];
+      final ports = UnusedWorkspacePorts();
+      var removed = false;
+      ports.onDeletePlugin = (id, owners) async {
+        expect(id, plugin);
+        expect(owners, {source.owner});
+        removed = true;
+      };
+      PluginRuntimeModule module() => PluginRuntimeModule(
+        registry: registry,
+        sourceCatalog: ports,
+        manualChecks: ports,
+        pluginHostApi: source.runtime(runtimeRegistry: registry).pluginHostApi,
+        attestationExchange: ports,
+        chatDelivery: ports,
+        passiveReceive: ports,
+        contactLabels: ports,
+        uiLog: ports,
+        secretVault: ports,
+        fileStore: source.files,
+        readActiveCapsuleRootHex: () => source.owner,
+        workspaceRemote: PluginWorkspaceRemoteService(
+          files: source.files,
+          vault: ports,
+          registry: registry,
+          requestTransport: (target, command, payload) async {
+            expect(target['host'], host);
+            expect(target['fingerprint'], pin);
+            expect(command, 'request');
+            final request =
+                jsonDecode(utf8.decode(payload)) as Map<String, dynamic>;
+            commands.add(request['command'] as String);
+            if (!updated) {
+              if (request['command'] == 'status') {
+                return jsonEncode({
+                  'ok': true,
+                  'result': {
+                    'runner': {'state': 'replaced', 'execution_controls': 5},
+                    'binding': {
+                      for (final key in serverBinding.keys) key: request[key],
+                    },
+                  },
+                });
+              }
+              return '{"ok":false}';
+            }
+            if (scenario == 'offline') {
+              throw const SocketException('fixture unavailable');
+            }
+            final result = await WorkspaceRunner.request(root, request);
+            if (scenario == 'wrong handoff' &&
+                request['command'] == 'execution') {
+              result['result']['handoff_id'] = '8' * 64;
+            }
+            return jsonEncode(result);
+          },
+        ),
+      );
+      final app = module();
+      Future<Map<String, dynamic>> revoke(PluginRuntimeModule host) =>
+          host.setWorkspaceExecution(
+            record: record,
+            enabled: false,
+            expiresAtMs: null,
+            revoke: true,
+          );
+      Future<Map<String, dynamic>> control() async =>
+          jsonDecode(
+                (await source.files.readPluginState(
+                  local,
+                  plugin,
+                  'workspace-execution.v1.json',
+                ))!,
+              )
+              as Map<String, dynamic>;
+
+      if (scenario != 'empty root') {
+        await expectLater(revoke(app), throwsStateError);
+        expect((await control())['revoked'], isTrue);
+      }
+      expect((await control())['executor'], 'vps');
+      // Replace the runtime on this test endpoint while preserving its installation.
+      if (scenario != 'empty root') {
+        await runner.start();
+        addTearDown(runner.close);
+      }
+      updated = true;
+      if (scenario == 'absent' || scenario == 'empty root') {
+        final view = await app.runWorkspaceAction(
+          record: record,
+          action: 'open',
+        );
+        expect(view['host_connection']['health'], 'not_started');
+        expect((await control())['executor'], 'vps');
+        final detached = await revoke(app);
+        expect(detached['host_connection']['target'], 'local');
+        expect(detached['execution']['revoked'], isTrue);
+        expect((await control())['handoff_id'], isNull);
+        expect((await control())['expires_at_ms'], 0);
+        expect((await control())['enabled'], isFalse);
+        expect(
+          await source.files.readPluginState(
+            local,
+            plugin,
+            PluginWorkspaceRemoteService.connectionFile,
+          ),
+          connectionJson,
+        );
+        final beforeRestart = List.of(commands);
+        final restarted = module();
+        final reopened = await restarted.runWorkspaceAction(
+          record: record,
+          action: 'open',
+          readOnly: true,
+        );
+        expect(reopened['host_connection']['target'], 'local');
+        await restarted.removePlugin(record);
+        expect(await registry.loadPlugins(), isEmpty);
+        expect(removed, isTrue);
+        expect(commands, beforeRestart);
+        expect(await serverDirectory.exists(), isFalse);
+      } else {
+        await expectLater(revoke(app), throwsStateError);
+        expect((await control())['executor'], 'vps');
+        expect((await control())['handoff_id'], handoff);
+        expect((await control())['revoked'], isTrue);
+        expect(
+          await server.files.readPluginState(
+            serverDirectory,
+            plugin,
+            'workspace-execution.v1.json',
+          ),
+          before,
+        );
+        expect(removed, isFalse);
+      }
+      expect(
+        await source.files.readPluginState(local, plugin, 'workspace.v1.json'),
+        workspace,
+      );
+      expect(
+        await source.files.readPluginState(
+          local,
+          plugin,
+          'external_effects.v1.json',
+        ),
+        journal,
+      );
+      expect(source.sends, 0);
+      expect(server.sends, 0);
+    });
+  }
+
   for (final deleteSavedData in [false, true]) {
     test(
       'failed secret cleanup preserves private data across retry (delete saved data: $deleteSavedData)',
@@ -1954,13 +2219,51 @@ void main() {
     expect(readiness['result']['runner']['state'], 'not_started');
     expect(readiness['result']['view'], isNull);
     expect(await vacant.list().isEmpty, isTrue);
+    final adoption = await WorkspaceRunner.request(vacant, {
+      ...binding,
+      'command': 'adopt',
+      'checkpoint': <String, dynamic>{},
+    });
+    expect(adoption['result']['runner']['state'], 'not_started');
+    expect(adoption['result']['view'], isNull);
+    expect(await vacant.list().isEmpty, isTrue);
     await expectLater(
       WorkspaceRunner.request(vacant, {...request, 'handoff_id': 'invalid'}),
       throwsFormatException,
     );
+    final revoke = {
+      ...binding,
+      'command': 'execution',
+      'handoff_id': 'b' * 64,
+      'enabled': false,
+      'revoke': true,
+      'settings': <String, dynamic>{},
+      'scope': null,
+      'expires_at_ms': null,
+      'expected_revision': null,
+    };
+    await expectLater(
+      WorkspaceRunner.request(vacant, {...revoke, 'revoke': false}),
+      throwsFormatException,
+    );
+    final absent = await WorkspaceRunner.request(vacant, revoke);
+    expect(absent['ok'], isTrue);
+    expect(absent['result']['runner']['state'], 'not_started');
+    expect(absent['result']['handoff_id'], revoke['handoff_id']);
+    expect(absent['result']['view'], isNull);
+    expect(
+      (await vacant.list().toList()).map(
+        (entry) => entry.uri.pathSegments.last,
+      ),
+      ['runner.lock'],
+    );
     await File('${vacant.path}/runner.json').writeAsString(jsonEncode(binding));
     await expectLater(
       WorkspaceRunner.request(vacant, request),
+      throwsA(isA<SocketException>()),
+    );
+    await expectLater(
+      WorkspaceRunner.request(vacant, revoke),
       throwsA(isA<SocketException>()),
     );
     final runner = WorkspaceRunner(
@@ -5515,12 +5818,21 @@ class Fixture {
   final executionSeen = <Map<String, dynamic>>[];
   final received = <Map<String, dynamic>>[];
   Fixture(this.home, this.files, this.origin) : url = '$origin/action';
-  static Future<Fixture> create({String origin = 'https://one.example'}) async {
-    final home = await Directory.systemTemp.createTemp('hivra_common_api_');
+  static Future<Fixture> create({
+    String origin = 'https://one.example',
+    bool headless = false,
+  }) async {
+    final home = await (headless ? Directory('/tmp') : Directory.systemTemp)
+        .createTemp('hivra_common_api_');
     final f = Fixture(
       home,
       CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+        dirs:
+            headless
+                ? UserVisibleDataDirectoryService(
+                  runtimeRootOverride: home.path,
+                )
+                : UserVisibleDataDirectoryService(homeOverride: home.path),
       ),
       origin,
     );

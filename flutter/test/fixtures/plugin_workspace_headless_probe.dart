@@ -1159,12 +1159,30 @@ Future<void> _checkProductionProcess(
       return Map<String, dynamic>.from(jsonDecode(raw) as Map);
     }
 
-    final vacant = await runCommand('request', {
+    final vacantBinding = {
       'owner': owner,
       'plugin_id': fixtureRecord.pluginId,
       'package_digest': installation['package_digest'],
       'package_id': fixtureRecord.id,
       'executor_id': installation['executor_id'],
+    };
+    Future<Map<String, dynamic>> revokeHandoff(
+      Map<String, dynamic> binding,
+      String handoff,
+    ) => runCommand('request', {
+      ...binding,
+      'command': 'execution',
+      'enabled': false,
+      'revoke': true,
+      'scope': null,
+      'settings': <String, dynamic>{},
+      'expires_at_ms': null,
+      'expected_revision': null,
+      'handoff_id': handoff,
+    }, authorizedExecutor: binding['executor_id'] as String);
+
+    final vacant = await runCommand('request', {
+      ...vacantBinding,
       'command': 'status',
     }, authorizedExecutor: 'f' * 64);
     if (vacant['ok'] != true ||
@@ -1172,6 +1190,35 @@ Future<void> _checkProductionProcess(
         vacant['result']['view'] != null ||
         !await root.list().isEmpty) {
       throw StateError('Installed runner did not report an empty workspace');
+    }
+    final lease = await File(
+      '${root.path}/runner.lock',
+    ).open(mode: FileMode.append);
+    try {
+      await lease.lock(FileLock.exclusive);
+      var rejected = false;
+      try {
+        await revokeHandoff(vacantBinding, 'a' * 64);
+      } on StateError catch (error) {
+        if (!error.message.toString().startsWith('Runner request failed:')) {
+          rethrow;
+        }
+        rejected = true;
+      }
+      if (!rejected) throw StateError('Revocation bypassed the runner lease');
+    } finally {
+      await lease.close();
+    }
+    final revokedVacant = await revokeHandoff(vacantBinding, 'a' * 64);
+    if (revokedVacant['ok'] != true ||
+        revokedVacant['result']['runner']['state'] != 'not_started' ||
+        revokedVacant['result']['handoff_id'] != 'a' * 64 ||
+        await root.list().any(
+          (entry) => entry.path != '${root.path}/runner.lock',
+        )) {
+      throw StateError(
+        'Unconfigured runner did not confirm the missing handoff',
+      );
     }
     final config = await runCommand('setup', installation);
     final record = (await registry.loadPlugins()).single;
@@ -1298,6 +1345,40 @@ Future<void> _checkProductionProcess(
     }
 
     process = await start();
+    final empty = await status();
+    final handoff = checkpoint['execution']['handoff_id'];
+    final revoked = await revokeHandoff({
+      ...config,
+      'executor_id': 'e' * 64,
+    }, handoff as String);
+    final staleAdoption = await WorkspaceRunner.request(root, {
+      ...config,
+      'command': 'adopt',
+      'checkpoint': checkpoint,
+    });
+    if (empty['runner']['state'] != 'not_started' ||
+        revoked['ok'] != true ||
+        revoked['result']['runner']['state'] != 'not_started' ||
+        revoked['result']['handoff_id'] != handoff ||
+        staleAdoption['result']['runner']['state'] != 'not_started' ||
+        await (await files.capsulesRoot()).exists()) {
+      throw StateError('Production runner did not confirm the missing handoff');
+    }
+    process.kill(ProcessSignal.sigterm);
+    if (await process.exitCode.timeout(const Duration(seconds: 10)) != 0) {
+      throw StateError('Empty production runner shutdown failed');
+    }
+    final adoptedConfig = await runCommand('setup', {
+      ...installation,
+      'checkpoint': checkpoint,
+    });
+    if (jsonEncode(adoptedConfig) != jsonEncode(config)) {
+      throw StateError('Authorized setup changed the expected binding');
+    }
+    stdout.writeln(
+      'Missing VPS handoff revocation acknowledged by production runner',
+    );
+    process = await start();
     try {
       await runCommand('setup', installation);
       throw StateError('Setup replaced a live production installation');
@@ -1317,7 +1398,9 @@ Future<void> _checkProductionProcess(
               'workspace.v1.json',
             ) !=
             checkpoint['workspace']) {
-      throw StateError('Production runner did not adopt exact source state');
+      throw StateError(
+        'Production runner did not acknowledge exact source state',
+      );
     }
     var sourceRejected = false;
     try {

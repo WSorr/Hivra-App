@@ -501,7 +501,12 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         executorId: connection['executor_id'] as String,
       ),
     });
-    if (adoption['runner']?['state'] == 'replaced') return adoption;
+    if (const {
+      'replaced',
+      'not_started',
+    }.contains(adoption['runner']?['state'])) {
+      return adoption;
+    }
     return _remote.request(
       connection,
       action == 'open' ? 'status' : 'action',
@@ -548,6 +553,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     Map<String, Map<String, String>>? credentialBindings,
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
+    String? expectedHandoffId,
   }) async {
     if (enabled && revoke) throw StateError('Start cannot revoke authority');
     final owner = activeCapsuleRootHex();
@@ -640,25 +646,44 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           'Start a new assignment to use different connections on the VPS, or return execution to this Capsule first',
         );
       }
-      if (!enabled) {
-        await setReleasedWorkspaceEntries(
-          record,
-          executorId: grant!['executor_id'] as String,
-          enabled: false,
-          revoke: revoke,
-        );
-      }
+      final stoppedRevision =
+          enabled
+              ? null
+              : await setReleasedWorkspaceEntries(
+                record,
+                executorId: grant!['executor_id'] as String,
+                enabled: false,
+                revoke: revoke,
+                expectedRevision: grant['revision'] as int,
+              );
+      var detached = false;
       try {
         if (c == null || c['executor_id'] != grant!['executor_id']) {
           throw StateError(
             'Reconnect the assigned VPS; remote stop is unconfirmed',
           );
         }
+        final handoff =
+            !enabled && revoke ? grant['handoff_id'] as String? : null;
+        if (handoff != null &&
+            (c['package_id'] == null ||
+                c['package_digest'] != grant['package_digest'])) {
+          c = {
+            ...c,
+            'package_id': grant['package_id'],
+            'package_digest': grant['package_digest'],
+          };
+        }
+        String? scopedHandoff;
         if (enabled ||
             revoke ||
             grant['revoked'] == true ||
             grant['expires_at_ms'] == null) {
-          await _requireExecutionControls(c);
+          final status = await _requireExecutionControls(c);
+          final controls = status['runner']['execution_controls'] as int;
+          if (controls >= workspaceHandoffRevocationControls) {
+            scopedHandoff = handoff;
+          }
         }
         if (activeCapsuleRootHex() != owner ||
             (await registry.resolveRuntimeBinding(
@@ -667,7 +692,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
                 record.id) {
           throw StateError('Capsule or package changed during authorization');
         }
-        await _remote.request(c, 'execution', {
+        final response = await _remote.request(c, 'execution', {
           'enabled': enabled,
           'settings': settings,
           'scope': approvedScope,
@@ -676,12 +701,33 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
             'expected_revision': expectedRevision,
             'revoke': revoke,
           },
+          if (scopedHandoff != null) 'handoff_id': scopedHandoff,
         });
+        if (scopedHandoff != null &&
+            response['runner']?['state'] == 'not_started') {
+          final controls = response['runner']?['execution_controls'];
+          if (response['handoff_id'] != scopedHandoff ||
+              controls is! int ||
+              controls < workspaceHandoffRevocationControls) {
+            throw StateError(
+              'The VPS did not acknowledge this revoked handoff',
+            );
+          }
+          await setReleasedWorkspaceEntries(
+            record,
+            executorId: grant['executor_id'] as String,
+            enabled: false,
+            revoke: true,
+            expectedRevision: stoppedRevision,
+            absentHandoffId: scopedHandoff,
+          );
+          detached = true;
+        }
       } catch (_) {
         if (!enabled && revoke) {
           throw StateError(
             'Permissions revoked on this device. Remote stop is unconfirmed; '
-            'restore VPS access before assuming its workflow stopped. '
+            'restore VPS access or update its runtime before retrying. '
             'Already accepted external actions are not undone.',
           );
         }
@@ -695,7 +741,11 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           expectedRevision: grant['revision'] as int,
         );
       }
-      return runWorkspaceAction(record: record, action: 'open');
+      return runWorkspaceAction(
+        record: record,
+        action: 'open',
+        readOnly: detached,
+      );
     }
     return super.setWorkspaceExecution(
       record: record,
@@ -707,6 +757,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       credentialBindings: credentialBindings,
       settings: settings,
       releaseToExecutorId: releaseToExecutorId,
+      expectedHandoffId: expectedHandoffId,
     );
   }
 

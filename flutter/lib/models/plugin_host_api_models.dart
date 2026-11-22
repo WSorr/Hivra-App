@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'consensus_models.dart';
 
 const int pluginHostApiSchemaVersion = 1;
+const int workspaceHandoffRevocationControls = 6;
 
 enum PluginHostApiStatus { executed, blocked, rejected }
 
