@@ -64,7 +64,10 @@ class PluginWorkspaceScreen extends StatefulWidget {
 
 class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     with WidgetsBindingObserver {
+  static const _permissionDurationError =
+      'Enter a duration above 0 and at most 1000000 hours. Use a decimal point for part of an hour.';
   final Map<String, TextEditingController> _fields = {};
+  String _nextStartHours = '';
   Map<String, dynamic>? _view;
   String? _error;
   bool _busy = false;
@@ -223,6 +226,11 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           'start_action': action,
         };
         final access = Map<String, dynamic>.from(scope['access'] as Map);
+        final hours = _remoteSelected && _edited ? _nextStartHours.trim() : '';
+        final duration = _permissionDurationMs(hours);
+        if (hours.isNotEmpty && duration == null) {
+          throw const FormatException(_permissionDurationError);
+        }
         if (!_hasAccess(access)) {
           setState(() {
             _choosing = true;
@@ -232,6 +240,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
             access,
             scope: scope,
             settings: settings,
+            initialDurationHours: hours,
           );
           if (!mounted || generation != _presentationGeneration) return;
           setState(() {
@@ -243,7 +252,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         } else {
           view = await configure(
             enabled: true,
-            expiresAtMs: _view!['execution']['expires_at_ms'] as int?,
+            expiresAtMs:
+                duration == null
+                    ? _view!['execution']['expires_at_ms'] as int?
+                    : DateTime.now().millisecondsSinceEpoch + duration,
             expectedRevision: _view!['execution']['revision'] as int?,
             approvedScope: {...scope, 'access': _view!['execution']['access']},
             settings: settings,
@@ -279,6 +291,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
       setState(() {
         _view = view;
         _edited = preserveEdits;
+        if (!preserveEdits) _nextStartHours = '';
         _observationUnavailable = _isSavedView(view);
         if (background) _error = null;
       });
@@ -647,11 +660,24 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
     );
   }
 
+  int? _permissionDurationMs(String hours) {
+    final duration = double.tryParse(hours);
+    if (duration == null ||
+        !duration.isFinite ||
+        duration <= 0 ||
+        duration > 1000000) {
+      return null;
+    }
+    final milliseconds = (duration * 3600000).round();
+    return milliseconds > 0 ? milliseconds : null;
+  }
+
   Future<bool> _authorize(
     Map<String, dynamic> access, {
     Map<String, dynamic>? scope,
     Map<String, dynamic> settings = const {},
     bool forChoice = false,
+    String initialDurationHours = '',
   }) async {
     final configure = widget.configureExecution;
     if (configure == null) throw StateError('Owner permissions unavailable');
@@ -718,8 +744,10 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
         }
       }
     }
-    var untilRevoked = _view?['execution']?['expires_at_ms'] == null;
-    var hours = '24';
+    var untilRevoked =
+        initialDurationHours.isEmpty &&
+        _view?['execution']?['expires_at_ms'] == null;
+    var hours = initialDurationHours.isEmpty ? '24' : initialDurationHours;
     const newSecret = '=new=';
     final names = <String, Map<String, String>>{
       for (final entry in declarations.entries)
@@ -756,14 +784,8 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           }
         }
       }
-      if (!forChoice && !untilRevoked) {
-        final duration = double.tryParse(hours);
-        if (duration == null ||
-            !duration.isFinite ||
-            duration <= 0 ||
-            duration > 1000000) {
-          return 'Enter a duration above 0 and at most 1000000 hours. Use a decimal point for part of an hour.';
-        }
+      if (!forChoice && !untilRevoked && _permissionDurationMs(hours) == null) {
+        return _permissionDurationError;
       }
       return null;
     }
@@ -984,7 +1006,7 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
           untilRevoked
               ? null
               : DateTime.now().millisecondsSinceEpoch +
-                  (double.parse(hours) * 3600000).round(),
+                  _permissionDurationMs(hours)!,
       expectedRevision: expectedRevision,
       approvedScope:
           scope ??
@@ -1230,6 +1252,14 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                   }.contains(a['host']),
             )
             .toList();
+    final startAccess = view?['schedule']?['access'];
+    final showNextStartDuration =
+        _remoteSelected &&
+        _edited &&
+        widget.configureExecution != null &&
+        startAccess is Map &&
+        actions.any((action) => action['host'] == 'workspace.start') &&
+        _hasAccess(startAccess.cast<String, dynamic>());
     final showRevokeControl =
         !_observationUnavailable &&
         revokeControl != null &&
@@ -1645,6 +1675,49 @@ class _PluginWorkspaceScreenState extends State<PluginWorkspaceScreen>
                               children: [
                                 for (final field in primaryFields)
                                   SizedBox(width: width, child: _field(field)),
+                                if (showNextStartDuration)
+                                  SizedBox(
+                                    width: width,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 14,
+                                      ),
+                                      child: TextFormField(
+                                        key: const ValueKey(
+                                          'plugin-next-start-duration',
+                                        ),
+                                        initialValue: _nextStartHours,
+                                        enabled: !_busy && !_choosing,
+                                        autovalidateMode:
+                                            AutovalidateMode.onUserInteraction,
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        decoration: const InputDecoration(
+                                          labelText:
+                                              'Next Start duration (hours)',
+                                          helperText:
+                                              'Leave blank to keep the current expiry.',
+                                          helperMaxLines: 2,
+                                          errorMaxLines: 4,
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        validator: (value) {
+                                          final hours = value?.trim() ?? '';
+                                          return hours.isNotEmpty &&
+                                                  _permissionDurationMs(
+                                                        hours,
+                                                      ) ==
+                                                      null
+                                              ? _permissionDurationError
+                                              : null;
+                                        },
+                                        onChanged:
+                                            (value) => _nextStartHours = value,
+                                      ),
+                                    ),
+                                  ),
                               ],
                             );
                           },
