@@ -129,11 +129,19 @@ read-only executor, with execution disabled in the package invocation. The
 saved permission terms remain available for a later owner Start; no dispatch,
 write, scheduler or local fallback is admitted by observation. A replacement
 reported by status applies even after a successful adoption acknowledgement.
-A failed request or a status response without a workspace view presents
-retained settings with unavailable status. This includes an older runtime's
-generic rejection. Both views keep the existing VPS selected and a new Start
-available without root reconnection. Only a new authorized Start follows
-the existing setup/adoption path; retrying observation never replaces a runner.
+An installed runtime with an empty private data directory answers `status`
+with `not_started` and its execution controls before the service has a socket.
+A failed request, including a stored assignment with an unreachable process,
+presents retained settings with unavailable status. Both views keep the existing
+VPS selected and a new Start available without root reconnection.
+
+With execution controls 5, a `status` request may include its saved `handoff_id`
+and the expected package digest to recover a lost setup reply. The runner
+confirms the current binding only when owner, executor, plugin, package digest
+and handoff all match. The client saves that transport binding under the
+existing authority lease and resumes the existing acknowledgement path. An
+unmatched handoff receives only the requested binding and no workspace view.
+Only an authorized Start uses `setup`; observation never replaces a runner.
 
 Full revocation remains reachable when first workspace open fails, including
 SSH authentication or an unavailable VPS. The existing custody owner saves

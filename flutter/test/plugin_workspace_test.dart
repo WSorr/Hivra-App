@@ -213,7 +213,7 @@ void main() {
           'detection_length': 3,
           'margin': 6.9,
         };
-        final newSettings = {...oldSettings, 'symbol': 'ACH-USDT'};
+        var newSettings = {...oldSettings, 'symbol': 'ACH-USDT'};
         final workspace = jsonEncode({
           'version': 2,
           'new_entries': true,
@@ -307,20 +307,8 @@ void main() {
         );
         final ports = UnusedWorkspacePorts();
         var binding = {...oldBinding, 'package_id': 'server-package-027'};
-        if (fixtures != null) {
-          final connections = {
-            for (final entry in oldReferences.entries)
-              entry.key: entry.value.map(
-                (field, _) => MapEntry(field, 'synthetic-$field'),
-              ),
-          };
-          binding = await WorkspaceRunner.setup(isolatedRunner, {
-            ...oldBinding,
-            'package': base64Encode(await oldArchive.readAsBytes()),
-            'credentials': {'version': 3, 'connections': connections},
-            'checkpoint': checkpoint,
-          });
-        }
+        Map<String, dynamic>? runnerGrant;
+        var dropSetupReply = true;
         await f.files.writePluginState(
           directory,
           plugin,
@@ -358,6 +346,11 @@ void main() {
             if (!reachable) {
               throw const SocketException('Isolated runner unavailable');
             }
+            if (runnerGrant == null && operation == 'status') {
+              final reply = await WorkspaceRunner.request(isolatedRunner, body);
+              expect(reply['result']['runner']['state'], 'not_started');
+              return jsonEncode(reply);
+            }
             if (operation == 'setup') {
               expect(body['package_digest'], newDigest);
               expect(body['checkpoint']['execution']['settings'], newSettings);
@@ -373,16 +366,30 @@ void main() {
                         'package_id': 'server-package-029',
                       }
                       : await WorkspaceRunner.setup(isolatedRunner, body);
+              runnerGrant = Map<String, dynamic>.from(
+                body['checkpoint']['execution'] as Map,
+              );
+              if (dropSetupReply) {
+                throw const SocketException(
+                  'Setup acknowledged by runner only',
+                );
+              }
               return jsonEncode(binding);
             }
             final result =
                 fixtures == null
                     ? {
                       'binding': binding,
-                      'runner': {'state': 'running', 'execution_controls': 4},
+                      if (body.containsKey('handoff_id'))
+                        'handoff_id': runnerGrant!['handoff_id'],
+                      'runner': {'state': 'running', 'execution_controls': 5},
                       'view': {
                         ...presentation(),
-                        'execution': {'mode': 'vps', 'running': true},
+                        'execution': {
+                          'mode': 'vps',
+                          'running': true,
+                          'revision': runnerGrant!['revision'],
+                        },
                       },
                     }
                     : await WorkspaceRunner(
@@ -535,29 +542,69 @@ void main() {
         expect(await snapshot(), before);
         calls.clear();
         reachable = true;
-        final started = await confirmStart();
+        await expectLater(confirmStart(), throwsA(isA<SocketException>()));
+        expect(calls, ['status', 'setup']);
+        expect(await readState(connectionFile), before[2]);
+        final firstHandoff = runnerGrant!['handoff_id'];
+        calls.clear();
+        final started = await module().runWorkspaceAction(
+          record: updated,
+          action: 'open',
+        );
         expect(calls.first, 'status');
-        expect(calls.where((operation) => operation != 'status'), [
-          'setup',
-          'adopt',
-        ]);
+        expect(calls.where((operation) => operation != 'status'), ['adopt']);
         expect(started['host_connection']['health'], 'running');
         expect(started['execution']['running'], isTrue);
+        expect(
+          jsonDecode((await readState(connectionFile))!)['package_id'],
+          binding['package_id'],
+        );
         expect(
           jsonDecode((await readState(executionFile))!)['package_id'],
           updated.id,
         );
         expect(await readState(workspaceFile), workspace);
+        expect(runnerGrant!['handoff_id'], firstHandoff);
+        expect(runnerGrant!['settings'], newSettings);
+        dropSetupReply = false;
+        newSettings = {...newSettings, 'symbol': 'BTC-USDT'};
+        calls.clear();
+        final second = await confirmStart(
+          confirmed: false,
+          expectedRevision: started['execution']['revision'] as int,
+        );
+        expect(second['execution']['running'], isTrue);
+        expect(calls.where((operation) => operation != 'status'), [
+          'setup',
+          'adopt',
+        ]);
+        expect(runnerGrant!['handoff_id'], isNot(firstHandoff));
+        expect(runnerGrant!['settings'], newSettings);
         if (fixtures != null) {
           final runnerPackage = (await runnerRegistry.loadPlugins()).single;
-          final runnerGrant = await WorkspaceRunner.runtimeFor(
+          final runtime = WorkspaceRunner.runtimeFor(
             isolatedRunner,
             binding,
             runnerRegistry,
             scheduleTimers: false,
-          ).readWorkspaceExecution(runnerPackage);
+          );
+          final persisted = await runtime.readWorkspaceExecution(runnerPackage);
           expect(runnerPackage.pluginVersion, '0.2.9');
-          expect(runnerGrant?['settings'], newSettings);
+          expect(persisted?['settings'], newSettings);
+          final stale = await WorkspaceRunner(
+            root: isolatedRunner,
+            registry: runnerRegistry,
+            binding: binding,
+            runtime: runtime,
+          ).dispatch({
+            ...binding,
+            'package_id': old.id,
+            'command': 'status',
+            'handoff_id': firstHandoff,
+          });
+          expect(stale['runner']['state'], 'replaced');
+          expect(stale['view'], isNull);
+          expect(stale, isNot(contains('handoff_id')));
         }
       },
       createHttpClient:
@@ -1346,9 +1393,9 @@ void main() {
         f.newSchema = true;
         f.requestOnOpen = true;
         for (final (scenario, health, commands) in const [
-          ('replaced-on-adopt', 'replaced', ['adopt']),
+          ('replaced-on-adopt', 'replaced', ['adopt', 'status']),
           ('legacy', 'unavailable', ['adopt']),
-          ('replaced-on-status', 'replaced', ['adopt', 'status']),
+          ('replaced-on-status', 'replaced', ['adopt', 'status', 'status']),
           ('unobserved', 'unavailable', ['adopt', 'status']),
           ('ready', 'running', ['adopt', 'status']),
         ]) {
@@ -1895,6 +1942,22 @@ void main() {
       'package_digest': f.registry.digest,
       'executor_id': 'e' * 64,
     };
+    final vacant = await f.home.createTemp('vacant-');
+    final request = {...binding, 'command': 'status'};
+    final readiness = await WorkspaceRunner.request(vacant, request);
+    expect(readiness['ok'], isTrue);
+    expect(readiness['result']['runner']['state'], 'not_started');
+    expect(readiness['result']['view'], isNull);
+    expect(await vacant.list().isEmpty, isTrue);
+    await expectLater(
+      WorkspaceRunner.request(vacant, {...request, 'handoff_id': 'invalid'}),
+      throwsFormatException,
+    );
+    await File('${vacant.path}/runner.json').writeAsString(jsonEncode(binding));
+    await expectLater(
+      WorkspaceRunner.request(vacant, request),
+      throwsA(isA<SocketException>()),
+    );
     final runner = WorkspaceRunner(
       root: root,
       registry: f.registry,

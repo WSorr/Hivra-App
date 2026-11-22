@@ -372,35 +372,39 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           throw StateError('Assigned VPS is unavailable; no local fallback');
         }
         try {
-          if (action != 'open' ||
-              grant['revoked'] == true ||
-              grant['expires_at_ms'] == null) {
-            await _requireExecutionControls(connection);
-          }
-          // Preserve exact lost-acknowledgement recovery on the existing path.
-          final adoption = await _remote.request(connection, 'adopt', {
-            'checkpoint': await releaseWorkspaceToVps(
+          if (action == 'open' &&
+              (connection['package_id'] == null ||
+                  connection['package_digest'] != grant['package_digest'])) {
+            result = await _recoverWorkspaceBinding(record, grant, connection);
+          } else {
+            result = await _runAssignedWorkspace(
               record,
-              executorId: connection['executor_id'] as String,
-            ),
-          });
-          result =
-              adoption['runner']?['state'] == 'replaced'
-                  ? adoption
-                  : await _remote.request(
-                    connection,
-                    action == 'open' ? 'status' : 'action',
-                    action == 'open'
-                        ? const {}
-                        : {'action': action, 'settings': settings},
-                  );
-          if (result['runner']?['state'] == 'replaced') {
-            if (action != 'open') {
-              throw StateError(
-                'Previous assignment replaced; use Start for a new assignment',
+              grant,
+              connection,
+              action,
+              settings,
+            );
+            final controls = result['runner']?['execution_controls'];
+            if (action == 'open' &&
+                result['runner']?['state'] == 'replaced' &&
+                grant['handoff_id'] is String &&
+                controls is int &&
+                controls >= 5) {
+              result = await _recoverWorkspaceBinding(
+                record,
+                grant,
+                connection,
               );
             }
-            unavailable = 'replaced';
+          }
+          final state = result['runner']?['state'];
+          if (state == 'replaced' || state == 'not_started') {
+            if (action != 'open') {
+              throw StateError(
+                'The VPS no longer runs this assignment; use Start',
+              );
+            }
+            unavailable = state as String;
           } else if (result['view'] is! Map) {
             throw StateError(
               'VPS observation unavailable; its lifecycle is not verified',
@@ -474,6 +478,65 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     };
   }
 
+  Future<Map<String, dynamic>> _runAssignedWorkspace(
+    WasmPluginRecord record,
+    Map<String, dynamic> grant,
+    Map<String, dynamic> connection,
+    String action,
+    Map<String, dynamic> settings,
+  ) async {
+    if (action != 'open' ||
+        grant['revoked'] == true ||
+        grant['expires_at_ms'] == null) {
+      final status = await _requireExecutionControls(connection);
+      if (status['runner']?['state'] == 'not_started') return status;
+    }
+    if (activeCapsuleRootHex() != grant['owner']) {
+      throw StateError('Capsule changed');
+    }
+    // A replay also carries any revocation recorded while the VPS was unreachable.
+    final adoption = await _remote.request(connection, 'adopt', {
+      'checkpoint': await releaseWorkspaceToVps(
+        record,
+        executorId: connection['executor_id'] as String,
+      ),
+    });
+    if (adoption['runner']?['state'] == 'replaced') return adoption;
+    return _remote.request(
+      connection,
+      action == 'open' ? 'status' : 'action',
+      action == 'open' ? const {} : {'action': action, 'settings': settings},
+    );
+  }
+
+  Future<Map<String, dynamic>> _recoverWorkspaceBinding(
+    WasmPluginRecord record,
+    Map<String, dynamic> grant,
+    Map<String, dynamic> connection,
+  ) async {
+    final handoff = grant['handoff_id'];
+    if (handoff is! String) {
+      throw StateError('The VPS assignment is unconfirmed');
+    }
+    final digest = grant['package_digest'] as String;
+    final observed = await _remote.request(
+      {...connection, 'package_id': record.id, 'package_digest': digest},
+      'status',
+      {'handoff_id': handoff},
+    );
+    if (observed['runner']?['state'] != 'running') return observed;
+    final confirmed = await confirmWorkspaceHandoff(
+      record,
+      grant,
+      () => _remote.rememberBinding(
+        connection,
+        Map<String, dynamic>.from(observed['binding'] as Map),
+        digest: digest,
+      ),
+    );
+    return _runAssignedWorkspace(record, grant, confirmed, 'open', const {});
+  }
+
   @override
   Future<Map<String, dynamic>> setWorkspaceExecution({
     required WasmPluginRecord record,
@@ -507,7 +570,11 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         throw StateError(_updatedPackageStart);
       }
       // Check the assigned target before changing the retained grant.
-      await _requireExecutionControls(c!, requireReplacement: true);
+      await _requireExecutionControls({
+        ...c!,
+        'package_id': c['package_id'] ?? grant!['package_id'],
+        'package_digest': c['package_digest'] ?? grant!['package_digest'],
+      }, requireReplacement: true);
       if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
     }
     if (enabled && startsOnVps) {
@@ -643,7 +710,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     );
   }
 
-  Future<void> _requireExecutionControls(
+  Future<Map<String, dynamic>> _requireExecutionControls(
     Map<String, dynamic> connection, {
     bool requireReplacement = false,
   }) async {
@@ -654,6 +721,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         'Update the VPS runtime before changing permission terms',
       );
     }
+    return status;
   }
 
   Future<PluginChatSendResult> sendChatMessage({

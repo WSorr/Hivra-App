@@ -887,6 +887,29 @@ class PluginWorkspaceRuntime {
     return Map<String, dynamic>.from(control);
   }
 
+  /// Accept transport acknowledgement only for the still-current local handoff.
+  Future<T> confirmWorkspaceHandoff<T>(
+    WasmPluginRecord record,
+    Map<String, dynamic> expected,
+    Future<T> Function() confirm,
+  ) {
+    final owner = expected['owner'] as String;
+    return _serialize(
+      '$owner::${record.pluginId}::execution',
+      () => _withWorkspaceLease(owner, record, () async {
+        final current = await _readExecution(record, owner, enforceHost: false);
+        if (!_isStillOwnedBy(owner) ||
+            current?['executor'] != 'vps' ||
+            current?['executor_id'] != expected['executor_id'] ||
+            current?['package_digest'] != expected['package_digest'] ||
+            current?['handoff_id'] != expected['handoff_id']) {
+          throw StateError('VPS assignment changed before acknowledgement');
+        }
+        return confirm();
+      }, authorityOnly: true),
+    );
+  }
+
   /// Called by the host transport, never by WASM. The source stays detached
   /// even if upload or acknowledgement is lost; there is no local fallback.
   Future<Map<String, dynamic>> releaseWorkspaceToVps(

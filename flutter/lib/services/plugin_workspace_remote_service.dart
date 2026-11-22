@@ -335,11 +335,36 @@ class PluginWorkspaceRemoteService {
     final result = _json(
       await _exchange(c, 'setup', utf8.encode('${jsonEncode(input)}\n')),
     );
-    _checkBinding(c, result, digest: input['package_digest'] as String);
+    return rememberBinding(
+      c,
+      result,
+      digest: input['package_digest'] as String,
+    );
+  }
+
+  Future<Map<String, dynamic>> rememberBinding(
+    Map<String, dynamic> c,
+    Map<String, dynamic> binding, {
+    required String digest,
+  }) async {
+    _checkBinding(c, binding, digest: digest);
+    final current = await connection(
+      c['owner'] as String,
+      c['plugin_id'] as String,
+    );
+    if (current == null ||
+        ![
+          'executor_id',
+          'host',
+          'port',
+          'fingerprint',
+        ].every((key) => current[key] == c[key])) {
+      throw StateError('VPS connection changed before acknowledgement');
+    }
     final updated = {
-      ...c,
-      'package_id': result['package_id'],
-      'package_digest': result['package_digest'],
+      ...current,
+      'package_id': binding['package_id'],
+      'package_digest': binding['package_digest'],
     };
     await _save(updated);
     return updated;
@@ -395,7 +420,12 @@ class PluginWorkspaceRemoteService {
       Map<String, dynamic>.from(result['binding'] as Map),
       digest: c['package_digest'] as String,
     );
-    if (result['binding']['package_id'] != c['package_id']) {
+    final handoff = command == 'status' ? arguments['handoff_id'] : null;
+    if (handoff != null && result['runner']?['state'] == 'running') {
+      if (result['handoff_id'] != handoff) {
+        throw StateError('VPS acknowledged a different assignment');
+      }
+    } else if (result['binding']['package_id'] != c['package_id']) {
       throw StateError('VPS package changed');
     }
     return result;
