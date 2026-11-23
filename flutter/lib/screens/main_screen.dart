@@ -58,13 +58,115 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
 }
 
 @visibleForTesting
-Widget chatUnreadNavigationIcon(int unreadCount) {
-  const icon = Icon(Icons.chat_bubble_outline);
-  if (unreadCount <= 0) return icon;
-  return Badge.count(
-    key: const ValueKey<String>('chat-unread-badge'),
-    count: unreadCount,
-    child: icon,
+Widget capsuleHeaderSummary({
+  required int starterCount,
+  required int relationshipCount,
+  required int chatUnreadCount,
+  required VoidCallback? onOpenChat,
+}) {
+  return Row(
+    children: [
+      Expanded(
+        flex: 3,
+        child: _headerStat(
+          icon: Icons.grid_3x3,
+          value: starterCount,
+          label: 'Starters',
+          color: Colors.blue,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        flex: 4,
+        child: _headerStat(
+          icon: Icons.people,
+          value: relationshipCount,
+          label: 'Relationships',
+          color: Colors.green,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Tooltip(
+        message:
+            chatUnreadCount == 0
+                ? 'Open Chat'
+                : 'Open Chat, $chatUnreadCount unread',
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            TextButton.icon(
+              key: const ValueKey('open-capsule-chat'),
+              onPressed: onOpenChat,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFE5D5F5),
+                backgroundColor: const Color(0xFF45305E),
+                minimumSize: const Size(48, 40),
+                tapTargetSize: MaterialTapTargetSize.padded,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              icon: const Icon(Icons.chat_bubble, size: 16),
+              label: const Text(
+                'Chat',
+                maxLines: 1,
+                style: TextStyle(fontWeight: FontWeight.bold, height: 1.1),
+              ),
+            ),
+            if (chatUnreadCount > 0)
+              PositionedDirectional(
+                top: 0,
+                end: 0,
+                child: FractionalTranslation(
+                  translation: const Offset(0, -0.75),
+                  child: ExcludeSemantics(
+                    child: Badge.count(
+                      key: const ValueKey<String>('chat-unread-badge'),
+                      count: chatUnreadCount,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _headerStat({
+  required IconData icon,
+  required int value,
+  required String label,
+  required Color color,
+}) {
+  return Row(
+    children: [
+      Icon(icon, size: 16, color: color),
+      const SizedBox(width: 4),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value.toString(),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+            ),
+          ],
+        ),
+      ),
+    ],
   );
 }
 
@@ -903,42 +1005,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _buildStatItem(
-                            icon: Icons.grid_3x3,
-                            value: _starterCount.toString(),
-                            label: 'Starters',
-                            color: Colors.blue,
-                          ),
-                          const SizedBox(width: 16),
-                          _buildStatItem(
-                            icon: Icons.people,
-                            value: _relationshipCount.toString(),
-                            label: 'Relationships',
-                            color: Colors.green,
-                          ),
-                          const SizedBox(width: 16),
-                          if (MediaQuery.sizeOf(context).width < 360)
-                            IconButton(
-                              key: const ValueKey('open-capsule-chat'),
-                              tooltip: _chatButtonLabel,
-                              onPressed: _hasLedgerHistory ? _openChat : null,
-                              icon: chatUnreadNavigationIcon(_chatUnreadCount),
-                            )
-                          else
-                            Tooltip(
-                              message: _chatButtonLabel,
-                              child: TextButton.icon(
-                                key: const ValueKey('open-capsule-chat'),
-                                onPressed: _hasLedgerHistory ? _openChat : null,
-                                icon: chatUnreadNavigationIcon(
-                                  _chatUnreadCount,
-                                ),
-                                label: const Text('Chat'),
-                              ),
-                            ),
-                        ],
+                      capsuleHeaderSummary(
+                        starterCount: _starterCount,
+                        relationshipCount: _relationshipCount,
+                        chatUnreadCount: _chatUnreadCount,
+                        onOpenChat: _hasLedgerHistory ? _openChat : null,
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -1015,48 +1086,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           const BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Settings',
-          ),
-        ],
-      ),
-    );
-  }
-
-  String get _chatButtonLabel =>
-      _chatUnreadCount == 0
-          ? 'Open Chat'
-          : 'Open Chat, $_chatUnreadCount unread';
-
-  Widget _buildStatItem({
-    required IconData icon,
-    required String value,
-    required String label,
-    required Color color,
-  }) {
-    return Expanded(
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
-                ),
-              ],
-            ),
           ),
         ],
       ),

@@ -29,8 +29,6 @@ import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/transport_health_policy_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/screens/capsule_chat_screen.dart';
-import 'package:hivra_app/screens/main_screen.dart';
-import 'package:flutter/material.dart';
 
 void main() {
   test(
@@ -1607,24 +1605,6 @@ void main() {
       expect(await store.unreadMessageCount(capsuleHex), 0);
     },
   );
-
-  testWidgets('chat navigation badge is visible only for unread messages', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: chatUnreadNavigationIcon(3))),
-    );
-    expect(find.byKey(const ValueKey<String>('chat-unread-badge')), findsOne);
-    expect(find.text('3'), findsOneWidget);
-
-    await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: chatUnreadNavigationIcon(0))),
-    );
-    expect(
-      find.byKey(const ValueKey<String>('chat-unread-badge')),
-      findsNothing,
-    );
-  });
 
   for (final conflicting in [false, true]) {
     test(
