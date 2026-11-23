@@ -20,8 +20,8 @@ The following product foundations are implemented and retained:
   removed;
 - shared external-effect and Capsule AI Runtime boundaries;
 - Chat delivery across macOS and Android;
-- Chat capability workspace ownership with host-owned Pair Consensus,
-  delivery, durable inbox, and acknowledgement boundaries;
+- built-in Capsule Chat using Core relationships, Pair Consensus, durable
+  inbox and acknowledgement boundaries;
 - Core-owned Starter-kind and invitation identity projections consumed by the
   Flutter runtime without product-side Ledger payload decoding;
 - Moltbook stateless service-history, proposal, publication/reply and receipt
@@ -64,9 +64,7 @@ implementation decision. No later V2 pass is selected.
   plugins. The common API target and bounded Jack replacement are defined in
   `plugins/plugin_host_api_v1.md`; the current decision belongs to
   `development-control.md`.
-- Common workspaces activate by installed contract/capabilities. Chat retains
-  a specialized host workspace and relationship-delivery binding; that remaining
-  dependency is part of host/package convergence, not a generic-workspace gap.
+- Common workspaces activate by installed contract and capabilities.
 - Several 1.x FFI and screen surfaces remain measured compatibility boundaries
   in `architecture/ownership-registry.v1.json`.
 - Crypto-agility migration is specified but no post-quantum 1.x runtime is

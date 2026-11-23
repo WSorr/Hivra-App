@@ -49,6 +49,7 @@ class RelationshipsScreen extends StatefulWidget {
   final Future<void> Function()? onLedgerChanged;
   final Future<void> Function()? onSyncTransport;
   final Future<void> Function(CapsuleHistorySubject subject)? onOpenHistory;
+  final ValueChanged<String>? onMessage;
   final Future<Map<String, String>> Function()? loadContactLabels;
 
   const RelationshipsScreen({
@@ -57,6 +58,7 @@ class RelationshipsScreen extends StatefulWidget {
     this.onLedgerChanged,
     this.onSyncTransport,
     this.onOpenHistory,
+    this.onMessage,
     this.loadContactLabels,
   });
 
@@ -571,10 +573,18 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                 itemCount: _groupedRelationships.length,
                 itemBuilder: (context, index) {
                   final group = _groupedRelationships[index];
+                  final rootKey = _resolvedRootKey(group);
                   return _RelationshipPeerCard(
                     group: group,
                     displayPeerName: _peerDisplayName(group),
                     peerIdentityHint: _peerIdentityHint(group),
+                    onMessage:
+                        rootKey != null &&
+                                group.isActive &&
+                                group.pendingRemoteBreakRelationships.isEmpty &&
+                                widget.onMessage != null
+                            ? () => widget.onMessage!(rootKey)
+                            : null,
                     isBreaking:
                         _breakingPeerPubkey != null &&
                         group.relationships.any(
@@ -636,6 +646,7 @@ class _RelationshipPeerCard extends StatelessWidget {
   final VoidCallback? onBreak;
   final bool isBreaking;
   final VoidCallback? onOpenHistory;
+  final VoidCallback? onMessage;
 
   const _RelationshipPeerCard({
     required this.group,
@@ -644,6 +655,7 @@ class _RelationshipPeerCard extends StatelessWidget {
     this.onBreak,
     this.isBreaking = false,
     this.onOpenHistory,
+    this.onMessage,
   });
 
   @override
@@ -846,6 +858,12 @@ class _RelationshipPeerCard extends StatelessWidget {
                       'Since ${_formatDate(group.latestEstablishedAt)}',
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
+                    if (onMessage != null)
+                      TextButton.icon(
+                        onPressed: onMessage,
+                        icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                        label: const Text('Message'),
+                      ),
                   ],
                 ),
               ),

@@ -19,7 +19,7 @@ import '../models/plugin_contract_ids.dart';
 import '../models/wasm_plugin_models.dart';
 import 'starters_screen.dart';
 import 'capsule_history_screen.dart';
-import 'capsule_chat_plugin_screen.dart';
+import 'capsule_chat_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
 import 'settings_screen.dart';
@@ -38,6 +38,7 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
   }
 
   final pluginId = canonicalPluginId(record.pluginId);
+  if (pluginId == capsuleChatPluginId) return null;
   final contractKind = record.contractKind?.trim();
   final requiredCapabilities = requiredCapabilitiesForPlugin(
     pluginId: pluginId,
@@ -58,7 +59,7 @@ String? installedPluginWorkspaceContractKind(WasmPluginRecord record) {
 
 @visibleForTesting
 Widget chatUnreadNavigationIcon(int unreadCount) {
-  const icon = Icon(Icons.extension);
+  const icon = Icon(Icons.chat_bubble_outline);
   if (unreadCount <= 0) return icon;
   return Badge.count(
     key: const ValueKey<String>('chat-unread-badge'),
@@ -317,9 +318,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Future<void> _refreshChatUnreadCount({String? capsuleHex}) async {
     final expectedCapsule =
         (capsuleHex ?? _activeCapsuleHex).trim().toLowerCase();
-    if (expectedCapsule.isEmpty) return;
+    if (expectedCapsule.isEmpty ||
+        expectedCapsule != _runtime.activeCapsuleRootHex()) {
+      return;
+    }
     final count = await _module.chatDelivery.unreadCachedMessageCount();
-    if (!mounted || expectedCapsule != _activeCapsuleHex) return;
+    if (!mounted ||
+        expectedCapsule != _activeCapsuleHex ||
+        expectedCapsule != _runtime.activeCapsuleRootHex()) {
+      return;
+    }
     setState(() {
       _chatUnreadCount = count;
     });
@@ -392,6 +400,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _ledgerHashHex = state.ledgerHashHex;
       _ledgerVersion = state.version;
       _hasLedgerHistory = state.hasLedgerHistory;
+      if (_activeCapsuleHex != activeCapsuleHex) _chatUnreadCount = 0;
       _activeCapsuleHex = activeCapsuleHex;
       _publicKeyText =
           displayKey.isEmpty ? '' : _encodeCapsulePublicKey(displayKey);
@@ -550,7 +559,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           onLedgerChanged: _handleLedgerChanged,
           onSyncTransport: _syncRelationshipsTransport,
           onOpenHistory: _openCapsuleHistory,
-          loadContactLabels: _runtime.buildCapsuleContactLabelStore().load,
+          onMessage: _openChatForPeer,
+          loadContactLabels: _module.loadContactLabels,
         );
       case 3:
         return WasmPluginsScreen(
@@ -655,20 +665,32 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
           ),
         );
-      case capsuleChatContractKind:
-        return () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder:
-                (_) => CapsuleChatPluginScreen(
-                  module: _pluginRuntime,
-                  onUnreadChanged: _refreshChatUnreadCount,
-                ),
-          ),
-        );
-
       default:
         return null;
     }
+  }
+
+  void _openChatForPeer(String rootKey) {
+    final peer = _module.decodeCapsuleRootKey(rootKey);
+    if (peer != null) _openChat(peerHex: _bytesToHex(peer));
+  }
+
+  void _openChat({String? peerHex}) {
+    if (!_hasLedgerHistory ||
+        _activeCapsuleHex != _runtime.activeCapsuleRootHex()) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => CapsuleChatScreen(
+              runtime: _runtime,
+              initialPeerHex: peerHex,
+              onUnreadChanged: _refreshChatUnreadCount,
+              onOpenInvitations: () => setState(() => _selectedIndex = 1),
+            ),
+      ),
+    );
   }
 
   Future<void> _openCapsuleHistory(CapsuleHistorySubject subject) {
@@ -752,7 +774,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         title: Text(_titles[_selectedIndex]),
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(
-            _transportHealth.isDegraded ? 116 : 98,
+            _transportHealth.isDegraded ? 128 : 110,
           ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -869,12 +891,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                             color: Colors.green,
                           ),
                           const SizedBox(width: 16),
-                          _buildStatItem(
-                            icon: Icons.mail,
-                            value: _pendingInvitations.toString(),
-                            label: 'Pending',
-                            color: Colors.orange,
-                          ),
+                          if (MediaQuery.sizeOf(context).width < 360)
+                            IconButton(
+                              key: const ValueKey('open-capsule-chat'),
+                              tooltip: _chatButtonLabel,
+                              onPressed: _hasLedgerHistory ? _openChat : null,
+                              icon: chatUnreadNavigationIcon(_chatUnreadCount),
+                            )
+                          else
+                            Tooltip(
+                              message: _chatButtonLabel,
+                              child: TextButton.icon(
+                                key: const ValueKey('open-capsule-chat'),
+                                onPressed: _hasLedgerHistory ? _openChat : null,
+                                icon: chatUnreadNavigationIcon(
+                                  _chatUnreadCount,
+                                ),
+                                label: const Text('Chat'),
+                              ),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -930,16 +965,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             icon: Icon(Icons.grid_3x3),
             label: 'Starters',
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.mail),
+          BottomNavigationBarItem(
+            icon:
+                _pendingInvitations > 0
+                    ? Badge.count(
+                      key: const ValueKey('pending-invitations-badge'),
+                      count: _pendingInvitations,
+                      child: const Icon(Icons.mail),
+                    )
+                    : const Icon(Icons.mail),
             label: 'Invitations',
           ),
           const BottomNavigationBarItem(
             icon: Icon(Icons.people),
             label: 'Relationships',
           ),
-          BottomNavigationBarItem(
-            icon: chatUnreadNavigationIcon(_chatUnreadCount),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.extension),
             label: 'Plugins',
           ),
           const BottomNavigationBarItem(
@@ -950,6 +992,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       ),
     );
   }
+
+  String get _chatButtonLabel =>
+      _chatUnreadCount == 0
+          ? 'Open Chat'
+          : 'Open Chat, $_chatUnreadCount unread';
 
   Widget _buildStatItem({
     required IconData icon,
@@ -962,22 +1009,26 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 4),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
                 ),
-              ),
-              Text(
-                label,
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
-              ),
-            ],
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -7,7 +7,6 @@ import 'package:hivra_app/services/plugin_contract_handlers.dart';
 void main() {
   test('installed manifest profiles select the canonical workspace', () {
     final profiles = <(String, String)>[
-      (capsuleChatPluginId, capsuleChatContractKind),
       ('example.service', pluginWorkspaceContractKind),
     ];
 
@@ -31,13 +30,29 @@ void main() {
     }
   });
 
+  test('legacy Chat packages cannot activate an installed workspace', () {
+    for (final contractKind in [
+      capsuleChatContractKind,
+      pluginWorkspaceContractKind,
+    ]) {
+      expect(
+        installedPluginWorkspaceContractKind(
+          _record(
+            pluginId: capsuleChatPluginId,
+            contractKind: contractKind,
+            capabilities: [
+              ...capsuleChatRequiredCapabilities,
+              ...pluginWorkspaceRequiredCapabilities,
+            ],
+          ),
+        ),
+        isNull,
+      );
+    }
+  });
+
   test('every required capability controls readiness and activation', () {
     final profiles = <(String, String, Set<String>)>[
-      (
-        capsuleChatPluginId,
-        capsuleChatContractKind,
-        capsuleChatRequiredCapabilities,
-      ),
       (
         'example.service',
         pluginWorkspaceContractKind,
@@ -99,13 +114,6 @@ void main() {
     final handlers = [
       const PluginWorkspaceContractHandler(
         pluginId: 'hivra.contract.independent.v1',
-      ),
-      CapsuleChatPluginContractHandler(
-        readSignable:
-            (_) =>
-                throw StateError(
-                  'No consensus read during capability inspection',
-                ),
       ),
     ];
     for (final handler in handlers) {

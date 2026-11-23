@@ -69,8 +69,14 @@ void main() {
         ),
       );
 
+      String? messagePeer;
       await tester.pumpWidget(
-        MaterialApp(home: RelationshipsScreen(service: service)),
+        MaterialApp(
+          home: RelationshipsScreen(
+            service: service,
+            onMessage: (root) => messagePeer = root,
+          ),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -78,6 +84,8 @@ void main() {
       expect(find.textContaining('Unknown root'), findsNothing);
       expect(find.bySemanticsLabel('Filter relationships'), findsOneWidget);
       expect(find.bySemanticsLabel('Refresh relationships'), findsOneWidget);
+      await tester.tap(find.text('Message'));
+      expect(messagePeer, rootKey);
       expect(
         find.bySemanticsLabel('Choose relationship to break'),
         findsOneWidget,

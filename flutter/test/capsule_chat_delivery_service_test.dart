@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/app_runtime_runtime.dart';
 import 'package:hivra_app/ffi/capsule_address_runtime.dart';
@@ -10,14 +11,13 @@ import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/ffi/ledger_view_runtime.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/models/consensus_models.dart';
-import 'package:hivra_app/models/plugin_contract_ids.dart';
-import 'package:hivra_app/models/plugin_host_api_models.dart';
-import 'package:hivra_app/services/plugin_contract_handlers.dart';
-import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
+import 'package:hivra_app/services/app_runtime_service.dart';
 import 'package:hivra_app/services/capsule_address_service.dart';
+import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
+import 'package:hivra_app/services/consensus_attested_guard_service.dart';
 import 'package:hivra_app/services/capsule_chat_deferred_inbox_store.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
@@ -28,16 +28,65 @@ import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/transport_health_policy_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
-import 'package:hivra_app/screens/capsule_chat_plugin_screen.dart';
+import 'package:hivra_app/screens/capsule_chat_screen.dart';
 import 'package:hivra_app/screens/main_screen.dart';
 import 'package:flutter/material.dart';
 
 void main() {
+  test(
+    'built-in Chat prepares the existing wire envelope with no package',
+    () async {
+      final runtime = _BuiltInChatRuntime();
+      final peer = '2' * 64;
+      final result = await runtime.sendChatMessage(
+        peerHex: peer,
+        messageText: ' Hello "world" ',
+      );
+      expect(result.isSuccess, isTrue);
+      expect(runtime.delivery.dispatches, 1);
+      final envelope = jsonDecode(runtime.delivery.envelope!) as Map;
+      expect(envelope['schema_version'], 1);
+      expect(envelope['plugin_id'], 'hivra.contract.capsule-chat.v1');
+      expect(envelope['contract_kind'], 'capsule_chat_direct');
+      expect(envelope['peer_hex'], peer);
+      expect(envelope['client_message_id'], startsWith('ui-'));
+      expect(envelope['message_text'], 'Hello "world"');
+      expect(envelope['created_at_utc'], endsWith('Z'));
+    },
+  );
+
+  test('built-in Chat rechecks the relationship before dispatch', () async {
+    final runtime = _BuiltInChatRuntime();
+    runtime.delivery.beforeDispatch = () => runtime.guard.ready = false;
+    final result = await runtime.sendChatMessage(
+      peerHex: '2' * 64,
+      messageText: 'hold',
+    );
+    expect(result.isSuccess, isFalse);
+    expect(runtime.delivery.dispatches, 0);
+  });
+
   group('Capsule chat conversation timeline', () {
     const capsuleHex =
         '1111111111111111111111111111111111111111111111111111111111111111';
     const peerHex =
         '2222222222222222222222222222222222222222222222222222222222222222';
+
+    test('opening the conversation list leaves every message unread', () {
+      final messages = [
+        CapsuleChatInboxMessage(
+          id: 'first',
+          fromHex: peerHex,
+          toHex: capsuleHex,
+          messageText: 'unread',
+          createdAtUtc: '2026-11-23T11:00:00Z',
+          envelopeHashHex: 'c' * 64,
+          timestampMs: 1,
+        ),
+      ];
+      expect(chatMessagesForPeer(messages, ''), isEmpty);
+      expect(chatMessagesForPeer(messages, peerHex), messages);
+    });
 
     test('classifies timeout as ambiguous instead of delivered', () {
       expect(
@@ -1568,7 +1617,7 @@ void main() {
     expect(find.text('3'), findsOneWidget);
 
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: Icon(Icons.extension))),
+      MaterialApp(home: Scaffold(body: chatUnreadNavigationIcon(0))),
     );
     expect(
       find.byKey(const ValueKey<String>('chat-unread-badge')),
@@ -2168,10 +2217,6 @@ void main() {
 
   for (final change in [
     'none',
-    'remove',
-    'replace',
-    'digest',
-    'revoke',
     'consensus',
     'capsule',
     'capsule_during_authorization',
@@ -2182,55 +2227,6 @@ void main() {
       const peer =
           '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
       var changed = false;
-      final host = PluginHostApiService(
-        handlers: [
-          CapsuleChatPluginContractHandler(
-            readSignable:
-                (_) => ConsensusSignableResult(
-                  preview: ConsensusPreview(
-                    peerHex: peer,
-                    peerLabel: 'peer',
-                    invitationCount: 1,
-                    relationshipCount: 1,
-                    hashHex: owner,
-                    canonicalJson: '{}',
-                    blockingFacts: const [],
-                  ),
-                  blockingFacts:
-                      changed && change == 'consensus'
-                          ? const [
-                            ConsensusBlockingFact(
-                              code: 'pair_attestation_missing',
-                            ),
-                          ]
-                          : const [],
-                ),
-          ),
-        ],
-        resolveRuntimeBinding: (_) async {
-          if (changed && change == 'remove') {
-            return const PluginRuntimeBinding.hostFallback();
-          }
-          return PluginRuntimeBinding.externalPackage(
-            packageId:
-                changed && change == 'replace' ? 'replacement' : 'original',
-            packageVersion: '1',
-            packageKind: 'zip',
-            packageDigestHex:
-                changed && change == 'digest' ? 'b' * 64 : 'a' * 64,
-            contractKind: capsuleChatContractKind,
-            capabilities:
-                changed && change == 'revoke'
-                    ? const ['content.draft.prepare']
-                    : const ['consensus_guard.read', 'content.draft.prepare'],
-          );
-        },
-      );
-      final authorize = await host.captureRuntimeAuthorization(
-        pluginId: capsuleChatPluginId,
-        method: postCapsuleChatMethod,
-        args: {'peer_hex': peer},
-      );
       final key = _hexToBytes(owner);
       final queue = CapsuleFfiWorkerQueue();
       final release = Completer<void>();
@@ -2275,7 +2271,9 @@ void main() {
       );
       final pending = service.sendCanonicalEnvelope(
         authorize: () async {
-          await authorize();
+          if (changed && change == 'consensus') {
+            throw StateError('Pair authorization changed');
+          }
           if (change == 'capsule_during_authorization') {
             key.fillRange(0, key.length, 7);
           }
@@ -3106,5 +3104,97 @@ class _FailingChatFileStore extends CapsuleFileStore {
       throw const FileSystemException('private deferred marker');
     }
     return super.writeChatDeferredInbox(dir, contents);
+  }
+}
+
+class _BuiltInChatRuntime extends AppRuntimeService {
+  final delivery = _BuiltInChatDispatch();
+  final guard = _BuiltInChatGuard();
+
+  _BuiltInChatRuntime()
+    : super(runtime: _FakeRuntime(capsuleRootKey: _hexToBytes('1' * 64)));
+
+  @override
+  CapsuleChatDeliveryService buildCapsuleChatDeliveryService() => delivery;
+
+  @override
+  ConsensusAttestedGuardService buildConsensusAttestedGuardService() => guard;
+
+  @override
+  ConsensusAttestationExchangeService
+  buildConsensusAttestationExchangeService() => _ReadyChatExchange();
+}
+
+class _ReadyChatExchange extends Fake
+    implements ConsensusAttestationExchangeService {
+  @override
+  Future<ConsensusAttestationExchangeResult> ensureForPeer(String peer) async =>
+      const ConsensusAttestationExchangeResult(
+        status: ConsensusAttestationExchangeStatus.ready,
+        message: null,
+        receiveCode: 0,
+        receivedCount: 0,
+        storedCount: 0,
+        localEvidenceSent: false,
+      );
+}
+
+class _BuiltInChatGuard extends Fake implements ConsensusAttestedGuardService {
+  bool ready = true;
+
+  @override
+  Future<ConsensusSignableResult> signable(String peerRootHex) async {
+    final blockers =
+        ready
+            ? const <ConsensusBlockingFact>[]
+            : const [ConsensusBlockingFact(code: 'pair_attestation_missing')];
+    return ConsensusSignableResult(
+      preview: ConsensusPreview(
+        peerHex: peerRootHex,
+        peerLabel: 'Fixture',
+        invitationCount: 0,
+        relationshipCount: 1,
+        hashHex: '3' * 64,
+        canonicalJson: '{}',
+        blockingFacts: blockers,
+      ),
+      blockingFacts: blockers,
+    );
+  }
+}
+
+class _BuiltInChatDispatch extends Fake implements CapsuleChatDeliveryService {
+  int dispatches = 0;
+  String? envelope;
+  void Function()? beforeDispatch;
+
+  @override
+  Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelopeWithTimeline({
+    required String capsuleRootHex,
+    required String peerHex,
+    required String canonicalEnvelopeJson,
+    required String envelopeHashHex,
+    required String messageText,
+    required String createdAtUtc,
+    required Future<void> Function() authorize,
+  }) async {
+    await authorize();
+    beforeDispatch?.call();
+    await authorize();
+    expect(capsuleRootHex, '1' * 64);
+    expect(peerHex, '2' * 64);
+    expect(
+      envelopeHashHex,
+      sha256.convert(utf8.encode(canonicalEnvelopeJson)).toString(),
+    );
+    envelope = canonicalEnvelopeJson;
+    dispatches++;
+    return const CapsuleChatDeliverySendResult(
+      isSuccess: true,
+      blockedByConsensus: false,
+      code: 0,
+      errorMessage: null,
+      deliveryPeerHex: null,
+    );
   }
 }

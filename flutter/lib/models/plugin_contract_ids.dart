@@ -31,7 +31,6 @@ const String capsuleChatContractKind = 'capsule_chat';
 const Set<String> capsuleChatRequiredCapabilities = <String>{
   'consensus_guard.read',
 };
-const String postCapsuleChatMethod = 'post_capsule_chat_message';
 Set<String>? requiredCapabilitiesForPlugin({
   required String? pluginId,
   required String? contractKind,

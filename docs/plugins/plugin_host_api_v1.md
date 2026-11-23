@@ -27,7 +27,7 @@ existing bounded JSON ABI. Protocol 2 is a capability protocol version, not
 activation of Hivra 2.0. Jack uses this path. The old Jack provider adapter,
 host financial preflight, normalization and host-selected continuations are
 removed. Moltbook uses the common path without a storage capability.
-Chat retains its relationship-scoped specialized contract.
+Built-in Capsule Chat uses the Capsule relationship and delivery runtime.
 
 Workspace activation admits only the supported common capability set. Retired
 named service capabilities remain readable in archived package metadata for
@@ -529,20 +529,9 @@ this contract does not qualify product execution.
 
 ## Implemented v1 Contracts
 
-The specialized contracts below remain maintained. Their permission does not
-authorize network access through the common workspace API.
-
-- `hivra.contract.capsule-chat.v1`
-  - `post_capsule_chat_message`
-  - Successful WASM preparation does not authorize a later transport call.
-    The existing runtime authorization capture pins the installed package and
-    peer-scoped preflight. Chat delivery requires that authorization and an
-    explicit owner Capsule; it rechecks them inside the shared FFI queue,
-    immediately before starting the send worker. Replacement, removal, lost
-    capability/consensus or a Capsule change while queued refuses dispatch.
-    A refused queued attempt is failed, not transport-accepted or ambiguous;
-    it is not retried. Package changes after worker admission do not revoke
-    a network operation that has already started.
+The installed host accepts the generic workspace contract below.
+The earlier `post_capsule_chat_message` operation is retired in this runtime.
+Its historical package may still be removed from the installed inventory.
 - Installed packages declaring `plugin_workspace_v1` use method `workspace`
   and the common protocol-2 operations above. Required capabilities are
   `workspace.render` and `workspace.continue`; opaque storage is optional.
@@ -582,13 +571,10 @@ authorize network access through the common workspace API.
 ```json
 {
   "schema_version": 1,
-  "plugin_id": "hivra.contract.capsule-chat.v1",
-  "method": "post_capsule_chat_message",
+  "plugin_id": "example.workspace",
+  "method": "workspace",
   "args": {
-    "peer_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "client_message_id": "msg-1",
-    "message_text": "hello",
-    "created_at_utc": "2026-04-04T10:00:00Z"
+    "action": "open"
   }
 }
 ```
@@ -649,17 +635,11 @@ The packed evaluate result is `(output_ptr << 32) | output_len`.
 
 ## Capability Ownership
 
-- Chat requires `consensus_guard.read`, returns plugin-owned canonical message
-  bytes, and leaves pair consensus and transport delivery to the host. The
-  host accepts the canonical result only when its peer, client message id,
-  creation timestamp, and bounded canonical message text remain bound to the
-  exact request; it never fills missing semantic fields from host input.
 - Common-workspace packages request the technical operations listed above.
   Moltbook has no named host methods: its content preparation, publication,
   verification and reconciliation live in WASM. Retired `content.*` names are
   metadata-only compatibility and cannot authorize invocation.
-- Both maintained contract families require the installed WASM runtime; neither
-  falls back to host-owned product semantics.
+- Installed workspaces require an admitted WASM runtime.
 
 ## Consensus Scopes
 

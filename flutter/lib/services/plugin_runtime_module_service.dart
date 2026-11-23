@@ -3,20 +3,14 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import 'ai_doctor_credential_store.dart';
 import 'app_runtime_service.dart';
 import 'capsule_ai_runtime_service.dart';
-import 'capsule_chat_delivery_service.dart';
-import 'capsule_contact_label_store.dart';
 import 'capsule_file_store.dart';
-import 'capsule_passive_receive_coordinator.dart';
 import 'capsule_scoped_secret_vault.dart';
-import 'consensus_attestation_exchange_service.dart';
-import 'manual_consensus_check_service.dart';
 import 'plugin_workspace_runtime.dart';
 import 'plugin_workspace_remote_service.dart';
 import 'wasm_plugin_package_preflight_service.dart';
@@ -24,42 +18,11 @@ import 'ui_event_log_service.dart';
 import 'wasm_plugin_registry_service.dart';
 import 'wasm_plugin_source_catalog_service.dart';
 
-enum PluginChatSendStatus {
-  sent,
-  syncing,
-  blocked,
-  rejected,
-  failed,
-  capsuleChanged,
-}
-
-class PluginChatSendResult {
-  final PluginChatSendStatus status;
-  final String message;
-  final PluginHostApiResponse? hostResponse;
-  final CapsuleChatDeliverySendResult? delivery;
-
-  const PluginChatSendResult({
-    required this.status,
-    required this.message,
-    this.hostResponse,
-    this.delivery,
-  });
-
-  bool get isSuccess => status == PluginChatSendStatus.sent;
-}
-
 class PluginRuntimeModule extends PluginWorkspaceRuntime {
   final WasmPluginSourceCatalogService sourceCatalog;
-  final ManualConsensusCheckService manualChecks;
-  final ConsensusAttestationExchangeService attestationExchange;
-  final CapsuleChatDeliveryService chatDelivery;
-  final CapsulePassiveReceivePort passiveReceive;
-  final CapsuleContactLabelStore contactLabels;
   final UiEventLogService uiLog;
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
-  final String? Function() _readActiveCapsuleRootHex;
   final PluginWorkspaceRemoteService? _providedRemote;
   late final PluginWorkspaceRemoteService _remote =
       _providedRemote ??
@@ -72,12 +35,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
   PluginRuntimeModule({
     required super.registry,
     required this.sourceCatalog,
-    required this.manualChecks,
     required super.pluginHostApi,
-    required this.attestationExchange,
-    required this.chatDelivery,
-    required this.passiveReceive,
-    required this.contactLabels,
     required this.uiLog,
     required super.fileStore,
     required CapsuleScopedSecretVault secretVault,
@@ -88,7 +46,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
   }) : _fileStore = fileStore,
        _providedRemote = workspaceRemote,
        _secretVault = secretVault,
-       _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
        super(resolveCredentialReferences: secretVault.resolveReferences);
 
   Future<void> removePlugin(
@@ -145,6 +102,11 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     final inspected = await const WasmPluginPackagePreflightService().inspect(
       file,
     );
+    if (inspected.pluginId == capsuleChatPluginId) {
+      throw const FormatException(
+        'Chat is built into Capsule. Open it from the top bar.',
+      );
+    }
     return _finishInstallation(
       registry.installPluginFromFile(
         file,
@@ -159,7 +121,14 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
 
   Future<WasmPluginRecord> installPluginFromSource(
     WasmPluginSourceCatalogEntry entry,
-  ) => _finishInstallation(sourceCatalog.installFromSourceEntry(entry));
+  ) async {
+    if (canonicalPluginId(entry.pluginId) == capsuleChatPluginId) {
+      throw const FormatException(
+        'Chat is built into Capsule. Open it from the top bar.',
+      );
+    }
+    return _finishInstallation(sourceCatalog.installFromSourceEntry(entry));
+  }
 
   Future<WasmPluginRecord> _finishInstallation(
     Future<WasmPluginRecord> installation,
@@ -812,222 +781,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     }
     return status;
   }
-
-  Future<PluginChatSendResult> sendChatMessage({
-    required String peerHex,
-    required String messageText,
-  }) async {
-    final normalizedPeer = peerHex.trim().toLowerCase();
-    final normalizedMessage = messageText.trim();
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedPeer)) {
-      return const PluginChatSendResult(
-        status: PluginChatSendStatus.rejected,
-        message: 'Choose a valid consensus peer before sending',
-      );
-    }
-    if (normalizedMessage.isEmpty) {
-      return const PluginChatSendResult(
-        status: PluginChatSendStatus.rejected,
-        message: 'Message text cannot be empty',
-      );
-    }
-
-    final operationCapsuleHex =
-        _readActiveCapsuleRootHex()?.trim().toLowerCase();
-    if (operationCapsuleHex == null || operationCapsuleHex.length != 64) {
-      return const PluginChatSendResult(
-        status: PluginChatSendStatus.failed,
-        message: 'Active capsule identity is unavailable',
-      );
-    }
-
-    await uiLog.log(
-      'chat.send.request',
-      'owner=$operationCapsuleHex peer=${normalizedPeer.substring(0, 8)}.. '
-          'fullPeer=$normalizedPeer textBytes=${normalizedMessage.length}',
-    );
-    final attestation = await attestationExchange.ensureForPeer(normalizedPeer);
-    await uiLog.log(
-      'chat.attestation.ensure',
-      'owner=$operationCapsuleHex peer=${normalizedPeer.substring(0, 8)}.. '
-          'status=${attestation.status.name} '
-          'receive=${attestation.receiveCode}/${attestation.receivedCount}/${attestation.storedCount} '
-          'mismatch=${attestation.mismatchedEvidenceCount} '
-          'sent=${attestation.localEvidenceSent} send=${attestation.sendCode ?? "-"}',
-    );
-    if (!_isStillOwnedBy(operationCapsuleHex)) {
-      return _capsuleChanged(operationCapsuleHex);
-    }
-    if (!attestation.isReady) {
-      return PluginChatSendResult(
-        status:
-            attestation.status == ConsensusAttestationExchangeStatus.syncing
-                ? PluginChatSendStatus.syncing
-                : PluginChatSendStatus.blocked,
-        message:
-            attestation.message ?? 'Pair consensus attestation is not ready',
-      );
-    }
-
-    final Future<void> Function() authorize;
-    try {
-      authorize = await pluginHostApi.captureRuntimeAuthorization(
-        pluginId: capsuleChatPluginId,
-        method: postCapsuleChatMethod,
-        args: {'peer_hex': normalizedPeer},
-      );
-    } catch (_) {
-      return const PluginChatSendResult(
-        status: PluginChatSendStatus.rejected,
-        message: 'Chat package authorization is unavailable; reopen Chat',
-      );
-    }
-    final createdAtUtc = DateTime.now().toUtc().toIso8601String();
-    final response = await pluginHostApi.executeWithRuntimeHook(
-      PluginHostApiRequest(
-        schemaVersion: pluginHostApiSchemaVersion,
-        pluginId: capsuleChatPluginId,
-        method: postCapsuleChatMethod,
-        args: <String, dynamic>{
-          'peer_hex': normalizedPeer,
-          'client_message_id': 'ui-${DateTime.now().microsecondsSinceEpoch}',
-          'message_text': normalizedMessage,
-          'created_at_utc': createdAtUtc,
-        },
-      ),
-    );
-    if (!_isStillOwnedBy(operationCapsuleHex)) {
-      return _capsuleChanged(operationCapsuleHex, hostResponse: response);
-    }
-
-    switch (response.status) {
-      case PluginHostApiStatus.executed:
-        final canonicalEnvelopeJson =
-            response.result?['canonical_envelope_json']?.toString() ?? '';
-        final envelopeHash =
-            response.result?['envelope_hash_hex']?.toString().toLowerCase() ??
-            '';
-        final canonicalMessageText = response.result?['message_text'];
-        final canonicalCreatedAtUtc = response.result?['created_at_utc'];
-        if (canonicalMessageText is! String ||
-            canonicalCreatedAtUtc is! String) {
-          await uiLog.log(
-            'chat.send.semantic.error',
-            'owner=$operationCapsuleHex phase=prepare reason=missing_wasm_fields',
-          );
-          return const PluginChatSendResult(
-            status: PluginChatSendStatus.failed,
-            message: 'Chat package returned an incomplete message envelope',
-          );
-        }
-        final CapsuleChatDeliverySendResult delivery;
-        try {
-          delivery = await chatDelivery.sendCanonicalEnvelopeWithTimeline(
-            capsuleRootHex: operationCapsuleHex,
-            peerHex: normalizedPeer,
-            canonicalEnvelopeJson: canonicalEnvelopeJson,
-            envelopeHashHex: envelopeHash,
-            messageText: canonicalMessageText,
-            createdAtUtc: canonicalCreatedAtUtc,
-            authorize: authorize,
-          );
-        } catch (error) {
-          await uiLog.log(
-            'chat.send.timeline.error',
-            'owner=$operationCapsuleHex phase=prepare error=${_safeError(error)}',
-          );
-          return const PluginChatSendResult(
-            status: PluginChatSendStatus.failed,
-            message:
-                'Message was not sent because Chat authorization or history '
-                'could not be verified. Reopen Chat before retrying.',
-          );
-        }
-        if (!delivery.isSuccess) {
-          await uiLog.log(
-            'chat.send.transport.error',
-            'owner=$operationCapsuleHex code=${delivery.code} '
-                'blocked=${delivery.blockedByConsensus} '
-                'deliveryPeer=${delivery.deliveryPeerHex ?? "none"} '
-                'message=${delivery.errorMessage ?? "unknown"}',
-          );
-          return PluginChatSendResult(
-            status: PluginChatSendStatus.failed,
-            message:
-                delivery.errorMessage ??
-                'Chat transport failed (code ${delivery.code})',
-            hostResponse: response,
-            delivery: delivery,
-          );
-        }
-        final shortHash =
-            envelopeHash.length >= 12
-                ? '${envelopeHash.substring(0, 12)}..'
-                : envelopeHash;
-        await uiLog.log(
-          'chat.send.success',
-          'owner=$operationCapsuleHex peer=${normalizedPeer.substring(0, 8)}.. '
-              'deliveryPeer=${delivery.deliveryPeerHex ?? "none"} '
-              'receipts=${delivery.deliveryReceiptCount} '
-              'hash=${shortHash.isEmpty ? "none" : shortHash} '
-              'source=${response.executionSource}',
-        );
-        return PluginChatSendResult(
-          status: PluginChatSendStatus.sent,
-          message: 'Message sent${shortHash.isEmpty ? "" : " · $shortHash"}',
-          hostResponse: response,
-          delivery: delivery,
-        );
-      case PluginHostApiStatus.blocked:
-        final message =
-            response.blockingFacts.isEmpty
-                ? 'Consensus guard blocked execution'
-                : response.blockingFacts.first.label;
-        await uiLog.log('chat.send.blocked', message);
-        return PluginChatSendResult(
-          status: PluginChatSendStatus.blocked,
-          message: message,
-          hostResponse: response,
-        );
-      case PluginHostApiStatus.rejected:
-        final message = response.errorMessage ?? 'Chat request rejected';
-        await uiLog.log(
-          'chat.send.rejected',
-          '$message code=${response.errorCode ?? "none"}',
-        );
-        return PluginChatSendResult(
-          status: PluginChatSendStatus.rejected,
-          message: message,
-          hostResponse: response,
-        );
-    }
-  }
-
-  bool _isStillOwnedBy(String operationCapsuleHex) =>
-      _readActiveCapsuleRootHex()?.trim().toLowerCase() == operationCapsuleHex;
-
-  String _safeError(Object error) {
-    final compact = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
-    return compact.length <= 240 ? compact : compact.substring(0, 240);
-  }
-
-  PluginChatSendResult _capsuleChanged(
-    String operationCapsuleHex, {
-    PluginHostApiResponse? hostResponse,
-  }) {
-    final activeCapsuleHex = _readActiveCapsuleRootHex() ?? 'none';
-    unawaited(
-      uiLog.log(
-        'chat.send.aborted',
-        'reason=capsule_changed owner=$operationCapsuleHex active=$activeCapsuleHex',
-      ),
-    );
-    return PluginChatSendResult(
-      status: PluginChatSendStatus.capsuleChanged,
-      message: 'Message not sent because the active capsule changed',
-      hostResponse: hostResponse,
-    );
-  }
 }
 
 class PluginRuntimeModuleService {
@@ -1080,12 +833,7 @@ class PluginRuntimeModuleService {
       },
       registry: const WasmPluginRegistryService(),
       sourceCatalog: const WasmPluginSourceCatalogService(),
-      manualChecks: runtime.buildManualConsensusCheckService(),
       pluginHostApi: pluginHostApi,
-      attestationExchange: runtime.buildConsensusAttestationExchangeService(),
-      chatDelivery: runtime.buildCapsuleChatDeliveryService(),
-      passiveReceive: runtime.passiveReceive,
-      contactLabels: runtime.buildCapsuleContactLabelStore(),
       uiLog: uiLog,
       secretVault: secretVault,
       fileStore: fileStore,

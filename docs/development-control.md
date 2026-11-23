@@ -165,14 +165,16 @@ and one Flutter App Shell. V2 remains design-only. Read Git for source and
 branch state; published artifacts and their signoff belong to
 [release evidence](checklists/release-manual-signoff-log.md).
 
-- Chat, Moltbook and Jack are installed packages developed in `hivra-plugins`.
-  Package versions can change independently within the supported ABI, host
-  contract, capability policy and catalog trust root. Web and Opsnex are
-  outside the Capsule release input.
-- Jack and Moltbook use the common protocol-2 workspace. Their former named
-  service dispatchers, host product controllers and provider adapters are
-  removed. Chat retains its specialized relationship/delivery binding.
-  The implemented boundary is [Plugin Host API](plugins/plugin_host_api_v1.md).
+- Chat is built into Capsule and scoped to its existing Core relationships.
+  The header opens the conversation list and a relationship can open the same
+  screen for its peer. The runtime uses the existing Pair Consensus check,
+  encrypted timeline and Nostr delivery. The legacy Chat package is retired
+  in this runtime. Its catalog entry remains available to older clients.
+- Moltbook and Jack are installed packages developed in `hivra-plugins`. They
+  use the common protocol-2 workspace and can change independently within its
+  ABI, capability policy and catalog trust root. Web and Opsnex are outside
+  the Capsule release input. The [Plugin Host API](plugins/plugin_host_api_v1.md)
+  owns the installed package boundary.
 - ZIP-with-manifest is the installable package format. Legacy raw modules
   remain removable but cannot bind or execute; no OS/process isolation is
   claimed. The macOS runner admits one running Hivra bundle instance.

@@ -36,43 +36,6 @@ class PluginHostApiService {
     );
   }
 
-  Future<Future<void> Function()> captureRuntimeAuthorization({
-    required String pluginId,
-    required String method,
-    Map<String, dynamic> args = const {},
-  }) async {
-    final request = PluginHostApiRequest(
-      schemaVersion: schemaVersion,
-      pluginId: pluginId,
-      method: method,
-      args: Map<String, dynamic>.unmodifiable(args),
-    );
-    Future<PluginRuntimeBinding> authorizedBinding() async {
-      final binding =
-          await _resolveRuntimeBinding?.call(pluginId) ??
-          const PluginRuntimeBinding.hostFallback();
-      if (_validateRuntimeBindingShape(binding) != null ||
-          await _preflightBeforeRuntime(request, binding) != null) {
-        throw StateError('Installed package authorization is unavailable');
-      }
-      final current =
-          await _resolveRuntimeBinding?.call(pluginId) ??
-          const PluginRuntimeBinding.hostFallback();
-      if (!_sameRuntimeBinding(binding, current)) {
-        throw StateError('Installed package changed during authorization');
-      }
-      return binding;
-    }
-
-    final initial = await authorizedBinding();
-    return () async {
-      final current = await authorizedBinding();
-      if (!_sameRuntimeBinding(initial, current)) {
-        throw StateError('Installed package changed during the action');
-      }
-    };
-  }
-
   Future<PluginHostApiResponse> executeWithRuntimeHook(
     PluginHostApiRequest request,
   ) async {
@@ -475,6 +438,7 @@ class PluginHostApiService {
     String pluginId, [
     PluginRuntimeBinding? binding,
   ]) {
+    if (pluginId.trim().toLowerCase() == capsuleChatPluginId) return null;
     if (binding?.source == 'external_package' &&
         binding?.contractKind == pluginWorkspaceContractKind) {
       return PluginWorkspaceContractHandler(
