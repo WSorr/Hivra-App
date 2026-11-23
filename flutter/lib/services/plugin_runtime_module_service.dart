@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
@@ -228,17 +230,6 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       enforceHost: false,
       allowRemoteRecoveryBinding: true,
     );
-    if (grant?['executor'] == 'vps') {
-      final existing = await _remote.connection(owner, record.pluginId!);
-      final sameAssignedVps =
-          existing != null &&
-          existing['host'] == host &&
-          existing['port'] == port &&
-          existing['executor_id'] == grant?['executor_id'];
-      if (!sameAssignedVps) {
-        throw StateError('Return to online mode before reinstalling the VPS');
-      }
-    }
     final binding = await registry.resolveRuntimeBinding(record.pluginId!);
     if (binding.packageId != record.id) throw StateError('Package changed');
     await _remote.connect(
@@ -249,7 +240,28 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       password: password,
       trustPeer: trustPeer,
       reinstall: reinstall,
+      assignedExecutorId:
+          grant?['executor'] == 'vps' ? grant!['executor_id'] as String : null,
       stillOwned: () => activeCapsuleRootHex() == owner,
+      saveAuthorized:
+          (save) => withWorkspaceAuthority(owner, record, () async {
+            final installed = await registry.resolveRuntimeBinding(
+              record.pluginId!,
+            );
+            final current = await super.readWorkspaceExecution(
+              record,
+              ownerCapsuleHex: owner,
+              enforceHost: false,
+              allowRemoteRecoveryBinding: true,
+            );
+            if (activeCapsuleRootHex() != owner ||
+                installed.packageId != binding.packageId ||
+                installed.packageDigestHex != binding.packageDigestHex ||
+                current?['revision'] != grant?['revision']) {
+              throw StateError('Workspace changed while connecting to the VPS');
+            }
+            await save();
+          }),
     );
   }
 
@@ -275,7 +287,10 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
         checkpoint: Map<String, dynamic>.from(result['checkpoint'] as Map),
       );
     }
-    await _remote.selectOnline(owner, record.pluginId!);
+    await withWorkspaceAuthority(owner, record, () async {
+      if (activeCapsuleRootHex() != owner) throw StateError('Capsule changed');
+      await _remote.selectOnline(owner, record.pluginId!);
+    });
   }
 
   Future<List<Map<String, String>>> listWorkspaceSecretReferences(
@@ -554,6 +569,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
     String? expectedHandoffId,
+    Future<void> Function()? authorizeRelease,
   }) async {
     if (enabled && revoke) throw StateError('Start cannot revoke authority');
     final owner = activeCapsuleRootHex();
@@ -591,6 +607,16 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
           'Start authority changed; reopen the current permissions',
         );
       }
+      final selected = c!;
+      Future<void> confirmDestination() async {
+        if (!mapEquals(
+          selected,
+          await _remote.connection(owner, record.pluginId!),
+        )) {
+          throw StateError('VPS selection changed during Start');
+        }
+      }
+
       // Start belongs to the current owner and selection, not the device that
       // happened to install the previous server process. No old runner action.
       await super.setWorkspaceExecution(
@@ -606,18 +632,20 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
                   MapEntry(k as String, Map<String, String>.from(v as Map)),
             ),
         settings: settings,
-        releaseToExecutorId: c!['executor_id'] as String,
+        releaseToExecutorId: selected['executor_id'] as String,
+        authorizeRelease: confirmDestination,
       );
       final checkpoint = await releaseWorkspaceToVps(
         record,
-        executorId: c['executor_id'] as String,
+        executorId: selected['executor_id'] as String,
       );
-      c = await _remote.ensurePackage(
-        owner,
+      final acknowledged = await _remote.ensurePackage(
+        selected,
         record,
         credentialBindings: credentialBindings,
         checkpoint: checkpoint,
         authorize: () async {
+          await confirmDestination();
           final current = await super.readWorkspaceExecution(
             record,
             enforceHost: false,
@@ -636,6 +664,15 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
             );
           }
         },
+      );
+      c = await confirmWorkspaceHandoff(
+        record,
+        Map<String, dynamic>.from(checkpoint['execution'] as Map),
+        () => _remote.rememberBinding(
+          selected,
+          acknowledged,
+          digest: checkpoint['package_digest'] as String,
+        ),
       );
       await _requireExecutionControls(c, requireReplacement: true);
       return runWorkspaceAction(record: record, action: 'open');
@@ -758,6 +795,7 @@ class PluginRuntimeModule extends PluginWorkspaceRuntime {
       settings: settings,
       releaseToExecutorId: releaseToExecutorId,
       expectedHandoffId: expectedHandoffId,
+      authorizeRelease: authorizeRelease,
     );
   }
 

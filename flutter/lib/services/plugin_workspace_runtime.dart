@@ -539,6 +539,7 @@ class PluginWorkspaceRuntime {
     Map<String, dynamic> settings = const {},
     String? releaseToExecutorId,
     String? expectedHandoffId,
+    Future<void> Function()? authorizeRelease,
   }) async {
     approvedScope =
         approvedScope == null
@@ -708,6 +709,7 @@ class PluginWorkspaceRuntime {
                 !binding.capabilities.contains('workspace.schedule'))) {
           throw StateError('Execution package changed during confirmation');
         }
+        if (releasing) await authorizeRelease?.call();
         if (!_isStillOwnedBy(owner)) throw StateError('Active Capsule changed');
         final directory = await _fileStore.capsuleDirForHex(
           owner,
@@ -897,21 +899,27 @@ class PluginWorkspaceRuntime {
     Future<T> Function() confirm,
   ) {
     final owner = expected['owner'] as String;
-    return _serialize(
-      '$owner::${record.pluginId}::execution',
-      () => _withWorkspaceLease(owner, record, () async {
-        final current = await _readExecution(record, owner, enforceHost: false);
-        if (!_isStillOwnedBy(owner) ||
-            current?['executor'] != 'vps' ||
-            current?['executor_id'] != expected['executor_id'] ||
-            current?['package_digest'] != expected['package_digest'] ||
-            current?['handoff_id'] != expected['handoff_id']) {
-          throw StateError('VPS assignment changed before acknowledgement');
-        }
-        return confirm();
-      }, authorityOnly: true),
-    );
+    return withWorkspaceAuthority(owner, record, () async {
+      final current = await _readExecution(record, owner, enforceHost: false);
+      if (!_isStillOwnedBy(owner) ||
+          current?['executor'] != 'vps' ||
+          current?['executor_id'] != expected['executor_id'] ||
+          current?['package_digest'] != expected['package_digest'] ||
+          current?['handoff_id'] != expected['handoff_id']) {
+        throw StateError('VPS assignment changed before acknowledgement');
+      }
+      return confirm();
+    });
   }
+
+  Future<T> withWorkspaceAuthority<T>(
+    String owner,
+    WasmPluginRecord record,
+    Future<T> Function() work,
+  ) => _serialize(
+    '$owner::${record.pluginId}::execution',
+    () => _withWorkspaceLease(owner, record, work, authorityOnly: true),
+  );
 
   /// Called by the host transport, never by WASM. The source stays detached
   /// even if upload or acknowledgement is lost; there is no local fallback.
