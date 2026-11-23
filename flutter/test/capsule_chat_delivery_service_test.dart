@@ -1186,6 +1186,7 @@ void main() {
       final result = await service.drainAndFilter();
 
       expect(result.code, -2005);
+      expect(result.newMessageCount, 0);
       expect(
         result.errorMessage,
         contains(
@@ -2011,7 +2012,9 @@ void main() {
         // A relay can redeliver after the receiver restarts, even after a local acknowledgement.
         for (var restart = 0; restart < 2; restart++) {
           final reopened = chat(side);
-          expect((await reopened.drainAndFilter()).code, 1);
+          final received = await reopened.drainAndFilter();
+          expect(received.code, 1);
+          expect(received.newMessageCount, restart == 0 ? 1 : 0);
           final messages = await reopened.loadCachedMessagesDurably();
           expect(messages.map((message) => message.id), unorderedEquals(ids));
           final incoming = messages.singleWhere(

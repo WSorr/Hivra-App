@@ -300,7 +300,35 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     };
     if (appliesAutomatically) {
       await _applyPassiveReceiveResult(result);
+    } else if (result.chat.newMessageCount > 0) {
+      await _refreshChatUnreadCount(capsuleHex: result.capsuleHex);
     }
+    final count = result.chat.newMessageCount;
+    if (count == 0 ||
+        !mounted ||
+        result.capsuleHex != _activeCapsuleHex ||
+        result.capsuleHex != _runtime.activeCapsuleRootHex() ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    UiFeedbackService.showSnackBar(
+      context,
+      count == 1 ? 'New chat message' : 'New chat messages',
+      source: 'chat.receive',
+      duration: const Duration(seconds: 5),
+      enableCopy: false,
+      action: SnackBarAction(
+        label: 'Open Chat',
+        onPressed: () {
+          if (mounted &&
+              result.capsuleHex == _activeCapsuleHex &&
+              ModalRoute.of(context)?.isCurrent == true) {
+            _openChat();
+          }
+        },
+      ),
+    );
   }
 
   Future<void> _applyPassiveReceiveResult(

@@ -168,7 +168,9 @@ branch state; published artifacts and their signoff belong to
 - Chat is built into Capsule and scoped to its existing Core relationships.
   The header opens the conversation list and a relationship can open the same
   screen for its peer. The runtime uses the existing Pair Consensus check,
-  encrypted timeline and Nostr delivery. The legacy Chat package is retired
+  encrypted timeline and Nostr delivery. When the Capsule main screen is visible,
+  newly stored messages show an Open Chat notice without message text. The unread
+  badge remains available after the notice closes. The legacy Chat package is retired
   in this runtime. Its catalog entry remains available to older clients.
 - Moltbook and Jack are installed packages developed in `hivra-plugins`. They
   use the common protocol-2 workspace and can change independently within its

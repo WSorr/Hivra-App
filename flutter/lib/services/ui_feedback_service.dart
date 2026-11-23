@@ -32,6 +32,7 @@ class UiFeedbackService {
     Duration duration = const Duration(seconds: 3),
     bool enableCopy = true,
     bool replaceCurrent = true,
+    SnackBarAction? action,
   }) {
     final text = message.trim();
     if (text.isEmpty) return;
@@ -55,7 +56,8 @@ class UiFeedbackService {
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
         content: Text(text),
         action:
-            enableCopy
+            action ??
+            (enableCopy
                 ? SnackBarAction(
                   label: 'COPY',
                   onPressed: () {
@@ -64,7 +66,7 @@ class UiFeedbackService {
                     dismissCurrent(context);
                   },
                 )
-                : null,
+                : null),
       ),
     );
 

@@ -617,8 +617,9 @@ class CapsuleChatDeliveryService {
     final messages =
         byId.values.toList()
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    final int newMessageCount;
     try {
-      await _deliveryInboxStore.mergeDurably(
+      newMessageCount = await _deliveryInboxStore.mergeDurably(
         activeCapsuleHex,
         messages: messages,
       );
@@ -652,6 +653,7 @@ class CapsuleChatDeliveryService {
           droppedByConsensus: droppedByConsensus,
           deferredByConsensus: deferredByConsensus,
           messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+          newMessageCount: newMessageCount,
         );
       }
     }
@@ -673,6 +675,7 @@ class CapsuleChatDeliveryService {
           droppedByConsensus: droppedByConsensus,
           deferredByConsensus: deferredByConsensus,
           messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+          newMessageCount: newMessageCount,
         );
       }
     }
@@ -683,6 +686,7 @@ class CapsuleChatDeliveryService {
       droppedByConsensus: droppedByConsensus,
       deferredByConsensus: deferredByConsensus,
       messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+      newMessageCount: newMessageCount,
     );
   }
 

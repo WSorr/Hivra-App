@@ -106,12 +106,16 @@ class CapsuleChatDeliveryReceiveResult {
   final int deferredByConsensus;
   final List<CapsuleChatInboxMessage> messages;
 
+  /// Incoming messages first retained by this drain, after the timeline write.
+  final int newMessageCount;
+
   const CapsuleChatDeliveryReceiveResult({
     required this.code,
     required this.errorMessage,
     required this.droppedByConsensus,
     this.deferredByConsensus = 0,
     required this.messages,
+    this.newMessageCount = 0,
   });
 }
 

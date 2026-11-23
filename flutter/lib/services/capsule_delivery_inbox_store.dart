@@ -103,18 +103,18 @@ class CapsuleDeliveryInboxStore {
     });
   }
 
-  Future<void> mergeDurably(
+  Future<int> mergeDurably(
     String capsuleRootHex, {
     required Iterable<CapsuleChatInboxMessage> messages,
   }) async {
     final normalized = capsuleRootHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return;
+    if (!_isHex64(normalized)) return 0;
     final incomingMessages = messages.toList(growable: false);
-    if (incomingMessages.isEmpty) return;
+    if (incomingMessages.isEmpty) return 0;
     if (!await hydrateCapsule(normalized)) {
       throw StateError('Existing Chat timeline is unavailable or invalid');
     }
-    await _persistTimeline(normalized, incoming: incomingMessages);
+    return _persistTimeline(normalized, incoming: incomingMessages);
   }
 
   Future<void> upsertMessageDurably(
@@ -279,7 +279,7 @@ class CapsuleDeliveryInboxStore {
     }
   }
 
-  Future<void> _persistTimeline(
+  Future<int> _persistTimeline(
     String capsuleRootHex, {
     List<CapsuleChatInboxMessage> incoming = const [],
     int? cacheBudgetBytes,
@@ -306,14 +306,13 @@ class CapsuleDeliveryInboxStore {
     }
   }
 
-  Future<void> _persistTimelineNow(
+  Future<int> _persistTimelineNow(
     String capsuleRootHex,
     List<CapsuleChatInboxMessage> incoming,
     int? cacheBudgetBytes,
   ) async {
-    final staged = Map<String, CapsuleChatInboxMessage>.of(
-      _messagesByCapsule[capsuleRootHex] ?? const {},
-    );
+    final previous = _messagesByCapsule[capsuleRootHex] ?? const {};
+    final staged = Map<String, CapsuleChatInboxMessage>.of(previous);
     _mergeMessagesInto(staged, incoming);
     final budget =
         cacheBudgetBytes ??
@@ -324,7 +323,7 @@ class CapsuleDeliveryInboxStore {
       staged,
       budgetBytes: budget,
     );
-    if (incoming.isEmpty && cacheBudgetBytes == null && !evicted) return;
+    if (incoming.isEmpty && cacheBudgetBytes == null && !evicted) return 0;
     final messages =
         staged.values.toList()
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
@@ -342,10 +341,13 @@ class CapsuleDeliveryInboxStore {
       capsuleDir,
       await _sealTimeline(capsuleRootHex, cleartext),
     );
+    final addedCount =
+        staged.keys.where((id) => !previous.containsKey(id)).length;
     _messagesByCapsule[capsuleRootHex] = staged;
     _cacheBudgets[capsuleRootHex] = budget;
     _touchCapsule(capsuleRootHex);
     _retainNewestCapsules();
+    return addedCount;
   }
 
   Map<String, Object?> _encodeTimelineMessage(
