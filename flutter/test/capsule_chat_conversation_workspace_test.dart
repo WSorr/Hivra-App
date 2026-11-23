@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/models/consensus_models.dart';
-import 'package:hivra_app/models/plugin_host_api_models.dart';
-import 'package:hivra_app/screens/capsule_chat_plugin_screen.dart';
+import 'package:hivra_app/screens/capsule_chat_screen.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
 import 'package:hivra_app/services/capsule_contact_label_store.dart';
 import 'package:hivra_app/services/capsule_passive_receive_coordinator.dart';
@@ -13,8 +12,7 @@ import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
 import 'package:hivra_app/services/consensus_attestation_sync_service.dart';
 import 'package:hivra_app/services/invitation_intent_handler.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
-import 'package:hivra_app/services/plugin_runtime_module_service.dart';
-import 'package:hivra_app/services/ui_event_log_service.dart';
+import 'package:hivra_app/services/app_runtime_service.dart';
 import 'package:hivra_app/widgets/capsule_chat_conversation_workspace.dart';
 import 'package:hivra_app/utils/peer_identity_format.dart';
 
@@ -32,12 +30,18 @@ void main() {
     Future<void> open(
       WidgetTester tester, {
       Size size = const Size(1200, 900),
+      String? initialPeerHex,
     }) async {
       module = _RecoveryChatModule(capsuleHex, peerHex);
       await tester.binding.setSurfaceSize(size);
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
-        MaterialApp(home: CapsuleChatPluginScreen(module: module)),
+        MaterialApp(
+          home: CapsuleChatScreen(
+            runtime: module,
+            initialPeerHex: initialPeerHex,
+          ),
+        ),
       );
       await tester.pumpAndSettle();
     }
@@ -124,11 +128,41 @@ void main() {
       expect(module.messageSends, 0);
     });
 
+    testWidgets('relationship entry opens its conversation directly', (
+      tester,
+    ) async {
+      await open(tester, size: const Size(390, 844), initialPeerHex: peerHex);
+      expect(find.text('Conversations'), findsNothing);
+      expect(find.byKey(const Key('capsule-chat-composer')), findsOneWidget);
+      expect(module.attestationExchange.requests, [peerHex]);
+      expect(module.messageSends, 0);
+      module.attestationExchange.pending.complete(_readyExchange);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('compact Chat returns from a conversation to its list', (
+      tester,
+    ) async {
+      await open(tester, size: const Size(390, 844));
+      expect(find.text('Conversations'), findsOneWidget);
+      await tester.tap(find.text('Needs verification'));
+      await tester.pump();
+      expect(find.text('Conversations'), findsNothing);
+      expect(find.byKey(const Key('capsule-chat-composer')), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await tester.pump();
+      expect(find.text('Conversations'), findsOneWidget);
+      expect(find.byKey(const Key('capsule-chat-composer')), findsNothing);
+      module.attestationExchange.pending.complete(_readyExchange);
+      await tester.pumpAndSettle();
+      expect(module.messageSends, 0);
+    });
+
     testWidgets('compact conversation shows verification before any send', (
       tester,
     ) async {
       await open(tester, size: const Size(390, 844));
-      await tester.tap(find.text('New conversation'));
+      await tester.tap(find.text('Needs verification'));
       await tester.pump();
       expect(find.text('Needs verification'), findsOneWidget);
       expect(find.text('Ready to chat'), findsNothing);
@@ -146,7 +180,7 @@ void main() {
       tester,
     ) async {
       await open(tester, size: const Size(390, 844));
-      await tester.tap(find.text('New conversation'));
+      await tester.tap(find.text('Needs verification'));
       await tester.pump();
       expect(find.text('Needs verification'), findsOneWidget);
 
@@ -400,35 +434,6 @@ void main() {
     expect(find.text('cached after timeout'), findsOneWidget);
   });
 
-  testWidgets('keeps runtime details collapsed by default', (tester) async {
-    final peerController = TextEditingController(text: peerHex);
-    final messageController = TextEditingController();
-    addTearDown(peerController.dispose);
-    addTearDown(messageController.dispose);
-
-    await tester.pumpWidget(
-      _testApp(
-        peerController: peerController,
-        messageController: messageController,
-        lastResponse: _response,
-      ),
-    );
-
-    expect(find.text('Technical details'), findsOneWidget);
-    expect(
-      find.textContaining('Method: post_capsule_chat_message'),
-      findsNothing,
-    );
-
-    await tester.tap(find.text('Technical details'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.textContaining('Method: post_capsule_chat_message'),
-      findsOneWidget,
-    );
-  });
-
   testWidgets(
     'projects a passive cached message while the workspace remains open',
     (tester) async {
@@ -527,8 +532,8 @@ void main() {
   test('send notices preserve product truth and the draft contract', () {
     expect(
       chatWorkspaceNoticeForSendResult(
-        const PluginChatSendResult(
-          status: PluginChatSendStatus.sent,
+        const CapsuleChatSendResult(
+          status: CapsuleChatSendStatus.sent,
           message: 'Message sent',
         ),
       ),
@@ -536,8 +541,8 @@ void main() {
     );
     expect(
       chatWorkspaceNoticeForSendResult(
-        const PluginChatSendResult(
-          status: PluginChatSendStatus.syncing,
+        const CapsuleChatSendResult(
+          status: CapsuleChatSendStatus.syncing,
           message: 'Pair consensus attestation is not ready',
         ),
       ),
@@ -550,7 +555,6 @@ Widget _testApp({
   required TextEditingController peerController,
   required TextEditingController messageController,
   List<CapsuleChatInboxMessage> messages = const <CapsuleChatInboxMessage>[],
-  PluginHostApiResponse? lastResponse,
   String? notice,
   bool noticeIsError = false,
   Future<void> Function()? onRetryReceive,
@@ -569,7 +573,6 @@ Widget _testApp({
           child: CapsuleChatConversationWorkspace(
             sending: false,
             checkingForMessages: false,
-            lastResponse: lastResponse,
             notice: notice,
             noticeIsError: noticeIsError,
             messages: messages,
@@ -593,32 +596,6 @@ Widget _testApp({
   );
 }
 
-const _response = PluginHostApiResponse(
-  status: PluginHostApiStatus.executed,
-  pluginId: 'capsule-chat',
-  method: 'post_capsule_chat_message',
-  executionSource: 'external_package',
-  executionPackageId: 'capsule-chat',
-  executionPackageVersion: '1',
-  executionPackageKind: 'wasm',
-  executionPackageDigestHex: 'aa',
-  executionContractKind: 'chat',
-  executionRuntimeMode: 'wasm',
-  executionRuntimeAbi: 'hivra_host_abi_v2',
-  executionRuntimeEntryExport: 'hivra_evaluate_v1',
-  executionRuntimeModulePath: 'chat.wasm',
-  executionRuntimeModuleSelection: 'manifest_module_path',
-  executionRuntimeModuleDigestHex: 'bb',
-  executionRuntimeInvokeDigestHex: 'cc',
-  executionCapabilities: <String>[],
-  errorCode: null,
-  errorMessage: null,
-  blockingFacts: <Never>[],
-  result: <String, dynamic>{'envelope_hash_hex': 'dd'},
-  canonicalJson: '{}',
-  responseHashHex: 'ee',
-);
-
 const _emptyChat = CapsuleChatDeliveryReceiveResult(
   code: 0,
   errorMessage: null,
@@ -635,21 +612,29 @@ const _readyExchange = ConsensusAttestationExchangeResult(
   localEvidenceSent: false,
 );
 
-class _RecoveryChatModule extends Fake implements PluginRuntimeModule {
+class _RecoveryChatModule extends Fake implements AppRuntimeService {
   String owner;
   int storedAttestations = 0;
   int messageSends = 0;
 
-  @override
   final _RecoveryChatExchange attestationExchange = _RecoveryChatExchange();
-  @override
   final _RecoveryChatChecks manualChecks;
-  @override
   final chatDelivery = _RecoveryChatCache();
-  @override
   final contactLabels = _RecoveryChatLabels();
+
   @override
-  final uiLog = _RecoveryChatLog();
+  CapsuleChatDeliveryService buildCapsuleChatDeliveryService() => chatDelivery;
+
+  @override
+  CapsuleContactLabelStore buildCapsuleContactLabelStore() => contactLabels;
+
+  @override
+  ManualConsensusCheckService buildManualConsensusCheckService() =>
+      manualChecks;
+
+  @override
+  ConsensusAttestationExchangeService
+  buildConsensusAttestationExchangeService() => attestationExchange;
   @override
   late final CapsulePassiveReceiveCoordinator passiveReceive =
       CapsulePassiveReceiveCoordinator.withRunners(
@@ -677,7 +662,7 @@ class _RecoveryChatModule extends Fake implements PluginRuntimeModule {
   String activeCapsuleRootHex() => owner;
 
   @override
-  Future<PluginChatSendResult> sendChatMessage({
+  Future<CapsuleChatSendResult> sendChatMessage({
     required String peerHex,
     required String messageText,
   }) async {
@@ -738,9 +723,4 @@ class _RecoveryChatCache extends Fake implements CapsuleChatDeliveryService {
 class _RecoveryChatLabels extends Fake implements CapsuleContactLabelStore {
   @override
   Future<Map<String, String>> load() async => {};
-}
-
-class _RecoveryChatLog extends Fake implements UiEventLogService {
-  @override
-  Future<void> log(String source, String message) async {}
 }

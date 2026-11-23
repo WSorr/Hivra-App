@@ -107,8 +107,8 @@ App Shell
        -> Delivery and Effect capabilities
        -> credential handles
        -> provider and platform adapters
+  -> built-in Capsule Chat
   -> installed capability packages
-       -> Chat
        -> Moltbook
        -> Trading
 ```
@@ -136,7 +136,7 @@ Provider observations and receipts do not become Core facts.
 
 The product capability targets are:
 
-1. Chat gives a person a usable cross-device conversation with durable
+1. Built-in Chat gives a person a usable cross-device conversation with durable
    delivery, receipt, deduplication and restart continuity of its retained
    local window. Its accepted cache budget and eviction journey belong to
    `development-control.md`; a permanent complete message archive is not a

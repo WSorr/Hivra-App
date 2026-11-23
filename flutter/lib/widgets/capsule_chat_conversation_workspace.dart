@@ -3,13 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/capsule_chat_models.dart';
-import '../models/plugin_host_api_models.dart';
 import '../utils/peer_identity_format.dart';
 
 class CapsuleChatConversationWorkspace extends StatelessWidget {
   final bool sending;
   final bool checkingForMessages;
-  final PluginHostApiResponse? lastResponse;
+  final bool canCompose;
   final String? notice;
   final bool noticeIsError;
   final List<CapsuleChatInboxMessage> messages;
@@ -32,7 +31,7 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
     super.key,
     required this.sending,
     required this.checkingForMessages,
-    required this.lastResponse,
+    this.canCompose = true,
     required this.notice,
     required this.noticeIsError,
     required this.messages,
@@ -105,14 +104,12 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
               ),
               const Divider(height: 1, color: Color(0xFF2B3846)),
               _ConversationComposer(
-                enabled: hasPeer,
+                enabled: hasPeer && canCompose,
                 sending: sending,
                 controller: messageController,
                 onChanged: onInputChanged,
                 onSend: onSend,
               ),
-              if (lastResponse != null)
-                _TechnicalDetails(response: lastResponse!),
             ],
           ),
         );
@@ -198,7 +195,8 @@ class _LiveConversationTimelineState extends State<_LiveConversationTimeline> {
   @override
   Widget build(BuildContext context) {
     return _ConversationTimeline(
-      messages: _messagesForPeer(_projectedMessages, widget.peerHex),
+      messages: chatMessagesForPeer(_projectedMessages, widget.peerHex)
+        ..sort((left, right) => left.timestampMs.compareTo(right.timestampMs)),
       contactLabels: widget.contactLabels,
     );
   }
@@ -598,57 +596,6 @@ class _ConversationComposer extends StatelessWidget {
       ),
     );
   }
-}
-
-class _TechnicalDetails extends StatelessWidget {
-  final PluginHostApiResponse response;
-
-  const _TechnicalDetails({required this.response});
-
-  @override
-  Widget build(BuildContext context) {
-    final hash = response.result?['envelope_hash_hex']?.toString() ?? '';
-    return Material(
-      type: MaterialType.transparency,
-      child: ExpansionTile(
-        key: const Key('capsule-chat-technical-details'),
-        dense: true,
-        title: const Text(
-          'Technical details',
-          style: TextStyle(fontSize: 12, color: Color(0xFF96A2B2)),
-        ),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        children: [
-          SelectableText(
-            'Status: ${response.status.name}\n'
-            'Method: ${response.method}\n'
-            'Source: ${response.executionSource}'
-            '${hash.isEmpty ? '' : '\nEnvelope: $hash'}',
-            style: const TextStyle(fontSize: 11, color: Color(0xFF96A2B2)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-List<CapsuleChatInboxMessage> _messagesForPeer(
-  List<CapsuleChatInboxMessage> messages,
-  String peerHex,
-) {
-  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
-    return const <CapsuleChatInboxMessage>[];
-  }
-  return messages
-      .where(
-        (message) =>
-            (message.direction == CapsuleChatMessageDirection.outgoing
-                ? message.toHex
-                : message.fromHex) ==
-            peerHex,
-      )
-      .toList(growable: false)
-    ..sort((left, right) => left.timestampMs.compareTo(right.timestampMs));
 }
 
 String _formatTimestamp(String value) {

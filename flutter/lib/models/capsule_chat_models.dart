@@ -1,5 +1,23 @@
 import 'dart:convert';
 
+enum CapsuleChatSendStatus {
+  sent,
+  syncing,
+  blocked,
+  rejected,
+  failed,
+  capsuleChanged,
+}
+
+class CapsuleChatSendResult {
+  final CapsuleChatSendStatus status;
+  final String message;
+
+  const CapsuleChatSendResult({required this.status, required this.message});
+
+  bool get isSuccess => status == CapsuleChatSendStatus.sent;
+}
+
 enum CapsuleChatMessageDirection { incoming, outgoing }
 
 enum CapsuleChatMessageDeliveryState {
@@ -88,11 +106,34 @@ class CapsuleChatDeliveryReceiveResult {
   final int deferredByConsensus;
   final List<CapsuleChatInboxMessage> messages;
 
+  /// Incoming messages first retained by this drain, after the timeline write.
+  final int newMessageCount;
+
   const CapsuleChatDeliveryReceiveResult({
     required this.code,
     required this.errorMessage,
     required this.droppedByConsensus,
     this.deferredByConsensus = 0,
     required this.messages,
+    this.newMessageCount = 0,
   });
+}
+
+List<CapsuleChatInboxMessage> chatMessagesForPeer(
+  List<CapsuleChatInboxMessage> messages,
+  String peerHex,
+) {
+  final normalizedPeer = peerHex.trim().toLowerCase();
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedPeer)) {
+    return const <CapsuleChatInboxMessage>[];
+  }
+  return messages
+      .where(
+        (message) =>
+            (message.direction == CapsuleChatMessageDirection.outgoing
+                ? message.toHex
+                : message.fromHex) ==
+            normalizedPeer,
+      )
+      .toList(growable: false);
 }

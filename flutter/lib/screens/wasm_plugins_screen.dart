@@ -112,7 +112,19 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _sourceCatalogSnapshot = catalog;
+        _sourceCatalogSnapshot = WasmPluginSourceCatalog(
+          sourceId: catalog.sourceId,
+          sourceName: catalog.sourceName,
+          fetchedAtIso: catalog.fetchedAtIso,
+          entries:
+              catalog.entries
+                  .where(
+                    (entry) =>
+                        canonicalPluginId(entry.pluginId) !=
+                        capsuleChatPluginId,
+                  )
+                  .toList(),
+        );
       });
     } catch (error) {
       await _module.uiLog.log('plugin.source.catalog.refresh', 'error=$error');
@@ -1078,7 +1090,10 @@ class _InstalledPluginTile extends StatelessWidget {
       contractKind: record.contractKind,
       capabilities: record.capabilities,
     );
+    final builtInChat =
+        canonicalPluginId(record.pluginId) == capsuleChatPluginId;
     final ready =
+        !builtInChat &&
         !record.removalPending &&
         (!isZipPackage || (abiMatches && entryMatches && capabilitiesMatch));
 
@@ -1157,6 +1172,8 @@ class _InstalledPluginTile extends StatelessWidget {
                   label:
                       record.removalPending
                           ? 'Removal pending'
+                          : builtInChat
+                          ? 'Chat is built in'
                           : ready
                           ? 'Ready'
                           : !capabilitiesMatch

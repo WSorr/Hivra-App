@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../models/capsule_chat_models.dart';
 import '../models/consensus_models.dart';
-import '../models/plugin_host_api_models.dart';
 import '../services/capsule_passive_receive_coordinator.dart';
-import '../services/plugin_runtime_module_service.dart';
+import '../services/app_runtime_service.dart';
 import '../utils/peer_identity_format.dart';
 import '../widgets/capsule_chat_conversation_workspace.dart';
 
@@ -31,34 +30,16 @@ projectCachedMessagesBeforeChatRefresh({
 }
 
 @visibleForTesting
-List<CapsuleChatInboxMessage> chatMessagesForPeer(
-  List<CapsuleChatInboxMessage> messages,
-  String peerHex,
-) {
-  final normalizedPeer = peerHex.trim().toLowerCase();
-  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedPeer)) return messages;
-  return messages
-      .where(
-        (message) =>
-            (message.direction == CapsuleChatMessageDirection.outgoing
-                ? message.toHex
-                : message.fromHex) ==
-            normalizedPeer,
-      )
-      .toList(growable: false);
-}
-
-@visibleForTesting
-String chatWorkspaceNoticeForSendResult(PluginChatSendResult result) {
+String chatWorkspaceNoticeForSendResult(CapsuleChatSendResult result) {
   return switch (result.status) {
-    PluginChatSendStatus.sent => 'Accepted by transport',
-    PluginChatSendStatus.syncing =>
+    CapsuleChatSendStatus.sent => 'Accepted by transport',
+    CapsuleChatSendStatus.syncing =>
       'Securing this conversation. Your draft is preserved; press Send again when it is ready.',
-    PluginChatSendStatus.blocked =>
+    CapsuleChatSendStatus.blocked =>
       'This conversation is not ready yet. Your draft is preserved.',
-    PluginChatSendStatus.rejected => result.message,
-    PluginChatSendStatus.failed => result.message,
-    PluginChatSendStatus.capsuleChanged => result.message,
+    CapsuleChatSendStatus.rejected => result.message,
+    CapsuleChatSendStatus.failed => result.message,
+    CapsuleChatSendStatus.capsuleChanged => result.message,
   };
 }
 
@@ -111,25 +92,27 @@ List<String> orderChatConversationPeerHexes({
   return List<String>.unmodifiable(ordered);
 }
 
-class CapsuleChatPluginScreen extends StatefulWidget {
-  final PluginRuntimeModule module;
+class CapsuleChatScreen extends StatefulWidget {
+  final AppRuntimeService runtime;
+  final String? initialPeerHex;
+  final VoidCallback? onOpenInvitations;
   final VoidCallback? onUnreadChanged;
 
-  const CapsuleChatPluginScreen({
+  const CapsuleChatScreen({
     super.key,
-    required this.module,
+    required this.runtime,
+    this.initialPeerHex,
+    this.onOpenInvitations,
     this.onUnreadChanged,
   });
 
   @override
-  State<CapsuleChatPluginScreen> createState() =>
-      _CapsuleChatPluginScreenState();
+  State<CapsuleChatScreen> createState() => _CapsuleChatScreenState();
 }
 
-class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
+class _CapsuleChatScreenState extends State<CapsuleChatScreen> {
   final TextEditingController _peerController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
-  PluginHostApiResponse? _lastResponse;
   String? _notice;
   bool _noticeIsError = false;
   bool _sending = false;
@@ -143,18 +126,34 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   int _droppedByConsensus = 0;
   int _deferredByConsensus = 0;
 
-  PluginRuntimeModule get _module => widget.module;
+  late final String? _owner;
+  late final _chatDelivery = widget.runtime.buildCapsuleChatDeliveryService();
+  late final _manualChecks = widget.runtime.buildManualConsensusCheckService();
+  late final _attestationExchange =
+      widget.runtime.buildConsensusAttestationExchangeService();
+  late final _contactLabelsStore =
+      widget.runtime.buildCapsuleContactLabelStore();
+
+  bool get _ownsCapsule =>
+      mounted &&
+      _owner != null &&
+      widget.runtime.activeCapsuleRootHex() == _owner;
 
   @override
   void initState() {
     super.initState();
-    _module.passiveReceive.addResultListener(_handlePassiveReceiveResult);
+    _owner = widget.runtime.activeCapsuleRootHex();
+    widget.runtime.passiveReceive.addResultListener(
+      _handlePassiveReceiveResult,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
   }
 
   @override
   void dispose() {
-    _module.passiveReceive.removeResultListener(_handlePassiveReceiveResult);
+    widget.runtime.passiveReceive.removeResultListener(
+      _handlePassiveReceiveResult,
+    );
     _peerController.dispose();
     _messageController.dispose();
     super.dispose();
@@ -163,8 +162,9 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   Future<void> _handlePassiveReceiveResult(
     CapsulePassiveReceiveResult result,
   ) async {
-    final activeCapsule = _module.activeCapsuleRootHex()?.trim().toLowerCase();
-    if (!mounted ||
+    final activeCapsule =
+        widget.runtime.activeCapsuleRootHex()?.trim().toLowerCase();
+    if (!_ownsCapsule ||
         activeCapsule == null ||
         activeCapsule != result.capsuleHex) {
       return;
@@ -175,10 +175,9 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
     }
 
     try {
-      final cachedMessages =
-          await _module.chatDelivery.loadCachedMessagesDurably();
+      final cachedMessages = await _chatDelivery.loadCachedMessagesDurably();
       final currentCapsule =
-          _module.activeCapsuleRootHex()?.trim().toLowerCase();
+          widget.runtime.activeCapsuleRootHex()?.trim().toLowerCase();
       if (!mounted || currentCapsule != result.capsuleHex) return;
       final retained = cachedMessages;
       setState(() {
@@ -194,17 +193,20 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   }
 
   Future<void> _initialize() async {
+    if (!_ownsCapsule) return;
     await _refreshContacts();
+    if (!_ownsCapsule) return;
+    final peerHex = widget.initialPeerHex;
+    if (peerHex != null) _selectPeer(peerHex);
     await _refreshInbox(silentWhenEmpty: true);
   }
 
   Future<void> _refreshContacts() async {
     try {
-      final contacts = await _module.manualChecks.loadAttestedChecks();
-      final labels = await _module.contactLabels.load();
-      final unread =
-          await _module.chatDelivery.unreadCachedMessageCountsByPeer();
-      if (!mounted) return;
+      final contacts = await _manualChecks.loadAttestedChecks();
+      final labels = await _contactLabelsStore.load();
+      final unread = await _chatDelivery.unreadCachedMessageCountsByPeer();
+      if (!_ownsCapsule) return;
       setState(() {
         _contacts = contacts;
         _contactLabels = labels;
@@ -215,7 +217,7 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
         _unreadByPeer = unread;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!_ownsCapsule) return;
       setState(() {
         _notice =
             'Contacts are unavailable. Saved conversation remains available.';
@@ -225,34 +227,28 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   }
 
   Future<String?> _selectContact() async {
-    final checks = await _module.manualChecks.loadAttestedChecks();
-    final labels = await _module.contactLabels.load();
-    if (!mounted) return null;
-    if (checks.isEmpty) {
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
+    final checks = await _manualChecks.loadAttestedChecks();
+    final labels = await _contactLabelsStore.load();
+    if (!mounted || !_ownsCapsule) return null;
+    final candidates =
+        checks.where((peer) => peer.relationshipCount > 0).toList();
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'No trusted contacts yet. Create at least one relationship first.',
-          ),
-          duration: Duration(seconds: 2),
+          content: Text('Accept an invitation to start a conversation.'),
         ),
       );
       return null;
     }
-
-    final candidates = checks.toList();
     if (candidates.length == 1) return candidates.first.peerHex;
 
     var unreadByPeer = const <String, int>{};
     var timeline = _messages;
     try {
-      unreadByPeer =
-          await _module.chatDelivery.unreadCachedMessageCountsByPeer();
-      timeline = await _module.chatDelivery.loadCachedMessagesDurably();
+      unreadByPeer = await _chatDelivery.unreadCachedMessageCountsByPeer();
+      timeline = await _chatDelivery.loadCachedMessagesDurably();
     } catch (_) {}
-    if (!mounted) return null;
+    if (!mounted || !_ownsCapsule) return null;
     final peerOrder = orderChatConversationPeerHexes(
       peerHexes: candidates.map((check) => check.peerHex),
       signableByPeer: <String, bool>{
@@ -328,14 +324,16 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
 
   Future<void> _chooseContact() async {
     final selectedPeerHex = await _selectContact();
-    if (!mounted || selectedPeerHex == null || selectedPeerHex.isEmpty) return;
-    final labels = await _module.contactLabels.load();
-    if (!mounted) return;
+    if (!_ownsCapsule || selectedPeerHex == null || selectedPeerHex.isEmpty) {
+      return;
+    }
+    final labels = await _contactLabelsStore.load();
+    if (!_ownsCapsule) return;
     _selectPeer(selectedPeerHex, labels: labels);
   }
 
   void _selectPeer(String peerHex, {Map<String, String>? labels}) {
-    if (_sending) return;
+    if (_sending || !_ownsCapsule) return;
     final previousPeer = _peerController.text.trim().toLowerCase();
     if (previousPeer.isNotEmpty) {
       _draftByPeer[previousPeer] = _messageController.text;
@@ -348,25 +346,24 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       _contactLabels = currentLabels;
       _selectedPeerLabel =
           currentLabels[PeerIdentityFormat.capsuleKeyFromRootHex(nextPeer)];
-      _lastResponse = null;
       _notice = null;
       _noticeIsError = false;
     });
     unawaited(_markMessagesRead(_messagesForSelectedPeer(_messages)));
-    unawaited(_secureSelectedPeer(nextPeer));
+    if (nextPeer.isNotEmpty) unawaited(_secureSelectedPeer(nextPeer));
   }
 
   Future<void> _secureSelectedPeer(String peerHex) async {
-    final owner = _module.activeCapsuleRootHex();
+    final owner = widget.runtime.activeCapsuleRootHex();
     if (owner == null) return;
     var failed = false;
     try {
-      await _module.attestationExchange.ensureForPeer(peerHex);
+      await _attestationExchange.ensureForPeer(peerHex);
     } catch (_) {
       failed = true;
     }
     if (!mounted ||
-        owner != _module.activeCapsuleRootHex() ||
+        owner != widget.runtime.activeCapsuleRootHex() ||
         peerHex != _peerController.text) {
       return;
     }
@@ -381,7 +378,7 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   }
 
   Future<void> _send() async {
-    if (_sending || !mounted) return;
+    if (_sending || !_ownsCapsule) return;
     setState(() {
       _sending = true;
       _notice = 'Sending...';
@@ -389,22 +386,21 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
     });
 
     try {
-      final result = await _module.sendChatMessage(
+      final result = await widget.runtime.sendChatMessage(
         peerHex: _peerController.text,
         messageText: _messageController.text,
       );
-      if (!mounted) return;
+      if (!_ownsCapsule) return;
       setState(() {
-        _lastResponse = result.hostResponse;
         _notice = chatWorkspaceNoticeForSendResult(result);
         _noticeIsError =
-            result.status != PluginChatSendStatus.sent &&
-            result.status != PluginChatSendStatus.syncing;
+            result.status != CapsuleChatSendStatus.sent &&
+            result.status != CapsuleChatSendStatus.syncing;
         if (result.isSuccess) _messageController.clear();
       });
       if (result.isSuccess) await _refreshInbox(silentWhenEmpty: true);
     } finally {
-      if (mounted) {
+      if (_ownsCapsule) {
         setState(() {
           _sending = false;
         });
@@ -431,8 +427,7 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
     }
 
     try {
-      final stopwatch = Stopwatch()..start();
-      final capsuleHex = _module.activeCapsuleRootHex();
+      final capsuleHex = widget.runtime.activeCapsuleRootHex();
       if (capsuleHex == null) {
         if (mounted) {
           setState(() {
@@ -443,9 +438,9 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
         return;
       }
       final result = await projectCachedMessagesBeforeChatRefresh(
-        loadCachedMessages: _module.chatDelivery.loadCachedMessagesDurably,
+        loadCachedMessages: _chatDelivery.loadCachedMessagesDurably,
         refresh:
-            () => _module.passiveReceive
+            () => widget.runtime.passiveReceive
                 .trigger(
                   capsuleHex: capsuleHex,
                   reason:
@@ -458,13 +453,7 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
                 .then((value) => value.chat),
         projectMessages: _projectMessages,
       );
-      stopwatch.stop();
-      await _module.uiLog.log(
-        'chat.fetch.result',
-        'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} dropped=${result.droppedByConsensus} deferred=${result.deferredByConsensus}'
-            '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
-      );
-      if (!mounted) return;
+      if (!_ownsCapsule) return;
       if (result.code < 0) {
         setState(() {
           _notice =
@@ -474,9 +463,8 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
         return;
       }
 
-      final cachedMessages =
-          await _module.chatDelivery.loadCachedMessagesDurably();
-      if (!mounted) return;
+      final cachedMessages = await _chatDelivery.loadCachedMessagesDurably();
+      if (!_ownsCapsule) return;
       final retained = cachedMessages;
       setState(() {
         _droppedByConsensus = result.droppedByConsensus;
@@ -491,15 +479,15 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
         }
       });
       await _refreshContacts();
-    } catch (error) {
-      if (mounted) {
+    } catch (_) {
+      if (_ownsCapsule) {
         setState(() {
-          _notice = 'Chat history is unavailable: $error';
+          _notice = 'Chat history is unavailable. Try again.';
           _noticeIsError = true;
         });
       }
     } finally {
-      if (mounted) {
+      if (_ownsCapsule) {
         setState(() {
           _refreshing = false;
         });
@@ -510,7 +498,7 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   }
 
   void _projectMessages(List<CapsuleChatInboxMessage> messages) {
-    if (!mounted) return;
+    if (!_ownsCapsule) return;
     setState(() {
       _messages = messages;
     });
@@ -518,17 +506,17 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   }
 
   Future<void> _markMessagesRead(List<CapsuleChatInboxMessage> messages) async {
-    if (messages.isEmpty) return;
+    if (messages.isEmpty || !_ownsCapsule) return;
     try {
-      await _module.chatDelivery.markCachedMessagesRead(messages);
+      await _chatDelivery.markCachedMessagesRead(messages);
     } catch (_) {
       return;
     }
+    if (!_ownsCapsule) return;
     widget.onUnreadChanged?.call();
     try {
-      final unread =
-          await _module.chatDelivery.unreadCachedMessageCountsByPeer();
-      if (mounted) setState(() => _unreadByPeer = unread);
+      final unread = await _chatDelivery.unreadCachedMessageCountsByPeer();
+      if (_ownsCapsule) setState(() => _unreadByPeer = unread);
     } catch (_) {}
   }
 
@@ -537,12 +525,16 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
   ) => chatMessagesForPeer(messages, _peerController.text);
 
   Future<void> _configureCache() async {
-    final capsule = _module.activeCapsuleRootHex();
+    final capsule = widget.runtime.activeCapsuleRootHex();
     try {
-      final bytes = await _module.chatDelivery.loadCacheBudgetBytes();
+      final bytes = await _chatDelivery.loadCacheBudgetBytes();
       final retainedCount =
-          (await _module.chatDelivery.loadCachedMessagesDurably()).length;
-      if (!mounted || capsule != _module.activeCapsuleRootHex()) return;
+          (await _chatDelivery.loadCachedMessagesDurably()).length;
+      if (!mounted ||
+          !_ownsCapsule ||
+          capsule != widget.runtime.activeCapsuleRootHex()) {
+        return;
+      }
       var budgetText = (bytes / 1000000).toString().replaceFirst(
         RegExp(r'\.0$'),
         '',
@@ -607,19 +599,23 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       );
       if (selected == null ||
           !mounted ||
-          capsule != _module.activeCapsuleRootHex()) {
+          capsule != widget.runtime.activeCapsuleRootHex()) {
         return;
       }
-      await _module.chatDelivery.setCacheBudgetBytes(selected);
-      final retained = await _module.chatDelivery.loadCachedMessagesDurably();
-      if (!mounted || capsule != _module.activeCapsuleRootHex()) return;
+      await _chatDelivery.setCacheBudgetBytes(selected);
+      final retained = await _chatDelivery.loadCachedMessagesDurably();
+      if (!mounted ||
+          !_ownsCapsule ||
+          capsule != widget.runtime.activeCapsuleRootHex()) {
+        return;
+      }
       _projectMessages(retained);
       setState(() {
         _notice = 'Local message cache budget saved.';
         _noticeIsError = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!_ownsCapsule) return;
       setState(() {
         _notice = 'Could not apply the local message cache budget.';
         _noticeIsError = true;
@@ -632,7 +628,6 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
     final workspace = CapsuleChatConversationWorkspace(
       sending: _sending,
       checkingForMessages: _refreshing,
-      lastResponse: _lastResponse,
       notice: _notice,
       noticeIsError: _noticeIsError,
       messages: _messages,
@@ -640,6 +635,11 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       deferredMessageCount: _deferredByConsensus,
       peerController: _peerController,
       selectedPeerLabel: _selectedPeerLabel,
+      canCompose: _contacts.any(
+        (contact) =>
+            contact.peerHex == _peerController.text &&
+            contact.relationshipCount > 0,
+      ),
       selectedPeerIsSignable: _contacts.any(
         (contact) =>
             contact.peerHex == _peerController.text && contact.isSignable,
@@ -650,72 +650,82 @@ class _CapsuleChatPluginScreenState extends State<CapsuleChatPluginScreen> {
       onChooseContact: _chooseContact,
       onRetryReceive: _refreshInbox,
       onSend: _send,
-      loadCachedMessages: _module.chatDelivery.loadCachedMessagesDurably,
+      loadCachedMessages: _chatDelivery.loadCachedMessagesDurably,
       onMessagesProjected: _projectMessages,
     );
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Capsule Chat'),
-        actions: [
-          IconButton(
-            onPressed: _sending ? null : _configureCache,
-            tooltip: 'Local message cache',
-            icon: const Icon(Icons.storage_outlined),
-          ),
-        ],
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(24),
-          child: Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Consensus-bound plugin workspace',
-              style: TextStyle(color: Color(0xFF9CA7B5), fontSize: 12),
+    if (!_ownsCapsule) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Chat')),
+        body: const Center(child: Text('Reopen Chat for the active Capsule.')),
+      );
+    }
+    final conversations = CapsuleChatContactSidebar(
+      contacts: _contacts,
+      messages: _messages,
+      contactLabels: _contactLabels,
+      unreadByPeer: _unreadByPeer,
+      selectedPeerHex: _peerController.text,
+      enabled: !_sending,
+      refreshing: _refreshing,
+      onSelect: _selectPeer,
+      onRefresh: _refreshInbox,
+      onOpenInvitations:
+          widget.onOpenInvitations == null
+              ? null
+              : () {
+                Navigator.of(context).pop();
+                widget.onOpenInvitations!();
+              },
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 640;
+        final hasPeer = _peerController.text.isNotEmpty;
+        final returnToList =
+            compact && hasPeer && widget.initialPeerHex == null;
+        return PopScope<void>(
+          canPop: !returnToList,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && returnToList) _selectPeer('');
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Chat'),
+              leading:
+                  returnToList
+                      ? BackButton(onPressed: () => _selectPeer(''))
+                      : null,
+              actions: [
+                IconButton(
+                  onPressed: _sending ? null : _configureCache,
+                  tooltip: 'Local message cache',
+                  icon: const Icon(Icons.storage_outlined),
+                ),
+              ],
+            ),
+            body: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.all(compact ? 12 : 20),
+                child:
+                    compact
+                        ? (hasPeer ? workspace : conversations)
+                        : Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1200),
+                            child: Row(
+                              children: [
+                                SizedBox(width: 260, child: conversations),
+                                const SizedBox(width: 14),
+                                Expanded(child: workspace),
+                              ],
+                            ),
+                          ),
+                        ),
+              ),
             ),
           ),
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 600) {
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 760),
-                    child: workspace,
-                  ),
-                );
-              }
-              return Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1200),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 240,
-                        child: CapsuleChatContactSidebar(
-                          contacts: _contacts,
-                          messages: _messages,
-                          contactLabels: _contactLabels,
-                          unreadByPeer: _unreadByPeer,
-                          selectedPeerHex: _peerController.text,
-                          enabled: !_sending,
-                          refreshing: _refreshing,
-                          onSelect: _selectPeer,
-                          onRefresh: _refreshInbox,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(child: workspace),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -730,6 +740,7 @@ class CapsuleChatContactSidebar extends StatelessWidget {
   final bool refreshing;
   final ValueChanged<String> onSelect;
   final Future<void> Function() onRefresh;
+  final VoidCallback? onOpenInvitations;
 
   const CapsuleChatContactSidebar({
     super.key,
@@ -742,6 +753,7 @@ class CapsuleChatContactSidebar extends StatelessWidget {
     required this.refreshing,
     required this.onSelect,
     required this.onRefresh,
+    this.onOpenInvitations,
   });
 
   @override
@@ -764,7 +776,11 @@ class CapsuleChatContactSidebar extends StatelessWidget {
       for (final contact in contacts) contact.peerHex: contact,
     };
     final ordered = orderChatConversationPeerHexes(
-      peerHexes: byPeer.keys,
+      peerHexes: {
+        for (final contact in contacts)
+          if (contact.relationshipCount > 0) contact.peerHex,
+        ...latestByPeer.keys,
+      },
       signableByPeer: <String, bool>{
         for (final contact in contacts) contact.peerHex: contact.isSignable,
       },
@@ -801,13 +817,22 @@ class CapsuleChatContactSidebar extends StatelessWidget {
           Expanded(
             child:
                 ordered.isEmpty
-                    ? const Center(
+                    ? Center(
                       child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text(
-                          'No trusted contacts yet. Create a relationship to start a conversation.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Color(0xFF96A2B2)),
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Accept an invitation to start a conversation.',
+                              textAlign: TextAlign.center,
+                            ),
+                            if (onOpenInvitations != null)
+                              TextButton(
+                                onPressed: onOpenInvitations,
+                                child: const Text('Open Invitations'),
+                              ),
+                          ],
                         ),
                       ),
                     )
@@ -815,7 +840,7 @@ class CapsuleChatContactSidebar extends StatelessWidget {
                       itemCount: ordered.length,
                       itemBuilder: (context, index) {
                         final peerHex = ordered[index];
-                        final contact = byPeer[peerHex]!;
+                        final ready = byPeer[peerHex]?.isSignable ?? false;
                         final unread = unreadByPeer[peerHex] ?? 0;
                         final latest = latestByPeer[peerHex];
                         return Material(
@@ -824,11 +849,11 @@ class CapsuleChatContactSidebar extends StatelessWidget {
                             selected: peerHex == selectedPeerHex,
                             leading: CircleAvatar(
                               backgroundColor:
-                                  contact.isSignable
+                                  ready
                                       ? const Color(0xFF2D4651)
                                       : const Color(0xFF493A2A),
                               child: Icon(
-                                contact.isSignable
+                                ready
                                     ? Icons.person_rounded
                                     : Icons.lock_outline_rounded,
                               ),
@@ -846,7 +871,7 @@ class CapsuleChatContactSidebar extends StatelessWidget {
                             ),
                             subtitle: Text(
                               latest?.messageText ??
-                                  (contact.isSignable
+                                  (ready
                                       ? 'Ready to chat'
                                       : 'Needs verification'),
                               maxLines: 1,

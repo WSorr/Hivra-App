@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'app_runtime_service.dart';
 import 'ai_tooling_module_service.dart';
 import 'capsule_history_ai_advisor_service.dart';
@@ -13,6 +15,8 @@ class MainScreenModule {
   final SettingsService Function() settingsService;
   final CapsulePassiveReceiveCoordinator passiveReceive;
   final CapsuleChatDeliveryService chatDelivery;
+  final Uint8List? Function(String) decodeCapsuleRootKey;
+  final Future<Map<String, String>> Function() loadContactLabels;
   final CapsuleHistoryProjectionService capsuleHistory;
   final CapsuleHistoryAiAdvisorService capsuleHistoryAi;
 
@@ -21,6 +25,8 @@ class MainScreenModule {
     required this.settingsService,
     required this.passiveReceive,
     required this.chatDelivery,
+    required this.decodeCapsuleRootKey,
+    required this.loadContactLabels,
     required this.capsuleHistory,
     required this.capsuleHistoryAi,
   });
@@ -38,6 +44,8 @@ class MainScreenModuleService {
       settingsService: runtime.buildSettingsService,
       passiveReceive: runtime.passiveReceive,
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
+      decodeCapsuleRootKey: runtime.buildCapsuleAddressService().decodeRootKey,
+      loadContactLabels: runtime.buildCapsuleContactLabelStore().load,
       capsuleHistory: CapsuleHistoryProjectionService(
         exportLedger: runtime.exportLedger,
         projectHistoryView: runtime.projectHistoryViewV1,

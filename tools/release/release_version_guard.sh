@@ -51,6 +51,12 @@ latest_published_tag() {
 
 suggest_next_tag() {
   local latest="$1"
+  # Test 9 was packaged for acceptance and retired before publication.
+  # This transition stops applying once Test 10 is published.
+  if [ "$latest" = v1.0.6-test8 ]; then
+    printf '%s\n' v1.0.6-test10
+    return
+  fi
   if [[ "$latest" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-test([0-9]+)$ ]]; then
     printf '%s-test%s\n' "${BASH_REMATCH[1]}" "$((BASH_REMATCH[2] + 1))"
     return
@@ -83,8 +89,8 @@ next_patch_base() {
 allowed_next_test_versions() {
   local latest="$1"
   if [[ "$latest" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-test([0-9]+)$ ]]; then
-    printf '%s-test%s\n' "${BASH_REMATCH[1]}" "$((BASH_REMATCH[2] + 1))"
-    printf '%s-test1\n' "$(next_patch_base "${BASH_REMATCH[1]}")"
+    suggest_next_tag "$latest"
+    printf '%s-test1\n' "$(next_patch_base "$latest")"
     return
   fi
   printf '%s-test1\n' "$(next_patch_base "$latest")"
@@ -117,6 +123,13 @@ self_test() {
   fi
   if is_allowed_next_test_version v1.0.3-test8 v1.0.3-test10; then
     die "self-test: skipped test number must be rejected"
+  fi
+  [ "$(suggest_next_tag v1.0.6-test8)" = "v1.0.6-test10" ] ||
+    die "self-test: retired Test 9 must be skipped"
+  is_allowed_next_test_version v1.0.6-test8 v1.0.6-test10 ||
+    die "self-test: Test 10 must follow published Test 8"
+  if is_allowed_next_test_version v1.0.6-test8 v1.0.6-test9; then
+    die "self-test: retired Test 9 must not be published"
   fi
 
   echo "PASS: release version guard self-test"

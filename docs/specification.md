@@ -15,7 +15,7 @@ Hivra is a local-first personal runtime for user-owned Capsules. A Capsule can o
 
 These trusted links form a **Core Trust Layer**, not a social network. They are internal ledger facts used for safe capsule-to-capsule interaction and pair-scoped consensus. There is no global discovery, no people search, no public social graph, and no global network statistics.
 
-Chat, trading, staking, AI, and other user-facing capabilities are drones/plugins, not Core. Core remains minimal: Capsule, Ledger, Invitations, Trust Layer facts, Pair Consensus inputs, and deterministic domain transitions.
+Capsule provides built-in Chat over its Trust Layer. Trading, staking and other installed capabilities run as drones. Core remains minimal and owns Capsule facts, Ledger, Invitations, Trust Layer facts, Pair Consensus inputs and deterministic domain transitions.
 
 The key architectural rule in this revision is strict layer isolation: Core knows nothing about transport, cryptography, time, or RNG. All external dependencies are injected through the Engine.
 
@@ -1511,8 +1511,8 @@ but cannot create, approve, or cache consensus truth.
 Selecting a Chat peer requests the existing pair-attestation exchange without
 sending message content. An attestation-only receive refreshes the displayed
 readiness, including the selected conversation header on compact screens.
-Sending content still requires the same current two-root guard;
-selection and recovery do not renew any application's effect authority.
+Built-in Chat requires the current two-root guard again before transport dispatch.
+Peer selection and recovery do not renew any application's effect authority.
 
 ### 8.5 Drone Consensus Guard Standard
 
